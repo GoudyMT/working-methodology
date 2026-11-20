@@ -735,10 +735,10 @@ test('every git init in the kit names its branch, so main never depends on the m
 });
 
 // why: guards rule:sweep-auto-approval
-test('the git pre-push hook stops an AI agent without approval and lets the owner push', { windows: true }, () => {
+test('the git pre-push hook stops every pusher without approval, a plain terminal included (K163)', { windows: true }, () => {
   const hook = path.resolve('project/.githooks/pre-push');
   const sh = (env) => spawnSync('sh', [hook], { encoding: 'utf8', env: { PATH: process.env.PATH, ...env } });
-  assert.equal(sh({}).status, 0, 'the owner in a plain terminal');
+  assert.notEqual(sh({}).status, 0, 'no marker is no owner: a push naming nothing needs a yes (K163)');
   assert.notEqual(sh({ AI_AGENT: 'some-tool' }).status, 0, 'an agent without approval');
   assert.notEqual(sh({ CLAUDECODE: '1' }).status, 0, 'Claude Code without approval');
   assert.equal(sh({ CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' }).status, 0, 'after the owner said go');

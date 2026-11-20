@@ -1,0 +1,24 @@
+{
+  "lines": [
+    {
+      "before": "3. **Code writes follow Edit Discipline;** default mode is Plan for design. New session or context loss -> the Recovery Protocol.",
+      "after": "3. **Code writes follow Edit Discipline;** default mode is Plan for design. New session or context loss -> rule:recovery-protocol."
+    },
+    {
+      "before": "### Goal Before Mechanism {#goal-before-mechanism}",
+      "after": "## Goal Before Mechanism {#goal-before-mechanism}"
+    },
+    {
+      "before": "The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.",
+      "after": "The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, its Ambition Tiers (the functional end goal, then the gated stretch) ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough."
+    },
+    {
+      "before": "### Recovery Protocol {#recovery-protocol}",
+      "after": "## Recovery Protocol {#recovery-protocol}"
+    },
+    {
+      "before": "Lost context mid-session: the Start reads above, then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.",
+      "after": "Lost context mid-session: the Start reads (rule:session-workflow), then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different."
+    }
+  ]
+}

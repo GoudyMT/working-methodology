@@ -309,7 +309,10 @@ function findOutward(text, depth) {
 	if (/(^|[\s;|&(/\\"'])claude(\.exe|\.cmd)?(\s|$)/i.test(text) && /<wake|author-id|trust=["']?principal/i.test(text)) return 'a session started with a thread message';
 	const flat = text.replace(/[\\`^]\r?\n/g, '').replace(/[\\`^'"]/g, '');
 	if (markersCleared(flat) && !markerOnlyNamed(text)) return MARKERS;
-	// The pre-push hook lets an AI push to main or a tag only with this marker set, so setting it is the owner's yes.
+	// K163 (build 21): the owner's own push sets KIT_OWNER_PUSH to pass the pre-push hook's bound; a tool never does.
+	if (/KIT_OWNER_PUSH/i.test(flat)) return MARKERS;
+	// The pre-push hook lets a push to main or a tag through only with this marker set and the owner's pop-up yes, so
+	// setting it is the owner's yes.
 	if (/KIT_PUSH_APPROVED/i.test(flat)) return 'the push hook\'s owner-yes marker';
 	// A program or a word built at run time, then an outward verb in the same command: $G push, "$(which git)" push.
 	if (/[$`%][^;|&\n]*?(^|[\s)"'`])(push|send-pack|publish|dcommit|upload)(\s|$)/i.test(flat)) return 'a command built at run time';
@@ -788,7 +791,7 @@ function check(input) {
 		: reason === 'a write to main that runs no pre-push hook'
 		? neverText("a write to main, master or the default branch that runs no pre-push hook; main takes a PR, and a tool pushes there only as a new repo's first push, by git push. Open a PR instead")
 		: reason === MARKERS
-		? neverText("clearing the AI shell's markers is a gate bypass; the pre-push hook would take the shell for the owner's own terminal and switch its checks off. Run the command with the markers in place; anything else is the owner's own, in their own terminal")
+		? neverText("clearing the AI shell's markers, or setting the owner's push marker KIT_OWNER_PUSH, is a gate bypass; the sweep approvals and install take a shell with no markers for the owner's own terminal, and the pre-push hook lets the owner's push marker past its bound. Run the command with the markers in place and no owner marker; anything else is the owner's own, in their own terminal")
 		: BYPASS.has(reason)
 		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
 		: verdict === 'allow' ? yesText(what) : askText(what, input, act, lead);

@@ -303,7 +303,8 @@ test('C5 C19 pre-push: the default branch and a new repo are asked of the remote
 	// A remote with master only is no new repo: main is no first push there.
 	const other = path.join(path.dirname(remote), 'other.git');
 	ok(git(path.dirname(remote), ['init', '-q', '--bare', '-b', 'master', other]));
-	ok(git(proj, ['push', '-q', other, 'HEAD:refs/heads/master']));
+	// The owner's own push of master there, the hook's one way round (K163: the hook holds every pusher).
+	ok(git(proj, ['push', '-q', '--no-verify', other, 'HEAD:refs/heads/master']));
 	const m = git(proj, ['push', other, 'HEAD:refs/heads/main'], { CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' });
 	assert.notEqual(m.status, 0);
 	assert.match(m.stderr, /not new/);
@@ -337,20 +338,20 @@ test('K29 pre-push: a remote that names no default branch is not read as having 
 // with the local origin/HEAD deleted, let a plain push land on a default branch not named main.
 test('pre-push: a remote the hook cannot ask may have any branch as its default', () => {
 	const { proj, remote } = setup();
-	ok(git(proj, ['checkout', '-q', '-b', 'develop']));
-	ok(git(proj, ['push', '-q', '--no-verify', 'origin', 'develop']));
-	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/develop']));
+	ok(git(proj, ['checkout', '-q', '-b', 'feat/develop']));
+	ok(git(proj, ['push', '-q', '--no-verify', 'origin', 'feat/develop']));
+	ok(git(remote, ['symbolic-ref', 'HEAD', 'refs/heads/feat/develop']));
 	fs.writeFileSync(path.join(proj, 'd.md'), 'd\n');
 	ok(git(proj, ['add', 'd.md']));
 	ok(git(proj, ['commit', '-q', '--no-verify', '-m', 'docs: d']));
 	const url = ok(git(proj, ['remote', 'get-url', 'origin']));
 	ok(git(proj, ['config', `remote.${url}.vcs`, 'bogus']));
 	git(proj, ['branch', '-rd', 'origin/HEAD']);
-	const r = aiPush(proj, 'develop');
+	const r = aiPush(proj, 'feat/develop');
 	assert.notEqual(r.status, 0, 'a push went out to the remote\'s default branch');
 	// Held as the default branch, whether the key broke the hook's ask (Windows paths) or git refused the key (Linux).
 	assert.match(r.stderr, /default branch/);
-	assert.notEqual(ok(git(remote, ['rev-parse', 'develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
+	assert.notEqual(ok(git(remote, ['rev-parse', 'feat/develop'])), ok(git(proj, ['rev-parse', 'HEAD'])));
 });
 
 // why: guards rule:outward-acts
@@ -1011,6 +1012,12 @@ test('V3 record: the install record and a config folder with another name are gu
 	const { home, proj, session: s } = setup({ homeAt: 'cfg' });
 	assert.equal(s.decide('Write', { file_path: path.join(home, 'kit-install.json'), content: '{"kitDir":"/tmp/evil"}' }).decision, 'deny');
 	assert.equal(s.decide('Write', { file_path: path.join(guardDir(home, proj), 'record.json'), content: '{}' }).decision, 'deny');
+	// E1 (build 21): the report channel's grant names the one intake repo, and the owner's scrub words keep a report
+	// about the kit; a tool writes neither, by the config folder's own name or by .claude.
+	for (const f of ['kit-report.json', 'kit-scrub-words.json', 'kit-reports/issues.jsonl']) {
+		assert.equal(s.decide('Write', { file_path: path.join(home, f), content: '{"repo":"x/y","issues":true}' }).decision, 'deny', f);
+		assert.equal(s.decide('Bash', { command: `echo {} > ~/.claude/${f}` }).decision, 'deny', `${f} by .claude`);
+	}
 });
 
 // why: guards rule:outward-acts

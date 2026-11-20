@@ -17,6 +17,7 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
 import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
 import { retiredHits, retiredList, hitLine } from '../project/.claude/retired-check.mjs';
+import { waiting as reportWaiting, unheard as reportUnheard, intakeHere as reportIntakeHere } from '../project/.claude/kit-report.mjs';
 
 // git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
 // Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
@@ -1708,7 +1709,17 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
   const open = fs.existsSync(reportDir) ? fs.readdirSync(reportDir).filter((f) => /^IR-.*\.md$/.test(f)).sort()
     .filter((f) => !/^\| Status \| (closed|declined) \|/m.test(fs.readFileSync(path.join(reportDir, f), 'utf8'))) : [];
   if (protection(projectDir) === 'unprotected') lines.push('main is not protected on GitHub the way the merge gate needs (a required check that must be up to date, no force push, no delete): run the "Protect main" step of rule:first-push-gate (an outward act; the owner says go).');
-  if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Hand filed ones to the kit.`);
+  if (open.length) lines.push(`${open.length} improvement report(s) open: ${open.join(', ')}. Send each fault to the kit with node .claude/kit-report.mjs send --title ... --area ... --severity ...; the file stays here.`);
+  // E1 (build 21): the report channel's watch. What waits in the PC inbox and for the owner's read, and each of this
+  // project's reports a release has closed since it last asked (status marks them heard).
+  // The inbox line shows only in the kit's workbench, where intake runs (the sweep); a fault here never stops the report.
+  try {
+    const box = reportWaiting(home);
+    if (box.inbox && reportIntakeHere(home, projectDir)) lines.push(`Kit reports: ${box.inbox} in the PC inbox; node .claude/kit-report.mjs intake makes each a list row.`);
+    if (box.held) lines.push(`Kit reports: ${box.held} wait for the owner's read before they go as issues: node .claude/kit-report.mjs held shows each one's text and its release command.`);
+    const heardNow = reportUnheard(home, projectDir);
+    if (heardNow.length) lines.push(`Kit reports closed: ${heardNow.join(', ')}. node .claude/kit-report.mjs status shows them and marks them heard.`);
+  } catch (e) { lines.push(`Kit reports: not read (${e.message}).`); }
   // T3 (1.30.0): install skips a CLAUDE.md the project filled in, so it can keep the old start reading: the tracking
   // files inlined at start and the old rule 11. Status names the exact lines to change.
   const claudeMd = (() => { try { return fs.readFileSync(path.join(projectDir, 'CLAUDE.md'), 'utf8'); } catch { return ''; } })();

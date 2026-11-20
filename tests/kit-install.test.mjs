@@ -1281,7 +1281,8 @@ test('an update retires a script once the edited audit that needed it is put bac
 test('a self-started closeout asks before a remote delete, and leftovers carry only on the owner yes', () => {
   assert.match(read(path.resolve('rules/tracking-and-handoff.md')), /merged -> retire per rule:branching[^\n]*remote delete on the owner's yes/);
   const core = read(path.resolve('rules/core.md'));
-  assert.match(core, /a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never/); // pin: 4 the owner's carry wording
+  // Build 21: Autonomous Fixes moved, unchanged, to kit-standards.md to leave room in the always-loaded file.
+  assert.match(read(path.resolve('rules/kit-standards.md')), /a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never/); // pin: 4 the owner's carry wording
   assert.doesNotMatch(core, /design items go to the roadmap/);
 });
 

@@ -33,6 +33,8 @@ const ASK = [
 	'git pu' + BT + 'sh',
 	'git {push,origin}',
 	'git pu{sh,sh} origin',
+	// K161 (build 21): a sequence that counts down is read too (no proof held one, so a flip of its loop survived).
+	'git pus{h..g} origin main',
 	'git --attr-source HEAD push',
 	'git --shallow-file x push',
 	'git config alias.p push; git p',

@@ -170,7 +170,12 @@ test('the use check fails a filled AGENTS.md over the cap and a compact window o
 	fs.appendFileSync(path.join(big, 'AGENTS.md'), 'x'.repeat(26000));
 	const b = check(big);
 	assert.deepEqual(b.out.failing, ['start-load']);
-	assert.match(part(b.out, 'start-load').wired.detail, /over the 25,000 B cap/);
+	assert.match(part(b.out, 'start-load').wired.detail, /over the 22,000 B cap/);
+	// K118 (build 21): the cap came down from 25,000 B, so a file between the two caps now fails.
+	const mid = project();
+	const agents = path.join(mid, 'AGENTS.md');
+	fs.appendFileSync(agents, 'x'.repeat(23000 - fs.statSync(agents).size));
+	assert.deepEqual(check(mid).out.failing, ['start-load'], 'a 23,000 B AGENTS.md');
 	for (const [file, settings] of [['settings.json', { autoCompactWindow: 650000 }], ['settings.local.json', { modelSettings: { 'claude-opus-5-5': { autoCompactWindow: 900000 } } }], ['settings.json', { autoCompactWindow: 40000 }]]) {
 		const w = project();
 		const f = path.join(w, '.claude', file);

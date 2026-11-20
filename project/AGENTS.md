@@ -29,7 +29,7 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 1. This file: the core rules below, and the module the moment needs (Rule Modules table at the end)
 2. `node .claude/resume-packet.mjs check`: the resume point, open lessons and git state, checked against the files
-3. The files its verdict names; with no packet (or a tool that runs no commands): [`_Start Here.md`](_Start Here.md), [`_Loop Learnings.md`](_Loop Learnings.md), [`_Working Memory.md`](_Working Memory.md), [`_Active Plan.md`](_Active Plan.md), the last [`_Session Log.md`](_Session Log.md) entry, the plan the Resume Point names
+3. The files its verdict names; with no packet (or a tool that runs no commands): [`_Start Here.md`](_Start Here.md), [`_Loop Learnings.md`](_Loop Learnings.md), [`_Working Memory.md`](_Working Memory.md), [`_Active Plan.md`](_Active Plan.md), the plan the Resume Point names
 
 ---
 
@@ -51,12 +51,6 @@ The core rules below this part are the full rules; these are the ones a tool rea
 
 - **Owner's shell:** <!-- PROJECT ADAPTER A23 --> `<shell + quirks>`.
 - **Spec, ADRs, plans:** depth lives in their files. Tracking files (Master Roadmap, Working Memory, Active Plan, Session Log) hold SHORT summary + LINK only.
-
----
-
-## Cross-Tool File Mapping (Memory-Bank Style Tools)
-
-A memory-bank tool's files live here: the brief and product context in the design spec (`_Start Here.md` links it); the active context in [`_Active Plan.md`](_Active Plan.md) and the last [`_Session Log.md`](_Session Log.md) entry; system patterns and tech context in the ADRs and rule:project-adapter; progress in [`_Master Roadmap.md`](_Master Roadmap.md) and [`_Working Memory.md`](_Working Memory.md).
 
 ---
 
@@ -132,19 +126,10 @@ No repo file, whatever its rank, loosens the outward-act, gate-bypass, delete or
 
 1. **The owner locks each decision** (pick, blend or revision). Nothing is locked from AI inference. Why: inference-locked decisions are drift with a confident face.
 2. **Bulk instructions** ("complete all todos", "implement the plan", "don't stop until done") never override rule 1: advance the current open issue; ask if unclear. Why: a request for momentum is not a blanket approval.
-3. **Code writes follow Edit Discipline;** default mode is Plan for design. New session or context loss -> the Recovery Protocol.
+3. **Code writes follow Edit Discipline;** default mode is Plan for design. New session or context loss -> rule:recovery-protocol.
 4. **Paste-able handoff line:** `[Topic] Issue [N] only. Plan mode. No code writes. A/B/C then stop.`
 
 **The A/B/C shape:** plain overview a reader takes in within 60 seconds (`_Templates/_Ask Formats.md`: what this is, why it is in front of the owner now, and what measurement or finding raised it; item codes only after the plain name) -> context (problem, what is locked, what is at stake) -> options with pros / cons -> security / design impact -> honest recommendation -> stop. Cover the whole space, extensive and rule-bending options included, each labelled by effort (Small / Moderate / EXTENSIVE) and rules (OK / BENDS <the lock> / BREAKS Tier 0), with whether pros beat cons for extensive or bending ones; the impossible marked so, with proof; a rule-breaking option is for contrast, never recommended. Why: a partial list hides the option the owner would pick.
-
-### Goal Before Mechanism {#goal-before-mechanism}
-
-- **Explore the goal, not the named mechanism:** the goal in one line, the current state against it, then every channel.
-- **Map an experience goal to the layer that emits it:** restate it as what the user SEES and name that layer in writing before code. The knob on the surface being edited is suspect; a measurement saying it cannot reach the goal means change layer, not a middle value.
-- **Check the capability exists** (where and when the output is produced) before tuning its presentation; gated off for most people = absent.
-- **Sequence by the tier people hit first;** **run the deciding measurement first** - the cheap check that would show the goal unreachable, its bar written down before the result.
-
-Why: the named mechanism is often the nearest knob; widening to the goal finds the defect it hid.
 
 ### Delegated Decisions (amends rule 1) {#delegated-decisions}
 
@@ -175,11 +160,9 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 - **The push bound** (the owner, 2026-11-10 and 2026-11-15) is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner. It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete. Main takes a PR; a tool pushes there only as a new repo's first push, with the owner's yes.
 
   The guard and the pre-push hook hold the bound; a refused push names the limit it hit.
-- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal.
+- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` in their own terminal: the pre-push hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority.
-- **Auto-merge goes through the merge gate:** after a PR's gates, under the grant Claude runs `node ~/.claude/kit-tools/merge-gate.mjs arm <n>` (PowerShell: the full forward-slash path install prints; `$HOME` never runs unasked); without GO the merge waits for the owner's yes (rule:standing-grants).
-- **Remote mode (owner away): show, then run.** List every git / forge / outward command in order with what it does; a yes covers that set only; stop at the first failure; report each with proof (URL, SHA, state read back); read-only checks need no yes; the push bound and auto-fix's grant push without asking. What the owner must read goes as a file they can open on the phone.
 
 ## Session Workflow {#session-workflow}
 
@@ -189,37 +172,9 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 
 **End:** the session-end batch (-> rule:tracking-file-functions) -> ADRs for locked architecture -> the Pre-Compact ritual if near the limit. **Compact after each major task** (a shipped PR or large step into new territory), not for rework of the current step. Why: drift grows with context length.
 
-### Recovery Protocol {#recovery-protocol}
-
-Lost context mid-session: the Start reads above, then the first OPEN issue; re-read Collaborative Design Locks; a pasted handoff line sets the scope exactly. Why: decisions rebuilt from memory come back subtly different.
-
 ### What This File Is Not {#what-this-file-is-not}
 
 Not the design spec (A22), the roadmap or the history: it is HOW we work; the modules hold the depth.
-
-## Correction & Learning Loop {#correction-loop}
-
-On an owner correction: **acknowledge** (don't defend); **capture** a specific actionable rule in its rule module the same session (memory gets a pointer, Kit Standards #3); **sharpen** it if the mistake repeats; **re-read** the section before working in that area. Memory: one file per subject, a line or two per entry, under 3 KB each, one index line per file. Why: a correction living only in chat is re-made next session.
-
-## Autonomous Fixes {#autonomous-fixes}
-
-**Fix and report:** doc contradictions, stale references, broken links, missing imports, obvious bugs, typos. **Small and easy now:** fixed in the current PR; a low or medium that cannot be finished carries only on the owner's yes, recorded; a high or critical never. **Ask instead:** ambiguous design conflicts, changed requirements touching locks, unclear intent. Why: asking about the obvious wastes the owner's time; deciding the ambiguous takes their decision.
-
-## Justify Every Direction Change {#direction-changes}
-
-When an agreed direction changes, state (1) **why it changed** (the new information); (2) **how it is better** (the concrete difference); (3) **why it is better** (risk avoided, cost saved, quality gained); (4) **a direct reference** (file / line, standard, ADR, precedent, measurement) - never "it is cleaner". Then the owner locks it. Missing any = a **silent pivot**. Why: the owner audits the turn without re-deriving it.
-
-## Re-Plan on Failure {#re-plan-on-failure}
-
-When work shows a locked decision is wrong: **STOP**; flag "this conflicts with [decision / ADR]"; assess what depends on it; present options (unlock and re-lock if needed), the root fix scaled to stakes first-class beside any work-around; then resume. Why: items built on a flawed foundation cascade.
-
-## Simplicity Lens {#simplicity-lens}
-
-Before locking: *"Is there a simpler version with the same outcome?"* Complexity is earned; 3 lines beat 30; no over-engineering for under-1% edge cases or problems users won't meet - but never simplify away depth that creates real capability. Why: every piece of complexity is paid for in every later change.
-
-## Success Charter (Define Success Before Building) {#success-charter}
-
-The five-part charter and its three rules live in the global standards; write it BEFORE differentiator or high-uncertainty work. Here, the tiers ARE the Dual-Horizon horizons. Why: work without a defined bar is never done, or never good enough.
 
 ## Rule Modules
 
@@ -232,9 +187,9 @@ by its fixed ID; `standards/INDEX.md` lists every ID and its file.
 | agent-teams | `standards/agent-teams.md` | Before any agent batch, swarm or fan-out. |
 | code | `.claude/rules/code.md` | Before writing code, and when a source file is opened (the patterns are a default; set them per project in rule:project-adapter). |
 | design-and-ux | `.claude/rules/design-and-ux.md` | Before any visual or UX decision, and when a UI file is opened. |
-| evidence-and-failures | `standards/evidence-and-failures.md` | When something fails, a number surprises, a probe is planned, a fact is handed on, or a choice is recommended. |
-| git-and-release | `.claude/rules/git-and-release.md` | Before a commit, branch, PR, merge or release. |
-| kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit, and when a session's context grows long or many tools are loaded. |
+| evidence-and-failures | `standards/evidence-and-failures.md` | When something fails, a number surprises, a probe is planned, a fact is handed on, a choice is recommended or a direction changes, a locked decision proves wrong, or a goal or success bar is set. |
+| git-and-release | `.claude/rules/git-and-release.md` | Before a commit, branch, PR, merge or release, and when the owner is away (remote mode). |
+| kit-standards | `standards/kit-standards.md` | Before changing a rule or the kit, when the owner corrects you, after a loss of context, before a small fix found in passing, and when a session's context grows long or many tools are loaded. |
 | loop-mode | `standards/loop-mode.md` | When loop mode is armed or a build loop runs. |
 | project-adapter | `standards/project-adapter.md` | Before an agent batch; filled in per project. |
 | reviews-and-findings | `standards/reviews-and-findings.md` | Before a sweep, a review or a PR, and when handling a finding. |

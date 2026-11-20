@@ -107,6 +107,15 @@ test('past the brace-group cap the rest of a command asks, and a long run of gro
 	assert.equal(hook('guard-outward.cjs', 'echo ' + 'x{1..1} '.repeat(20)), 'pass');
 });
 
+// K161 (build 21): no test read a sequence that counts down, so a flip of its loop (x >= b to x < b) survived the
+// mutation check and pus{h..g} read as nothing; the guard proofs hold it now too.
+// why: guards rule:outward-acts
+// planted: {"file":"project/.claude/guard-read.cjs","was":"x <= b : x >= b","to":"x <= b : x < b"}
+test('a sequence that counts down is read as bash reads it', () => {
+	assert.equal(hook('guard-outward.cjs', 'git pus{h..g} origin main'), 'deny');
+	assert.equal(hook('guard-delete.cjs', 'r{n..m} -rf ' + OUT), 'deny');
+});
+
 // A review lead (2026-11-18): a git subcommand held in a variable was held only where git came first, so behind a
 // shell keyword (then, do, else, !) or an assignment it was read as a plain git call.
 // why: guards rule:outward-acts

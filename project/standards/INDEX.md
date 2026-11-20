@@ -19,19 +19,11 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | instruction-priority | Instruction Priority | `AGENTS.md` | conflict, which instruction wins, override |
 | owners-rules | The Owner's Rules | `AGENTS.md` | owner, preferences, standing orders |
 | collaborative-design-locks | Collaborative Design Locks (Non-Negotiable) | `AGENTS.md` | decide, lock, options, approval, one issue, bulk instructions |
-| goal-before-mechanism | Goal Before Mechanism | `AGENTS.md` | goal, purpose, why, mechanism, options |
 | delegated-decisions | Delegated Decisions (amends rule 1) | `AGENTS.md` | decide alone, records answer, impact test |
 | edit-discipline | Edit Discipline | `AGENTS.md` | edit, write code, change files, approval before writing |
 | outward-acts | Git: Local Work vs Outward Acts | `AGENTS.md` | push, pull request, merge, release, tag, publish, remote |
 | session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
-| recovery-protocol | Recovery Protocol | `AGENTS.md` | lost context, new chat, recover |
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
-| correction-loop | Correction & Learning Loop | `AGENTS.md` | corrections, feedback, mistakes, learn |
-| autonomous-fixes | Autonomous Fixes | `AGENTS.md` | fix without asking, small fixes |
-| direction-changes | Justify Every Direction Change | `AGENTS.md` | pivot, change direction, justify |
-| re-plan-on-failure | Re-Plan on Failure | `AGENTS.md` | plan failed, replan |
-| simplicity-lens | Simplicity Lens | `AGENTS.md` | simple, simpler, over-engineering |
-| success-charter | Success Charter (Define Success Before Building) | `AGENTS.md` | success criteria, define done, measurable |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
 | craft-floor | Craft Floor | `.claude/rules/design-and-ux.md` | states, empty state, heuristics, design review score, dashboard, board, anti-patterns, slop |
 | design-for-human-error | Design for Human Error | `.claude/rules/design-and-ux.md` | mistakes, typo, mistype, forgiving, recover |
@@ -46,6 +38,11 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | fact-check | Fact-Check Before Handing Over | `standards/evidence-and-failures.md` | fact check, verify a document, claims, report, explainer, diagram accuracy |
 | anti-hallucination | Anti-Hallucination Discipline (Standing) | `standards/evidence-and-failures.md` | guess, verify, invented, made up, re-read claims |
 | dual-horizon | Dual-Horizon Recommendations | `standards/evidence-and-failures.md` | short term, long term, rework cost |
+| goal-before-mechanism | Goal Before Mechanism | `standards/evidence-and-failures.md` | goal, purpose, why, mechanism, options |
+| success-charter | Success Charter (Define Success Before Building) | `standards/evidence-and-failures.md` | success criteria, define done, measurable |
+| direction-changes | Justify Every Direction Change | `standards/evidence-and-failures.md` | pivot, change direction, justify |
+| re-plan-on-failure | Re-Plan on Failure | `standards/evidence-and-failures.md` | plan failed, replan |
+| simplicity-lens | Simplicity Lens | `standards/evidence-and-failures.md` | simple, simpler, over-engineering |
 | pre-commit | Pre-Commit Discipline | `.claude/rules/git-and-release.md` | before commit, commit checks, staged |
 | commit-message-format | Commit Message Format | `.claude/rules/git-and-release.md` | commit message, subject line, type |
 | branching | Branching | `.claude/rules/git-and-release.md` | branch name, naming, git branch |
@@ -55,12 +52,17 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | kit-stays-local | Kit Stays Local | `.claude/rules/git-and-release.md` | kit not committed, exclude, track growth, never list, private |
 | first-push-gate | First Push Gate | `.claude/rules/git-and-release.md` | first push, new remote, initial push, tracked files check, history |
 | standing-grants | Standing Grants | `.claude/rules/git-and-release.md` | grant, autonomy, autopilot, kill switch, act without asking, automatic release |
+| remote-mode | Remote Mode | `.claude/rules/git-and-release.md` | owner away, remote control, phone, show then run |
+| correction-loop | Correction & Learning Loop | `standards/kit-standards.md` | owner correction, corrected, capture a rule, memory file |
 | kit-standards | Kit Standards (How the Methodology Improves) | `standards/kit-standards.md` | kit, methodology, change a rule, briefs, one home, improvement report, process gap, kit gap, missing kit, kit gate |
 | context-engineering | Context Engineering Discipline | `standards/kit-standards.md` | context window, tokens, load, size |
+| recovery-protocol | Recovery Protocol | `standards/kit-standards.md` | lost context, new chat, recover |
+| autonomous-fixes | Autonomous Fixes | `standards/kit-standards.md` | fix without asking, small fixes |
 | loop-workflow-mode | Loop Workflow Mode (Keyword-Gated TDD Loop) | `standards/loop-mode.md` | loop, autonomous, keyword |
 | graduated-loop-lessons | Graduated loop lessons | `standards/loop-mode.md` | lessons, learned, regression |
 | loop-driver | The Loop Driver | `standards/loop-mode.md` | loop, bounds, stop, counter, triage |
 | project-adapter | Project Adapter (FILL-IN TEMPLATE) | `standards/project-adapter.md` | project values, stack, adapter, fill in |
+| cross-tool-mapping | Cross-Tool File Mapping (Memory-Bank Style Tools) | `standards/project-adapter.md` | memory bank, other AI tool, cline, roo, active context |
 | finding-pipeline | The Finding Pipeline (Sweep Finding -> Fix) | `standards/reviews-and-findings.md` | findings, review results, fix findings, triage |
 | features-first | Features First; Findings Ride Inside the PR | `standards/reviews-and-findings.md` | fix-only pr, findings in the pr |
 | milestone-sweep | Milestone Project Sweep (Periodic Multi-Agent Audit) | `standards/reviews-and-findings.md` | audit, sweep, milestone, review dimensions |

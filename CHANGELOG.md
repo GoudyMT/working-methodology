@@ -1,5 +1,27 @@
 # Changelog
 
+## 1.47.0 - 2026-11-20
+
+A project can now report a kit fault from its own session, scrubbed and read by the owner before it leaves the PC; the pre-push hook holds every pusher to the push bound; four guard gaps are closed; and the always-loaded rules file is 18% smaller under a 22,000 B cap.
+
+### Added
+- A project reports a kit fault with `kit-report.mjs send`: a scrub refuses any path, link, address, secret or project word, the report lands in a PC folder, and its text goes to the private intake repo only after the owner reads it.
+- `kit-report.mjs intake`, run in the workbench the owner names, makes each inbox report a suspect list row from real use; a repeat raises its count, and a fault that comes back after its row closed opens a new row that names the old one.
+- A build record lists the kit reports its release closes, and a project hears it once at session start or from `kit-report.mjs status`.
+
+### Changed
+- The armed-head hold is proven by a planted bug for the project hook and the kit source hook alike, in one test with real commits.
+- The always-loaded rules file cap is 22,000 B, down from 25,000 B; the kit's own file is 19,467 B, so about 2,500 B are left for a project's own lines. Eleven sections moved, unchanged, to the modules read at their moment.
+- The Session Log left the start-up read order, the resume packet's full list and the cross-tool map.
+
+### Fixed
+- A plain read beside true, : or pwd passes, and a read held for the command beside it says so instead of calling it a guard write.
+
+### Security
+- The pre-push hook holds every pusher to the push bound: main, a tag, a delete, a force or the first branch on an empty remote needs the owner's yes, and every push is scanned. The owner's own push sets KIT_OWNER_PUSH=1.
+- The dash-name check reads a here-document a shell runs, a quoted command inside $(), and a shell named by a wildcard or an expansion.
+- A brace sequence that counts down (pus{h..g}, r{n..m}) is read as bash reads it.
+
 ## 1.46.1 - 2026-11-20
 
 The upgrade note now says render adds the archive block itself and that a done row needs the release check run in the project, and the known limits name the test runners in plain words.

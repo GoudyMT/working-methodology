@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // Improvement reports (rule:kit-standards item 12). One format the kit owns for every process or method gap found
-// while using it, the same in every project, so the owner can hand a report to the kit as one file and the kit can
+// while using it, the same in every project, so a report goes to the kit through kit-report.mjs send and the kit can
 // triage it by its fields. Reports live in .kit/reports/ (kit-local, never pushed).
 //
 // Usage (from the project folder):

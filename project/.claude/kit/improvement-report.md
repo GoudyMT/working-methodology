@@ -15,11 +15,11 @@
 | Closed by | <the kit version that closes it; leave "-" while open> |
 
 <!--
-Fill this in the session the gap shows up, then hand the file to the kit as is. `improvement-report.mjs audit
-<file>` must PASS first.
+Fill this in the session the gap shows up. `improvement-report.mjs audit <file>` must PASS, then send it with
+`kit-report.mjs send --title --area --severity`; this file stays in the project.
 Type: process = how we work (step order, who decides, hand-offs); method = a rule, check, script, hook or template.
 Severity: high = a standard was broken or could have been; medium = rework or owner time lost; low = friction.
-Status: open (here) -> filed (handed to the kit) -> accepted or declined (the kit's call) -> closed (a release fixed it).
+Status: open (here) -> filed (sent to the kit) -> accepted or declined (the kit's call) -> closed (a release fixed it).
 Plain words to the owner; full rigour in the tables. Every cause carries evidence; a guess is labelled "guess".
 -->
 

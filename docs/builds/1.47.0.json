@@ -1,0 +1,530 @@
+{
+  "version": "1.47.0",
+  "date": "2026-11-20",
+  "level": "minor",
+  "area": "Safety",
+  "title": "feat: report channel, push checks and a smaller rules file",
+  "headline": "A project can now report a kit fault from its own session, scrubbed and read by the owner before it leaves the PC; the pre-push hook holds every pusher to the push bound; four guard gaps are closed; and the always-loaded rules file is 18% smaller under a 22,000 B cap.",
+  "alignment": "v1.47.0 is build 21 of the v2.0 plan: K158, K159, K161, K163, E1 (with I8, J5, T11 and E38 rung 1), K118 and the rest of TC5, each reproduced on the released 1.46.1 or proven by a run first.",
+  "items": [
+    {
+      "id": "E1",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A project reports a kit fault with `kit-report.mjs send`: a scrub refuses any path, link, address, secret or project word, the report lands in a PC folder, and its text goes to the private intake repo only after the owner reads it.",
+      "evidence": "project/.claude/kit-report.mjs",
+      "where": "Telling the kit about a fault found in a project",
+      "before": "An improvement-report file the owner carried by hand",
+      "after": "One send command; the owner reads before anything leaves",
+      "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
+    },
+    {
+      "id": "E1-INTAKE",
+      "kind": "added",
+      "reach": "kit",
+      "text": "`kit-report.mjs intake`, run in the workbench the owner names, makes each inbox report a suspect list row from real use; a repeat raises its count, and a fault that comes back after its row closed opens a new row that names the old one.",
+      "evidence": "project/.claude/kit-report.mjs",
+      "where": "Taking reports into the kit list",
+      "before": "No intake",
+      "after": "Suspect rows, counted, never holding report text",
+      "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+    },
+    {
+      "id": "E1-HEAR",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A build record lists the kit reports its release closes, and a project hears it once at session start or from `kit-report.mjs status`.",
+      "evidence": "scripts/build-record.mjs",
+      "where": "Learning a reported fault was fixed",
+      "before": "Nothing came back",
+      "after": "The release that closed it is named once",
+      "test": "tests/kit-report.test.mjs::a project hears which release closed its report, once"
+    },
+    {
+      "id": "K163",
+      "kind": "security",
+      "reach": "projects",
+      "text": "The pre-push hook holds every pusher to the push bound: main, a tag, a delete, a force or the first branch on an empty remote needs the owner's yes, and every push is scanned. The owner's own push sets KIT_OWNER_PUSH=1.",
+      "evidence": "project/.githooks/pre-push",
+      "where": "Pushing past the push bound",
+      "before": "A push with neither marker went out unchecked",
+      "after": "Held for every pusher; the owner has a checked way of their own",
+      "test": "tests/kit-rules.test.mjs::the git pre-push hook stops every pusher without approval, a plain terminal included (K163)"
+    },
+    {
+      "id": "K163-PROOF",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The armed-head hold is proven by a planted bug for the project hook and the kit source hook alike, in one test with real commits.",
+      "evidence": "tests/kit-hooks.test.mjs",
+      "where": "The kit test suite",
+      "before": "Two loop-made tests on fake commits",
+      "after": "One test that fails on its planted bug",
+      "test": "tests/kit-hooks.test.mjs::the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher, in a project and in the kit source"
+    },
+    {
+      "id": "K158",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "A plain read beside true, : or pwd passes, and a read held for the command beside it says so instead of calling it a guard write.",
+      "evidence": "project/.claude/owner-proof.cjs",
+      "where": "Reading a guard file in a chained command",
+      "before": "Refused with a false reason",
+      "after": "Passes, or names the command beside it",
+      "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+    },
+    {
+      "id": "K159",
+      "kind": "security",
+      "reach": "projects",
+      "text": "The dash-name check reads a here-document a shell runs, a quoted command inside $(), and a shell named by a wildcard or an expansion.",
+      "evidence": "project/.claude/owner-proof.cjs",
+      "where": "A wildcard that matches a file named like an option",
+      "before": "Two shapes passed",
+      "after": "Held as unsure",
+      "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+    },
+    {
+      "id": "K161",
+      "kind": "security",
+      "reach": "projects",
+      "text": "A brace sequence that counts down (pus{h..g}, r{n..m}) is read as bash reads it.",
+      "evidence": "project/.claude/guard-read.cjs",
+      "where": "A push or delete spelled with a descending sequence",
+      "before": "Read as nothing",
+      "after": "Held",
+      "test": "tests/guard-prompts.test.mjs::a sequence that counts down is read as bash reads it"
+    },
+    {
+      "id": "K118",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "The always-loaded rules file cap is 22,000 B, down from 25,000 B; the kit's own file is 19,467 B, so about 2,500 B are left for a project's own lines. Eleven sections moved, unchanged, to the modules read at their moment.",
+      "evidence": "project/.claude/use-check.mjs",
+      "where": "Every session start",
+      "before": "23,834 B under a 25,000 B cap",
+      "after": "19,467 B under a 22,000 B cap",
+      "test": "tests/use-check.test.mjs::the use check fails a filled AGENTS.md over the cap and a compact window outside 100K to 400K"
+    },
+    {
+      "id": "TC5",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "The Session Log left the start-up read order, the resume packet's full list and the cross-tool map.",
+      "evidence": "rules/_parts/agents-head.md",
+      "where": "Session start",
+      "before": "The last Session Log entry was a start read",
+      "after": "Read only when a task needs its history"
+    }
+  ],
+  "verification": [
+    "K158, K159 and K163 were reproduced on the released 1.46.1 before each fix; K161 came from the mutation check.",
+    "The scrub ran against planted lines, the issue route against recorded GitHub replies.",
+    "Accuracy held against the released 1.46.1, measured the same day and scored blind together: rule recall 13, 13, 13, 14, 14 against 12, 12, 13, 13, 13 (no question worse), behaviour 13, 14, 13 against 12, 12, 12, control 0."
+  ],
+  "decisions": [
+    {
+      "decision": "Reports go to a PC folder and a private intake repo",
+      "why": "The kit repo is public, so it never takes a report."
+    },
+    {
+      "decision": "Free text leaves the PC only after the owner reads it",
+      "why": "A scrub cannot prove a sentence names nothing private; the yes is bound to the text read."
+    },
+    {
+      "decision": "The owner's own push has its own marker instead of skipping the hooks",
+      "why": "Skipping the hooks also skipped the secret scan and the first push gate; the marker skips only the bound, and a session's shell is refused it."
+    },
+    {
+      "decision": "Sections moved, none cut",
+      "why": "The owner put retention above size: each moved section is unchanged in the module read at its moment, and the recall run decides whether the moves stay."
+    },
+    {
+      "decision": "A minor release",
+      "why": "A new command, a hook rule and a lower cap reach every project."
+    }
+  ],
+  "upgrading": "Run install user, then install project. To push main, a tag or a delete from your own terminal, set KIT_OWNER_PUSH=1 for that push (PowerShell: `$env:KIT_OWNER_PUSH = 1`, then remove it); skipping the hooks also skips the secret scan and the first push gate. A project rules file over 22,000 B fails the use check: move a project section to a module. The issue route stays off until `kit-report.json` in the user config folder names the intake repo with \"issues\": true.",
+  "limits": "The pre-push hook trusts KIT_OWNER_PUSH in a shell with neither session marker; a process that clears the markers past the guard, or skips the hooks, is not stopped by a hook. The scrub reads words it knows (folder, remote, account, computer and the owner's list); a project word it was never told can pass, which is why free text waits for the owner's read. Intake runs only in the folder kit-report.json names.",
+  "visuals": {
+    "fold": true,
+    "summary": "Visuals: Always-loaded rules file 23,834 B to 19,467 B (cap 22,000 B)",
+    "body": "<details>\n<summary>Visuals: Always-loaded rules file 23,834 B to 19,467 B (cap 22,000 B)</summary>\n\nAlways-loaded rules file loads 1,600 fewer tokens at each session start: about $6.40 less per 1,000 sessions\nat the uncached input price, and 0.40 points less of the window used at start.\n\n![Chart: Always-loaded rules file 23,834 B to 19,467 B; Always-loaded rules file: tokens read at each session start 8,500 to 6,900; Always-loaded rules file: cost per 1,000 sessions $34.00 to $27.60; Always-loaded rules file: share of the window used at start 2.13% to 1.73%](https://github.com/GoudyMT/working-methodology/raw/9a7578085edb2b66c71fc3cf72aee28ab478a0f9/docs/visuals/feat/report-channel/chart.png)\n\n```text\nAlways-loaded rules file, bytes (| = limit 22,000)\nbefore  #####################################|##  23,834\nafter   #################################    |    19,467\n```\n\n| Metric | Before | After | Change | Limit | Source |\n|---|---|---|---|---|---|\n| Always-loaded rules file | 23,834 B | 19,467 B | -4,367 B (-18.3%) | 22,000 B | measured: bytes at ec73f1d and bf6c9a0 |\n| Always-loaded rules file: tokens read at each session start | 8,500 | 6,900 | -1,600 (-18.8%) | none | measured: session context report, to 0.1k (docs/evals/results/b21-start-load.md) |\n| Always-loaded rules file: cost per 1,000 sessions | $34.00 | $27.60 | -$6.40 (-18.8%) | none | derived: tokens x $4 per million input tokens, uncached (2026-11-03) |\n| Always-loaded rules file: share of the window used at start | 2.13% | 1.73% | -0.40 points | none | derived: tokens / 400,000-token window |\n\n**Why each number moved**\n\n- **Always-loaded rules file:** the Session Log left the start reads, and eleven sections moved, unchanged,\n  to the modules read at their moment.\n- **Always-loaded rules file: tokens read at each session start:** follows from the Always-loaded rules file\n  size.\n- **Always-loaded rules file: cost per 1,000 sessions:** follows from tokens at the uncached input price;\n  cached reads cost less.\n- **Always-loaded rules file: share of the window used at start:** less of the window goes to the start, so\n  more is left for the work before the session compacts.\n</details>"
+  },
+  "tests": {
+    "before": 961,
+    "after": 966,
+    "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+  },
+  "sweep": {
+    "tier": "Feature (security-sensitive, user data)",
+    "commit": "d2afd10",
+    "dimensions": [
+      {
+        "name": "Privacy",
+        "result": "Scrub widened to hosts, addresses and joined names; no report text reaches a list row"
+      },
+      {
+        "name": "Supply chain",
+        "result": "Not touched: no dependency added"
+      },
+      {
+        "name": "Legal",
+        "result": "Not touched: no content source or licence changed"
+      },
+      {
+        "name": "Code security",
+        "result": "Dash reader, push hook and intake writes fixed"
+      },
+      {
+        "name": "Gaps, scaling, test value",
+        "result": "Cap room, stale text and weak rows fixed"
+      },
+      {
+        "name": "Alignment",
+        "result": "YES"
+      }
+    ],
+    "findings": {
+      "critical": 0,
+      "high": 6,
+      "medium": 20,
+      "low": 19
+    },
+    "fixes": [
+      {
+        "id": "R1-1",
+        "severity": "high",
+        "security": true,
+        "text": "The dash check reads a here-document body a shell expands",
+        "commit": "f592285",
+        "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+      },
+      {
+        "id": "R1-2",
+        "severity": "medium",
+        "security": true,
+        "text": "A shell named by a wildcard behind a wrapper program is read as unsure",
+        "commit": "f592285",
+        "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+      },
+      {
+        "id": "R1-3",
+        "severity": "medium",
+        "security": true,
+        "text": "A shell named by an expansion no longer skips the second reading of its -c text",
+        "commit": "f592285",
+        "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+      },
+      {
+        "id": "R2-1",
+        "severity": "high",
+        "security": true,
+        "text": "A url.insteadOf rewrite of the push URL holds the push",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R2-2",
+        "severity": "medium",
+        "security": true,
+        "text": "Two pushes on one yes: the second waits on a lock until the first logs it",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R2-3",
+        "severity": "low",
+        "security": true,
+        "text": "The first branch pushed to an empty remote, which becomes its default, waits for the owner",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R2-4",
+        "severity": "low",
+        "security": true,
+        "text": "The owner's own push has its own way, KIT_OWNER_PUSH, which keeps the scan and gates",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R3-1",
+        "severity": "high",
+        "security": true,
+        "text": "A report's kit file name is checked for project words",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"
+      },
+      {
+        "id": "R3-2",
+        "severity": "medium",
+        "security": true,
+        "text": "Host names, IP addresses, shares and relative paths in report text are refused",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"
+      },
+      {
+        "id": "R3-3",
+        "severity": "medium",
+        "security": true,
+        "text": "The scrub knows the remote host, nested owners, the email's name and joined spellings",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"
+      },
+      {
+        "id": "R3-4",
+        "severity": "medium",
+        "security": true,
+        "text": "Text past its cap is refused unread, so a long line costs no time",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"
+      },
+      {
+        "id": "R3-5",
+        "severity": "medium",
+        "security": true,
+        "text": "A list row carries no words of the report; its title and note stay in taken/",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R3-6",
+        "severity": "medium",
+        "security": true,
+        "text": "A release shows the text the owner reads, and the yes is bound to that text",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
+      },
+      {
+        "id": "R3-7",
+        "severity": "low",
+        "reason": "a row in the report test this build item added",
+        "text": "One bad inbox file is set aside with its reason; the rest are still taken in",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R3-8",
+        "severity": "low",
+        "text": "The project hash is salted per PC, so a known path cannot be matched to it",
+        "commit": "447814b",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R4-1",
+        "severity": "high",
+        "security": true,
+        "text": "Intake writes its row file under a new random name, never through a link",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R4-3",
+        "severity": "medium",
+        "reason": "a row in the report test this build item added",
+        "text": "A null line in a report log stops neither start-up nor status, held or release",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::a project hears which release closed its report, once"
+      },
+      {
+        "id": "R4-4",
+        "severity": "low",
+        "security": true,
+        "text": "The replay switch is gone; tests hand the GitHub call in, so no session can fake a filing",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
+      },
+      {
+        "id": "R4-5",
+        "severity": "low",
+        "reason": "a row in the report test this build item added",
+        "text": "A bad recorded reply or a null issue is skipped, and intake goes on",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R4-6",
+        "severity": "low",
+        "security": true,
+        "text": "A repo name with a dot part is refused, so the call stays under /repos/",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
+      },
+      {
+        "id": "R4-7",
+        "severity": "low",
+        "text": "Release and intake each hold a lock, so a report is filed once and counts are not lost",
+        "commit": "447814b",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R5-1",
+        "severity": "medium",
+        "reason": "a row in the report test this build item added",
+        "text": "A fault that comes back after its row closed opens a new row that names the old one",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R5-2",
+        "severity": "medium",
+        "reason": "a row in the report test this build item added",
+        "text": "The same report from the inbox and its own issue in one run counts once",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R5-3",
+        "severity": "low",
+        "reason": "a row in the report test this build item added",
+        "text": "An id already on the list adds nothing, so a crash before the move is no repeat",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R5-5",
+        "severity": "low",
+        "reason": "a row in the report test this build item added",
+        "text": "A refused file moves to refused/ with a reason and is not read again",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R5-6",
+        "severity": "low",
+        "text": "A taken file never replaces one already in taken/",
+        "commit": "447814b",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R6-1",
+        "severity": "high",
+        "text": "The rules file is 19,467 B, leaving room under the cap",
+        "commit": "2868f84",
+        "test": "tests/use-check.test.mjs::the use check fails a filled AGENTS.md over the cap and a compact window outside 100K to 400K"
+      },
+      {
+        "id": "R6-2",
+        "severity": "high",
+        "security": true,
+        "text": "The owner's first push keeps the gate and the scan",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R6-3",
+        "severity": "medium",
+        "security": true,
+        "text": "Owner pushes are logged as owner-hand and scanned like any other",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R6-4",
+        "severity": "medium",
+        "reason": "a row in the report test this build item added",
+        "text": "Intake runs only in the workbench the owner named, and only there shows the inbox line",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
+      },
+      {
+        "id": "R6-5",
+        "severity": "medium",
+        "security": true,
+        "text": "No refusal names the hook skip; they name the owner's own way in the outward-acts rule",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
+      },
+      {
+        "id": "R6-6",
+        "severity": "low",
+        "text": "Remote mode has its own heading, and its module is read when the owner is away",
+        "commit": "04ad853",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R7-1",
+        "severity": "medium",
+        "text": "The resume packet no longer names the Session Log in the start reads",
+        "commit": "04ad853",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R7-2",
+        "severity": "medium",
+        "security": true,
+        "text": "The marker refusal names who reads the markers, and holds the owner's push marker too",
+        "commit": "4d2c3cf",
+        "test": "tests/guards-hold.test.mjs::reading or naming a marker runs; every way of clearing one is still never by a tool"
+      },
+      {
+        "id": "R7-3",
+        "severity": "medium",
+        "text": "Rule 12, the kit skill and the report template name one route: send",
+        "commit": "04ad853",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R7-4",
+        "severity": "medium",
+        "security": true,
+        "text": "The refusal for the report files says the owner writes them",
+        "commit": "f592285",
+        "test": "tests/guards-outside.test.mjs::V3 record: the install record and a config folder with another name are guarded too"
+      },
+      {
+        "id": "R7-5",
+        "severity": "low",
+        "security": true,
+        "text": "The refusal for a command beside a protected file no longer lists a fixed set of files",
+        "commit": "f592285",
+        "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+      },
+      {
+        "id": "R7-6",
+        "severity": "low",
+        "text": "The Success Charter names its Ambition Tiers as the Dual-Horizon horizons",
+        "commit": "04ad853",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R7-7",
+        "severity": "low",
+        "text": "The auto-merge line no longer points at its own section",
+        "commit": "04ad853",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R7-8",
+        "severity": "low",
+        "text": "The report scripts' header lines match their commands",
+        "commit": "447814b",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R8-1",
+        "severity": "medium",
+        "security": true,
+        "text": "A release refuses a log whose kept digest was changed, not only a changed title",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::send puts a scrubbed report in the PC inbox, and an issue goes only on the owner's read, to the named repo"
+      },
+      {
+        "id": "R8-2",
+        "severity": "low",
+        "reason": "a row in the report test this build item added",
+        "text": "The scrub test tries a tab and a newline, not only a sign past ASCII",
+        "commit": "447814b",
+        "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"
+      },
+      {
+        "id": "R8-3",
+        "severity": "low",
+        "text": "A file between the old and new cap now fails the use check",
+        "commit": "04ad853",
+        "test": "tests/use-check.test.mjs::the use check fails a filled AGENTS.md over the cap and a compact window outside 100K to 400K"
+      }
+    ]
+  }
+}
