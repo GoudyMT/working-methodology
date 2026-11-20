@@ -215,7 +215,7 @@ test('the test check reads tests made in a loop, and still names a changed file 
 // K148 (build 19): PR 55 changed test files to import a helper module main did not have yet, so main's copy of the
 // checks named every changed test as failing on the base. That reads as a broken test, and hides the one cause: main
 // cannot load the file. The check names the file once, with the module it could not find; the finding still fails CI.
-// why: catches a load failure on main reported as many failed tests
+// why: guards rule:test-value
 test('a changed file main cannot load is named once, with the module main lacks, and still fails strict', () => {
 	const dir = repo();
 	const lead = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
@@ -230,7 +230,7 @@ test('a changed file main cannot load is named once, with the module main lacks,
 	sh(dir, 'commit', '-qm', 'the old file reads a new helper');
 	const r = spawnSync(process.execPath, [CHECK, 'main', '--strict'], { cwd: dir, encoding: 'utf8' });
 	assert.equal(r.status, 1, `a file main cannot load is still a finding: ${r.stdout}${r.stderr}`);
-	assert.match(r.stdout, /A1 tests\/old\.test\.mjs: main cannot load this: .*helpers\.mjs/);
+	assert.match(r.stdout, /A1 tests\/old\.test\.mjs: main cannot load this: .*helpers\.mjs/); // pin: 4 (the owner's K148 words)
 	assert.doesNotMatch(r.stdout, /A1 tests\/old\.test\.mjs::/, 'each test of the file was named as failing');
 });
 

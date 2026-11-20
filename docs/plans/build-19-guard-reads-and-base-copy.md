@@ -7,7 +7,7 @@ sweep and one recall run on plan quota (the recall run is asked again with its r
 
 ## 1. Proof first (done, no kit change)
 
-Run 2026-11-20 on a throwaway clone of the v1.44.0 release (`C:\Users\Max\kit-probes\b19-proof`): the project guard fed
+Run 2026-11-20 on a throwaway clone of the v1.44.0 release, in a probe folder outside the repo: the project guard fed
 directly, then the launcher with throwaway user and project installs, the way Claude Code runs them.
 
 | Row | Result | Evidence |
