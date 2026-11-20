@@ -1,5 +1,23 @@
 # Changelog
 
+## 1.45.0 - 2026-11-20
+
+The guards pass a read loop piped on and a printed PowerShell string, a body that claims a measured move must show Visuals, the app templates install only where a project shows a UI, and a build opens its PR as a draft after the first commit.
+
+### Added
+- The plan file and the plan gap check ask whether main's checks can read the branch, and a check change it needs ships first as its own small PR.
+
+### Changed
+- The Standard PR and release notes audits need a Visuals section when a body claims a measured move (a size, tokens, time or dollars across an arrow or a Summary row); tallies never count.
+- The component spec and component security checklist install only where the project shows a UI (a UI framework in package.json, or a components folder), with `--with-templates web`, or where a copy is already in place.
+- A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push.
+
+### Fixed
+- The guards pass a read loop over guard files piped on to a reader (wc, head, tail, grep, sort with no output file), from a plain cd too; a pipe to a writer, a shell or a file, and a wildcard matching a dash-named file, are held.
+- A PowerShell statement that is one quoted string, beside a kit script, is read as printing it; a substitution or redirect in it keeps the strict reading.
+- A for loop held for how its glob is read says so and how to rerun it, instead of naming the first protected place checked (a guard write was refused as a transcript write).
+- The test check names a changed test file main cannot load once, with the module main lacks, instead of each of its tests as failing; it still fails the run.
+
 ## 1.44.0 - 2026-11-19
 
 The owner's profile and the third-party backups leave the public kit repo, a sweep reviewer's shell can only read and write its own scratch folder, the sweep floor follows what a diff touches, and the content checks in CI run the base commit's copies.

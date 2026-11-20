@@ -96,14 +96,114 @@
   }
  ],
  "upgrading": "Install user and install project as usual. A project with no UI keeps the component templates it already has; delete them by hand if unused. Add `--with-templates web` to install project to get them where no UI shows yet.",
- "limits": "The launcher still reads a wildcard inside quotes, so a quoted regex such as /\\*\\*/ in inline node code can hold a read. The Visuals check reads arrows and Summary rows; a move told only in a sentence is not seen.",
+ "limits": "The launcher still reads a wildcard inside quotes, so a quoted regex such as /\\*\\*/ in inline node code can hold a read. The Visuals check reads arrows and Summary rows; a move told only in a sentence is not seen. During the fixes, local runs went wider than the rule (four extra guard test files, about 170 tests) until the owner stopped them; a check that keeps local runs to the changed tests is a list row for the next build.",
  "sweep": {
   "tier": "Feature (security-sensitive)",
-  "commit": "pending",
-  "dimensions": [],
-  "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
-  "fixes": [],
-  "accepted": []
+  "commit": "68edd53",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "No personal data; a temp path in a message now trimmed"
+   },
+   {
+    "name": "Code security",
+    "result": "A liftable guard hold and dash-named wildcards fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Visuals reader, fix ledger, rule and skill text fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 3,
+   "medium": 15,
+   "low": 13
+  },
+  "fixes": [
+   {
+    "id": "R1-1",
+    "severity": "high",
+    "security": true,
+    "text": "The glob hold could be lifted by a pop-up yes; now never by a tool",
+    "commit": "add66f1",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R1-2",
+    "severity": "medium",
+    "security": true,
+    "text": "A wildcard matching a file named -i made sed edit a guard in place; held",
+    "commit": "64b73e4",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R2-1",
+    "severity": "high",
+    "text": "A move told in words passed the Visuals check",
+    "commit": "64b73e4",
+    "test": "tests/visuals.test.mjs::a Standard body that claims a measured number moved must carry Visuals; a tally or an unchanged figure need not"
+   },
+   {
+    "id": "R2-2",
+    "severity": "medium",
+    "text": "Unit spellings, extra arrows, wrapped lines and other tables were misread",
+    "commit": "64b73e4",
+    "test": "tests/visuals.test.mjs::a Standard body that claims a measured number moved must carry Visuals; a tally or an unchanged figure need not"
+   },
+   {
+    "id": "R4-1",
+    "severity": "high",
+    "text": "The fix ledger read fails first for a test main cannot load",
+    "commit": "166355a",
+    "test": "tests/test-check.test.mjs::a changed file main cannot load is named once, with the module main lacks, and still fails strict"
+   },
+   {
+    "id": "R3-1",
+    "severity": "medium",
+    "security": true,
+    "text": "A test file could print markup into the summary through the load cause",
+    "commit": "166355a",
+    "test": "tests/test-check.test.mjs::a changed file main cannot load is named once, with the module main lacks, and still fails strict"
+   },
+   {
+    "id": "R4-2",
+    "severity": "medium",
+    "text": "Package and base wording, and the base folder trim, in the load message",
+    "commit": "166355a",
+    "test": "tests/test-check.test.mjs::a changed file main cannot load is named once, with the module main lacks, and still fails strict"
+   },
+   {
+    "id": "R4-4",
+    "severity": "medium",
+    "security": true,
+    "text": "A UI read as none (byte-order mark, workspace, index.html); same commit as the pattern hold",
+    "commit": "d836aae",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R5-1",
+    "severity": "medium",
+    "security": true,
+    "text": "Ready and draft wording, skills, brief and rule lines; same commit as the pattern hold",
+    "commit": "d836aae",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R6-1",
+    "severity": "medium",
+    "text": "A PowerShell row that passed on main left the guard test; cd twins and a count added",
+    "commit": "add66f1",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   }
+  ],
+  "accepted": [
+   "R6-4 (low): the template test skips the CLI flag and some UI branches; the owner chose no new template test cases (2026-11-20)"
+  ]
  },
  "tests": {
   "before": 952,
