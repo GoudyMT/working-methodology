@@ -1170,20 +1170,41 @@ test('T4: kit.mjs build turns on the kit source commit-msg hook', { windows: tru
   assert.notEqual(spawnSync('git', ['-C', dir, 'config', '--get', 'core.hooksPath'], { encoding: 'utf8' }).stdout.trim(), '');
 });
 
+// K163 (build 21): the project hook holds every pusher to the push bound and scans what it sends, so these pushes are
+// real commits to a remote whose main is known, with the scan beside the hook.
+function armedRepo() {
+  const dir = makeTemp('armed-');
+  const bare = makeTemp('armed-remote-');
+  const run = (...a) => assert.equal(spawnSync('git', a, { cwd: dir, encoding: 'utf8' }).status, 0, a.join(' '));
+  run('init', '-q', '-b', 'main');
+  run('config', 'user.name', 't');
+  run('config', 'user.email', 't@x');
+  assert.equal(spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]).status, 0);
+  fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
+  run('add', '.');
+  run('commit', '-qm', 'one');
+  run('push', '-q', bare, 'main');
+  const head = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
+  fs.writeFileSync(path.join(dir, 'b.md'), 'b\n');
+  run('add', '.');
+  run('commit', '-qm', 'two');
+  const other = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
+  fs.mkdirSync(path.join(dir, '.claude'));
+  for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+  fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
+  return { dir, head, other, bare };
+}
+
 // N5: GitHub's docs promise no head pin past a writer's push, so the hook refuses a push over a head still armed.
 // The kit source holds its own pushes the same way (.githooks/pre-push), so the gate can arm a PR there too.
 // why: guards rule:standing-grants
 for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`the pre-push hook refuses a push over an armed head until it is disarmed, for any pusher (${hook})`, { windows: true }, () => {
-  const dir = makeTemp('armed-');
-  assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
+  const { dir, head, other, bare } = armedRepo();
   fs.mkdirSync(path.join(dir, '.githooks'));
   fs.copyFileSync(path.resolve(hook), path.join(dir, '.githooks', 'pre-push'));
-  fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
-  const head = 'a'.repeat(40);
-  const other = 'b'.repeat(40);
   const log = path.join(dir, '.git', 'kit-merge-gate.log');
-  const push = (remote) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', 'x'], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/x ${other} refs/heads/feat/x ${remote}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '1', AI_AGENT: '', CLAUDECODE: '' } });
+  const push = (remote) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/feat/x ${other} refs/heads/feat/x ${remote}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '', AI_AGENT: '', CLAUDECODE: '' } });
   assert.equal(push(head).status, 0, 'no log, no refusal');
   fs.writeFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\n`);
   const held = push(head);
@@ -1199,13 +1220,10 @@ for (const hook of ['project/.githooks/pre-push', '.githooks/pre-push']) test(`t
 
 // why: guards rule:outward-acts
 test('the pre-push hook holds a head armed on two PRs until both are disarmed', { windows: true }, () => {
-  const dir = makeTemp('armed-');
-  assert.equal(spawnSync('git', ['init', '-q', '-b', 'main', dir]).status, 0);
-  fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
-  const head = 'a'.repeat(40);
+  const { dir, head, other, bare } = armedRepo();
   const log = path.join(dir, '.git', 'kit-merge-gate.log');
-  const push = () => spawnSync('sh', [path.resolve('project/.githooks/pre-push'), 'origin', 'x'], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/x ${'b'.repeat(40)} refs/heads/feat/x ${head}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '1', AI_AGENT: '', CLAUDECODE: '' } });
+  const push = () => spawnSync('sh', [path.resolve('project/.githooks/pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
+    input: `refs/heads/feat/x ${other} refs/heads/feat/x ${head}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '', AI_AGENT: '', CLAUDECODE: '' } });
   fs.writeFileSync(log, `t ARMED https://github.com/o/r/pull/7 ${head} required=ci\nt ARMED https://github.com/o/r/pull/8 ${head} required=ci\nt DISARMED 8\n`);
   assert.equal(push().status, 1, 'PR 7 is still armed');
   fs.appendFileSync(log, 't DISARMED 7\n');

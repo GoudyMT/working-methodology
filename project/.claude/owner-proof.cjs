@@ -636,8 +636,9 @@ function dashGlob(command, tool, start) {
 	}
 	// K159 (build 21): a here-document or here-string is text only to a plain reader; fed to anything else (bash <<E,
 	// cat <<E | sh, xargs, a variable) it may run as a command of its own, so it is read the same way. A list of plain
-	// readers, not of shells: the commit security review of this fix found shells such a list would miss.
-	if (read.bodies.some((b) => /[*?[]/.test(b)) && !read.cmds.every((cmd) => /^(cat|head|tail|grep|egrep|fgrep|wc|sort|uniq|cut|tr|tee|jq|diff|cmp|base64|md5sum|sha256sum)$/.test(wordText(cmd[0] || [])))) {
+	// readers, not of shells: the commit security review of this fix found shells such a list would miss. Only readers
+	// with no option that runs a program (sort --compress-program does, the second review) are on it.
+	if (read.bodies.some((b) => /[*?[]/.test(b)) && !read.cmds.every((cmd) => /^(cat|head|tail|grep|egrep|fgrep|wc|cut|tr)$/.test(wordText(cmd[0] || [])))) {
 		if (cdBefore) return 'unsure';
 		for (const b of read.bodies) { const inner = dashGlob(b, tool, start); if (inner) return inner; }
 	}

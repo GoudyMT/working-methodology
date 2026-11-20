@@ -303,7 +303,8 @@ test('C5 C19 pre-push: the default branch and a new repo are asked of the remote
 	// A remote with master only is no new repo: main is no first push there.
 	const other = path.join(path.dirname(remote), 'other.git');
 	ok(git(path.dirname(remote), ['init', '-q', '--bare', '-b', 'master', other]));
-	ok(git(proj, ['push', '-q', other, 'HEAD:refs/heads/master']));
+	// The owner's own push of master there, the hook's one way round (K163: the hook holds every pusher).
+	ok(git(proj, ['push', '-q', '--no-verify', other, 'HEAD:refs/heads/master']));
 	const m = git(proj, ['push', other, 'HEAD:refs/heads/main'], { CLAUDECODE: '1', KIT_PUSH_APPROVED: '1' });
 	assert.notEqual(m.status, 0);
 	assert.match(m.stderr, /not new/);

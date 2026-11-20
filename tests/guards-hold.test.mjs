@@ -361,7 +361,7 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	// of its own, and a quote or an escaped backquote inside a substitution does not end it.
 	fs.writeFileSync(path.join(clean, '-n.txt'), 'x\n');
 	try {
-		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE"]) assert.match(dashWhy(c), /starts with a dash|more than the guard reads/, c);
+		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE", "sort --compress-program=sh <<'E'\ncat *.txt\nE"]) assert.match(dashWhy(c), /starts with a dash|more than the guard reads/, c);
 		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt"]) assert.equal(at(c), 'allow', c);
 	} finally { fs.rmSync(path.join(clean, '-n.txt')); }
 	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
@@ -635,6 +635,15 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 		assert.notEqual(push(line).status, 0, why);
 	}
 	assert.notEqual(push('').status, 0, 'nothing named');
+	// K163 (build 21, reproduced on 1.46.1: with neither marker, main and a tag went out unchecked): every pusher is
+	// held the same way, and a feature branch still goes.
+	const bare0 = { CLAUDECODE: '', AI_AGENT: '' };
+	for (const line of [`refs/heads/main ${main} refs/heads/main ${Z}`, `refs/tags/v1 ${main} refs/tags/v1 ${Z}`, `(delete) ${Z} refs/heads/feat/x ${main}`]) {
+		const r = push(line, bare0);
+		assert.notEqual(r.status, 0, `no marker: ${line}`);
+		assert.match(r.stderr, /only a feature branch goes without the owner's yes.*--no-verify/);
+	}
+	assert.equal(push(`refs/heads/feat/y ${main} refs/heads/feat/y ${Z}`, bare0).status, 0, 'a feature branch with no marker');
 	// The marker is any script's to set, so it counts only beside the owner's own pop-up yes to that push.
 	const go = { KIT_PUSH_APPROVED: '1', CLAUDE_CODE_SESSION_ID: SID, CLAUDE_CONFIG_DIR: cfg };
 	// Claude Code keeps a session's transcript in a folder named by the session's path.
