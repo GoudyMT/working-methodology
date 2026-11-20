@@ -121,6 +121,9 @@ const SWEEP_ASK = [
 	// The 1.23.0 sweep: a sequence group in the program's place is still rm, and so is a group inside another.
 	'{r..r}m -rf C:/elsewhere',
 	'r{m..m} -rf C:/elsewhere',
+	// K161 (build 21): a sequence that counts down (m to l, n to m) is read as bash reads it.
+	'r{m..l} -rf C:/elsewhere',
+	'r{n..m} -rf C:/elsewhere',
 	'{rm,{-rf,C:/elsewhere}}',
 	// A command too long to read is refused before it is read, quickly (the hook's timeout blocks).
 	'rm -rf C:/elsewhere ; echo ' + '/'.repeat(150000),
