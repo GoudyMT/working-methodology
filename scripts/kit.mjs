@@ -213,7 +213,7 @@ function uiPackage(file) {
   try {
     const st = fs.lstatSync(file);
     if (!st.isFile() || st.size > 1024 * 1024) return false;
-    const pkg = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^﻿/, ''));
+    const pkg = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
     return ['dependencies', 'devDependencies', 'peerDependencies'].some((k) => Object.keys((pkg && pkg[k]) || {}).some((n) => UI_PACKAGES.test(n)));
   } catch { return false; }
 }
