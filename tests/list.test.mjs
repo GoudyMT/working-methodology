@@ -135,6 +135,12 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	// The build 20 sweep: a typed line is no proof; the release check's own log in the git folder is.
 	spawnSync('git', ['-C', dir, 'init', '-q'], { encoding: 'utf8' });
 	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no complete release check of 1\.35\.0 is logged/);
+	// A git folder of a tool's own, named by GIT_DIR, holding a forged log, is not read (the commit security review).
+	const forged = kitTemp.makeTemp('list-forged-');
+	spawnSync('git', ['-C', forged, 'init', '-q'], { encoding: 'utf8' });
+	fs.writeFileSync(path.join(forged, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ version: '1.35.0' })}\n`);
+	const viaEnv = spawnSync(process.execPath, [SCRIPT, 'item', 'set', 'A2', 'tag', 'done 1.35.0'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', GIT_DIR: path.join(forged, '.git') } });
+	assert.equal(viaEnv.status, 1, 'a GIT_DIR to a forged log');
 	fs.appendFileSync(path.join(dir, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ tag: 'v1.35.0', version: '1.35.0' })}\n`);
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 0);
 	assert.equal(rows(dir)[1].verify, 'results/a2.md');
