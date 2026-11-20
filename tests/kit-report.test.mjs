@@ -98,6 +98,13 @@ test('send puts a scrubbed report in the PC inbox, and an issue goes only on the
 		assert.equal(no.code, 1);
 		assert.match(no.out[0], /owner's read comes first/);
 		assert.equal(fs.existsSync(`${replay}.calls`), false, 'no call without the owner\'s yes');
+		// The yes is for the report the owner read: one changed since is not it.
+		const file = path.join(home, 'kit-reports', 'inbox', `${id2}.json`);
+		const kept = fs.readFileSync(file, 'utf8');
+		fs.writeFileSync(file, kept.replace('beside pwd', 'beside ls'));
+		assert.match(release(id2, { home, projectDir, sessionYes: () => true }).out[0], /no longer matches its own text/);
+		assert.equal(fs.existsSync(`${replay}.calls`), false, 'a changed report is never sent');
+		fs.writeFileSync(file, kept);
 		let asked = '';
 		const ok = release(id2, { home, projectDir, sessionYes: (act) => { asked = act; return true; } });
 		assert.equal(ok.code, 0, ok.out.join('\n'));
