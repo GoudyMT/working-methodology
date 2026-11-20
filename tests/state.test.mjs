@@ -155,7 +155,7 @@ test('a working-memory line that keeps retired rule wording fails the check, unl
 	// The build 20 sweep: the new rule said in words that name the old one passes, "(history)" marks only from the line's
 	// start, a learning project's line about Max is not the retired rule, and a rule outside the kit's files says where
 	// it lives.
-	fs.appendFileSync(path.join(dir, '_Working Memory.md'), '- Never run a local cheap check before a push.\n- Max types all code in his learning projects.\n- Fix it (history) and run a local cheap check before each push.\n- The owner types all code.\n');
+	fs.appendFileSync(path.join(dir, '_Working Memory.md'), '- Never run a local cheap check before a push.\n- Max types all code in his learning projects.\n- Fix it (history) and run a local cheap check before each push.\n- The owner types all code.\n- Locally run only the changed test; test-run.mjs --changed is CI\'s job.\n');
 	const r = st(dir, 'check');
 	assert.equal(r.status, 1, r.stdout);
 	const lines = r.stdout.split('\n').filter((l) => /retired wording/.test(l));

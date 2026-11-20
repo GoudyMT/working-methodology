@@ -97,7 +97,9 @@ test('a whole record writes a PR body that passes the audit, and one that would 
 	rec.headline = `${'Every kit test now names the rule it guards, and the ones that guarded nothing new are gone. '.repeat(3)}`.trim();
 	rec.items[0].text = 'Each test carries a why line naming the rule it guards, read by a script that holds new tests to the same bar. '.repeat(2).trim();
 	rec.verification = ['Every test passed in CI on Linux and Windows, and the install check passed on both.', 'The mutation check ran.', 'The planted cases held.'];
+	// One row is a Fix review's shape; a Feature review names all six from build 20.
 	rec.sweep.dimensions = [{ name: 'Code security', result: 'clean' }];
+	rec.sweep.tier = 'Fix';
 	assert.deepEqual(problems(rec), []);
 	const dir = kitTemp.makeTemp('recbody-');
 	const f = path.join(dir, 'body.md');
@@ -252,6 +254,11 @@ test('a record names a sweep tier the PR body audit reads, with modifiers only i
 	const four = record();
 	four.sweep.dimensions = four.sweep.dimensions.filter((d) => !/^(Supply chain|Legal)$/.test(d.name));
 	assert.match(problems(four).join('\n'), /a Feature review names all six dimensions: missing Supply chain, Legal/);
+	// First push and Launch gate are held the same (the build 20 sweep).
+	for (const tier of ['First push', 'Launch gate']) {
+		four.sweep.tier = tier;
+		assert.match(problems(four).join('\n'), new RegExp(`a ${tier} review names all six dimensions`), tier);
+	}
 	four.sweep.tier = 'Fix (security-sensitive)';
 	assert.deepEqual(problems(four), []);
 });

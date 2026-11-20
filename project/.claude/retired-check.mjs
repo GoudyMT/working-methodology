@@ -14,7 +14,8 @@ export const FILES = ['_Working Memory.md', '_Loop Learnings.md', '_Active Plan.
 /** The retired wordings, or [] when the list is missing or broken (the state check names a broken list). */
 export function retiredList(file = path.join(HERE, 'retired-wording.json')) {
 	const j = JSON.parse(fs.readFileSync(file, 'utf8'));
-	return (j.retired || []).map((r) => ({ ...r, re: new RegExp(r.pattern, 'i') }));
+	// unless: a line that also says this is the new rule (the build 20 sweep: "--changed is CI's" states the rule now).
+	return (j.retired || []).map((r) => ({ ...r, re: new RegExp(r.pattern, 'i'), unlessRe: r.unless ? new RegExp(r.unless) : null }));
 }
 
 /**
@@ -38,7 +39,7 @@ export function retiredHits(root, list = retiredList()) {
 			if (/^\s*(?:[-*+]|\d+\.)?\s*\(history\)/i.test(l)) return;
 			for (const r of list) {
 				const m = r.re.exec(l);
-				if (!m) continue;
+				if (!m || (r.unlessRe && r.unlessRe.test(l))) continue;
 				const before = l.slice(0, m.index).split(/[.;!?]\s/).pop();
 				if (/\b(never|not|no longer|don't|do not|retired|replaced|instead of)\b/i.test(before)) continue;
 				hits.push({ file, line: i + 1, text: m[0], rule: r.rule, where: r.where, since: r.since, now: r.now });
