@@ -983,3 +983,36 @@ control: 0
 gate: b17-1.43.0 median 13 baseline 14 brief v2 keys v12 owner-accepted
 behaviour: b17-1.43.0 median 13 baseline 12 suite v2 control 5
 scored: d71611161dea881dd4469dc75978463a65d60fa9
+
+## Recall v12 - 1.44.0, repo diet, read-only reviewers and the sweep floor (2026-11-19)
+
+Candidate: the branch at 3b55d46 (the project layer from this branch, the user layer the released 1.43.0). Baseline: the 1.43.0 final runs (b17r-c1 to c3; main's rule text is unchanged since they ran), scored again here; control: the v12 control. Opus 5.5 at medium, brief v2, keys v12. One fresh blind scorer read all seven runs (relabeled, the map sealed). The owner approved the spend by pop-up. The first candidate run stopped at question 8 on "Reached max turns (8)", and the harness saved nothing; the score is from a rerun at the same limits (b18-c1b).
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 2 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 3 | 1, 1, 1 | 0, 1, 1 | 0 |
+| 4 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 5 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 6 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 7 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 8 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 9 | 1, 1, 1 | 1, 0, 1 | 0 |
+| 10 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 11 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 12 | 1, 1, 1 | 1, 1, 1 | 0 |
+| 13 | 0, 1, 1 | 1, 1, 1 | 0 |
+| 14 | 1, 1, 1 | 1, 1, 1 | 0 |
+| Total | 13, 14, 14 | 13, 13, 14 | 0 |
+
+- **Scored: median 14 of 14, baseline 13, control 0.** The bar of 13 holds.
+- **Q13 missed once on the candidate:** the answer said the closeout starts by itself, then asked for its keyword. The baseline missed Q3 and Q9 once each.
+- **Behaviour (suite v2, pass 11):** the branch 14, 13, 14 (the closeout task failed once); the 1.43.0 release, run in a throwaway clone of its tag, 12, 12, 12 (the open-PR sweep task and the closeout task failed in all three). Control 5 (the 1.43.0 control).
+- **Owner-accepted:** after the runs, scoring showed that this build's K137 change made the scoring tool print "no gate line yet" and exit 1 for a median over the bar, though it printed the right gate line. The one-word fix (95da8b3) changes the scoring tool, which the gate counts as graded; scoring again with the fix gives the same table and line. The owner chose to fix it now and accept the line by pop-up (2026-11-19: "Fix now, owner-accept").
+- **Not measured:** the user layer's changes (skills and the global file), as before.
+
+control: 0
+gate: b18-1.44.0 median 14 baseline 13 brief v2 keys v12 owner-accepted
+behaviour: b18-1.44.0 median 14 baseline 12 suite v2 control 5
+scored: 3b55d467558a1dee23fad2840e4ba623ebe781ec
