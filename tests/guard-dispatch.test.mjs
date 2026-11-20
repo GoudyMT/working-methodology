@@ -299,4 +299,13 @@ test('a choice pop-up that offers item codes with no plain words, or a plan with
 	fs.writeFileSync(path.join(outside, 'bare.md'), '# Plan\n');
 	for (const p of [path.join(outside, 'bare.md'), `../${path.basename(path.dirname(outside))}/plans/bare.md`, '\\\\host\\share\\plans\\bare.md']) assert.equal(ask(`Approve ${p} as written, with every step it names?`, [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', p);
 	assert.match(run('AskUserQuestion', { questions: [{ question: 'Working on M1, M2, M3: which?', options: [opt('Do M1', 'x')] }] }, { cwd: dir }).permissionDecisionReason, /^Held: this pop-up [^\n]*"M1"[^\n]*60-second overview/);
+	// The build 20 sweep: a model, chip or hash name is no item code, and a plan's fix is named in the plan file.
+	assert.equal(ask('Which model runs the check?', [opt('GPT4o', 'The hosted model.'), opt('H100', 'The rented chip.')]), 'allow');
+	assert.equal(ask('Keep the SHA256 check?', [opt('Yes', 'Keep it.'), opt('No', 'Drop it.')]), 'allow');
+	assert.match(run('AskUserQuestion', { questions: [{ question: 'Approve docs/plans/bare.md as written, with every step it names?', options: [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')] }] }, { cwd: dir }).permissionDecisionReason, /at the top of the plan file/);
+	// A link inside the project that points out of it is not opened.
+	const linked = path.join(dir, 'docs', 'plans', 'linked.md');
+	let linkMade = true;
+	try { fs.symlinkSync(path.join(outside, 'bare.md'), linked, 'file'); } catch { linkMade = false; }
+	if (linkMade) assert.equal(ask('Approve docs/plans/linked.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', 'a link out of the project');
 });

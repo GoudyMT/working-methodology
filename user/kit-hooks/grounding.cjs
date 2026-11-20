@@ -10,9 +10,12 @@
 const fs = require('fs');
 const path = require('path');
 
-const CODE = /\b[A-Z]{1,4}\d{1,3}[a-z]?(?:-\d+)?\b/g;
+const CODE_SHAPE = /\b[A-Z]{1,4}\d{1,3}[a-z]?(?:-\d+)?\b/g;
+// Names of things that look like item codes and are not (the build 20 sweep): hashes, models, chips, encodings, clouds.
+const NOT_CODES = /^(SHA\d+|MD5|GPT\d+[a-z]?|[AHVB]\d00|ARM\d+|X86|S3|EC2|UTF\d+|IPV[46]|MP[34]|HTTP\d|TLS\d|K8S)$/i;
+const codesIn = (s) => (String(s || '').match(CODE_SHAPE) || []).filter((c) => !NOT_CODES.test(c));
 const words = (s) => String(s || '').split(/\s+/).map((w) => w.replace(/^[^\w$]+|[^\w%]+$/g, '')).filter(Boolean);
-const plain = (s) => words(s).filter((w) => !new RegExp(`^${CODE.source}$`).test(w));
+const plain = (s) => { const codes = new Set(codesIn(s)); return words(s).filter((w) => !codes.has(w)); };
 const sentences = (s) => String(s || '').split(/(?<=[.!?])\s+|\n+/).filter((x) => x.trim());
 
 /** Whether a plan file opens with an Overview section of at least three lines before its next heading. */
@@ -29,24 +32,27 @@ function problemsOf(input) {
 	const out = [];
 	for (const q of (input.tool_input && input.tool_input.questions) || []) {
 		for (const o of q.options || []) {
-			const codes = String(o.label || '').match(CODE) || [];
-			if (codes.length && codes.length * 2 >= words(o.label).length) out.push(`the option "${String(o.label).slice(0, 40)}" is item codes; name it in plain words`);
+			const codes = codesIn(o.label);
+			if (codes.length && codes.length * 2 >= words(o.label).length) out.push({ kind: 'code', text: `the option "${String(o.label).slice(0, 40)}" is item codes; name it in plain words` });
 		}
 		for (const text of [q.question, ...(q.options || []).map((o) => o.description)]) {
 			for (const s of sentences(text)) {
-				const codes = s.match(CODE);
-				if (codes && plain(s).length < 6) out.push(`"${codes[0]}" in "${s.trim().slice(0, 60)}" has no plain words beside it`);
+				const codes = codesIn(s);
+				if (codes.length && plain(s).length < 6) out.push({ kind: 'code', text: `"${codes[0]}" in "${s.trim().slice(0, 60)}" has no plain words beside it` });
 			}
 		}
-		// Only a plan inside the project is read: a path elsewhere (a share named \\host\x, another drive) is never touched
-		// (the commit security review: a pop-up's text must not make the hook open a network path).
+		// Only a plan inside the project is read: a path elsewhere (a share named \\host\x, another drive, a link out of
+		// the project) is never opened (the commit security review: a pop-up's text must not make the hook open a network
+		// path). The pattern is bounded, so a long question costs no backtracking (the build 20 sweep).
 		const root = path.resolve(String(input.cwd || process.cwd()));
-		for (const m of String(q.question || '').matchAll(/[\w./\\:-]*plans[\\/][\w.-]+\.md/g)) {
+		for (const m of String(q.question || '').slice(0, 4000).matchAll(/[\w./\\:-]{0,200}plans[\\/][\w.-]{1,120}\.md/g)) {
 			if (/^([\\/]{2}|[A-Za-z]:|[\\/])/.test(m[0])) continue;
 			const file = path.resolve(root, m[0]);
 			const rel = path.relative(root, file);
-			if (rel.startsWith('..') || path.isAbsolute(rel)) continue;
-			if (fs.existsSync(file) && !overview(file)) out.push(`the plan ${m[0]} has no "## Overview" of three lines at its top`);
+			if (rel.startsWith('..') || path.isAbsolute(rel) || !fs.existsSync(file)) continue;
+			const real = path.relative(fs.realpathSync(root), fs.realpathSync(file));
+			if (real.startsWith('..') || path.isAbsolute(real)) continue;
+			if (!overview(file)) out.push({ kind: 'plan', text: `the plan ${m[0]} has no "## Overview" of three lines at its top` });
 		}
 	}
 	return out;
@@ -57,7 +63,11 @@ function check(input) {
 	let found = [];
 	try { found = problemsOf(input); } catch { return null; }
 	if (!found.length) return null;
-	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Held: this pop-up ${found.slice(0, 3).join('; ')}. Open with the 60-second overview (what we are looking at, what was found or measured, what is being decided; _Templates/_Ask Formats.md) and give each item code a plain sentence, then ask again.` } };
+	// Each kind names its own fix (the build 20 sweep: a plan with no overview is fixed in the plan file, not the pop-up).
+	const fix = [];
+	if (found.some((f) => f.kind === 'code')) fix.push('Open the pop-up with the 60-second overview (what we are looking at, what was found or measured, what is being decided; _Templates/_Ask Formats.md) and give each item code a plain sentence');
+	if (found.some((f) => f.kind === 'plan')) fix.push('Add a "## Overview" of three lines (what we are looking at, what was found, what is being decided) at the top of the plan file');
+	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Held: this pop-up ${found.slice(0, 3).map((f) => f.text).join('; ')}. ${fix.join('. ')}, then ask again.` } };
 }
 
 module.exports = { check };
