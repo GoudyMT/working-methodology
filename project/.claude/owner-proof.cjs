@@ -519,7 +519,8 @@ function dashGlob(command, tool, start) {
 		const re = globRe(path.basename(word));
 		for (const d of dirs) {
 			let names;
-			try { names = fs.readdirSync(path.resolve(d, dir)); } catch { return true; }
+			// A folder that is not there leaves the wildcard as written, unless the same command could make it first.
+			try { names = fs.readdirSync(path.resolve(d, dir)); } catch (e) { if (e.code === 'ENOENT' && !/[;&|\n]/.test(c)) continue; return true; }
 			if (names.some((n) => n.startsWith('-') && re.test(n))) return true;
 		}
 	}
