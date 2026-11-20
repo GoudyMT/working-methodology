@@ -78,7 +78,7 @@ export function loadList(io) {
 	return { rows, exists: true };
 }
 
-const KEYS = ['id', 'title', 'short', 'tag', 'at', 'severity', 'origin', 'caught_by', 'escaped', 'measured', 'note', 'section', 'detail'];
+const KEYS = ['id', 'title', 'short', 'tag', 'at', 'severity', 'origin', 'caught_by', 'escaped', 'measured', 'note', 'section', 'detail', 'verify'];
 /** What is wrong with a row's shape (not its owed labels), or null. */
 function shape(r, rows) {
 	if (!r || typeof r !== 'object' || Array.isArray(r)) return 'not an object';
@@ -95,9 +95,9 @@ function shape(r, rows) {
 	if (r.caught_by != null && !CAUGHT.includes(r.caught_by)) return `${r.id}: caught_by ${show(r.caught_by)} is not one of ${CAUGHT.join(', ')}`;
 	if (r.measured != null && !MEASURED.includes(r.measured)) return `${r.id}: measured ${show(r.measured)} is not one of ${MEASURED.join(', ')}`;
 	if (r.escaped != null && typeof r.escaped !== 'boolean') return `${r.id}: escaped is not true or false`;
-	for (const k of ['at', 'note', 'section']) if (r[k] != null && typeof r[k] !== 'string') return `${r.id}: ${k} is not text`;
+	for (const k of ['at', 'note', 'section', 'verify']) if (r[k] != null && typeof r[k] !== 'string') return `${r.id}: ${k} is not text`;
 	if (r.detail != null && (typeof r.detail !== 'object' || Array.isArray(r.detail) || Object.values(r.detail).some((v) => typeof v !== 'string'))) return `${r.id}: detail is not a set of text cells`;
-	const texts = [r.title, r.short, r.at, r.note, r.section, ...Object.keys(r.detail || {}), ...Object.values(r.detail || {})].filter((x) => x != null);
+	const texts = [r.title, r.short, r.at, r.note, r.section, r.verify, ...Object.keys(r.detail || {}), ...Object.values(r.detail || {})].filter((x) => x != null);
 	if (texts.some((x) => CONTROL.test(x))) return `${r.id}: a text field holds a line break or a control character`;
 	return null;
 }
@@ -385,8 +385,8 @@ export function setField(r, field, value) {
 	} else if (field === 'at') { if (v === '-') delete out.at; else out.at = v; }
 	else if (field === 'caught-by') out.caught_by = v;
 	else if (field === 'escaped') { if (!Object.hasOwn(yes, v)) return { why: 'escaped is yes or no' }; out.escaped = yes[v]; }
-	else if (['title', 'short', 'severity', 'origin', 'measured', 'note', 'section'].includes(field)) out[field] = v;
-	else return { why: 'the field is one of tag, at, title, short, severity, origin, caught-by, escaped, measured, note, section' };
+	else if (['title', 'short', 'severity', 'origin', 'measured', 'note', 'section', 'verify'].includes(field)) out[field] = v;
+	else return { why: 'the field is one of tag, at, title, short, severity, origin, caught-by, escaped, measured, note, section, verify' };
 	return { row: out };
 }
 

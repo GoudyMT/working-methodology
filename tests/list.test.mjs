@@ -113,7 +113,21 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	assert.match(r.stdout, /caught-by/);
 	assert.equal(rows(dir)[1].tag, 'later');
 	assert.equal(st(dir, 'item', 'set', 'A2', 'caught-by', 'sweep').status, 0);
+	// TC1 (build 20): done needs proof, the verify result whose release check passed for that release; a step 6 thread
+	// set the tag alone before. Closed (shown not real) needs none.
+	r = st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0');
+	assert.equal(r.status, 1, 'done with no verify result is refused');
+	assert.match(r.stdout, /A2: done needs its verify result: item set A2 verify <result file>/);
+	fs.mkdirSync(path.join(dir, 'results'));
+	put(dir, 'results/a2.md', 'Verified.\n');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', 'results/a2.md').status, 0);
+	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no "RELEASE COMPLETE: every step of v1\.35\.0" line/);
+	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.34.0 is done.\n');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 1, 'another release\'s check is no proof');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', '../outside.md').status, 1, 'a result outside the project is refused');
+	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.35.0 is done.\n');
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 0);
+	assert.equal(rows(dir)[1].verify, 'results/a2.md');
 
 	r = st(dir, 'item', 'add', '--from', json(dir, { id: 'K1', title: 'Start load is 64,975 B of 80,000', tag: 'later', at: 'T9', severity: 'medium', origin: 'self' }));
 	assert.equal(r.status, 1, 'a number with no label is refused');
@@ -425,6 +439,8 @@ test('import moves a checkbox roadmap into data once, and the boxes view writes 
 	assert.equal(st(dir, 'check').status, 0);
 	// A box changed in the data shows in the view at the next render.
 	assert.equal(st(dir, 'item', 'set', 'R3', 'caught-by', 'owner').status, 0);
+	put(dir, 'r3.md', 'RELEASE COMPLETE: every step of v1 is done.\n');
+	assert.equal(st(dir, 'item', 'set', 'R3', 'verify', 'r3.md').status, 0);
 	assert.equal(st(dir, 'item', 'set', 'R3', 'tag', 'done v1').status, 0);
 	// item set writes the views itself: no render between.
 	assert.ok(read(dir, 'roadmap.md').includes('- [x] R3 Regenerate the README images'));

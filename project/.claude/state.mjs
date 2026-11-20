@@ -35,6 +35,7 @@
 //   node .claude/state.mjs list import <file.md>              once: a markdown list into _List.jsonl, whole or not at all
 //   node .claude/state.mjs item add --from <file.json>        a new row, every label it owes included
 //   node .claude/state.mjs item set <id> <field> <value>      tag ("done 1.35.0"), caught-by, escaped, measured, origin ...
+//                                                             verify <file>: the result done needs (its RELEASE COMPLETE line)
 //   node .claude/state.mjs step set <step> release|carries|state <text>
 //   node .claude/state.mjs step rename <step or release> <new name>
 // render also writes the roadmap, counts and rows blocks (list:begin markers) in any of the project's markdown files.
@@ -825,6 +826,20 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (why) return fail(why);
 		const bad = list.refuse(ch.row, l.rows.filter((_, k) => k !== at), s.list_import);
 		if (bad) return fail(clean(bad));
+		// TC1 (build 20): done needs proof. The row names its verify result, a file in the project, and that file holds the
+		// release check's "RELEASE COMPLETE" line for the release the row ships in; a tag set alone is refused. Closed
+		// (shown not real) needs none.
+		if (field === 'verify') {
+			const rel = path.relative(ROOT, path.resolve(ROOT, ch.row.verify));
+			if (rel.startsWith('..') || path.isAbsolute(rel) || !fs.existsSync(path.join(ROOT, rel))) return fail(`${clean(id)}: the verify result must be a file in this project`);
+		}
+		if (field === 'tag' && ch.row.tag === 'done' && l.rows[at].tag !== 'done') {
+			if (!ch.row.verify) return fail(`${clean(id)}: done needs its verify result: item set ${clean(id)} verify <result file>, a file holding the release check's RELEASE COMPLETE line`);
+			let text = '';
+			try { text = fs.readFileSync(path.resolve(ROOT, ch.row.verify), 'utf8'); } catch { return fail(`${clean(id)}: its verify result ${clean(ch.row.verify)} cannot be read`); }
+			const want = ch.row.at ? `RELEASE COMPLETE: every step of v${String(ch.row.at).trim().replace(/^v/, '')} ` : 'RELEASE COMPLETE: every step of ';
+			if (!text.includes(want)) return fail(`${clean(id)}: its verify result ${clean(ch.row.verify)} has no "${want.trim()}" line: run the release check and keep its output there`);
+		}
 		const rows = [...l.rows];
 		rows[at] = ch.row;
 		write(list.LIST, list.serialize(rows));
