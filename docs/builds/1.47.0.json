@@ -125,7 +125,7 @@
   "decisions": [
     {
       "decision": "Reports go to a PC folder and a private intake repo",
-      "why": "The kit repo is public, so it never takes a report; the owner picked the route by pop-up."
+      "why": "The kit repo is public, so it never takes a report."
     },
     {
       "decision": "Free text leaves the PC only after the owner reads it",
@@ -141,7 +141,7 @@
     },
     {
       "decision": "A minor release",
-      "why": "A new command, a new hook rule for every pusher and a lower cap reach every project."
+      "why": "A new command, a hook rule and a lower cap reach every project."
     }
   ],
   "upgrading": "Run install user, then install project. To push main, a tag or a delete from your own terminal, set KIT_OWNER_PUSH=1 for that push (PowerShell: `$env:KIT_OWNER_PUSH = 1`, then remove it); skipping the hooks also skips the secret scan and the first push gate. A project rules file over 22,000 B fails the use check: move a project section to a module. The issue route stays off until `kit-report.json` in the user config folder names the intake repo with \"issues\": true.",
@@ -149,7 +149,7 @@
   "visuals": {
     "fold": true,
     "summary": "Visuals: Always-loaded rules file 23,834 B to 19,467 B (cap 22,000 B)",
-    "body": "<details>\n<summary>Visuals: Always-loaded rules file 23,834 B to 19,467 B (cap 22,000 B)</summary>\n\nAlways-loaded rules file loads 1,600 fewer tokens at each session start: about $6.40 less per 1,000 sessions\nat the uncached input price, and 0.40 points less of the window used at start.\n\n![Chart: Always-loaded rules file 23,834 B to 19,467 B; Always-loaded rules file: tokens read at each session start 8,500 to 6,900; Always-loaded rules file: cost per 1,000 sessions $34.00 to $27.60; Always-loaded rules file: share of the window used at start 2.13% to 1.73%](https://github.com/GoudyMT/working-methodology/raw/9a7578085edb2b66c71fc3cf72aee28ab478a0f9/docs/visuals/feat/report-channel/chart.png)\n\n```text\nAlways-loaded rules file, bytes (| = limit 22,000)\nbefore  #####################################|##  23,834\nafter   #################################    |    19,467\n```\n\n| Metric | Before | After | Change | Limit | Source |\n|---|---|---|---|---|---|\n| Always-loaded rules file | 23,834 B | 19,467 B | -4,367 B (-18.3%) | 22,000 B | measured: bytes at ec73f1d and bf6c9a0 |\n| Always-loaded rules file: tokens read at each session start | 8,500 | 6,900 | -1,600 (-18.8%) | none | measured: session context report, to 0.1k (docs/evals/results/b21-start-load.md) |\n| Always-loaded rules file: cost per 1,000 sessions | $34.00 | $27.60 | -$6.40 (-18.8%) | none | derived: tokens x $4 per million input tokens, uncached (2026-11-03) |\n| Always-loaded rules file: share of the window used at start | 2.13% | 1.73% | -0.40 points | none | derived: tokens / 400,000-token window |\n\n**Why each number moved**\n\n- **Always-loaded rules file:** the Session Log left the start reads, and eleven sections moved, unchanged, to the modules read at their moment.\n- **Always-loaded rules file: tokens read at each session start:** follows from the Always-loaded rules file\n  size.\n- **Always-loaded rules file: cost per 1,000 sessions:** follows from tokens at the uncached input price;\n  cached reads cost less.\n- **Always-loaded rules file: share of the window used at start:** less of the window goes to the start, so\n  more is left for the work before the session compacts.\n</details>"
+    "body": "<details>\n<summary>Visuals: Always-loaded rules file 23,834 B to 19,467 B (cap 22,000 B)</summary>\n\nAlways-loaded rules file loads 1,600 fewer tokens at each session start: about $6.40 less per 1,000 sessions\nat the uncached input price, and 0.40 points less of the window used at start.\n\n![Chart: Always-loaded rules file 23,834 B to 19,467 B; Always-loaded rules file: tokens read at each session start 8,500 to 6,900; Always-loaded rules file: cost per 1,000 sessions $34.00 to $27.60; Always-loaded rules file: share of the window used at start 2.13% to 1.73%](https://github.com/GoudyMT/working-methodology/raw/9a7578085edb2b66c71fc3cf72aee28ab478a0f9/docs/visuals/feat/report-channel/chart.png)\n\n```text\nAlways-loaded rules file, bytes (| = limit 22,000)\nbefore  #####################################|##  23,834\nafter   #################################    |    19,467\n```\n\n| Metric | Before | After | Change | Limit | Source |\n|---|---|---|---|---|---|\n| Always-loaded rules file | 23,834 B | 19,467 B | -4,367 B (-18.3%) | 22,000 B | measured: bytes at ec73f1d and bf6c9a0 |\n| Always-loaded rules file: tokens read at each session start | 8,500 | 6,900 | -1,600 (-18.8%) | none | measured: session context report, to 0.1k (docs/evals/results/b21-start-load.md) |\n| Always-loaded rules file: cost per 1,000 sessions | $34.00 | $27.60 | -$6.40 (-18.8%) | none | derived: tokens x $4 per million input tokens, uncached (2026-11-03) |\n| Always-loaded rules file: share of the window used at start | 2.13% | 1.73% | -0.40 points | none | derived: tokens / 400,000-token window |\n\n**Why each number moved**\n\n- **Always-loaded rules file:** the Session Log left the start reads, and eleven sections moved, unchanged,\n  to the modules read at their moment.\n- **Always-loaded rules file: tokens read at each session start:** follows from the Always-loaded rules file\n  size.\n- **Always-loaded rules file: cost per 1,000 sessions:** follows from tokens at the uncached input price;\n  cached reads cost less.\n- **Always-loaded rules file: share of the window used at start:** less of the window goes to the start, so\n  more is left for the work before the session compacts.\n</details>"
   },
   "tests": {
     "before": 961,
@@ -196,7 +196,7 @@
         "id": "R1-1",
         "severity": "high",
         "security": true,
-        "text": "A here-document body a shell would expand is now read by the dash check, even beside plain readers",
+        "text": "The dash check reads a here-document body a shell expands",
         "commit": "f592285",
         "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
       },
@@ -220,7 +220,7 @@
         "id": "R2-1",
         "severity": "high",
         "security": true,
-        "text": "A url.insteadOf rewrite of the push URL holds the push, so no remote answer comes from a decoy",
+        "text": "A url.insteadOf rewrite of the push URL holds the push",
         "commit": "4d2c3cf",
         "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
       },
@@ -252,7 +252,7 @@
         "id": "R3-1",
         "severity": "high",
         "security": true,
-        "text": "A report's kit file name is checked for project words, and no longer reaches a list row",
+        "text": "A report's kit file name is checked for project words",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::the report scrub passes a report about the kit and refuses every way it could name the project"
       },
@@ -315,7 +315,7 @@
         "id": "R4-1",
         "severity": "high",
         "security": true,
-        "text": "Intake writes its row file under a new random name with wx, so no link is written through",
+        "text": "Intake writes its row file under a new random name, never through a link",
         "commit": "447814b",
         "test": "tests/kit-report.test.mjs::intake makes each inbox report a suspect list row from a real project, and a repeat raises its count"
       },
@@ -400,7 +400,7 @@
       {
         "id": "R6-1",
         "severity": "high",
-        "text": "The always-loaded file is 19,467 B, so a project's own lines fit under the 22,000 B cap",
+        "text": "The rules file is 19,467 B, leaving room under the cap",
         "commit": "2868f84",
         "test": "tests/use-check.test.mjs::the use check fails a filled AGENTS.md over the cap and a compact window outside 100K to 400K"
       },
@@ -408,7 +408,7 @@
         "id": "R6-2",
         "severity": "high",
         "security": true,
-        "text": "The owner's first push of a new repo goes through the owner path with the gate and scan on",
+        "text": "The owner's first push keeps the gate and the scan",
         "commit": "4d2c3cf",
         "test": "tests/guards-hold.test.mjs::the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest"
       },
