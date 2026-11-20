@@ -722,14 +722,13 @@ function doneProof(row, was, named) {
 	const line = new RegExp(`RELEASE COMPLETE: every step of v?${m[1].replace(/\./g, '\\.')} `);
 	if (!line.test(text)) return `${id}: its verify result ${clean(row.verify)} has no "RELEASE COMPLETE: every step of v${m[1]}" line: run the release check and keep its output there`;
 	// The release check also logs each complete run in the git folder, which no tool writes: a typed line is not one.
-	// Read with git's own variables taken out, so GIT_DIR cannot point the lookup at a folder a tool wrote (the commit
-	// security review of this fix).
-	const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));
-	const common = spawnSync('git', ['--no-optional-locks', '-C', ROOT, ...NO_PROGRAMS, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', cwd: path.dirname(process.execPath), timeout: 10000, env: { ...env, GIT_CEILING_DIRECTORIES: path.dirname(ROOT) } });
+	// Read at the project's own .git folder, never where git says (GIT_DIR, a .git file or commondir could point it at a
+	// folder a tool wrote: the commit security reviews of this fix). A worktree checkout has no .git folder: mark the
+	// row done from the main checkout.
 	let logged = '';
-	try { logged = fs.readFileSync(path.join(String(common.stdout).trim(), 'kit-release-checks.jsonl'), 'utf8'); } catch { /* named below */ }
+	try { if (fs.lstatSync(path.join(ROOT, '.git')).isDirectory()) logged = fs.readFileSync(path.join(ROOT, '.git', 'kit-release-checks.jsonl'), 'utf8'); } catch { /* named below */ }
 	const ran = logged.split('\n').some((l) => { try { return JSON.parse(l).version === m[1]; } catch { return false; } });
-	return ran ? null : `${id}: no complete release check of ${m[1]} is logged in this project's git folder: run the release check here`;
+	return ran ? null : `${id}: no complete release check of ${m[1]} is logged in this project's .git folder: run the release check here, from the main checkout`;
 }
 
 /** list [text] [--all] | list caught | list audit | list import <file.md> | item add --from <file.json> | item set <id> <field> <value> */

@@ -141,6 +141,9 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	fs.writeFileSync(path.join(forged, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ version: '1.35.0' })}\n`);
 	const viaEnv = spawnSync(process.execPath, [SCRIPT, 'item', 'set', 'A2', 'tag', 'done 1.35.0'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', GIT_DIR: path.join(forged, '.git') } });
 	assert.equal(viaEnv.status, 1, 'a GIT_DIR to a forged log');
+	fs.writeFileSync(path.join(dir, '.git', 'commondir'), `${path.join(forged, '.git')}\n`);
+	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 1, 'a commondir file to a forged log');
+	fs.rmSync(path.join(dir, '.git', 'commondir'));
 	fs.appendFileSync(path.join(dir, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ tag: 'v1.35.0', version: '1.35.0' })}\n`);
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 0);
 	assert.equal(rows(dir)[1].verify, 'results/a2.md');

@@ -69,14 +69,14 @@ function notesOf(root, ver, scriptRoot = root) {
 	return r.status === 0 ? r.stdout : null;
 }
 
-/** Adds one line for a complete release check to <git common dir>/kit-release-checks.jsonl; a failure is not fatal. */
+/**
+ * Adds one line for a complete release check to <project>/.git/kit-release-checks.jsonl, the fixed place the done mark
+ * reads (state.mjs), with no git call; a project with no .git folder there (a worktree) gets none.
+ */
 function recordComplete(dir, tag) {
 	try {
-		// git's own variables are taken out, as the done mark reads it (state.mjs), so both name the same folder.
-		const env = Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^GIT_/i.test(k)));
-		const common = spawnSync('git', ['--no-optional-locks', '-C', dir, '-c', 'core.fsmonitor=false', 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 10000, env });
-		if (common.status !== 0 || !String(common.stdout || '').trim()) return;
-		fs.appendFileSync(path.join(String(common.stdout).trim(), 'kit-release-checks.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), tag: String(tag), version: String(tag).replace(/^v/, '') })}\n`);
+		if (!fs.lstatSync(path.join(dir, '.git')).isDirectory()) return;
+		fs.appendFileSync(path.join(dir, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), tag: String(tag), version: String(tag).replace(/^v/, '') })}\n`);
 	} catch { /* the done mark asks for it, and names it */ }
 }
 
