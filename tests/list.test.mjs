@@ -331,7 +331,8 @@ test('an installed state.mjs run from outside a project reads its own project, a
 	put(dir, 'list.md', LIST);
 	st(dir, 'list', 'import', 'list.md');
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['state.mjs', 'list-data.mjs', 'retired-check.mjs', 'retired-wording.json']) {
+	// The retired-wording files state.mjs imports from build 20; a base commit before them has none to copy.
+	for (const f of ['state.mjs', 'list-data.mjs', 'retired-check.mjs', 'retired-wording.json'].filter((x) => fs.existsSync(path.join(KIT, 'project', '.claude', x)))) {
 		const t = fs.readFileSync(path.join(KIT, 'project', '.claude', f), 'utf8');
 		fs.writeFileSync(path.join(dir, '.claude', f), t.replaceAll('{{CLAUDE_HOME}}', dir.split('\\').join('/')));
 	}
