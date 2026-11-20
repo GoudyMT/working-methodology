@@ -1,25 +1,32 @@
 {
   "threshold": 0.01,
-  "price": { "perMTok": 4, "date": "2026-11-03" },
-  "window": { "before": 650000, "after": 400000 },
+  "price": {
+    "perMTok": 4,
+    "date": "2026-11-03"
+  },
+  "window": 400000,
   "sessions": 1000,
   "metrics": [
     {
       "name": "Always-loaded rules file",
-      "paths": ["project/AGENTS.md"],
+      "paths": [
+        "project/AGENTS.md"
+      ],
       "limit": 22000,
-      "impact": ["cost"],
-      "tokens": { "before": 9800, "after": 8500, "source": "session context report, to 0.1k (docs/evals/results/e4-start-load.md)", "measuredAt": ["83ab095", "8dc1583"] }
-    },
-    {
-      "name": "Whole start-up load",
-      "unit": "tokens",
-      "before": 47900,
-      "after": 46800,
-      "source": "session context report, to 0.1k (docs/evals/results/e4-start-load.md)",
-      "measuredAt": ["83ab095", "8dc1583"],
-      "impact": ["cost", "room"],
-      "lead": true
+      "impact": [
+        "cost",
+        "room"
+      ],
+      "lead": true,
+      "tokens": {
+        "before": 8500,
+        "after": 7600,
+        "source": "session context report, to 0.1k (docs/evals/results/b21-start-load.md)",
+        "measuredAt": [
+          "ec73f1d",
+          "e7a71ce"
+        ]
+      }
     }
   ]
 }
