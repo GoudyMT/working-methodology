@@ -27,7 +27,7 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	}
 	if (userHooks) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
-		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
+		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs', 'test-scope.cjs']) if (fs.existsSync(path.resolve('user/kit-hooks', f))) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
 	// Recorded as install user records them: since B23 a kit hook runs only with the bytes its stamp names.
 	if (oldHook || userHooks) {
@@ -232,4 +232,27 @@ test('a start a project guard refuses never reaches the sweep guard, so it spend
 	// Control: with nothing to read first, the same start reaches it.
 	start({ CLAUDE_PROJECT_DIR: kitTemp.makeTemp('bare-') });
 	assert.equal(fs.existsSync(marker), true, 'the sweep guard never ran, so the test proves nothing');
+});
+
+// why: guards the owner's starred rule "locally run only the changed test" (K150, build 20). Build 19 reran about 170
+// unchanged tests after each fix because only prose held it; the test-scope hook reads each local test run.
+test('a local test run reaches only the tests the branch changed; the rest waits for the owner', () => {
+	const run = setup({ userHooks: true });
+	const repo = kitTemp.makeTemp('scope-');
+	const g = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(repo, 'tests'));
+	fs.writeFileSync(path.join(repo, 'tests', 'a.test.mjs'), 'a\n');
+	g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base');
+	g('switch', '-qc', 'feat/x');
+	fs.writeFileSync(path.join(repo, 'tests', 'b.test.mjs'), 'b\n');
+	const at = (command, env = {}) => run('Bash', { command }, { cwd: repo }, { CI: '', ...env }).permissionDecision || 'allow';
+	for (const c of ['node --test tests/b.test.mjs', 'node --test --test-name-pattern "one row" tests/b.test.mjs', 'node scripts/test-run.mjs --changed --pick', 'git status', 'node --test tests/b.test.mjs; echo done']) assert.equal(at(c), 'allow', c);
+	for (const c of ['node --test', 'node --test tests/a.test.mjs', 'node --test tests/b.test.mjs tests/a.test.mjs', 'node scripts/test-run.mjs --changed', 'node scripts/test-run.mjs',
+		'npm test', 'npx vitest run', 'pytest -k one', 'node scripts/test-check.mjs origin/main', 'git status && X=1 node --test']) assert.equal(at(c), 'deny', c);
+	assert.match(run('Bash', { command: 'node --test' }, { cwd: repo }, { CI: '' }).permissionDecisionReason, /^Owner's yes needed: .*whole suite/);
+	// CI runs everything; a throwaway clone on a tag (no branch) reproduces a bug with an unchanged test.
+	assert.equal(at('node --test', { CI: 'true' }), 'allow');
+	g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'b'); g('switch', '-q', '--detach');
+	assert.equal(at('node --test tests/a.test.mjs'), 'allow');
 });

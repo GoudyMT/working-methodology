@@ -54,6 +54,7 @@ function parseArgs(args) {
 		}
 		else if (args[i] === '--map') o.map = true;
 		else if (args[i] === '--changed') o.changed = true;
+		else if (args[i] === '--owner-yes') o.ownerYes = true;
 		else o.files.push(path.resolve(args[i]));
 	}
 	return o;
@@ -293,8 +294,16 @@ export async function main(argv) {
 	// as growth, and a run killed outright is swept by the next one.
 	const runRoot = sessionRoot();
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
-	// A notice only: a full run on the owner's machine costs minutes and finds what CI finds (K59). A map needs every test.
-	if (!o.changed && !o.map && !o.files.length && !process.env.CI) process.stdout.write('test-run: a full local run. CI runs the suite on every PR and push; for a change, use --changed.\n');
+	// K150 (build 20): a full run, or --changed, which widens to every test the change reaches, is CI's job; on the owner's
+	// machine it costs minutes and finds what CI finds (K59 was a notice, and build 19 reran about 170 tests anyway). It
+	// runs here only with --owner-yes, given after the owner's pop-up yes. A map needs every test; --pick runs none.
+	if ((o.changed || !o.files.length) && !o.map && !o.pick && !process.env.CI) {
+		if (!o.ownerYes) {
+			process.stderr.write('test-run: refused: a full or --changed run is CI\'s job. Run only the tests you changed (node --test <file>); CI runs the rest after you push. With the owner\'s pop-up yes: add --owner-yes.\n');
+			process.exit(2);
+		}
+		process.stdout.write('test-run: a local run past the changed tests, on the owner\'s yes.\n');
+	}
 	// K108: a full run reads tests/ at the top and CI's slow lane reads tests/slow, so a test file anywhere else under
 	// tests/ would run in no lane. Refuse the run and name it, rather than let its failures reach no one.
 	if (!o.files.length) {

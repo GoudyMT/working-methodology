@@ -532,20 +532,26 @@ test('a map is made only from a clean tree, so its line numbers match its commit
 	assert.equal(fs.existsSync(path.join(repo, 'tests', '.map.json')), false);
 });
 
-// K59: a full local run costs minutes and finds what CI finds, so the runner says so; the run itself is unchanged.
-// why: guards rule:test-and-review-cadence
-test('a full local run prints a notice that CI runs the suite; CI, --changed, --map and named files print none', () => {
+// K59: a full local run costs minutes and finds what CI finds. K150 (build 20): the notice did not hold it (build 19
+// reran about 170 tests locally), so off CI a full or --changed run is refused unless the owner's yes is passed on.
+// renamed from: a full local run prints a notice that CI runs the suite; CI, --changed, --map and named files print none
+// why: guards the owner's starred rule "locally run only the changed test"
+test('off CI a full or --changed run is refused without the owner\'s yes; CI, --map and named files run', () => {
 	const dir = kitTemp.makeTemp('notice-');
 	fs.mkdirSync(path.join(dir, 'tests'));
 	const file = path.join(dir, 'tests', 'x.test.mjs');
 	fs.writeFileSync(file, `import { test } from 'node:test';\ntest('a', () => {});\n`);
-	const notice = /test-run: a full local run\. CI runs the suite on every PR and push; for a change, use --changed\./;
-	const local = run(dir, [], { CI: '' });
-	assert.equal(local.status, 0, local.stdout + local.stderr);
-	assert.match(local.stdout, notice);
-	for (const [args, env] of [[[], { CI: 'true' }], [['--changed'], { CI: '' }], [['--map'], { CI: '' }], [[file], { CI: '' }]]) {
+	const refused = /test-run: refused: a full or --changed run is CI's job/;
+	for (const args of [[], ['--changed']]) {
+		const r = run(dir, args, { CI: '' });
+		assert.equal(r.status, 2, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
+		assert.match(r.stderr, refused);
+	}
+	const yes = run(dir, ['--owner-yes'], { CI: '' });
+	assert.equal(yes.status, 0, yes.stdout + yes.stderr);
+	assert.match(yes.stdout, /on the owner's yes/);
+	for (const [args, env] of [[[], { CI: 'true' }], [['--map'], { CI: '' }], [[file], { CI: '' }], [['--changed', '--pick'], { CI: '' }]]) {
 		const r = run(dir, args, env);
-		assert.equal(r.status, 0, r.stdout + r.stderr);
-		assert.doesNotMatch(r.stdout, notice, `${args.join(' ')} CI=${env.CI}`);
+		assert.doesNotMatch(r.stderr, refused, `${args.join(' ')} CI=${env.CI}`);
 	}
 });
