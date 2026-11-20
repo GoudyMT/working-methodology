@@ -1087,3 +1087,38 @@ control: 0
 gate: b20-1.46.0 median 13 baseline 14 brief v2 keys v12 owner-accepted
 behaviour: b20-1.46.0 median 14 baseline 14 suite v2 control 5
 scored: b05ca19fada94174a7f89497fa0dae1f82700821
+
+## Recall v12 - 1.47.0, report channel, push checks and a smaller rules file (2026-11-20)
+
+Candidate: the branch at bf6c9a0 (the project layer from this branch, the user layer the released 1.46.1). Baseline: five runs on a clone of the released 1.46.1 tag, run the same day; control: a no-kit run. Opus 5.5 at medium, brief v2, keys v12. The rule text this build changes: eleven sections moved, unchanged, out of AGENTS.md into the modules read at their moment (Goal Before Mechanism, Success Charter, Correction Loop, the cross-tool map, the remote-mode and auto-merge bullets, Justify Every Direction Change, Re-Plan on Failure, Simplicity Lens, Autonomous Fixes, Recovery Protocol), and the Session Log left the start reads. AGENTS.md went from 23,834 B to 19,467 B.
+
+One fresh blind scorer read all eleven runs together (decision 7). An earlier scorer, reading the ten candidate and baseline runs without the control, gave the candidate 11, 14, 13, 14, 14 and the baseline 13, 12, 13, 13, 13; this scorer differs by a point on borderline calls only, and is the one recorded.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 1, 0, 1, 1, 1 | 1, 0, 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 7 | 1, 1, 0, 1, 1 | 0, 1, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 0, 1, 1, 1, 1 | 0, 1, 1, 0, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 0, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 0, 1, 1, 0 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 13, 13, 13, 14, 14 | 12, 12, 13, 13, 13 | 0 |
+
+- **Scored: five-run median 13 of 14, same-day baseline 13, control 0.** On the bar of 13. No question fails more often in the candidate runs than in the baseline runs; totals 67 against 63.
+- **The misses:** Q9 (the parking lot: "after the gates" left out), Q7 (the ASK to the owner), Q4 (the tag, force and delete limits), each marked borderline. No moved section holds those rules.
+- **Recorded as measured (2026-11-20, pop-up: "Record as measured"):** the owner set a bar of 14 for keeping the moves; neither build reaches it today, and nothing dropped against the same-day baseline. Lifting Q9, Q7 and Q13 above scorer noise by scripts goes on the list.
+- **Behaviour (suite v2, pass 11):** the branch 13, 14, 13; the released 1.46.1 runs 12, 12, 12 the same day as baseline. Every run of both missed the closeout task in at least two of three; the 1.46.1 runs also missed sweep-before-PR in all three. Control 5 (the 1.43.0 control).
+- **Not measured:** the user layer changes, as before.
+
+control: 0
+gate: b21-1.47.0 median 13 baseline 13 brief v2 keys v12
+behaviour: b21-1.47.0 median 13 baseline 12 suite v2 control 5
+scored: bf6c9a03edef0ef5feee8750232f1100f12f39c6
