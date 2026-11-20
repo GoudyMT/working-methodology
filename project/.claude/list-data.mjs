@@ -433,6 +433,29 @@ export function views(rows, steps = []) {
 }
 
 /**
+ * TC2 (build 20): the status board, written from the list data by script: one column per tag in TAGS order, one card
+ * per row, so the board never disagrees with the list (the hand-kept one differed on 18 of 276 cards). One page with
+ * its data inside it, no outside script or style; every row text is shown as text.
+ *
+ * Returns:
+ *     the page's HTML
+ */
+export function boardHtml(rows, title = 'Status board') {
+	const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+	const columns = TAGS.map((tag) => ({ tag, cards: rows.filter((r) => r.tag === tag).map((r) => ({ id: r.id, text: r.short || r.title, severity: r.severity, at: r.at || '', section: r.section || '' })) })).filter((c) => c.cards.length);
+	const data = JSON.stringify({ title, total: rows.length, columns }).replace(/</g, '\\u003c');
+	const cols = columns.map((c) => `<section><h2>${esc(c.tag)} <span>${c.cards.length}</span></h2>${c.cards.map((k) => `<article><b>${esc(k.id)}</b> ${esc(k.text)}<small>${esc(k.severity)}${k.at ? ` | ${esc(k.at)}` : ''}</small></article>`).join('')}</section>`).join('\n');
+	return [
+		'<!doctype html>', '<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">', `<title>${esc(title)}</title>`,
+		'<style>:root{--bg:#fff;--fg:#1a1a1a;--card:#f3f3f1;--muted:#666}@media (prefers-color-scheme:dark){:root{--bg:#161616;--fg:#eee;--card:#262626;--muted:#aaa}}',
+		'body{margin:0;padding:16px;background:var(--bg);color:var(--fg);font:14px/1.4 system-ui,sans-serif}main{display:flex;gap:12px;overflow-x:auto;align-items:flex-start}',
+		'section{min-width:240px;flex:1}h2{font-size:14px;text-transform:uppercase;letter-spacing:.04em}h2 span{color:var(--muted)}article{background:var(--card);border-radius:6px;padding:8px;margin:0 0 8px}small{display:block;color:var(--muted);margin-top:4px}</style></head>',
+		`<body><h1>${esc(title)}</h1><p>${rows.length} rows, written from _List.jsonl by node .claude/state.mjs board; never edited by hand.</p><main>`, cols, '</main>',
+		`<script type="application/json" id="board-data">${data}</script>`, '</body></html>', '',
+	].join('\n');
+}
+
+/**
  * Every list block in a file: { name, begin, end }, or a reason the markers cannot be trusted. A marker sits alone on
  * its line at the left edge, in the exact form render writes; one indented, carrying other text, or inside fenced
  * code is refused, so a hand-written view can never pass as a generated one.

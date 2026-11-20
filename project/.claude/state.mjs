@@ -595,6 +595,16 @@ function main(argv) {
 		return;
 	}
 	if (cmd === 'list' || cmd === 'item') return listCommand(cmd, rest, { fail, usage });
+	// TC2 (build 20): the status board, one page written from the list data; a page in the project's own folder only.
+	if (cmd === 'board') {
+		const out = String(rest[0] || '');
+		const rel = path.relative(ROOT, path.resolve(ROOT, out));
+		if (!/\.html$/i.test(out) || /^[\\/]{2}/.test(out) || !rel || rel.startsWith('..') || path.isAbsolute(rel) || !realUnder(path.dirname(path.resolve(ROOT, out)))) return fail('board takes a page name ending .html inside this project: node .claude/state.mjs board <page.html>');
+		const l = list.loadList(io);
+		if (l.why) return fail(l.why);
+		write(rel, list.boardHtml(l.rows));
+		return console.log(`board written: ${rel.split(path.sep).join('/')}, ${l.rows.length} rows`);
+	}
 	const { state: s, why } = loadState();
 	if (cmd === 'step') {
 		const [verb, step, field, ...text] = rest;

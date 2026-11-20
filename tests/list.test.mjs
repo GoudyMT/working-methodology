@@ -839,3 +839,24 @@ test('a project with no list is untouched: check and render pass as before', () 
 	assert.equal(fs.existsSync(path.join(dir, '_List.jsonl')), false);
 	assert.match(st(dir, 'list').stdout, /no _List\.jsonl/);
 });
+
+// why: guards the owner's pick of TC2 (2026-11-20): the status board is written from the list data by script, so it
+// never disagrees with the list (the hand-kept board differed on 18 of 276 cards, and 178 rows had no card).
+test('board writes one self-contained page from the list data, every row one card in its tag column', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	const r = st(dir, 'board', 'board.html');
+	assert.equal(r.status, 0, r.stdout);
+	const page = read(dir, 'board.html');
+	const data = JSON.parse(page.match(/<script type="application\/json" id="board-data">([\s\S]*?)<\/script>/)[1]);
+	assert.deepEqual(data.columns.flatMap((c) => c.cards.map((k) => k.id)).sort(), rows(dir).map((x) => x.id).sort(), 'each row once');
+	for (const c of data.columns) for (const k of c.cards) assert.equal(rows(dir).find((x) => x.id === k.id).tag, c.tag);
+	assert.doesNotMatch(page, /<script src=|<link /, 'self-contained');
+	assert.equal(st(dir, 'board', '../board.html').status, 1, 'a page outside the project is refused');
+	// Row text is shown as text: a planted tag cannot end the data or start a script.
+	const added = st(dir, 'item', 'add', '--from', json(dir, { id: 'X1', title: '</script><script>alert(x)</script>', tag: 'later', at: 'T9', severity: 'low', origin: 'self' }));
+	assert.equal(added.status, 0, added.stdout);
+	assert.equal(st(dir, 'board', 'board.html').status, 0);
+	assert.doesNotMatch(read(dir, 'board.html'), /<script>alert/);
+});
