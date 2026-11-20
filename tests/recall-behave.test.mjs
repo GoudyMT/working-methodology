@@ -233,3 +233,30 @@ test('the behaviour line (K198) needs 5 runs a side from the same day and names 
 	const untimed = [...five('base').slice(1), save('base', [], null)];
 	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand'), base: untimed, control }), /same day/);
 });
+
+// K195 (reproduced 2026-11-20 on 1.47.0): sessions run with project settings only, which never load the Claude folder's
+// skills, so a release arm ran with no kit skills while the candidate's were copied in, and sweep-before-PR could not
+// pass on the release. The release arm now gets its installed kit skills and agents copied the same way, and nothing else.
+// why: catches a release arm run with no kit skills against a candidate that has them
+test('the release arm (K195) gets its installed kit skills and agents in the probe, as the candidate gets its own', async () => {
+	const { releasedUserLayer } = await import('../scripts/recall-behave.mjs');
+	const home = makeTemp('k195-home-');
+	const dir = makeTemp('k195-probe-');
+	const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(home, rel)), { recursive: true }); fs.writeFileSync(path.join(home, rel), body); };
+	put('skills/pre-pr-sweep/SKILL.md', 'kit sweep');
+	put('skills/pre-pr-sweep/approve.mjs', 'kit approve');
+	put('agents/reviewer.md', 'kit reviewer');
+	put('skills/mine/SKILL.md', 'not the kit');
+	put('CLAUDE.md', 'not a skill');
+	put('kit-install.json', JSON.stringify({ version: '1.47.0', release: true, files: { 'skills/pre-pr-sweep/SKILL.md': 'h', 'skills/pre-pr-sweep/approve.mjs': 'h', 'agents/reviewer.md': 'h', 'CLAUDE.md': 'h' } }));
+	releasedUserLayer(home, dir);
+	const at = (rel) => path.join(dir, '.claude', rel);
+	assert.equal(fs.readFileSync(at('skills/pre-pr-sweep/SKILL.md'), 'utf8'), 'kit sweep');
+	assert.equal(fs.readFileSync(at('skills/pre-pr-sweep/approve.mjs'), 'utf8'), 'kit approve');
+	assert.equal(fs.readFileSync(at('agents/reviewer.md'), 'utf8'), 'kit reviewer');
+	assert.equal(fs.existsSync(at('skills/mine/SKILL.md')), false, 'a skill the kit did not install stays out');
+	assert.equal(fs.existsSync(at('CLAUDE.md')), false, 'only skills and agents');
+	// A listed path that climbs out of the Claude folder is never copied.
+	put('kit-install.json', JSON.stringify({ version: '1.47.0', release: true, files: { 'skills/../../x': 'h' } }));
+	assert.throws(() => releasedUserLayer(home, makeTemp('k195-probe-')), /outside/);
+});

@@ -185,6 +185,22 @@ export function copyUserLayer(kitDir, dir) {
 	}
 }
 
+/**
+ * K195 (reproduced on 1.47.0): a session run with project settings only never loads the Claude folder's skills, so a
+ * release arm had no kit skills while the candidate's were copied in. The release arm gets the skills and agents its
+ * install record lists, copied the same way, and nothing the kit did not install.
+ */
+export function releasedUserLayer(home, dir) {
+	const files = JSON.parse(fs.readFileSync(path.join(home, 'kit-install.json'), 'utf8')).files || {};
+	for (const rel of Object.keys(files).filter((k) => /^(skills|agents)\//.test(k))) {
+		const to = path.resolve(dir, '.claude', rel);
+		const inside = path.relative(path.join(dir, '.claude'), to);
+		if (inside.startsWith('..') || path.isAbsolute(inside) || path.relative(home, path.resolve(home, rel)).startsWith('..')) throw new Error(`an install record path outside the Claude folder: ${rel}`);
+		fs.mkdirSync(path.dirname(to), { recursive: true });
+		fs.copyFileSync(path.join(home, rel), to);
+	}
+}
+
 /** One session on one scenario: the record, the grades and the reads outside. */
 export function runScenario({ s, dir, home, run }) {
 	const r = run('claude', ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL, '--effort', EFFORT,
@@ -306,6 +322,7 @@ async function main(argv) {
 		try {
 			setupProbe({ dir, kitDir: kit, noKit, released, run });
 			if (!noKit && !released) copyUserLayer(kit, dir);
+				else if (!noKit) releasedUserLayer(home, dir);
 			readOnlyProbe(dir);
 			seed(dir, s.files, run, s.merged === true);
 			const r = runScenario({ s, dir, home, run });
