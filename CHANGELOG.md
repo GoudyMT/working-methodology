@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.46.0 - 2026-11-20
+
+Four of the owner's standing rules are now held by checks instead of prose, the dash-name wildcard check reads a command as bash splits it, release text is written from the build record and checked against it, and the list shows open rows with an archive beside it.
+
+### Added
+- A local test run reaches only the test files the branch changed; a run of the whole suite, `test-run.mjs --changed`, an unchanged test file or a check that is the CI's job waits for the owner's pop-up yes.
+- A meter that cannot read a reviewer's transcript lets the call through and writes the cause to the git folder's log; the sweep outcome then keeps auto-approval paused and names the role.
+- The test check names each new test the build record does not name, and a medium or low sweep fix that adds a new test instead of a row in an existing one, unless the fix gives a reason.
+- A working-memory line that keeps rule wording the kit has retired fails the state check the closeout runs, and session start names it; a line marked (history) is skipped.
+- A choice pop-up that names an item code with too few plain words beside it, or asks to approve a plan with no Overview, is sent back to be rewritten before the owner sees it; the plan format opens with that Overview.
+- `build-record.mjs release` writes the release notes file and prints the one publish line with its title, and the release check compares the live title and notes with the record.
+- `state.mjs board <page.html>` writes the status board from the list data: one page, one column per tag, one card per row.
+
+### Changed
+- The kit's test runner refuses a full or `--changed` run off CI unless given `--owner-yes`; a named file, `--pick` and `--map` run as before.
+- A Feature, First push or Launch gate review must name Privacy, Supply chain, Legal, Code security and a gaps or test value row, in the build record and in the PR body audit.
+- A list row is marked done only with a verify file in the project that holds the release check's RELEASE COMPLETE line for its release; closed rows need none.
+- The list's rows view shows open rows only; done and closed rows go to a new archive view written from the same data, so each row appears in exactly one of them.
+- The Working Memory template points at the generated phase line and the decision record instead of keeping its own Phase Status and Locked Architectural Decisions sections.
+
+### Fixed
+- The sweep meter answers with the call cap and token ceiling before any other reviewer hold; build 19's role 1 ran to 1,072,274 tokens against 749,524 because a shell refusal answered first, six times.
+- The dash-name wildcard check reads a command as bash splits it (quotes, `$?`, here-documents), reads only a wildcard in the first path part, in each folder a cd reaches; what it cannot follow gets its own reason.
+
 ## 1.45.0 - 2026-11-20
 
 The guards pass a read loop piped on and a printed PowerShell string, a body that claims a measured move must show Visuals, the app templates install only where a project shows a UI, and a build opens its PR as a draft after the first commit.

@@ -74,6 +74,16 @@ test('a release with every step done passes, names each step it read, and writes
 	assert.deepEqual(fs.readdirSync(path.join(t.project, '.git')).sort(), before, 'no FETCH_HEAD, no new ref file');
 	assert.equal(sh(t.project, 'tag'), tags);
 	assert.ok(t.calls.every((a) => a[0] === 'api' || a.includes('-R')), 'every gh call names the repo, never the one gh guesses');
+	// The build 20 sweep: a complete check is logged in the git folder of the project it checked (the done mark reads
+	// it); a check with a step missing logs nothing.
+	const logFile = path.join(t.project, '.git', 'kit-release-checks.jsonl');
+	t.facts.release = null;
+	assert.equal(releaseCheck(t.opts, t.deps).ok, false);
+	assert.equal(fs.existsSync(logFile), false, 'a check with a step missing logs nothing');
+	t.facts.release = { tagName: 'v1.1.0', isDraft: false, body: 'Methodology kit 1.1.0 adds one thing.' };
+	assert.equal(releaseCheck(t.opts, t.deps).ok, true, t.lines.join('\n'));
+	assert.ok(fs.existsSync(logFile), 'a complete check is logged');
+	assert.equal(JSON.parse(fs.readFileSync(logFile, 'utf8').trim()).version, '1.1.0');
 });
 
 // J1 (build 11, the owner's pick "take, light"): before an item moves, one number in its result file is run again; a
@@ -108,6 +118,36 @@ test('notes that are missing, a draft, empty, failing the audit or never audited
 		assert.equal(r.ok, false, JSON.stringify(release));
 		assert.match(all(r), want);
 	}
+	// Build 20: where the release's build record is, the live title and notes must be the ones it writes (v1.45.0 went
+	// out with the changelog entry, and five of eleven titles were a bare tag); a project with no record is not asked.
+	const written = '# Methodology Kit v1.1.0\n\nOne thing.\n';
+	for (const [release, want] of [
+		[{ tagName: 'v1.1.0', name: 'v1.1.0', isDraft: false, body: written }, /title is "v1\.1\.0", not "Methodology Kit v1\.1\.0"/],
+		[{ tagName: 'v1.1.0', name: 'Methodology Kit v1.1.0', isDraft: false, body: '## 1.1.0 - 2026-11-20\n\n### Added\n\n- One thing.\n' }, /notes are not the ones the build record writes/],
+		[{ tagName: 'v1.1.0', name: 'Methodology Kit v1.1.0', isDraft: false, body: written.replace(/\n/g, '\r\n') }, null],
+	]) {
+		const t = setup();
+		fs.mkdirSync(path.join(t.project, 'docs', 'builds'), { recursive: true });
+		fs.writeFileSync(path.join(t.project, 'docs', 'builds', '1.1.0.json'), '{}');
+		t.facts.release = release;
+		t.deps.notes = () => written;
+		const r = releaseCheck(t.opts, t.deps);
+		if (want) assert.match(all(r), want);
+		else assert.equal(r.ok, true, all(r));
+	}
+	// The real writer: with no script beside the record the notes cannot be written; with a release copy, the copy's
+	// script writes them, never the project's (the build 20 sweep).
+	const t = setup();
+	fs.mkdirSync(path.join(t.project, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(t.project, 'docs', 'builds', '1.1.0.json'), '{}');
+	t.facts.release = { tagName: 'v1.1.0', name: 'Methodology Kit v1.1.0', isDraft: false, body: '# Methodology Kit v1.1.0\n\nFrom the copy.\n' };
+	assert.match(all(releaseCheck(t.opts, t.deps)), /notes could not be written/);
+	for (const [dir, text] of [[t.copy, 'From the copy.'], [t.project, 'From the project.']]) {
+		fs.mkdirSync(path.join(dir, 'scripts'), { recursive: true });
+		fs.writeFileSync(path.join(dir, 'scripts', 'build-record.mjs'), `process.stdout.write('# Methodology Kit v1.1.0\\n\\n${text}\\n');\n`);
+	}
+	const r = releaseCheck({ ...t.opts, copy: t.copy }, t.deps);
+	assert.equal(r.ok, true, all(r));
 });
 
 // why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)

@@ -16,6 +16,7 @@ import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
 import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
+import { retiredHits, retiredList, hitLine } from '../project/.claude/retired-check.mjs';
 
 // git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
 // Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
@@ -1519,6 +1520,11 @@ export function sessionStartReport({ kit, home, projectDir, source, session, cla
   if (channel) lines.push(channel);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
+  // K153 (build 20): a stale note is named before a thread acts on it, not only at the closeout that fails on it.
+  try {
+    const hits = retiredHits(projectDir, retiredList());
+    if (hits.length) lines.push(`Working memory keeps ${hits.length} line(s) of retired rule wording, and the closeout fails until each goes: ${hitLine(hits[0])}.${hits.length > 1 ? ` The rest: node .claude/state.mjs check.` : ''}`);
+  } catch { /* the state check names a list it cannot read */ }
   if (source === 'compact') lines.push('After a compact: run rule:post-compact-orientation first (standards/INDEX.md names its file) - node .claude/resume-packet.mjs check, then the files its verdict names, before any edit.');
   // K112 (1.42.0): a resumed session re-reads its whole old context after each idle gap; once a closeout closed the
   // task, the next task starts fresh from the packet.

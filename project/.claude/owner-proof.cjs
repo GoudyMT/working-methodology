@@ -71,6 +71,7 @@ const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', p
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
 const GLOB_REASON = 'Never by a tool: this for loop reads its glob where the guard cannot follow it (a folder change first and a body that writes, IFS, or an unquoted name a file splits). Quote "$f", or run the loop from the folder, or one command per file.';
 const DASH_REASON = 'Never by a tool: a wildcard here matches a file whose name starts with a dash, which the shell hands on as an option (sed -i edits in place). Rename that file, or name the files you mean.';
+const DASH_UNSURE = 'Never by a tool: part of this command is more than the guard reads as bash does (a folder change it cannot follow, a here-document, an extended pattern, a glob option, or text run as shell), so it cannot rule out a wildcard matching a file whose name starts with a dash. Run the wildcard from a plainly named folder, or name the files you mean.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
@@ -492,36 +493,166 @@ function globSplits(command, tool, start) {
 // option (a file named -i turns sed -n 1p * .claude/guard.cjs into an in-place edit). No reading of the wildcard as a
 // name sees that, so a Bash command whose unquoted wildcard matches such a name, in the start folder or a folder a cd
 // names, is held whole. A folder the guard cannot list is passed here; the readings after it still hold what they hold.
+// K155 (build 20): the words as bash splits them. Each word is a list of [char, quoted]; quoted text, an escaped sign,
+// a parameter ($?, $*, ${x}) and a here-document's body never glob. A substitution is opaque unless a wildcard is in it.
+function bashWords(c) {
+	const cmds = [[]];
+	let word = null;
+	let unsure = false;
+	let ext = false;
+	const heredocs = [];
+	const put = (ch, q) => { (word ||= []).push([ch, q]); };
+	const end = () => { if (word) cmds[cmds.length - 1].push(word); word = null; };
+	const next = () => { end(); if (cmds[cmds.length - 1].length) cmds.push([]); };
+	// The end of a substitution that starts at i (just past "$(" or the opening backquote), and whether a wildcard is in it.
+	const sub = (i, close) => {
+		let depth = 1;
+		let j = i;
+		for (; j < c.length && depth; j++) {
+			if (close === ')' && c[j] === '(') depth++;
+			else if (c[j] === close) depth--;
+		}
+		if (/[*?[]/.test(c.slice(i, j))) unsure = true;
+		return j;
+	};
+	for (let i = 0; i < c.length; i++) {
+		const ch = c[i];
+		if (ch === '\n') {
+			next();
+			// A here-document's body is text: its lines end at the delimiter line.
+			for (const h of heredocs.splice(0)) {
+				const lines = c.slice(i + 1).split('\n');
+				let k = 0;
+				while (k < lines.length && (h.strip ? lines[k].replace(/^\t+/, '') : lines[k]) !== h.tag) k++;
+				if (k >= lines.length) unsure = true;
+				i += lines.slice(0, Math.min(k + 1, lines.length)).reduce((n, l) => n + l.length + 1, 0);
+			}
+			continue;
+		}
+		if (ch === ' ' || ch === '\t') { end(); continue; }
+		if (';&|()'.includes(ch)) {
+			if (ch === '(' && word && word.length && !word[word.length - 1][1] && '?*+@!'.includes(word[word.length - 1][0])) ext = true;
+			next();
+			continue;
+		}
+		if (ch === '<' && c[i + 1] === '<' && c[i + 2] !== '<') {
+			// The end word as bash reads it: quotes and backslashes taken out (the commit security review of this fix). One
+			// the reader cannot take apart, or an end line never found below, is more than it follows.
+			const m = /^<<(-?)[ \t]*([^\s;&|<>()]+)/.exec(c.slice(i));
+			if (!m) { unsure = true; end(); i++; continue; }
+			const tag = m[2].replace(/\\(.)/g, '$1').replace(/['"]/g, '');
+			if (!tag || /[$`]/.test(m[2])) unsure = true;
+			heredocs.push({ strip: m[1] === '-', tag });
+			end();
+			i += m[0].length - 1;
+			continue;
+		}
+		if (ch === '<' || ch === '>') { end(); continue; }
+		if (ch === '#' && !word) { while (i + 1 < c.length && c[i + 1] !== '\n') i++; continue; }
+		if (ch === '\\') { if (i + 1 < c.length && c[i + 1] !== '\n') put(c[++i], true); else i++; continue; }
+		if (ch === "'") { const j = c.indexOf("'", i + 1); const s = j < 0 ? c.slice(i + 1) : c.slice(i + 1, j); for (const x of s) put(x, true); if (!s) put('', true); i = j < 0 ? c.length : j; continue; }
+		if (ch === '"') {
+			let j = i + 1;
+			put('', true);
+			for (; j < c.length && c[j] !== '"'; j++) {
+				if (c[j] === '\\' && j + 1 < c.length) { put(c[++j], true); continue; }
+				if (c[j] === '$' && c[j + 1] === '(') { j = sub(j + 2, ')') - 1; put('$', true); continue; }
+				if (c[j] === '`') { j = sub(j + 1, '`') - 1; put('$', true); continue; }
+				put(c[j], true);
+			}
+			i = j;
+			continue;
+		}
+		if (ch === '`') { i = sub(i + 1, '`') - 1; put('$', true); continue; }
+		if (ch === '$') {
+			const n = c[i + 1];
+			if (n === '(') { i = sub(i + 2, ')') - 1; put('$', true); continue; }
+			if (n === '{') { const j = c.indexOf('}', i); i = j < 0 ? c.length : j; put('$', true); continue; }
+			if (n === "'") { const m = /^\$'((?:\\.|[^'\\])*)'?/.exec(c.slice(i)); for (const x of m[1]) put(x, true); i += m[0].length - 1; continue; }
+			if (n && /[?*@#$!\-0-9]/.test(n)) { put('$', true); put(n, true); i++; continue; }
+			put('$', true);
+			continue;
+		}
+		put(ch, false);
+	}
+	next();
+	return { cmds: cmds.filter((x) => x.length), unsure, ext };
+}
+const wordText = (w) => w.map(([ch]) => ch).join('');
+// A [ is a class only with a ] after it in the same word: a lone [ or [[ is the test command.
+const wordGlob = (w) => w.some(([ch, q], i) => !q && (ch === '*' || ch === '?' || (ch === '[' && w.slice(i + 1).some(([x, y]) => !y && x === ']'))));
+// The build 19 sweep: bash hands a name the wildcard matches on as a word, and one that starts with a dash is read as an
+// option (a file named -i turns sed -n 1p * .claude/guard.cjs into an in-place edit), so such a command is held whole.
+// K155 and K156 (build 20): only a wildcard in a word's first part can make a word that starts with a dash (.claude/*
+// makes .claude/-i), so only that part is read; the folders it is read in are the start folder and each cd's folder,
+// followed in turn. A folder change the guard cannot follow (a bare cd, cd -, popd, a variable) says so, not "a file".
+// Returns 'dash' (a dash name fits), 'unsure' (more than this reading follows) or false.
 function dashGlob(command, tool, start) {
 	if (tool === 'PowerShell') return false;
 	const c = String(command || '');
 	const from = start || (startNow && startNow.dir) || process.cwd();
 	const posixDrive = (p) => p.replace(/^\/([a-z])\//i, '$1:/');
-	// The commit security review: a word is read with its quoted parts taken out, so "x"* still counts; a bracket class,
-	// a quote beside a wildcard, a folder change the guard cannot place or a folder it cannot list is held, the safe side.
-	// A lone [ or [[ is the test command, not a class.
-	if (/[?*+@!]\((?=[^)]*\))/.test(c.replace(/'[^']*'|"[^"]*"/g, ''))) return true;
-	const words = c.split(/[\s;&|()<>]+/).filter((w) => /[*?]|\[[^\]]*\]/.test(w.replace(/'[^']*'|"[^"]*"/g, '')));
-	if (!words.length) return false;
-	// The second commit review: a glob option turned on (shopt, set -o), a folder change in any place (after then, do,
-	// builtin or env too) that is not a plain folder, and a glob word with braces, a variable, a substitution or an
-	// extended pattern are each more than this reading follows: held.
-	// An extended pattern is cut apart by the word split below, so it is read on the whole command (the third review).
-	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o|[?*+@!]\(/.test(c)) return true;
-	const cds = [...c.matchAll(/(?:^|[^\w./-])(?:cd|pushd|popd|chdir)(?![\w.-])\s*(\S*)/g)];
-	if (cds.some((m) => !/^[^\s;&|()`$'"~\\{}]+$/.test(m[1]) || m[1].startsWith('-'))) return true;
-	const dirs = [from, ...cds.map((m) => path.resolve(from, posixDrive(m[1])))];
-	for (const w of words) {
-		if (/['"[\\{}$`]|[?*+@!]\(/.test(w)) return true;
-		const word = posixDrive(w);
-		const dir = path.dirname(word);
-		if (/[*?]/.test(dir)) return true;
-		const re = globRe(path.basename(word));
+	const read = bashWords(c);
+	const words = read.cmds.flat();
+	// The commit security review of this fix: text run as shell (eval, bash -c, source) is read again as a command of
+	// its own, since its quotes hide its wildcards and cd's from the reading above; any of it held is held.
+	// The build 20 sweep: text run after a cd is read from the start folder below, and text from a variable is not
+	// read at all, so a wildcard in either is unsure.
+	let cdBefore = false;
+	for (const cmd of read.cmds) {
+		const names = cmd.map(wordText);
+		const k = names.findIndex((n, j) => n === 'eval' || ((/(^|\/)(ba|z|da|k)?sh(\.exe)?$/.test(n)) && names.slice(j + 1).some((x) => /^-\w*c/.test(x))));
+		if (k >= 0) {
+			const text = names.slice(k + 1).filter((x) => !/^-\w*c$/.test(x)).join(' ');
+			if (cdBefore && /[*?[]/.test(text)) return 'unsure';
+			if (/[*?[]/.test(c) && cmd.slice(k + 1).some((w) => w.some(([ch]) => ch === '$'))) return 'unsure';
+			const inner = dashGlob(text, tool, start);
+			if (inner) return inner;
+		}
+		if (names.some((n) => /^(cd|pushd|popd|chdir)$/.test(n))) cdBefore = true;
+	}
+	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
+	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
+	const cdSeen = words.filter((w) => /^(cd|pushd|popd|chdir)$/.test(wordText(w))).length;
+	const cdRaw = (c.match(/(?:^|[^\w./-])(?:cd|pushd|popd|chdir)(?![\w.-])/g) || []).length;
+	// A word whose first part is the wildcard: a plain first folder, a root, a drive or a ~ never starts with a dash.
+	const firsts = words.filter((w) => {
+		if (!wordGlob(w) || (w[0] && w[0][0] === '~' && !w[0][1])) return false;
+		const cut = w.findIndex(([ch]) => ch === '/');
+		const head = cut < 0 ? w : w.slice(0, cut);
+		return head.length > 0 && wordGlob(head);
+	});
+	// The second commit review: a wildcard inside a substitution and an extended pattern (cut apart by the word split) are
+	// more than this reading follows, and so are a glob option turned on, braces or a bracket class in the first part.
+	// A here-document the reader cannot end hides no wildcard when the command has none (the build 20 sweep).
+	if (read.ext || (read.unsure && /[*?[]/.test(c))) return 'unsure';
+	if (!firsts.length) return false;
+	if (cdRaw > cdSeen) return 'unsure';
+	if (/(^|[^\w-])(shopt|setopt)(?![\w-])|(^|[^\w-])set\s+[-+]\w*o/.test(c)) return 'unsure';
+	// Each cd in turn, from where the last one left the shell (K156); every folder reached is read, the safe side.
+	const dirs = [from];
+	let here = from;
+	for (const cmd of read.cmds) {
+		for (let k = 0; k < cmd.length; k++) {
+			if (!/^(cd|pushd|popd|chdir)$/.test(wordText(cmd[k]))) continue;
+			const t = cmd[k + 1];
+			const text = t ? wordText(t) : '';
+			if (!t || /^popd$/.test(wordText(cmd[k])) || text.startsWith('-') || wordGlob(t) || t.some(([ch, q]) => ch === '$' || (!q && ch === '~'))) return 'unsure';
+			here = path.resolve(here, posixDrive(text));
+			dirs.push(here);
+		}
+	}
+	for (const w of firsts) {
+		const cut = w.findIndex(([ch]) => ch === '/');
+		const head = cut < 0 ? w : w.slice(0, cut);
+		// An expansion before or beside the wildcard ($X*, ${X}*, $(x)*) can give any text, a dash included.
+		if (head.some(([ch, q]) => (!q && (ch === '[' || ch === '{' || ch === '}')) || ch === '$')) return 'unsure';
+		const re = new RegExp(`^${head.map(([ch, q]) => (!q && ch === '*' ? '.*' : !q && ch === '?' ? '.' : ch.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&'))).join('')}$`, 'i');
 		for (const d of dirs) {
 			let names;
 			// A folder that is not there leaves the wildcard as written, unless the same command could make it first.
-			try { names = fs.readdirSync(path.resolve(d, dir)); } catch (e) { if (e.code === 'ENOENT' && !/[;&|\n]/.test(c)) continue; return true; }
-			if (names.some((n) => n.startsWith('-') && re.test(n))) return true;
+			try { names = fs.readdirSync(d); } catch (e) { if (e.code === 'ENOENT' && read.cmds.length < 2) continue; return 'unsure'; }
+			if (names.some((n) => n.startsWith('-') && re.test(n))) return 'dash';
 		}
 	}
 	return false;
@@ -1011,7 +1142,8 @@ function answer(input) {
 		// K145 (build 19): a loop held for how its glob is read names no protected file, so it says so, not the first
 		// protected place checked (a guard write was refused as a transcript write).
 		if (globSplits(t.command, input.tool_name, cwd)) return deny(GLOB_REASON);
-		if (dashGlob(t.command, input.tool_name, cwd)) return deny(DASH_REASON);
+		const dash = dashGlob(t.command, input.tool_name, cwd);
+		if (dash) return deny(dash === 'dash' ? DASH_REASON : DASH_UNSURE);
 		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
 		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);

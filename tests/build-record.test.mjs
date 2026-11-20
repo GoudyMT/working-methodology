@@ -19,7 +19,7 @@ const record = () => ({
 	],
 	decisions: [{ decision: 'One record', why: 'the changelog and the body never differ' }],
 	verification: ['Every test passed in CI.'],
-	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: [{ name: 'Code security', result: 'clean' }], findings: { critical: 0, high: 1, medium: 2, low: 0 },
+	sweep: { tier: 'Feature', commit: 'abc1234', dimensions: ['Privacy', 'Supply chain', 'Legal', 'Code security', 'Gaps, scaling, test value', 'Alignment'].map((name) => ({ name, result: 'clean' })), findings: { critical: 0, high: 1, medium: 2, low: 0 },
 		fixes: [{ id: 'F1', severity: 'high', text: 'one high, fixed here', commit: 'abc1234', test: 'tests/x.test.mjs::a' }, { id: 'F2', severity: 'low', text: 'one low, a parser edge', commit: 'abc1235', test: 'no test: no real input' }] },
 	tests: { before: 10, after: 8 },
 });
@@ -97,7 +97,9 @@ test('a whole record writes a PR body that passes the audit, and one that would 
 	rec.headline = `${'Every kit test now names the rule it guards, and the ones that guarded nothing new are gone. '.repeat(3)}`.trim();
 	rec.items[0].text = 'Each test carries a why line naming the rule it guards, read by a script that holds new tests to the same bar. '.repeat(2).trim();
 	rec.verification = ['Every test passed in CI on Linux and Windows, and the install check passed on both.', 'The mutation check ran.', 'The planted cases held.'];
+	// One row is a Fix review's shape; a Feature review names all six from build 20.
 	rec.sweep.dimensions = [{ name: 'Code security', result: 'clean' }];
+	rec.sweep.tier = 'Fix';
 	assert.deepEqual(problems(rec), []);
 	const dir = kitTemp.makeTemp('recbody-');
 	const f = path.join(dir, 'body.md');
@@ -247,6 +249,18 @@ test('a record names a sweep tier the PR body audit reads, with modifiers only i
 		rec.sweep.tier = tier;
 		assert.match(problems(rec).join('\n'), /sweep tier/, tier);
 	}
+	// Build 20 (the 1.45.0 record named four dimensions, and PR 58 lost two rows): a Feature, First push or Launch gate
+	// review names all six; a Fix or Triage names what it touched.
+	const four = record();
+	four.sweep.dimensions = four.sweep.dimensions.filter((d) => !/^(Supply chain|Legal)$/.test(d.name));
+	assert.match(problems(four).join('\n'), /Feature[^\n]*six dimensions: missing Supply chain, Legal/);
+	// First push and Launch gate are held the same (the build 20 sweep).
+	for (const tier of ['First push', 'Launch gate']) {
+		four.sweep.tier = tier;
+		assert.match(problems(four).join('\n'), new RegExp(`a ${tier} review names all six dimensions`), tier);
+	}
+	four.sweep.tier = 'Fix (security-sensitive)';
+	assert.deepEqual(problems(four), []);
 });
 
 // why: guards the owner's pick of E14, 2026-11-15: the notes command prints the draft, and its upgrading and limits
@@ -263,6 +277,13 @@ test('build-record notes prints the draft, and the upgrading and limits lines ar
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.stdout, notes(rec));
 	assert.match(r.stdout, /^## Upgrading\n\nRun `install user` first/m, 'the default upgrading line');
+	// Build 20 (five of eleven release titles were a bare tag; v1.45.0 went out with the changelog entry as its notes):
+	// one command writes the notes file and prints the one publish line, title included.
+	const out = path.join(dir, 'notes.md');
+	const rel = spawnSync(process.execPath, [path.resolve('scripts/build-record.mjs'), 'release', path.join(dir, 'docs', 'builds', 'r.json'), out], { encoding: 'utf8' });
+	assert.equal(rel.status, 0, rel.stderr);
+	assert.equal(fs.readFileSync(out, 'utf8'), notes(rec));
+	assert.equal(rel.stdout.trim(), `gh release create v1.2.0 --title "Methodology Kit v1.2.0" --notes-file "${out}"`);
 });
 
 // K105 (build 13, PR 49): the PR said each finding had a test that fails first, and nothing checked it; six low or

@@ -16,6 +16,11 @@ its own. Plan the whole cycle before branching (rule:session-workflow) so the wo
 ```markdown
 # <Feature> Plan
 
+## Overview
+What we are looking at: <the part, in plain words>.
+What was found or measured: <the fact, with its number or source>.
+What is being decided: <the choice this plan asks the owner to approve>.
+
 ## Progress
 - Current task: <N>
 - Done (with evidence): <task - commit - the check's result>

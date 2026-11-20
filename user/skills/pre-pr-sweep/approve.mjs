@@ -1189,6 +1189,14 @@ function outcome() {
 	const n = (x) => Math.round(x).toLocaleString('en-US');
 	// A crash and its retry each had the whole ceiling, so the check reads the retry alone, as the call check does.
 	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (${x.stopped ? 'the hook stopped it too late' : 'the hook is missing or did not fire'})`); }
+	// K151 (build 20): the call-cap meter lets a call through when it cannot read the transcript, and logs why. Each such
+	// line for one of this sweep's reviewers keeps auto-approval paused and names the role: a silent meter is a gap.
+	let opens = [];
+	try { opens = fs.readFileSync(path.join(path.dirname(LOG), 'kit-guard-open.log'), 'utf8').split('\n').map((l) => { try { return JSON.parse(l); } catch { return null; } }).filter((e) => e && e.hook === 'call-cap'); } catch { /* none */ }
+	for (const x of per) {
+		const o = opens.filter((e) => String(e.agent).toLowerCase() === String(x.agent).toLowerCase());
+		if (o.length) trips.push(`the call-cap meter let ${o.length} call(s) of ${x.role} through unread (${[...new Set(o.map((e) => e.cause))].join(', ')})`);
+	}
 	// Past the cap's own stop (one call over is the hook's margin): the hook is missing or did not hold. Without a
 	// baseline the whole-sweep trip covers it and this is a note; under the bound nothing else would, so it trips (the
 	// 1.23.0 sweep).

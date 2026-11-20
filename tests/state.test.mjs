@@ -146,6 +146,30 @@ test('a D- pointer with no record fails the check', () => {
 	assert.match(r.stdout, /D-7.*_Master Roadmap\.md/);
 });
 
+// why: guards the owner's rule "working memory matches the kit at closeout" (K153, build 20). Notes that kept a rule
+// the kit had since replaced were acted on by later threads; the closeout's state check now names each such line.
+test('a working-memory line that keeps retired rule wording fails the check, unless marked as history', async () => {
+	const dir = project();
+	fs.appendFileSync(path.join(dir, '_Working Memory.md'), '\n- Run a local cheap check before each push.\n- (history) Until 1.44 we ran a local cheap check before each push.\n');
+	fs.appendFileSync(path.join(dir, '_Loop Learnings.md'), '\n- Re-run test-run.mjs --changed locally after each fix.\n');
+	// The build 20 sweep: the new rule said in words that name the old one passes, "(history)" marks only from the line's
+	// start, a learning project's line about Max is not the retired rule, and a rule outside the kit's files says where
+	// it lives.
+	fs.appendFileSync(path.join(dir, '_Working Memory.md'), '- Never run a local cheap check before a push.\n- Max types all code in his learning projects.\n- Fix it (history) and run a local cheap check before each push.\n- The owner types all code.\n- Locally run only the changed test; test-run.mjs --changed is CI\'s job.\n');
+	const r = st(dir, 'check');
+	assert.equal(r.status, 1, r.stdout);
+	const lines = r.stdout.split('\n').filter((l) => /retired wording/.test(l));
+	assert.equal(lines.length, 4, r.stdout);
+	assert.match(r.stdout, /owner types all code" \(the owner's global[^)]*Collaboration Workflow, since 1\.41\.0\)/);
+	assert.match(r.stdout, /_Working Memory\.md line \d+: retired wording "[^"]*cheap check[^"]*" \(rule:[\w-]+, since 1\.\d+\.\d+\)/);
+	assert.match(r.stdout, /_Loop Learnings\.md line \d+: retired wording "[^"]*--changed[^"]*"/);
+	assert.equal(st(project(), 'check').status, 0, 'the shipped templates carry none');
+	// Session start names it too, before a thread acts on the stale note.
+	const { sessionStartReport } = await import('../scripts/kit.mjs');
+	const said = sessionStartReport({ kit: KIT, home: kitTemp.makeTemp('state-home-'), projectDir: dir, claudeVersion: () => '2.1.325 (Claude Code)', ahead: () => ({ count: 0 }) });
+	assert.match(said, /Working memory keeps 4 line\(s\)[^\n]*_Working Memory\.md line \d+/);
+});
+
 // why: guards rule:tracking-file-functions
 test('item text or a planted id cannot add a line, and a label outside its block is caught', () => {
 	const dir = project();

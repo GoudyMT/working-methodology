@@ -29,6 +29,8 @@ export function copyKitCli(kit) {
   fs.mkdirSync(path.join(kit, 'project/.claude'), { recursive: true });
   fs.copyFileSync(path.resolve('scripts/kit.mjs'), path.join(kit, 'scripts/kit.mjs'));
   fs.copyFileSync(path.resolve('project/.claude/kit-temp.cjs'), path.join(kit, 'project/.claude/kit-temp.cjs'));
+  // The retired-wording check the session-start report reads (build 20).
+  for (const f of ['retired-check.mjs', 'retired-wording.json']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(kit, 'project/.claude', f));
   // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
   fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
   fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
@@ -747,12 +749,14 @@ export const pastRole = (tokens, extra = {}) => ({ role: 'r', kind: 'security', 
 
 // Each sweep below runs on a log of 25 measured roles of 200,000 tokens over 6 calls, starting at 10,000: the
 // ceiling is 200,000, content per call 33,333, and every baseline the drift signals read exists. Each role's cap is 5.
-export function driftSweep(spec) {
+export function driftSweep(spec, { opens = [] } = {}) {
   const dir = sweepRepo();
   seedOutcomes(dir, Array.from({ length: 25 }, () => pastRole(200000)));
   const r = approveRun(featureContract(), dir);
   assert.equal(r.status, 0, r.stdout);
   const ids = spec.map(() => `t${++agentSeq}`);
+  // K151: the line the call-cap meter writes when it lets a call through unread, for the roles named by place.
+  for (const i of opens) fs.appendFileSync(path.join(dir, '.git', 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'call-cap', agent: ids[i], cause: 'ENOENT' })}\n`);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, spec[i]])), {}, undefined, undefined, roleModels(ids, featureContract().roles));
   const o = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '3', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);

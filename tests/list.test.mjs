@@ -113,7 +113,45 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 	assert.match(r.stdout, /caught-by/);
 	assert.equal(rows(dir)[1].tag, 'later');
 	assert.equal(st(dir, 'item', 'set', 'A2', 'caught-by', 'sweep').status, 0);
+	// TC1 (build 20): done needs proof, the verify result whose release check passed for that release; a step 6 thread
+	// set the tag alone before. Closed (shown not real) needs none.
+	r = st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0');
+	assert.equal(r.status, 1, 'done with no verify result is refused');
+	assert.match(r.stdout, /A2: done needs its verify result[^\n]*item set A2 verify/);
+	fs.mkdirSync(path.join(dir, 'results'));
+	put(dir, 'results/a2.md', 'Verified.\n');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', 'results/a2.md').status, 0);
+	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no "RELEASE COMPLETE: every step of v1\.35\.0" line/);
+	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.34.0 is done.\n');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 1, 'another release\'s check is no proof');
+	// A real result outside the project, named by a climb out or through a link inside it, is refused (the build 20 sweep).
+	const outside = path.join(kitTemp.makeTemp('list-out-'), 'outside.md');
+	fs.writeFileSync(outside, 'RELEASE COMPLETE: every step of v1.35.0 is done.\n');
+	assert.equal(st(dir, 'item', 'set', 'A2', 'verify', path.relative(dir, outside)).status, 1, 'a result outside the project is refused');
+	let linked = true;
+	try { fs.symlinkSync(path.dirname(outside), path.join(dir, 'out-link'), 'junction'); } catch { linked = false; }
+	if (linked) assert.equal(st(dir, 'item', 'set', 'A2', 'verify', 'out-link/outside.md').status, 1, 'a result through a link out is refused');
+	put(dir, 'results/a2.md', 'Verified.\nRELEASE COMPLETE: every step of v1.35.0 is done.\n');
+	// The build 20 sweep: a typed line is no proof; the release check's own log in the git folder is.
+	spawnSync('git', ['-C', dir, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	assert.match(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').stdout, /no complete release check of 1\.35\.0 is logged/);
+	// A git folder of a tool's own, named by GIT_DIR, holding a forged log, is not read (the commit security review).
+	const forged = kitTemp.makeTemp('list-forged-');
+	spawnSync('git', ['-C', forged, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	fs.writeFileSync(path.join(forged, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ version: '1.35.0' })}\n`);
+	const viaEnv = spawnSync(process.execPath, [SCRIPT, 'item', 'set', 'A2', 'tag', 'done 1.35.0'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', GIT_DIR: path.join(forged, '.git') } });
+	assert.equal(viaEnv.status, 1, 'a GIT_DIR to a forged log');
+	fs.writeFileSync(path.join(dir, '.git', 'commondir'), `${path.join(forged, '.git')}\n`);
+	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 1, 'a commondir file to a forged log');
+	fs.rmSync(path.join(dir, '.git', 'commondir'));
+	fs.appendFileSync(path.join(dir, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ tag: 'v1.35.0', version: '1.35.0' })}\n`);
 	assert.equal(st(dir, 'item', 'set', 'A2', 'tag', 'done 1.35.0').status, 0);
+	assert.equal(rows(dir)[1].verify, 'results/a2.md');
+	// The commit review: a new row added as done owes the same proof.
+	assert.match(st(dir, 'item', 'add', '--from', json(dir, { id: 'A9', title: 'Added done', tag: 'done', at: '1.35.0', severity: 'low', caught_by: 'owner' })).stdout, /A9: done needs its verify result/);
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'A9', title: 'Added done', tag: 'done', at: '1.35.0', severity: 'low', caught_by: 'owner', verify: 'results/a2.md' })).status, 0);
+	// The release named in a step's own words, with or without its v, is read the same (the build 20 sweep).
+	assert.equal(st(dir, 'item', 'add', '--from', json(dir, { id: 'A10', title: 'Added done in step form', tag: 'done', at: 'build 20 (v1.35.0)', severity: 'low', caught_by: 'owner', verify: 'results/a2.md' })).status, 0);
 
 	r = st(dir, 'item', 'add', '--from', json(dir, { id: 'K1', title: 'Start load is 64,975 B of 80,000', tag: 'later', at: 'T9', severity: 'medium', origin: 'self' }));
 	assert.equal(r.status, 1, 'a number with no label is refused');
@@ -123,9 +161,10 @@ test('check fails a new or changed row that closes with no catcher or holds a nu
 
 	// A hand edit that gets round the commands is still caught.
 	const lines = read(dir, '_List.jsonl').split('\n');
-	const k1 = JSON.parse(lines[4]);
+	const at = lines.findIndex((l) => l.includes('"id":"K1"'));
+	const k1 = JSON.parse(lines[at]);
 	delete k1.measured;
-	lines[4] = JSON.stringify(k1);
+	lines[at] = JSON.stringify(k1);
 	put(dir, '_List.jsonl', lines.join('\n'));
 	r = st(dir, 'check');
 	assert.equal(r.status, 1);
@@ -292,7 +331,8 @@ test('an installed state.mjs run from outside a project reads its own project, a
 	put(dir, 'list.md', LIST);
 	st(dir, 'list', 'import', 'list.md');
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['state.mjs', 'list-data.mjs']) {
+	// The retired-wording files state.mjs imports from build 20; a base commit before them has none to copy.
+	for (const f of ['state.mjs', 'list-data.mjs', 'retired-check.mjs', 'retired-wording.json'].filter((x) => fs.existsSync(path.join(KIT, 'project', '.claude', x)))) {
 		const t = fs.readFileSync(path.join(KIT, 'project', '.claude', f), 'utf8');
 		fs.writeFileSync(path.join(dir, '.claude', f), t.replaceAll('{{CLAUDE_HOME}}', dir.split('\\').join('/')));
 	}
@@ -425,6 +465,8 @@ test('import moves a checkbox roadmap into data once, and the boxes view writes 
 	assert.equal(st(dir, 'check').status, 0);
 	// A box changed in the data shows in the view at the next render.
 	assert.equal(st(dir, 'item', 'set', 'R3', 'caught-by', 'owner').status, 0);
+	put(dir, 'r3.md', 'RELEASE COMPLETE: every step of v1 is done.\n');
+	assert.equal(st(dir, 'item', 'set', 'R3', 'verify', 'r3.md').status, 0);
 	assert.equal(st(dir, 'item', 'set', 'R3', 'tag', 'done v1').status, 0);
 	// item set writes the views itself: no render between.
 	assert.ok(read(dir, 'roadmap.md').includes('- [x] R3 Regenerate the README images'));
@@ -612,7 +654,7 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	const dir = project();
 	put(dir, 'list.md', LIST);
 	st(dir, 'list', 'import', 'list.md');
-	const plan = ['# Roadmap', '', 'Owner text above.', '', '<!-- list:begin roadmap -->', '<!-- list:end -->', '', '<!-- list:begin counts -->', '<!-- list:end -->', '', '<!-- list:begin rows -->', '<!-- list:end -->', '', 'Owner text below.', ''].join('\n');
+	const plan = ['# Roadmap', '', 'Owner text above.', '', '<!-- list:begin roadmap -->', '<!-- list:end -->', '', '<!-- list:begin counts -->', '<!-- list:end -->', '', '<!-- list:begin rows -->', '<!-- list:end -->', '', '<!-- list:begin archive -->', '<!-- list:end -->', '', 'Owner text below.', ''].join('\n');
 	put(dir, '_Master Roadmap.md', plan);
 	let r = st(dir, 'check');
 	assert.equal(r.status, 1, 'empty blocks differ from the data');
@@ -625,8 +667,23 @@ test('render writes the roadmap, counts and rows blocks from the data, and check
 	// pin: 1 check compares the generated view byte for byte
 	assert.match(out, /^\| A1 \| The closeout deleted 480 items \| Source: a project \| high \| not set \| \*\*\[DONE 1\.14\.0\]\*\* fixed and probed \|$/m);
 	assert.match(out, /^\*\*C\. Found inside\*\*$/m, 'a section is a bold line, never a heading a reader takes for its own');
+	// TC3 (build 20): the rows view holds the open rows a thread reads at start, the archive view the done and closed
+	// ones; every row of the data is in exactly one of them.
+	const block = (name) => out.split(`<!-- list:begin ${name}:`)[1].split('<!-- list:end -->')[0];
+	const ids = (t) => [...t.matchAll(/^\| (\w+) \|/gm)].map((m) => m[1]).filter((x) => x !== 'ID' && x !== 'Step');
+	assert.deepEqual([...ids(block('rows')), ...ids(block('archive'))].sort(), rows(dir).map((x) => x.id).sort());
+	assert.ok(!ids(block('rows')).includes('A1') && ids(block('archive')).includes('A1'), 'a done row is in the archive only');
 	assert.match(out, /^Owner text above\.$/m);
 	assert.match(out, /^Owner text below\.$/m);
+	// The build 20 sweep: a project that upgrades with a rows block and no archive block gets one at the next render,
+	// so its done rows stay in sight.
+	const old = project();
+	put(old, 'list.md', LIST);
+	st(old, 'list', 'import', 'list.md');
+	put(old, '_Master Roadmap.md', plan.replace('<!-- list:begin archive -->\n<!-- list:end -->\n', ''));
+	assert.equal(st(old, 'render').status, 0);
+	assert.ok(read(old, '_Master Roadmap.md').split('<!-- list:begin archive:')[1].includes('| A1 |'), 'the done row shows in the added archive');
+	assert.equal(st(old, 'check').status, 0);
 
 	put(dir, '_Master Roadmap.md', out.replace('| 1.35.0 | The list as data |', '| 1.35.0 | The list as data, typed |'));
 	r = st(dir, 'check');
@@ -715,7 +772,9 @@ test('a step counts its open rows by name, build or release, never a closed one'
 	add('K20', 'later', '8');
 	add('K21', 'next', '1.34.0');
 	add('K22', 'next', 'build 8');
-	add('K23', 'done', '8', { caught_by: 'sweep' });
+	// A done row carries its verify result (TC1, build 20); "8" names no release, so the file is the proof.
+	put(dir, 'v.md', 'Verified.\n');
+	add('K23', 'done', '8', { caught_by: 'sweep', verify: 'v.md' });
 	add('K24', 'later', '18');
 	put(dir, '_Master Roadmap.md', '<!-- list:begin roadmap -->\n<!-- list:end -->\n');
 	assert.equal(st(dir, 'render').status, 0);
@@ -812,4 +871,25 @@ test('a project with no list is untouched: check and render pass as before', () 
 	assert.equal(r.status, 0, r.stdout);
 	assert.equal(fs.existsSync(path.join(dir, '_List.jsonl')), false);
 	assert.match(st(dir, 'list').stdout, /no _List\.jsonl/);
+});
+
+// why: guards the owner's pick of TC2 (2026-11-20): the status board is written from the list data by script, so it
+// never disagrees with the list (the hand-kept board differed on 18 of 276 cards, and 178 rows had no card).
+test('board writes one self-contained page from the list data, every row one card in its tag column', () => {
+	const dir = project();
+	put(dir, 'list.md', LIST);
+	st(dir, 'list', 'import', 'list.md');
+	const r = st(dir, 'board', 'board.html');
+	assert.equal(r.status, 0, r.stdout);
+	const page = read(dir, 'board.html');
+	const data = JSON.parse(page.match(/<script type="application\/json" id="board-data">([\s\S]*?)<\/script>/)[1]);
+	assert.deepEqual(data.columns.flatMap((c) => c.cards.map((k) => k.id)).sort(), rows(dir).map((x) => x.id).sort(), 'each row once');
+	for (const c of data.columns) for (const k of c.cards) assert.equal(rows(dir).find((x) => x.id === k.id).tag, c.tag);
+	assert.doesNotMatch(page, /<script src=|<link /, 'self-contained');
+	assert.equal(st(dir, 'board', '../board.html').status, 1, 'a page outside the project is refused');
+	// Row text is shown as text: a planted tag cannot end the data or start a script.
+	const added = st(dir, 'item', 'add', '--from', json(dir, { id: 'X1', title: '</script><script>alert(x)</script>', tag: 'later', at: 'T9', severity: 'low', origin: 'self' }));
+	assert.equal(added.status, 0, added.stdout);
+	assert.equal(st(dir, 'board', 'board.html').status, 0);
+	assert.doesNotMatch(read(dir, 'board.html'), /<script>alert/);
 });

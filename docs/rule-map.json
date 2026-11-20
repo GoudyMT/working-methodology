@@ -570,6 +570,7 @@
    "scripts": [
     "project/.claude/pr-body-audit-lean.mjs",
     "project/.claude/pr-body-audit.mjs",
+    "scripts/build-record.mjs",
     "scripts/kit.mjs",
     "user/kit-tools/audits/pr-body-audit-lean.mjs",
     "user/kit-tools/audits/pr-body-audit.mjs",

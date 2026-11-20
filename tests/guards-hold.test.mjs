@@ -325,7 +325,33 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 			'sed -n 1p ""* .claude/guard.cjs', 'sed -n 1p [-]i .claude/guard.cjs', 'shopt -s extglob; sed -n 1p @(-i|x) .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
 		// The install check's false hold V1: a wildcard into a folder that is not there stays as written.
 		for (const c of ['if [ -f x ]; then cat x; fi', 'ls *.md', 'grep -n "a*b" a.txt', 'npm test -- nowhere/*']) assert.equal(bash(c), 'allow', c);
+		// K155 (build 20, held live on 1.45.0 with no dash name there): a wildcard after a plain first folder expands to
+		// words that start with that folder, never a dash; $? is a parameter; quoted text and a quoted cd target are read
+		// as the shell reads them.
+		fs.mkdirSync(path.join(proj, 'sub dir'), { recursive: true });
+		for (const c of ['ls .claude/*/SKILL.md | wc -l', 'sed -n 1p .claude/* .claude/guard.cjs', 'git status; echo exit=$?', 'cd "sub dir" && ls *.md', "grep -nE '^\\| *K15[0-9]\\b' a.txt",
+			'node -e "const c={};c[r.s]=1"', 'sed -n 1p ~/*']) assert.equal(bash(c), 'allow', c);
+		// The first folder is the wildcard, or the folder change cannot be followed: still held.
+		for (const c of ['sed -n 1p */x .claude/guard.cjs', 'cd $D && sed -n 1p * .claude/guard.cjs', 'cd - && sed -n 1p *', 'popd; sed -n 1p *', "echo $(ls *) 'x'",
+			// The commit security review of this fix: an expansion before the wildcard, text run as shell, and a
+			// here-document whose end line the reader cannot match the way bash does.
+			'sed -n 1p $X* .claude/guard.cjs', "bash -c 'sed -n 1p * .claude/guard.cjs'", 'eval "sed -n 1p * .claude/guard.cjs"', 'cat <<E\\x\nEx\nsed -n 1p * .claude/guard.cjs\nE\\x',
+			"echo 'sed -n 1p * x' | sh", "$SHELL -c 'sed -n 1p * x'", "busybox sh -c 'sed -n 1p * x'", "cat <<'E\"x\nsed -n 1p * x\nE"]) assert.equal(bash(c), 'deny', c);
 	} finally { for (const d of [proj, path.join(proj, '.claude')]) fs.rmSync(path.join(d, '-i')); }
+	// K156 (build 20): the shell lands where each cd takes it in turn, and a bare cd lands in the home folder; a start
+	// folder with no dash name must not let a wildcard read there through.
+	const clean = kitTemp.makeTemp('clean-');
+	for (const d of ['sed', 'b', 'a/b']) fs.mkdirSync(path.join(clean, d), { recursive: true });
+	fs.writeFileSync(path.join(clean, 'a/b/-i'), 'x\n');
+	const at = (command) => decide('Bash', { command }, { cwd: clean });
+	for (const c of ['cd\nsed -n 1p *', 'cd a && cd b && sed -n 1p *', 'cd a; cd b; sed -n 1p *', 'eval "cd a/b" && sed -n 1p *']) assert.equal(at(c), 'deny', c);
+	// The build 20 sweep: shell text run after a cd, and shell text from a variable, beside a wildcard, are held by the
+	// dash reading itself (other readings held them only as a guess at a protected file).
+	const dashWhy = (command) => JSON.parse(spawnSync(process.execPath, HOOKS, { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd: clean }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout || '{"hookSpecificOutput":{}}').hookSpecificOutput.permissionDecisionReason || '';
+	// A cd inside shell text, by eval or bash -c, is held for the dash reason too, not passed by chance (the sweep).
+	for (const c of ["cd a/b && bash -c 'sed -n 1p *'", "c='sed -n 1p *'; cd a/b; bash -c \"$c\"", 'eval "cd a/b" && sed -n 1p *', 'bash -c "cd a/b" && sed -n 1p *']) assert.match(dashWhy(c), /starts with a dash/, c);
+	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
+	assert.equal(at('cd a && cd b && ls *.md'), 'allow', 'no dash name fits *.md');
 	assert.equal(bash('sed -n 1p * .claude/guard.cjs'), 'allow', 'with no dash name the read passes');
 });
 

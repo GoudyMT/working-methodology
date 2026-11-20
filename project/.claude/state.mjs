@@ -35,6 +35,7 @@
 //   node .claude/state.mjs list import <file.md>              once: a markdown list into _List.jsonl, whole or not at all
 //   node .claude/state.mjs item add --from <file.json>        a new row, every label it owes included
 //   node .claude/state.mjs item set <id> <field> <value>      tag ("done 1.35.0"), caught-by, escaped, measured, origin ...
+//                                                             verify <file>: the result done needs (its RELEASE COMPLETE line)
 //   node .claude/state.mjs step set <step> release|carries|state <text>
 //   node .claude/state.mjs step rename <step or release> <new name>
 // render also writes the roadmap, counts and rows blocks (list:begin markers) in any of the project's markdown files.
@@ -54,6 +55,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import * as list from './list-data.mjs';
+import { retiredHits, retiredList, hitLine } from './retired-check.mjs';
 
 const STATE = '_State.json';
 // install project fills this in, so a caller cannot move the transcripts with CLAUDE_CONFIG_DIR (as owner-yes.cjs).
@@ -286,6 +288,16 @@ function listBlocks(s, { overwrite = false, check = false } = {}) {
 	if (l.why) return [l.why];
 	const v = list.views(l.rows, s.roadmap || []);
 	const empty = list.views([], []);
+	// The build 20 sweep: the rows view now shows open rows only, so a project that upgrades with a rows block and no
+	// archive block would lose sight of its done rows. Render adds an empty archive block after the rows block, once.
+	const has = (name) => files.some(([, t]) => { const at = list.blocksIn(t); return !at.why && at.blocks.some((b) => b.name === name); });
+	if (!check && has('rows') && !has('archive')) {
+		const k = files.findIndex(([, t]) => { const at = list.blocksIn(t); return !at.why && at.blocks.some((b) => b.name === 'rows'); });
+		const at = list.blocksIn(files[k][1]);
+		const end = at.blocks.find((b) => b.name === 'rows').end;
+		files[k] = [files[k][0], [...at.lines.slice(0, end + 1), '', list.listBegin('archive'), at.lines[end], ...at.lines.slice(end + 1)].join(at.crlf ? '\r\n' : '\n')];
+		write(files[k][0], files[k][1]);
+	}
 	for (const [rel, text] of files) {
 		const at = list.blocksIn(text);
 		if (at.why) { out.push(`${rel}: ${at.why}`); continue; }
@@ -361,6 +373,10 @@ function check() {
 			else if ((dec.rows || []).some((d) => d.supersedes === id)) notes.push(`${id} in ${rel} is superseded`);
 		}
 	}
+	// K153 (build 20): a working-memory line that keeps wording the kit has retired fails here, so the closeout catches it.
+	let retired = null;
+	try { retired = retiredList(); } catch (e) { faults.push(`.claude/retired-wording.json cannot be read (${clean(e.message).slice(0, 80)}): run install project`); }
+	if (retired) for (const h of retiredHits(ROOT, retired)) faults.push(hitLine(h));
 	return { faults, notes, decisions: rows.size };
 }
 
@@ -589,6 +605,16 @@ function main(argv) {
 		return;
 	}
 	if (cmd === 'list' || cmd === 'item') return listCommand(cmd, rest, { fail, usage });
+	// TC2 (build 20): the status board, one page written from the list data; a page in the project's own folder only.
+	if (cmd === 'board') {
+		const out = String(rest[0] || '');
+		const rel = path.relative(ROOT, path.resolve(ROOT, out));
+		if (!/\.html$/i.test(out) || /^[\\/]{2}/.test(out) || !rel || rel.startsWith('..') || path.isAbsolute(rel) || !realUnder(path.dirname(path.resolve(ROOT, out)))) return fail('board takes a page name ending .html inside this project: node .claude/state.mjs board <page.html>');
+		const l = list.loadList(io);
+		if (l.why) return fail(l.why);
+		write(rel, list.boardHtml(l.rows));
+		return console.log(`board written: ${rel.split(path.sep).join('/')}, ${l.rows.length} rows`);
+	}
 	const { state: s, why } = loadState();
 	if (cmd === 'step') {
 		const [verb, step, field, ...text] = rest;
@@ -675,6 +701,44 @@ function main(argv) {
 		console.log(`${rest[0]} done`);
 	}
 	saveState(s);
+}
+
+/**
+ * TC1 (build 20): done needs proof, on every path that writes a row (item set and item add; the review of this fix).
+ * The row names its verify result, a file in the project, which holds the release check's RELEASE COMPLETE line for
+ * the release the row ships in; a tag set alone is refused. Closed (shown not real) needs none.
+ *
+ * Args:
+ *     row: the row as it would be written
+ *     was: the row before, or null for a new one
+ *     named: true when the verify field itself is being set
+ *
+ * Returns:
+ *     the reason it is refused, or null
+ */
+function doneProof(row, was, named) {
+	const id = clean(row.id);
+	// The build 20 sweep: a link or a junction on the way leads outside the project, so the file is read only through
+	// inside(), as an import is.
+	if ((named || (row.tag === 'done' && row.verify)) && !inside(String(row.verify))) return `${id}: the verify result must be a plain file in this project`;
+	if (row.tag !== 'done' || (was && was.tag === 'done')) return null;
+	if (!row.verify) return `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
+	// The release the row ships in: a version anywhere in its at (1.46.0, v1.46.0, "build 20 (1.46.0)"). A row with no
+	// version (a project that ships no releases) needs only its verify file.
+	const m = String(row.at || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
+	if (!m) return null;
+	let text = '';
+	try { text = fs.readFileSync(inside(String(row.verify)), 'utf8'); } catch { return `${id}: its verify result ${clean(row.verify)} cannot be read`; }
+	const line = new RegExp(`RELEASE COMPLETE: every step of v?${m[1].replace(/\./g, '\\.')} `);
+	if (!line.test(text)) return `${id}: its verify result ${clean(row.verify)} has no "RELEASE COMPLETE: every step of v${m[1]}" line: run the release check and keep its output there`;
+	// The release check also logs each complete run in the git folder, which no tool writes: a typed line is not one.
+	// Read at the project's own .git folder, never where git says (GIT_DIR, a .git file or commondir could point it at a
+	// folder a tool wrote: the commit security reviews of this fix). A worktree checkout has no .git folder: mark the
+	// row done from the main checkout.
+	let logged = '';
+	try { if (fs.lstatSync(path.join(ROOT, '.git')).isDirectory()) logged = fs.readFileSync(path.join(ROOT, '.git', 'kit-release-checks.jsonl'), 'utf8'); } catch { /* named below */ }
+	const ran = logged.split('\n').some((l) => { try { return JSON.parse(l).version === m[1]; } catch { return false; } });
+	return ran ? null : `${id}: no complete release check of ${m[1]} is logged in this project's .git folder: run the release check here, from the main checkout`;
 }
 
 /** list [text] [--all] | list caught | list audit | list import <file.md> | item add --from <file.json> | item set <id> <field> <value> */
@@ -806,6 +870,8 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (r && typeof r.id === 'string' && Object.hasOwn(s.list_import, r.id)) return fail(`${clean(r.id)} was moved in by the import; change it with item set`);
 		const bad = list.refuse(r, l.rows, s.list_import, { added: true });
 		if (bad) return fail(clean(bad));
+		const proof = doneProof(r, null, Boolean(r.verify));
+		if (proof) return fail(proof);
 		write(list.LIST, list.serialize([...l.rows, r]));
 		return console.log(`${r.id} added${refreshLists()}`);
 	}
@@ -820,6 +886,8 @@ function listCommand(cmd, rest, { fail, usage }) {
 		if (why) return fail(why);
 		const bad = list.refuse(ch.row, l.rows.filter((_, k) => k !== at), s.list_import);
 		if (bad) return fail(clean(bad));
+		const proof = doneProof(ch.row, l.rows[at], field === 'verify');
+		if (proof) return fail(proof);
 		const rows = [...l.rows];
 		rows[at] = ch.row;
 		write(list.LIST, list.serialize(rows));

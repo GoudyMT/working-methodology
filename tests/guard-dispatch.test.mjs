@@ -27,7 +27,10 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 	}
 	if (userHooks) {
 		fs.mkdirSync(path.join(cfg, 'kit-hooks'));
+		// The older hooks are copied with no existence check, so a lost one fails here; the two build 20 hooks may be
+		// missing only where the test check runs a new test on the base commit, which then fails on its assertion.
 		for (const f of ['call-cap.cjs', 'canary.cjs', 'sweep-guard.cjs']) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
+		for (const f of ['test-scope.cjs', 'grounding.cjs']) if (fs.existsSync(path.resolve('user/kit-hooks', f))) fs.copyFileSync(path.resolve('user/kit-hooks', f), path.join(cfg, 'kit-hooks', f));
 	}
 	// Recorded as install user records them: since B23 a kit hook runs only with the bytes its stamp names.
 	if (oldHook || userHooks) {
@@ -232,4 +235,81 @@ test('a start a project guard refuses never reaches the sweep guard, so it spend
 	// Control: with nothing to read first, the same start reaches it.
 	start({ CLAUDE_PROJECT_DIR: kitTemp.makeTemp('bare-') });
 	assert.equal(fs.existsSync(marker), true, 'the sweep guard never ran, so the test proves nothing');
+});
+
+// why: guards the owner's starred rule "locally run only the changed test" (K150, build 20). Build 19 reran about 170
+// unchanged tests after each fix because only prose held it; the test-scope hook reads each local test run.
+test('a local test run reaches only the tests the branch changed; the rest waits for the owner', () => {
+	const run = setup({ userHooks: true });
+	const repo = kitTemp.makeTemp('scope-');
+	const g = (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(repo, 'tests'));
+	fs.writeFileSync(path.join(repo, 'tests', 'a.test.mjs'), 'a\n');
+	g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'base');
+	g('switch', '-qc', 'feat/x');
+	fs.writeFileSync(path.join(repo, 'tests', 'b.test.mjs'), 'b\n');
+	const at = (command, env = {}) => run('Bash', { command }, { cwd: repo }, { CI: '', ...env }).permissionDecision || 'allow';
+	for (const c of ['node --test tests/b.test.mjs', 'node --test --test-name-pattern "one row" tests/b.test.mjs', 'node scripts/test-run.mjs --changed --pick', 'git status', 'node --test tests/b.test.mjs; echo done']) assert.equal(at(c), 'allow', c);
+	for (const c of ['node --test', 'node --test tests/a.test.mjs', 'node --test tests/b.test.mjs tests/a.test.mjs', 'node scripts/test-run.mjs --changed', 'node scripts/test-run.mjs',
+		'npm test', 'npx vitest run', 'pytest -k one', 'node scripts/test-check.mjs origin/main', 'git status && X=1 node --test']) assert.equal(at(c), 'deny', c);
+	assert.match(run('Bash', { command: 'node --test' }, { cwd: repo }, { CI: '' }).permissionDecisionReason, /^Owner's yes needed: .*whole suite/);
+	// The build 20 sweep: other spellings of a whole-suite run, a run from another shell tool, a new test that imports
+	// an unchanged one, and --pick alone are held; a cd before the run and a changed go package are read right.
+	fs.mkdirSync(path.join(repo, 'pkg'));
+	fs.writeFileSync(path.join(repo, 'pkg', 'x_test.go'), 'package pkg\n');
+	fs.writeFileSync(path.join(repo, 'tests', 'c.test.mjs'), "import './a.test.mjs';\n");
+	for (const c of ['npx --yes vitest run', 'npm --prefix . test', 'npm run-script test', '(node --test)', 'bash -c "npm test"', 'node scripts/test-run.mjs --pick', 'node --test tests/c.test.mjs']) assert.equal(at(c), 'deny', c);
+	assert.equal(run('Monitor', { command: 'node --test' }, { cwd: repo }, { CI: '' }).permissionDecision, 'deny', 'a run from the Monitor tool');
+	assert.equal(run('PowerShell', { command: 'npm test' }, { cwd: repo }, { CI: '' }).permissionDecision, 'deny', 'a run from PowerShell');
+	for (const c of ['cd tests && node --test b.test.mjs', 'go test ./pkg/', 'go test ./pkg']) assert.equal(at(c), 'allow', c);
+	// The repo's own config names no program the check runs.
+	const mark = path.join(repo, 'fsmonitor-ran');
+	fs.writeFileSync(path.join(repo, 'fsm.cjs'), `require('fs').writeFileSync(${JSON.stringify(mark)}, 'x');\n`);
+	g('config', 'core.fsmonitor', `node "${path.join(repo, 'fsm.cjs').split(path.sep).join('/')}"`);
+	at('node --test tests/b.test.mjs');
+	assert.equal(fs.existsSync(mark), false, 'fsmonitor ran from the check');
+	g('config', '--unset', 'core.fsmonitor');
+	// CI runs everything; a throwaway clone on a tag (no branch) reproduces a bug with an unchanged test; a detached
+	// feature commit is read like its branch.
+	assert.equal(at('node --test', { CI: 'true' }), 'allow');
+	g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'b'); g('switch', '-q', '--detach');
+	assert.equal(at('node --test tests/a.test.mjs'), 'deny', 'detached, not on a tag');
+	g('tag', 'v1.0.0');
+	assert.equal(at('node --test tests/a.test.mjs'), 'allow');
+});
+
+// why: guards the owner's rule "never just item codes to pick from" (E18, build 20). The 60-second overview scored 0 of
+// 4 as rule text in 1.19.0, so the choice pop-up itself is checked: codes need plain words, and a plan asked for opens
+// with its overview.
+test('a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude', () => {
+	const run = setup({ userHooks: true });
+	const dir = kitTemp.makeTemp('ground-');
+	fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'docs', 'plans', 'bare.md'), '# Build plan\n\n## 1. Proof\n\nRows.\n');
+	fs.writeFileSync(path.join(dir, 'docs', 'plans', 'grounded.md'), '# Build plan\n\n## Overview\n\nWhat: the guards.\nFound: six false holds.\nDecided: the scope.\n\n## 1. Proof\n');
+	const ask = (question, options) => run('AskUserQuestion', { questions: [{ question, header: 'Pick', multiSelect: false, options }] }, { cwd: dir }).permissionDecision || 'allow';
+	const opt = (label, description) => ({ label, description });
+	// This build's own scope pop-up passes; the shape the owner asked to end is held.
+	assert.equal(ask('Build 20 scope: which slice do I build? All figures are estimates in plan quota, and CI runs on your PC runner at $0.', [
+		opt('Guards + checks (Recommended)', 'K150 local test runs limited to the changed test, about $6 and every project.'), opt('Everything', 'Adds TC1 done-needs-proof, a check that a row is marked done only with its proof.')]), 'allow');
+	for (const [q, o] of [['Working on M1, M2, M3: which?', [opt('Do M1', 'First one.'), opt('Do M2', 'Second one.')]],
+		['Which slice do I build next, given the measured cost of each one below?', [opt('K150 + K151', 'The guard and the meter, about $11 of quota together.'), opt('Neither', 'Build nothing now and wait for the next build.')]],
+		['Approve docs/plans/bare.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]]]) assert.equal(ask(q, o), 'deny', q);
+	assert.equal(ask('Approve docs/plans/grounded.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow');
+	// The commit security review: a plan path outside the project (a share, another drive, a climb out) is never read.
+	const outside = path.join(kitTemp.makeTemp('ground-out-'), 'plans');
+	fs.mkdirSync(outside);
+	fs.writeFileSync(path.join(outside, 'bare.md'), '# Plan\n');
+	for (const p of [path.join(outside, 'bare.md'), `../${path.basename(path.dirname(outside))}/plans/bare.md`, '\\\\host\\share\\plans\\bare.md']) assert.equal(ask(`Approve ${p} as written, with every step it names?`, [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', p);
+	assert.match(run('AskUserQuestion', { questions: [{ question: 'Working on M1, M2, M3: which?', options: [opt('Do M1', 'x')] }] }, { cwd: dir }).permissionDecisionReason, /^Held: this pop-up [^\n]*"M1"[^\n]*60-second overview/);
+	// The build 20 sweep: a model, chip or hash name is no item code, and a plan's fix is named in the plan file.
+	assert.equal(ask('Which model runs the check?', [opt('GPT4o', 'The hosted model.'), opt('H100', 'The rented chip.')]), 'allow');
+	assert.equal(ask('Keep the SHA256 check?', [opt('Yes', 'Keep it.'), opt('No', 'Drop it.')]), 'allow');
+	assert.match(run('AskUserQuestion', { questions: [{ question: 'Approve docs/plans/bare.md as written, with every step it names?', options: [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')] }] }, { cwd: dir }).permissionDecisionReason, /at the top of the plan file/);
+	// A link inside the project that points out of it is not opened.
+	const linked = path.join(dir, 'docs', 'plans', 'linked.md');
+	let linkMade = true;
+	try { fs.symlinkSync(path.join(outside, 'bare.md'), linked, 'file'); } catch { linkMade = false; }
+	if (linkMade) assert.equal(ask('Approve docs/plans/linked.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', 'a link out of the project');
 });

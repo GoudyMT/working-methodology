@@ -6,6 +6,9 @@
 //   node scripts/build-record.mjs check [<record>]       the record is whole, ASCII, and matches VERSION and CHANGELOG
 //   node scripts/build-record.mjs changelog [<record>]   prints the CHANGELOG entry
 //   node scripts/build-record.mjs pr [<record>]          prints the Standard PR body
+//   node scripts/build-record.mjs notes [<record>]       prints the release notes
+//   node scripts/build-record.mjs release [<record>] [<file>]  writes the notes to a file (default reports/) and
+//                                                        prints the one publish line, its title from the record
 // With no record named, the one for the version in VERSION is read.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -16,6 +19,9 @@ import { checkSection } from '../project/.claude/visuals.mjs';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const KINDS = { added: 'Added', changed: 'Changed', fixed: 'Fixed', security: 'Security', removed: 'Removed' };
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
+export const SIX_DIMENSIONS = ['Privacy', 'Supply chain', 'Legal', 'Code security', 'Gaps, scaling, test value', 'Alignment'];
+// The release's title, written as data with its notes (build 20: five of eleven titles were typed as a bare tag).
+export const releaseTitle = (rec) => `Methodology Kit v${rec.version}`;
 export const NO_TEST = 'no test: no real input';
 export const TEST_KEY = /^tests\/[^:\s]+\.test\.mjs::\S/;
 // A hand-typed claim that every fix or finding has its test (PR 49's line 1), which no check read.
@@ -105,6 +111,13 @@ export function problems(rec) {
 	}
 	need(!Array.isArray(rec.verification) || rec.verification.length <= 3, 'verification has more than 3 lines (the body adds the tests line; the audit shows 4)');
 	need(!s || (s.dimensions || []).some((d) => /^code security$/i.test(d.name || '')), 'sweep has no Code security dimension');
+	// Build 20 (the 1.45.0 record named four, so PR 58's review lost Supply chain and Legal): a Feature, First push or
+	// Launch gate review names all six dimensions (rule:sweep-tiers).
+	const deep = s && text(s.tier) && /^(Feature|First push|Launch gate)\b/.exec(s.tier);
+	if (deep && Array.isArray(s.dimensions)) {
+		const lack = SIX_DIMENSIONS.filter((n) => !s.dimensions.some((d) => d && String(d.name || '').toLowerCase().startsWith(n.split(',')[0].toLowerCase())));
+		need(!lack.length, `a ${deep[1]} review names all six dimensions: missing ${lack.join(', ')}`);
+	}
 	// K125: the Visuals section the script wrote, checked as the PR and release audits check it.
 	const v = rec.visuals;
 	if (v !== undefined) {
@@ -194,7 +207,7 @@ export function notes(rec) {
 	const bullet = (it) => `- ${it.text.trim()}`;
 	const projects = rec.items.filter((it) => it.reach !== 'kit');
 	const kit = rec.items.filter((it) => it.reach === 'kit');
-	const out = [`# Methodology Kit v${rec.version}`, '', rec.headline.trim(), '', `A ${rec.level} release.${rec.alignment ? ` ${rec.alignment.trim()}` : ''}`, ''];
+	const out = [`# ${releaseTitle(rec)}`, '', rec.headline.trim(), '', `A ${rec.level} release.${rec.alignment ? ` ${rec.alignment.trim()}` : ''}`, ''];
 	if (projects.length) out.push('## What changed for projects', '', ...projects.map(bullet), '');
 	if (kit.length) out.push('## What changed in the kit itself', '', 'These stay in the kit and are not installed into projects.', '', ...kit.map(bullet), '');
 	out.push('## Upgrading', '', (rec.upgrading || 'Run `install user` first, then `install project` in each project.').trim(), '');
@@ -248,10 +261,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	} else if (cmd === 'check') {
 		if (r.problems.length) { process.stderr.write(`Build record ${path.relative(root, r.at)}:\n${r.problems.map((p) => `    ${p}`).join('\n')}\n`); process.exitCode = 1; }
 		else process.stdout.write(`Build record ${path.relative(root, r.at)}: whole, and the changelog matches\n`);
+	} else if (cmd === 'release' && r.rec && !problems(r.rec).length) {
+		// Build 20: the notes file and the one publish line, title included, so neither is typed by hand; the changelog
+		// output is for CHANGELOG.md only (v1.45.0 went out with it as its notes).
+		const out = path.resolve(process.argv[4] || path.join(root, 'reports', `release-v${r.rec.version}.md`));
+		fs.mkdirSync(path.dirname(out), { recursive: true });
+		fs.writeFileSync(out, notes(r.rec));
+		process.stdout.write(`gh release create v${r.rec.version} --title "${releaseTitle(r.rec)}" --notes-file "${out}"\n`);
 	} else if (['changelog', 'pr', 'notes'].includes(cmd) && r.rec && !problems(r.rec).length) {
 		process.stdout.write({ changelog, pr: prBody, notes }[cmd](r.rec));
 	} else {
-		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>]\n');
+		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>] | release [<record>] [<file>]\n');
 		process.exitCode = r.rec ? 1 : 2;
 	}
 }

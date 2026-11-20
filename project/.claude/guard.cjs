@@ -4,8 +4,8 @@
 // for a Bash call (209 ms summed on Windows, workbench results/v2-prep B0).
 //   project guards (this folder): owner-proof, task-gate, guard-outward, guard-delete. One missing or broken refuses
 //     the call, with the fix: they hold the owner's acts, so they fail closed.
-//   agent-team checks (the Claude folder's kit-hooks): call-cap, canary, sweep-guard. One missing is skipped: they
-//     are slip-catchers for agent teams, and a broken user layer must never stop the session (teardown, "brick mode").
+//   user-layer checks (the Claude folder's kit-hooks): call-cap, canary, sweep-guard, test-scope, grounding. One missing is
+//     skipped: they are slip-catchers, and a broken user layer must never stop the session (teardown, "brick mode").
 // The answers are merged the way Claude Code merges several hooks: a refusal wins, then an ask, then an allow (only an
 // owner's pop-up yes allows); the added context of each is kept.
 // Usage: the launcher in the Claude config folder (kit-tools/kit-launch.cjs, V3 in 1.25.1) loads this file after it has
@@ -35,6 +35,10 @@ const USER = [
 	['call-cap.cjs', (t, input) => Boolean(input.agent_id)],
 	['canary.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
+	// K150 (build 20): a local test run reaches only the tests the branch changed, unless the owner's pop-up says yes.
+	['test-scope.cjs', (t) => SHELLS.includes(t)],
+	// E18 (build 20): a choice pop-up opens with a plain overview, never item codes alone.
+	['grounding.cjs', (t) => t === 'AskUserQuestion'],
 ];
 
 const STARTED = Date.now();
@@ -104,7 +108,14 @@ function answers(input) {
 			const text = bytes.toString('utf8');
 			// A user layer from before the one process (1.24.0) has hooks that read stdin and export no check: loading one
 			// would run it here with no input, so it runs as its own process, from the checked bytes (the 1.25.0 sweep).
-			if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, require(where).check(input)]);
+			if (file === 'test-scope.cjs') {
+				// Its hold is the owner's to lift: the pop-up yes for this exact command lets it run; a subagent hands it back.
+				const a = require(where).check(input);
+				if (a && a.kitWhat) {
+					const yes = require(path.join(__dirname, 'owner-yes.cjs'));
+					out.push([file, input.agent_id || !yes.ownerYes(input) ? refuse(yes.askText(a.kitWhat, input)) : null]);
+				}
+			} else if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, require(where).check(input)]);
 			else {
 				// The old-shape hooks share one budget well inside the launcher's 10 s, so a slow one is skipped rather than
 				// timing out the whole guard, which blocks the call (the 1.25.0 sweep, R4.2).

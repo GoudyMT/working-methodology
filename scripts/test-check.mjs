@@ -178,7 +178,7 @@ function run(dir, keys, env, left) {
 	return red;
 }
 
-export function check(root, base, { strict = false, slice = null, budget = null, record = null, windowsPart = false } = {}) {
+export function check(root, base, { strict = false, slice = null, budget = null, record = null, items = [], windowsPart = false } = {}) {
 	// K95 (build 12): a step that would run past the budget is not started or is stopped, and its tests are named.
 	const deadline = budget === null ? Infinity : Date.now() + budget;
 	const left = () => Math.max(0, deadline - Date.now());
@@ -263,6 +263,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// A slice (i/n) takes every n-th changed test, in key order, so a PR that changes many tests is checked on several
 	// machines at once instead of timing out on one (K13, the 1.27.0 build: 616 changed tests ran past 15 minutes).
 	const allKeys = new Set(newOrChanged.map((t) => t.key));
+	const allNew = newOrChanged.filter((t) => t.isNew && !t.old);
 	if (slice) newOrChanged = newOrChanged.sort((a, b) => (a.key < b.key ? -1 : 1)).filter((_, k) => k % slice.n === slice.i);
 	// The owner, 2026-11-18: what only Windows can show is measured on Windows. A test marked { windows: true } is
 	// skipped elsewhere, and a planted bug tagged "os": "win32" shows only there. Off Windows each is left to the Windows
@@ -494,6 +495,20 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			}
 		}
 	}
+	// A7 (K152, build 20; the owner's test standard): every new test is named in the build record, by the item or the
+	// sweep fix it serves, so the count of new tests is a choice the record shows. A medium or low fix goes as a row in an
+	// existing test; one that adds a new test is named unless it carries a reason (no existing test reaches its module).
+	// High, critical and security fixes may add one. Checked once, by the first slice.
+	if (record && !windowsPart && (!slice || slice.i === 0)) {
+		const named = new Set([...items.map((i) => i && i.test), ...record.map((f) => f && f.test)].filter(Boolean));
+		for (const t of allNew) if (!named.has(t.key)) note(t.key, 'A7', 'a new test the build record does not name: name it under the item or sweep fix it serves');
+		const newKeys = new Set(allNew.map((t) => t.key));
+		for (const f of record) {
+			// The build 20 sweep: only a security flag of true counts, and a reason is a few words, not one.
+			if (!newKeys.has(f.test) || f.security === true || /^(high|critical)$/i.test(String(f.severity)) || (typeof f.reason === 'string' && f.reason.trim().split(/\s+/).length >= 3)) continue;
+			note(f.id, 'A7', `a ${f.severity} fix adds a new test (${f.test}): make it a row in an existing test, or give the fix a reason`);
+		}
+	}
 	// A6: each new or changed test names what it guards in a why line of the kit's shape; A2 names an unknown rule.
 	// A comment-only change is checked once, by the first slice.
 	for (const t of windowsPart ? [] : [...newOrChanged, ...(!slice || slice.i === 0 ? retagged : [])]) {
@@ -526,16 +541,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 		// --record <build record>: the fix ledger whose tests get a verdict (K105).
 		const rt = args.indexOf('--record');
 		let record = null;
+		let items = [];
 		let bad = null;
 		if (rt >= 0) {
-			try { record = JSON.parse(fs.readFileSync(args[rt + 1] || '', 'utf8')).sweep.fixes; } catch { /* named below */ }
+			try { const j = JSON.parse(fs.readFileSync(args[rt + 1] || '', 'utf8')); record = j.sweep.fixes; items = Array.isArray(j.items) ? j.items : []; } catch { /* named below */ }
 			if (!Array.isArray(record)) bad = `test check: cannot read the fix ledger (sweep.fixes) in "${args[rt + 1] || ''}"`;
 		}
 		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' }
 			: bt >= 0 && secs === null ? { code: 2, text: 'test check: --budget takes whole seconds' }
 				: bad ? { code: 2, text: bad }
 					: args.includes('--windows') && process.platform !== 'win32' ? { code: 2, text: 'test check: --windows measures what only Windows shows, so it runs on Windows' }
-							: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record, windowsPart: args.includes('--windows') });
+							: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record, items, windowsPart: args.includes('--windows') });
 		process.stdout.write(r.text + '\n');
 		process.exitCode = r.code;
 	}
