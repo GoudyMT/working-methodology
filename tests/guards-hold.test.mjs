@@ -286,6 +286,49 @@ test('a loop over a glob of guard files that only reads, cmp against a guard and
 	} finally { fs.rmSync(path.join(proj, 'x .claude')); }
 });
 
+// K145 (build 19, held live on 1.44.0 from the workbench and the build 19 thread): the K138 read loop piped on to a
+// counter or a filter, and a PowerShell foreach that prints a header before each row of a kit script, were held as
+// protected-file writes. Each write twin stays held beside it. (A file search joined to a script under .claude/tools
+// stays held by design: that script is no kit script.)
+// why: guards rule:outward-acts (a held read is a false hold the owner pays for in every kit project)
+test('a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold', () => {
+	fs.writeFileSync(path.join(proj, '.claude', 'guard.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, '.claude', 'guard-read.cjs'), 'x\n');
+	fs.writeFileSync(path.join(proj, '.claude', 'state.mjs'), 'x\n');
+	const P = proj.replace(/\\/g, '/');
+	const ps = (command) => decide('PowerShell', { command });
+	for (const c of ['for f in .claude/guard*.cjs; do sed -n 1,1p "$f"; done | wc -l', 'for f in .claude/*.cjs; do head -1 "$f"; done | head -5',
+		`cd ${P} && for f in .claude/guard*.cjs; do sed -n 1,1p "$f"; done | wc -l`, 'for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | sort | grep -c x']) assert.equal(bash(c), 'allow', c);
+	for (const c of [`cd ${proj}; foreach($i in 'O4','O2'){ "==== $i"; node .claude/state.mjs item $i | Out-String -Width 2000 }`]) assert.equal(ps(c), 'allow', c);
+	// The build 19 sweep: a plain cd before a read loop is read from that folder only when the pipe after it reads too;
+	// a cd joined by ; or a pushd keeps the strict reading.
+	for (const c of [`cd ${P} && for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | tee .claude/guard.cjs`, `cd ${P}; for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | wc -l`,
+		`pushd ${P} && for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | wc -l`]) assert.equal(bash(c), 'deny', c);
+	for (const c of ['for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | tee .claude/guard.cjs', 'for f in .claude/guard*.cjs; do sed -i 1d "$f"; done | wc -l',
+		'for f in .claude/guard*.cjs; do cat "$f"; done | xargs rm', 'for f in .claude/guard*.cjs; do cat "$f"; done | sh', 'for f in .claude/guard*.cjs; do sed -n 1p "$f"; done | wc -l > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+	for (const c of [`foreach($i in 'a','b'){ "x" | Set-Content .claude/guard.cjs }`, `foreach($i in 'a','b'){ node .claude/state.mjs item $i | Out-File .claude/guard.cjs }`,
+		'Get-ChildItem .claude -Recurse -Filter state.mjs | Remove-Item', '"$(Remove-Item .claude/guard.cjs)"; node .claude/state.mjs item O4',
+		'"x" > .claude/guard.cjs; node .claude/state.mjs item O4']) assert.equal(ps(c), 'deny', c);
+	// A loop held for how its glob is read says so; on 1.44.0 a guard write held this way named the session transcripts.
+	const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: `cd ${P} && for f in .claude/guard*.cjs; do sed -i 1d "$f"; done | wc -l` }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+	const why = JSON.parse(r.stdout).hookSpecificOutput;
+	assert.equal(why.permissionDecision, 'deny');
+	assert.doesNotMatch(why.permissionDecisionReason, /transcripts/);
+	// The build 19 sweep: the hold stays never by a tool, so no owner's yes can lift it on a second reading.
+	assert.match(why.permissionDecisionReason, /^Never by a tool: this for loop reads its glob/); // pin: 1 (guard.cjs reads the prefix)
+	// The build 19 sweep: a wildcard that matches a file named -i hands sed its in-place option, so a read writes a
+	// guard; the class predates the loop reads, and every spelling of it is held while such a name is there.
+	for (const d of [proj, path.join(proj, '.claude')]) fs.writeFileSync(path.join(d, '-i'), 'x\n');
+	try {
+		// The commit security review: a quote beside the wildcard and a bracket class are wildcards too.
+		for (const c of ['sed -n 1p * .claude/guard.cjs', 'for f in *; do sed -n 1p "$f" .claude/guard.cjs; done', 'cd .claude && for f in *; do sed -n 1p "$f" guard.cjs; done',
+			'sed -n 1p ""* .claude/guard.cjs', 'sed -n 1p [-]i .claude/guard.cjs', 'shopt -s extglob; sed -n 1p @(-i|x) .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+		// The install check's false hold V1: a wildcard into a folder that is not there stays as written.
+		for (const c of ['if [ -f x ]; then cat x; fi', 'ls *.md', 'grep -n "a*b" a.txt', 'npm test -- nowhere/*']) assert.equal(bash(c), 'allow', c);
+	} finally { for (const d of [proj, path.join(proj, '.claude')]) fs.rmSync(path.join(d, '-i')); }
+	assert.equal(bash('sed -n 1p * .claude/guard.cjs'), 'allow', 'with no dash name the read passes');
+});
+
 // K117 rest (build 17, held live on 1.42.0 from the workbench): a kit script given a quoted note with a bracket in it,
 // a read loop followed by a sed line range, and three PowerShell reads (a variable set from a read, a Test-Path guard
 // in a loop, a property of a bracketed read) were held as writes to a protected file. Quoted text holds no code but

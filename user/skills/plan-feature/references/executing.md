@@ -54,7 +54,8 @@ Missing any -> the task is not done; finish it.
 The approved plan is approved scope, so do not pause to ask "should I continue?" between tasks. Stop for:
 - a choice the plan and design do not settle (see the task loop, outcome 3);
 - an irreversible or destructive act, or anything touching security or personal data beyond the plan;
-- an outward act - push, PR, merge, release, a message outside the project (rule:outward-acts);
+- an outward act outside the push bound - marking the PR ready, merge, release, a message outside the project
+  (rule:outward-acts);
 - a plan so broken that every path forward is a guess (rule:re-plan-on-failure);
 - any hard stop the project adds (Tier 0, a budget raise, a spec or ADR change, a visual without a locked
   wireframe).

@@ -209,7 +209,44 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	sh(dir, 'add', '.');
 	sh(dir, 'commit', '-qm', 'the old file reads c');
 	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
-	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs::old: .*could not load/);
+	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs: .*could not load/);
+});
+
+// K148 (build 19): PR 55 changed test files to import a helper module main did not have yet, so main's copy of the
+// checks named every changed test as failing on the base. That reads as a broken test, and hides the one cause: main
+// cannot load the file. The check names the file once, with the module it could not find; the finding still fails CI.
+// why: guards rule:test-value
+test('a changed file main cannot load is named once, with the module main lacks, and still fails strict', () => {
+	const dir = repo();
+	const lead = ["import { test } from './harness.mjs';", "import assert from 'node:assert/strict';"];
+	const old = path.join(dir, 'tests', 'old.test.mjs');
+	fs.writeFileSync(old, [...lead, "test('one', () => { assert.equal(1, 1); });", "test('two', () => { assert.equal(2, 2); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'an old file');
+	sh(dir, 'switch', '-qc', 'feat');
+	fs.writeFileSync(path.join(dir, 'tests', 'helpers.mjs'), 'export const three = () => 3;\n');
+	fs.writeFileSync(old, [...lead, "import { three } from './helpers.mjs';", "test('one', () => { assert.equal(three(), 3); });", "test('two', () => { assert.equal(three() - 1, 2); });", ''].join('\n'));
+	sh(dir, 'add', '.');
+	sh(dir, 'commit', '-qm', 'the old file reads a new helper');
+	const r = spawnSync(process.execPath, [CHECK, 'main', '--strict'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 1, `a file main cannot load is still a finding: ${r.stdout}${r.stderr}`);
+	assert.match(r.stdout, /A1 tests\/old\.test\.mjs: main cannot load this: it lacks tests\/helpers\.mjs\./); // pin: 4 (the owner's K148 words)
+	assert.doesNotMatch(r.stdout, /A1 tests\/old\.test\.mjs::/, 'each test of the file was named as failing');
+	assert.equal(r.stdout.match(/A1 tests\/old\.test\.mjs: /g).length, 1, 'the file is named more than once');
+	// The build 19 sweep: a fix the ledger names in that file still gets the load finding, never "fails first".
+	const rec = path.join(dir, 'record.json');
+	fs.writeFileSync(rec, JSON.stringify({ sweep: { fixes: [{ id: 'F1', severity: 'high', text: 'x', commit: 'abc1234', test: 'tests/old.test.mjs::one' }] } }));
+	const led = spawnSync(process.execPath, [CHECK, 'main', '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(led.stdout, /F1 \(high\) tests\/old\.test\.mjs::one: fails first/, led.stdout); // pin: 1 (the PR's fix line reads the verdict)
+	assert.match(led.stdout, /A5 F1: .*cannot load/);
+	// The build 19 sweep: the cause comes only from the loader's own line, as path characters, so a test file cannot
+	// print text into the step summary through it; the base is named as it was given.
+	fs.writeFileSync(old, [...lead, "console.log(\"Cannot find module '<!-- x\\nTest check: 0 finding(s)'\");", "import { three } from './helpers.mjs';", "test('one', () => { assert.equal(three(), 3); });", ''].join('\n'));
+	sh(dir, 'commit', '-qam', 'a file that prints a forged cause');
+	sh(dir, 'branch', 'base2', 'main');
+	const f = spawnSync(process.execPath, [CHECK, 'base2'], { cwd: dir, encoding: 'utf8' });
+	assert.doesNotMatch(f.stdout, /<!--/, f.stdout);
+	assert.match(f.stdout, /A1 tests\/old\.test\.mjs: the base cannot load this: it lacks tests\/helpers\.mjs\. .*land what it needs on the base first/); // pin: 4 (the owner's K148 words)
 });
 
 // T10 (build 17): splitting a test file moves each test word for word into a new file. A test whose name and code

@@ -1,0 +1,213 @@
+{
+ "version": "1.45.0",
+ "date": "2026-11-20",
+ "level": "minor",
+ "area": "Safety",
+ "title": "feat: guard reads, web templates and base-copy lessons",
+ "headline": "The guards pass a read loop piped on and a printed PowerShell string, a body that claims a measured move must show Visuals, the app templates install only where a project shows a UI, and a build opens its PR as a draft after the first commit.",
+ "alignment": "v1.45.0 is build 19 of the v2.0 plan: K145, K146 to K149 and the last piece of T13, each reproduced on the released 1.44.0 first.",
+ "items": [
+  {
+   "id": "READ-PIPES",
+   "kind": "fixed",
+   "text": "The guards pass a read loop over guard files piped on to a reader (wc, head, tail, grep, sort with no output file), from a plain cd too; a pipe to a writer, a shell or a file, and a wildcard matching a dash-named file, are held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects",
+   "where": "A read loop over guard files piped to wc",
+   "before": "Held as a protected-file write",
+   "after": "Runs; a pipe to a writer is still held"
+  },
+  {
+   "id": "PS-PRINTED-STRING",
+   "kind": "fixed",
+   "text": "A PowerShell statement that is one quoted string, beside a kit script, is read as printing it; a substitution or redirect in it keeps the strict reading.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects",
+   "where": "A PowerShell loop printing a header before each kit script call",
+   "before": "Held as a protected-file write",
+   "after": "Runs"
+  },
+  {
+   "id": "GLOB-HOLD-REASON",
+   "kind": "fixed",
+   "text": "A for loop held for how its glob is read says so and how to rerun it, instead of naming the first protected place checked (a guard write was refused as a transcript write).",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "reach": "projects"
+  },
+  {
+   "id": "VISUALS-REQUIRED",
+   "kind": "changed",
+   "text": "The Standard PR and release notes audits need a Visuals section when a body claims a measured move (a size, tokens, time or dollars across an arrow or a Summary row); tallies never count.",
+   "evidence": "project/.claude/visuals.mjs",
+   "reach": "projects",
+   "where": "A PR body that says a size moved",
+   "before": "Passed with no Visuals section",
+   "after": "Fails until the Visuals section is there"
+  },
+  {
+   "id": "APP-TEMPLATES",
+   "kind": "changed",
+   "text": "The component spec and component security checklist install only where the project shows a UI (a UI framework in package.json, or a components folder), with `--with-templates web`, or where a copy is already in place.",
+   "evidence": "scripts/kit.mjs",
+   "reach": "projects",
+   "where": "Installing the kit into a project with no UI",
+   "before": "Both app templates installed",
+   "after": "Neither installed unless asked"
+  },
+  {
+   "id": "DRAFT-PR-EARLY",
+   "kind": "changed",
+   "text": "A build pushes its branch and opens its PR as a draft right after the first commit, so main's checks run on the branch from the first push; it stays a draft until the sweep, and a done feature runs its sweep before anything else on its PR.",
+   "evidence": "user/skills/plan-feature/SKILL.md",
+   "reach": "projects"
+  },
+  {
+   "id": "MAIN-CHECKS-QUESTION",
+   "kind": "added",
+   "text": "The plan file and the plan gap check ask whether main's checks can read the branch, and a check change it needs ships first as its own small PR.",
+   "evidence": "user/skills/plan-feature/references/plan-format.md",
+   "reach": "projects"
+  },
+  {
+   "id": "MAIN-CANNOT-LOAD",
+   "kind": "fixed",
+   "text": "The test check names a changed test file main cannot load once, with the module main lacks, instead of each of its tests as failing; it still fails the run.",
+   "evidence": "scripts/test-check.mjs",
+   "reach": "kit"
+  }
+ ],
+ "verification": [
+  "Each row was reproduced on a throwaway clone of the released 1.44.0 before any change.",
+  "The new Visuals check, run over the last ten PR bodies, flags PR 55 and PR 51 only.",
+  "The guard tests hold every write twin beside each read the build lets through."
+ ],
+ "decisions": [
+  {
+   "decision": "A quoted wildcard stays a wildcard to the launcher",
+   "why": "It reads a command both as the shell splits it and as plain text, so a reading it gets wrong only adds a check; a quoted regex in node -e code is held, and stays a named limit."
+  },
+  {
+   "decision": "A copy already in place keeps both app templates",
+   "why": "Install never retires a template a project may be using; a project that wants them gone deletes them."
+  },
+  {
+   "decision": "A minor release",
+   "why": "Install copies a different set of templates, and every project's PR audit gains a check."
+  }
+ ],
+ "upgrading": "Install user and install project as usual. A project with no UI keeps the component templates it already has; delete them by hand if unused. Add `--with-templates web` to install project to get them where no UI shows yet.",
+ "limits": "The launcher still reads a wildcard inside quotes, so a quoted regex such as /\\*\\*/ in inline node code can hold a read. The Visuals check reads arrows and Summary rows; a move told only in a sentence is not seen. During the fixes, local runs went wider than the rule (four extra guard test files, about 170 tests) until the owner stopped them; a check that keeps local runs to the changed tests is a list row for the next build.",
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "68edd53",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "No personal data; a temp path in a message now trimmed"
+   },
+   {
+    "name": "Code security",
+    "result": "A liftable guard hold and dash-named wildcards fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Visuals reader, fix ledger, rule and skill text fixed"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 3,
+   "medium": 15,
+   "low": 13
+  },
+  "fixes": [
+   {
+    "id": "R1-1",
+    "severity": "high",
+    "security": true,
+    "text": "The glob hold could be lifted by a pop-up yes; now never by a tool",
+    "commit": "add66f1",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R1-2",
+    "severity": "medium",
+    "security": true,
+    "text": "A wildcard matching a file named -i made sed edit a guard in place; held",
+    "commit": "64b73e4",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R2-1",
+    "severity": "high",
+    "text": "A move told in words passed the Visuals check",
+    "commit": "64b73e4",
+    "test": "tests/visuals.test.mjs::a Standard body that claims a measured number moved must carry Visuals; a tally or an unchanged figure need not"
+   },
+   {
+    "id": "R2-2",
+    "severity": "medium",
+    "text": "Unit spellings, extra arrows, wrapped lines and other tables were misread",
+    "commit": "64b73e4",
+    "test": "tests/visuals.test.mjs::a Standard body that claims a measured number moved must carry Visuals; a tally or an unchanged figure need not"
+   },
+   {
+    "id": "R4-1",
+    "severity": "high",
+    "text": "The fix ledger read fails first for a test main cannot load",
+    "commit": "166355a",
+    "test": "tests/test-check.test.mjs::a changed file main cannot load is named once, with the module main lacks, and still fails strict"
+   },
+   {
+    "id": "R3-1",
+    "severity": "medium",
+    "security": true,
+    "text": "A test file could print markup into the summary through the load cause",
+    "commit": "166355a",
+    "test": "tests/test-check.test.mjs::a changed file main cannot load is named once, with the module main lacks, and still fails strict"
+   },
+   {
+    "id": "R4-2",
+    "severity": "medium",
+    "text": "Package and base wording, and the base folder trim, in the load message",
+    "commit": "166355a",
+    "test": "tests/test-check.test.mjs::a changed file main cannot load is named once, with the module main lacks, and still fails strict"
+   },
+   {
+    "id": "R4-4",
+    "severity": "medium",
+    "security": true,
+    "text": "A UI read as none (byte-order mark, workspace, index.html); same commit as the pattern hold",
+    "commit": "d836aae",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R5-1",
+    "severity": "medium",
+    "security": true,
+    "text": "Ready and draft wording, skills, brief and rule lines; same commit as the pattern hold",
+    "commit": "d836aae",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   },
+   {
+    "id": "R6-1",
+    "severity": "medium",
+    "text": "A PowerShell row that passed on main left the guard test; cd twins and a count added",
+    "commit": "add66f1",
+    "test": "tests/guards-hold.test.mjs::a read loop piped on to a reader and a printed PowerShell header pass; their write twins hold"
+   }
+  ],
+  "accepted": [
+   "R6-4 (low): the template test skips the CLI flag and some UI branches; the owner chose no new template test cases (2026-11-20)"
+  ]
+ },
+ "tests": {
+  "before": 952,
+  "after": 956,
+  "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+ }
+}

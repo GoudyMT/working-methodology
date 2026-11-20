@@ -202,7 +202,33 @@ const releaseCheckout = (kit, tag) => `git -C "${toPosix(kit)}" fetch --tags; gi
  * Returns:
  *     { entries: [{ key, src, dest }], stampPath, memoryDir }
  */
-function plan({ kit, home, target, projectDir }) {
+// T13 (build 19): the two templates that assume an app with a client and HTML. They install where the project shows a
+// UI, on request (--with-templates web), or where a copy is already in place, so no install retires one a project uses.
+const APP_TEMPLATES = ['_Templates/_Component Spec Template.md', '_Templates/_Component Security Checklist.md'];
+const UI_PACKAGES = /^(react|react-dom|preact|vue|nuxt|svelte|@sveltejs\/kit|solid-js|@angular\/core|next|astro|lit|@remix-run\/react|ember-source|electron|react-native|expo|gatsby|@builder\.io\/qwik|@tauri-apps\/api|alpinejs|htmx\.org|jquery)$/;
+// The build 19 sweep: a package.json is read only as a plain file under 1 MB (a link to a device would hang install),
+// with a byte-order mark taken off (PowerShell 5.1 writes one); a workspace's own package.json one level down
+// (apps/*, packages/*) and a root index.html count too.
+function uiPackage(file) {
+  try {
+    const st = fs.lstatSync(file);
+    if (!st.isFile() || st.size > 1024 * 1024) return false;
+    const pkg = JSON.parse(fs.readFileSync(file, 'utf8').replace(/^\uFEFF/, ''));
+    return ['dependencies', 'devDependencies', 'peerDependencies'].some((k) => Object.keys((pkg && pkg[k]) || {}).some((n) => UI_PACKAGES.test(n)));
+  } catch { return false; }
+}
+function showsUi(projectDir) {
+  for (const d of ['components', 'src/components', 'app/components', 'index.html']) if (fs.existsSync(path.join(projectDir, d))) return true;
+  if (uiPackage(path.join(projectDir, 'package.json'))) return true;
+  for (const w of ['apps', 'packages']) {
+    let names = [];
+    try { names = fs.readdirSync(path.join(projectDir, w)).slice(0, 64); } catch { continue; }
+    if (names.some((n) => uiPackage(path.join(projectDir, w, n, 'package.json')))) return true;
+  }
+  return false;
+}
+
+function plan({ kit, home, target, projectDir, withTemplates = [] }) {
   const entries = [];
   const add = (srcRoot, destRoot, prefix = '') => {
     for (const src of walk(srcRoot)) {
@@ -217,6 +243,8 @@ function plan({ kit, home, target, projectDir }) {
   if (target !== 'project' || !projectDir) throw new Error('target must be "user" or "project <folder>"');
   const memoryDir = path.join(home, 'projects', projectSlug(projectDir), 'memory');
   add(path.join(kit, 'project'), projectDir);
+  const app = withTemplates.includes('web') || showsUi(projectDir) || APP_TEMPLATES.some((t) => fs.existsSync(path.join(projectDir, t)));
+  if (!app) entries.splice(0, entries.length, ...entries.filter((e) => !APP_TEMPLATES.includes(e.key)));
   add(path.join(kit, 'memory'), memoryDir, 'memory/');
   return { entries, stampPath: path.join(projectDir, STAMP_PROJECT), memoryDir };
 }
@@ -2310,6 +2338,8 @@ function main(argv) {
   const merged = mergedAt >= 0 ? String(argv[mergedAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   const acceptAt = argv.indexOf('--accept-host');
   const acceptHost = acceptAt >= 0 ? String(argv[acceptAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
+  const withAt = argv.indexOf('--with-templates');
+  const withTemplates = withAt >= 0 ? String(argv[withAt + 1] || '').split(',').map((s) => s.trim()).filter(Boolean) : [];
   // Accepting a changed host file or folder list lifts a hold the kit set on it, so it is the owner's own act, in
   // their own terminal: a shell an AI tool started carries its marker, and is refused here whatever the command's
   // spelling was (the review of the recorded folder list: a guard that matches the flag's text can be spelled round).
@@ -2337,7 +2367,7 @@ function main(argv) {
       return;
     }
     const release = { release: !rel.problems.length, describe: rel.describe, dirty: rel.dirty, tree: rel.tree };
-    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost });
+    const r = install({ kit, home, target, projectDir, dryRun, force, overlay, merged, release, acceptHost, withTemplates });
     console.log(`${dryRun ? '[dry run] ' : ''}Kit ${r.version} -> ${target}${projectDir ? ' ' + projectDir : ` (Claude config folder: ${toPosix(home)})`}`);
     if (!release.release) console.log(`    Unreleased build ${rel.describe || 'with no git history'} (--unreleased): for a throwaway test install only. Status shows it as unreleased.`);
     for (const f of r.hostOwned) console.log(`    host-owned: ${f} (the kit's CLAUDE.md is in CLAUDE.local.md)`);
@@ -2347,6 +2377,9 @@ function main(argv) {
     for (const f of r.threeWayMerged || []) console.log(`    ${dryRun ? "would merge" : "merged"} with your edits: ${f} (your lines and the kit's changes, line by line${dryRun ? "" : "; your copy is in the backup folder"})`);
     for (const f of r.replaced) console.log(`    replaced ${f}`);
     for (const f of r.retired) console.log(`    retired ${f} (a copy is in the backup folder)`);
+    // T13: say when the app templates were left out, and name a --with-templates value install does not know.
+    for (const w of withTemplates.filter((x) => x !== 'web')) console.log(`    --with-templates ${w}: not a template set install knows (only web); nothing added for it`);
+    if (target === 'project' && !withTemplates.includes('web') && !showsUi(projectDir) && !APP_TEMPLATES.some((t) => fs.existsSync(path.join(projectDir, t)))) console.log('    app templates left out: no UI found; add --with-templates web to install them');
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
     if (target === 'project' && !dryRun) for (const l of doubleRunLines(projectDir)) console.log(`    ${l}`);
@@ -2431,7 +2464,7 @@ function main(argv) {
     console.log(hits.length ? `${hits.length} hit(s)` : 'Scrub clean');
     process.exitCode = hits.length ? 1 : 0;
   } else {
-    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>] [--unreleased]');
+    console.log('Usage: node scripts/kit.mjs install user | install project <folder> [--dry-run] [--force] [--overlay] [--merged <file>,<file>] [--with-templates web] [--unreleased]');
     console.log('       node scripts/kit.mjs fold-back user | fold-back project <folder>');
     console.log('       node scripts/kit.mjs bump major|minor|patch "<note>"');
     console.log('       node scripts/kit.mjs snapshot | restore <name>');

@@ -35,6 +35,36 @@ test('install user writes rendered files into ~/.claude and stamps the version',
   assert.deepEqual(r.skipped, []);
 });
 
+// T13 (build 19): the component spec and component security checklist assume an app with a client and HTML; they
+// installed into every project, the workbench too, and were never used there. They install where the project shows
+// a UI (a UI framework in package.json, or a components folder), on request, or where a copy is already in place.
+// why: catches the two app templates installed into a project with no UI
+test('install project adds the two app templates only to a UI project, on request, or where they already are', () => {
+  const { kit, home, proj } = makeKit();
+  const T = ['_Templates/_Component Spec Template.md', '_Templates/_Component Security Checklist.md'];
+  fs.mkdirSync(path.join(kit, 'project', '_Templates'));
+  for (const t of [...T, '_Templates/_PR Body Template.md']) fs.writeFileSync(path.join(kit, 'project', t), 'template\n');
+  const has = (dir) => T.map((t) => fs.existsSync(path.join(dir, t)));
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(has(proj), [false, false], 'a project with no UI got the app templates');
+  assert.ok(fs.existsSync(path.join(proj, '_Templates', '_PR Body Template.md')), 'the other templates still install');
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(has(proj), [false, false], 'a second install added them');
+  const make = (name, setup) => { const d = path.join(path.dirname(proj), name); fs.mkdirSync(d); setup(d); return d; };
+  const react = make('ui-pkg', (d) => fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ dependencies: { react: '^18.3.1' } })));
+  const comps = make('ui-dir', (d) => fs.mkdirSync(path.join(d, 'src', 'components'), { recursive: true }));
+  const asked = make('asked', () => {});
+  const kept = make('kept', (d) => { fs.mkdirSync(path.join(d, '_Templates')); fs.writeFileSync(path.join(d, T[0]), 'template\n'); });
+  const server = make('server', (d) => fs.writeFileSync(path.join(d, 'package.json'), JSON.stringify({ dependencies: { express: '^4.0.0' } })));
+  for (const d of [react, comps, kept, server]) install({ kit, home, target: 'project', projectDir: d });
+  install({ kit, home, target: 'project', projectDir: asked, withTemplates: ['web'] });
+  assert.deepEqual(has(react), [true, true], 'a React project');
+  assert.deepEqual(has(comps), [true, true], 'a components folder');
+  assert.deepEqual(has(asked), [true, true], '--with-templates web');
+  assert.deepEqual(has(kept), [true, true], 'a project that already had one keeps it and gets its pair');
+  assert.deepEqual(has(server), [false, false], 'a server with no UI framework');
+});
+
 // K141: the kit repo is public, so the owner's profile is read from the Claude folder, never from the kit folder.
 // why: catches the owner's profile being read from the public kit repo, or lost without a word when missing
 test('install user takes the owner profile from the Claude folder, never the kit folder, and says when there is none', () => {

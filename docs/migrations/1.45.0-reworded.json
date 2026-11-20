@@ -1,0 +1,16 @@
+{
+  "lines": [
+    {
+      "before": "- **Per-component checklist:** `_Templates/_Component Security Checklist.md` completed BEFORE a component is complete. Why: security reviewed last is security bolted on.",
+      "after": "- **Per-component checklist (app projects):** `_Templates/_Component Security Checklist.md`, installed where the project shows a UI, with `--with-templates web`, or where a copy is already in place, completed BEFORE a component is complete. Why: security reviewed last is security bolted on."
+    },
+    {
+      "before": "and _Component Security Checklist.md respected? (5) Each new test guards a real use and can fail?",
+      "after": "and, in an app project, _Component Security Checklist.md respected? (5) Each new test guards a real use and can fail?"
+    },
+    {
+      "before": "**Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version.",
+      "after": "**Triggers:** (1) **before any substantive PR to `main`** (new behaviour or surface, security / privacy / legal relevance, a sub-project; when unsure, swarm; an early draft PR waits as a draft until the sweep) - a sweep at its tier (rule:sweep-tiers), the Pre-PR Deep Sweep for a feature; a chore / docs / one-line PR gets the triage tier; (2) **mid-build** when an arc adds a runtime dependency or external data flow; (3) a **launch-gate sweep** of EVERY surface before any public major version."
+    }
+  ]
+}

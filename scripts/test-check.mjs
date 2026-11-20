@@ -132,6 +132,7 @@ export function tests(text) {
 function run(dir, keys, env, left) {
 	const red = new Map();
 	red.seen = new Set();
+	red.why = new Map();
 	let cut = false;
 	const { NODE_TEST_CONTEXT: _c, KIT_SHARD: _s, KIT_MAP_DIR: _m, KIT_MAP_TEST: _t, KIT_RUN_AT: _a, ...base } = process.env;
 	// TAP writes a Windows path with each backslash doubled.
@@ -154,8 +155,22 @@ function run(dir, keys, env, left) {
 		for (const m of out.matchAll(/^(?:not ok|ok) \d+ - (.*?)(?: # .*)?$/gm)) if (!isFile(m[1])) red.seen.add(`${f}::${plain(m[1])}`);
 		// Each top-level "not ok <n> - <name>" with its YAML block up to the next result line.
 		for (const m of out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?\n([\s\S]*?)(?=^(?:ok|not ok) \d+ - |^1\.\.|(?![\s\S]))/gm)) {
-			// A file that could not load (an import the base lacks), or ended non-zero, fails as a whole under its own path.
-			if (isFile(m[1])) red.set(`file:${f}`, false);
+			// A file that could not load (an import the base lacks), or ended non-zero, fails as a whole under its own path;
+			// K148 keeps the module it could not find, so the check names that cause once.
+			if (isFile(m[1])) {
+				red.set(`file:${f}`, false);
+				// Node writes the load error as comment lines before the file's result, not inside its block.
+				// The build 19 sweep: only the loader's own line counts (ERR_MODULE_NOT_FOUND ... imported from), on one line, as
+				// path characters, so a test file cannot print markup or a forged line into the step summary through it; the
+				// copy's folder is taken off as written and as the file system resolves it.
+				const miss = `${out}\n${r.stderr || ''}`.match(/ERR_MODULE_NOT_FOUND\]?:? Cannot find (module|package) '([\w./\\@~:+-]+)' imported from /);
+				if (miss) {
+					let real = dir;
+					try { real = fs.realpathSync.native(dir); } catch { /* as given */ }
+					const name = [dir, real].reduce((s, d) => s.replace(new RegExp(`^${slash(d).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'i'), ''), slash(miss[2]));
+					red.why.set(f, miss[1] === 'package' ? `the package ${name}` : name);
+				}
+			}
 			else red.set(`${f}::${plain(m[1])}`, /ERR_ASSERTION|AssertionError/.test(m[2]));
 		}
 	}
@@ -294,7 +309,15 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 				// K105: a new test in a file the base does not have, with no result of its own because that file cannot load
 				// there, fails first; the fix ledger still names it (a fix's test should load on the code it fixes). A file the
 				// base has that cannot load proves nothing about the test (N12: still named).
-				else if (!names.length && red.has(`file:${t.file}`)) { if (t.newFile) t.loadOnly = true; else note(t.key, 'A1', 'fails on the base commit, but not on an assertion (its file could not load there)'); }
+				// K148: a file the base has that cannot load there is one cause, named once by its file, not a failed test each.
+				else if (!names.length && red.has(`file:${t.file}`)) {
+					if (t.newFile) t.loadOnly = true;
+					else if (!findings.some((x) => x.key === t.file && x.rule === 'A1')) {
+						const who = /(^|\/)main$/.test(base) ? 'main' : 'the base';
+						const need = red.why.get(t.file);
+						note(t.file, 'A1', `${who} cannot load this: ${need ? `it lacks ${need}` : 'the file ended before its tests ran'}. Its tests are not measured there (the file could not load); land what it needs on ${who} first, as its own small PR`);
+					}
+				}
 				else if (!reds.length) pending.push(t);
 				else if (!reds.some((n) => red.get(n))) note(t.key, 'A1', 'fails on the base commit, but not on an assertion (a crash or a missing file)');
 			}
@@ -379,7 +402,8 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (!mine.has(f.test)) continue;
 			// A fix's test runs against the code it fixes, so a test that is red there only because its file cannot load
 			// proves nothing about the fix (the build 14 sweep: a file made unloadable on purpose read "fails first").
-			const a1 = findings.find((x) => x.rule === 'A1' && x.key === f.test);
+			// K148 keys a file's load finding by the file (the build 19 sweep: looked up by test alone it read "fails first").
+			const a1 = findings.find((x) => x.rule === 'A1' && (x.key === f.test || x.key === f.test.slice(0, f.test.indexOf('::'))));
 			const t = mine.get(f.test);
 			let why = a1 ? a1.text : t.loadOnly ? 'fails on the base commit only because its file cannot load there' : null;
 			let ok = t.proof || 'fails first';

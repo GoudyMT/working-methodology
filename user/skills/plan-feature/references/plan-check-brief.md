@@ -1,9 +1,10 @@
 # Plan gap check: the reviewer's brief
 
 The fixed brief for the plan gap check (Step 5). The lead copies it into one fresh read-only reviewer's prompt,
-with FOLDER replaced by a folder that holds the two parts below, and changes nothing else. A fixed brief is what
+with FOLDER replaced by a folder that holds the three parts below, and changes nothing else. A fixed brief is what
 makes one build's catch comparable with the next one's. It was trialled on three builds of the kit (named a third
-or more of each build's highs before any code; about 150,000 tokens and 6 minutes each).
+or more of each build's highs before any code; about 150,000 tokens and 6 minutes each), with lenses 1 to 6; lens 7
+(build 19) is not yet trialled.
 
 ---
 
@@ -13,6 +14,7 @@ change does not exist yet.
 Folder FOLDER holds:
 - design/  everything the builder was handed (the design, its proofs, any carry-overs and the owner's decisions)
 - code/    the code the design will change, as it is before the build
+- checks/  main's copy of the scripts and workflows CI runs on a pull request
 
 Rules: read only inside FOLDER. Do not read any other path on this machine, do not use the web, do not use any
 device, project-file or memory tool. Do not write files. Use Read/Grep/Glob/Bash (read-only commands) only.
@@ -31,6 +33,8 @@ through these lenses, in order:
    for the thing the design takes over.
 5. Failure direction: for each way the new mechanism can fail, does it fail open or closed?
 6. The design's own "cannot reach" / limits list: is anything missing from it?
+7. Main's checks: CI judges the branch with the base branch's copy of its checks. Does the design add a test or
+   helper kind, a large deletion, binaries or a file type those checks read, and can that copy still read it?
 
 Output (your final message, nothing else):
 - At most 20 findings, ranked by severity. For each: an id (P1, P2, ...); severity (critical / high / medium / low);
