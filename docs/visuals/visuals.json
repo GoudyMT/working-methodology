@@ -20,11 +20,11 @@
       "lead": true,
       "tokens": {
         "before": 8500,
-        "after": 7600,
+        "after": 6900,
         "source": "session context report, to 0.1k (docs/evals/results/b21-start-load.md)",
         "measuredAt": [
           "ec73f1d",
-          "e7a71ce"
+          "bf6c9a0"
         ]
       }
     }
