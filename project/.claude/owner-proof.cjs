@@ -31,6 +31,8 @@ let homeNow = null;
 // It moves with each cd the guard follows, and is used only while its own parts are the parts in hand, so a stale
 // or mistaken one is never read from: the lower-case parts are then all there is.
 let startNow = null;
+// K158 (build 21): set only to ask whether a hold came from a neighbour alone (see heldBeside below).
+let neighbourBlind = false;
 // The two sides of the compare are kept between calls: a long command asks for every word (the 98 KB command spent
 // most of its owner-proof time here, the main CI on the PR 37 merge).
 const cwdKeys = new WeakMap();
@@ -65,14 +67,17 @@ const COPY_OPTIONS = /^(-[rRpafvni]+|--recursive|--preserve|--archive|--force|--
 // Programs whose quoted words are messages, not paths: a commit message or a PR body may name the file.
 const MESSAGES = new Set(['git', 'gh']);
 // git subcommands that read or stage a file and write none of the files they name.
-const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-files', 'grep', 'cat-file', 'check-ignore', 'commit']);
+const GIT_READS = new Set(['add', 'diff', 'log', 'show', 'status', 'blame', 'ls-files', 'ls-tree', 'grep', 'cat-file', 'check-ignore', 'commit']);
 const slash = (p) => p.split('\\').join('/').toLowerCase();
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const REASON = 'Never by a tool: the session transcripts and kit-owner.json hold the owner\'s answers, so they are protected files. Read them; Claude Code and the owner write them.';
 const GLOB_REASON = 'Never by a tool: this for loop reads its glob where the guard cannot follow it (a folder change first and a body that writes, IFS, or an unquoted name a file splits). Quote "$f", or run the loop from the folder, or one command per file.';
 const DASH_REASON = 'Never by a tool: a wildcard here matches a file whose name starts with a dash, which the shell hands on as an option (sed -i edits in place). Rename that file, or name the files you mean.';
 const DASH_UNSURE = 'Never by a tool: part of this command is more than the guard reads as bash does (a folder change it cannot follow, a here-document, an extended pattern, a glob option, or text run as shell), so it cannot rule out a wildcard matching a file whose name starts with a dash. Run the wildcard from a plainly named folder, or name the files you mean.';
-const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
+// K158 (build 21): the read itself is plain, but another command beside it (one the guard cannot read as plain, a
+// definition, a substitution) may change what it runs, so it is held; on 1.46.1 this named the guard files instead.
+const BESIDE_REASON = 'Never by a tool: this names a protected file (the kit\'s guards, git hooks, .git/config, the settings or the session transcripts) beside another command the guard cannot read as plain, which may change what the read runs. Run the read as a command of its own.';
+const GUARD_REASON ='Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install. Read them, or ask the owner to reinstall the kit.';
 const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
@@ -503,7 +508,8 @@ function bashWords(c) {
 	const heredocs = [];
 	const bodies = [];
 	const put =(ch, q) => { (word ||= []).push([ch, q]); };
-	const end = () => { if (word) cmds[cmds.length - 1].push(word); word = null; };
+	let hereString = false;
+	const end = () => { if (word) { cmds[cmds.length - 1].push(word); if (hereString) { bodies.push(wordText(word)); hereString = false; } } word = null; };
 	const next = () => { end(); if (cmds[cmds.length - 1].length) cmds.push([]); };
 	// The end of a substitution that starts at i (just past "$(" or the opening backquote), and whether a wildcard is in it.
 	// K159 (build 21): a quoted or escaped ) or backquote inside does not end it; a double-quoted part that holds a
@@ -562,6 +568,8 @@ function bashWords(c) {
 			i += m[0].length - 1;
 			continue;
 		}
+		// A here-string (<<< 'text') hands its word to the command as input, as a here-document does (K159).
+		if (ch === '<' && c[i + 1] === '<' && c[i + 2] === '<') { end(); hereString = true; i += 2; continue; }
 		if (ch === '<' || ch === '>') { end(); continue; }
 		if (ch === '#' && !word) { while (i + 1 < c.length && c[i + 1] !== '\n') i++; continue; }
 		if (ch === '\\') { if (i + 1 < c.length && c[i + 1] !== '\n') put(c[++i], true); else i++; continue; }
@@ -626,12 +634,15 @@ function dashGlob(command, tool, start) {
 		}
 		if (names.some((n) => /^(cd|pushd|popd|chdir)$/.test(n))) cdBefore = true;
 	}
-	// K159 (build 21): a here-document body is text only to a reader; one a shell runs (bash <<E, cat <<E | sh, a
-	// variable that may name a shell) is a command of its own, read the same way.
-	if (read.bodies.some((b) => /[*?[]/.test(b)) && read.cmds.some((cmd) => cmd.some((w) => { const n = wordText(w); return /(^|\/)(ba|z|da|k|mk|po|y)?sh(\.exe)?$/.test(n) || /^(eval|source|\.|busybox|toybox)$/.test(n) || n.startsWith('$'); }))) {
+	// K159 (build 21): a here-document or here-string is text only to a plain reader; fed to anything else (bash <<E,
+	// cat <<E | sh, xargs, a variable) it may run as a command of its own, so it is read the same way. A list of plain
+	// readers, not of shells: the commit security review of this fix found shells such a list would miss.
+	if (read.bodies.some((b) => /[*?[]/.test(b)) && !read.cmds.every((cmd) => /^(cat|head|tail|grep|egrep|fgrep|wc|sort|uniq|cut|tr|tee|jq|diff|cmp|base64|md5sum|sha256sum)$/.test(wordText(cmd[0] || [])))) {
 		if (cdBefore) return 'unsure';
 		for (const b of read.bodies) { const inner = dashGlob(b, tool, start); if (inner) return inner; }
 	}
+	// A program named by a wildcard may be anything, a shell included.
+	if (/[*?[]/.test(c) && read.cmds.some((cmd) => cmd[0] && wordGlob(cmd[0]))) return 'unsure';
 	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
 	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
 	const cdSeen = words.filter((w) => /^(cd|pushd|popd|chdir)$/.test(wordText(w))).length;
@@ -932,7 +943,8 @@ function shellWritesFrom(command, tool, start, names) {
 		// K117 (1.42.0): echo prints its words and defines nothing (its redirect is read below like any other).
 		// K145 (build 19): a PowerShell statement that is one quoted string ("==== $i") prints it, as Write-Output does; a
 		// substitution in it ($(...)) keeps the strict reading through the check below.
-		return (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
+		// K158 (build 21): true, false, : and pwd print or return and define nothing.
+		return (onPath && /^(true|false|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
@@ -941,7 +953,7 @@ function shellWritesFrom(command, tool, start, names) {
 	const substituted = /[`]|\$\(|<\(/.test(text);
 	// $_, ${_} and !$ hand the last word of the command before to the next one, whatever that command is.
 	const defined = DEFINITION.test(text) || /\$\{?_(?!\w)|!\$/.test(String(command || ''));
-	const definesBefore = (s) => defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value))))));
+	const definesBefore = (s) => !neighbourBlind && (defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value)))))));
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
@@ -1165,10 +1177,12 @@ function answer(input) {
 		if (globSplits(t.command, input.tool_name, cwd)) return deny(GLOB_REASON);
 		const dash = dashGlob(t.command, input.tool_name, cwd);
 		if (dash) return deny(dash === 'dash' ? DASH_REASON : DASH_UNSURE);
-		if (shellWrites(t.command, input.tool_name, cwd)) return deny(REASON);
+		// K158 (build 21): a hold that goes away when the commands beside the read are taken as plain came from them alone.
+		const heldBeside = (names) => { neighbourBlind = true; try { return !shellWrites(t.command, input.tool_name, cwd, names); } finally { neighbourBlind = false; } };
+		if (shellWrites(t.command, input.tool_name, cwd)) return deny(heldBeside(proofNames) ? BESIDE_REASON : REASON);
 		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(GUARD_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(listShape))) return deny(LIST_REASON);
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(heldBeside(shapeNames(guardShape)) ? BESIDE_REASON : GUARD_REASON);
+		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(listShape))) return deny(heldBeside(shapeNames(listShape)) ? BESIDE_REASON : LIST_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
 	}
 	return null;

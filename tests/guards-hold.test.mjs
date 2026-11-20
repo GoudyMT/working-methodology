@@ -316,6 +316,13 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	assert.doesNotMatch(why.permissionDecisionReason, /transcripts/);
 	// The build 19 sweep: the hold stays never by a tool, so no owner's yes can lift it on a second reading.
 	assert.match(why.permissionDecisionReason, /^Never by a tool: this for loop reads its glob/); // pin: 1 (guard.cjs reads the prefix)
+	// K158 (build 21, held live on 1.46.1 as guard writes): true and pwd define nothing, so a read beside them passes;
+	// a read beside a command the guard cannot read as plain stays held, and the reason says so, not "a guard write".
+	const reason = (tool_name, command) => JSON.parse(spawnSync(process.execPath, HOOKS, { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input: { command }, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } }).stdout || '{"hookSpecificOutput":{}}').hookSpecificOutput.permissionDecisionReason || '';
+	for (const c of ['ls ~/.claude/skills/*/SKILL.md; true', 'ls .claude/*.cjs | head -1; pwd', 'cat .claude/guard.cjs; :', 'git ls-tree HEAD .claude/guard.cjs']) assert.equal(bash(c), 'allow', c);
+	for (const [t, c] of [['PowerShell', 'Get-Content .git/kit-release-checks.jsonl -Tail 1; gh release view v1.46.1'], ['PowerShell', '$o = "results/b.txt"; node .claude/state.mjs board $o'], ['Bash', 'cat .claude/guard.cjs; gh pr view 1']]) assert.match(reason(t, c), /^Never by a tool: .*beside another command/, c);
+	for (const c of ['cat .claude/guard.cjs; true > .claude/guard.cjs', 'pwd > .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+	assert.match(reason('Bash', 'cp x .claude/guard.cjs; gh pr view 1'), /kit's guards, the git hooks/, 'a write beside another command keeps the write reason');
 	// The build 19 sweep: a wildcard that matches a file named -i hands sed its in-place option, so a read writes a
 	// guard; the class predates the loop reads, and every spelling of it is held while such a name is there.
 	for (const d of [proj, path.join(proj, '.claude')]) fs.writeFileSync(path.join(d, '-i'), 'x\n');
@@ -354,7 +361,7 @@ test('a read loop piped on to a reader and a printed PowerShell header pass; the
 	// of its own, and a quote or an escaped backquote inside a substitution does not end it.
 	fs.writeFileSync(path.join(clean, '-n.txt'), 'x\n');
 	try {
-		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt"]) assert.match(dashWhy(c), /starts with a dash|more than the guard reads/, c);
+		for (const c of ["bash <<'E'\ncat *.txt\nE", 'bash <<E\ncat *.txt\nE', "cat <<'E' | sh\ncat *.txt\nE", "cat $(echo ')') *.txt", 'cat $(echo ")") *.txt', "cat `echo '\\`'` *.txt", "rbash <<'E'\ncat *.txt\nE", "bash <<< 'cat *.txt'", "cat <<'E' | xargs -0 sh -c\ncat *.txt\nE"]) assert.match(dashWhy(c), /starts with a dash|more than the guard reads/, c);
 		for (const c of ["cat <<'E'\ncat *.txt\nE", "cat $(echo ')') a.txt"]) assert.equal(at(c), 'allow', c);
 	} finally { fs.rmSync(path.join(clean, '-n.txt')); }
 	assert.equal(at('cat <<E\nhello'), 'allow', 'a here-document with no end and no wildcard hides none');
