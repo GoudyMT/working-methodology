@@ -143,7 +143,8 @@ Why: the plan is the set of decisions a builder cannot make alone; written down,
 
 ## Step 7 - Execute the plan
 
-Branch first (rule:branching). Then:
+Branch first (rule:branching). After the first commit, push the branch and open its PR as a draft (the push bound,
+no yes needed), so main's checks run on the branch from its first push, not first at the end. Then:
 - **Agent team** (the plan's Execution approach says so): the agent-team-build skill; the owner's plan
   approval starts it.
 - **Inline** (the lead builds): [references/executing.md](references/executing.md) - setup, the task loop, the
@@ -154,7 +155,7 @@ cover follow the Self-Correction Boundary in rule:loop-workflow-mode (self-corre
 choices; it applies here too), and
 every stopping point ends with the rundown and `Decided alone` (rule:delegated-decisions). After the last task:
 the parking-lot triage (rule:parking-lot), the sweep at the plan's tier (the pre-pr-sweep skill), findings
-through rule:finding-pipeline. Push, PR and merge are the owner's (rule:outward-acts).
+through rule:finding-pipeline. Marking the PR ready follows the sweep; merge is the owner's (rule:outward-acts).
 
 **Done when:** every Progress line is ticked against shown evidence, the full gate is green
 (rule:ci-gate), and the sweep report exists.

@@ -31,6 +31,8 @@ through these lenses, in order:
    for the thing the design takes over.
 5. Failure direction: for each way the new mechanism can fail, does it fail open or closed?
 6. The design's own "cannot reach" / limits list: is anything missing from it?
+7. Main's checks: CI judges the branch with the base branch's copy of its checks. Does the design add a test or
+   helper kind, a large deletion, binaries or a file type those checks read, and can that copy still read it?
 
 Output (your final message, nothing else):
 - At most 20 findings, ranked by severity. For each: an id (P1, P2, ...); severity (critical / high / medium / low);

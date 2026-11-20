@@ -45,6 +45,11 @@ expected time and cost (rule:patterns-and-dispatch).>
 ## Sweep tier
 <feature | fix | triage | ..., and the modifiers it hits (rule:sweep-tiers).>
 
+## Can main's checks read this branch?
+<Yes, or the check change it needs. CI judges a PR with main's copy of the checks, so a new test or helper kind,
+a large deletion, binaries or a file type the checks read can fail there for a reason the branch cannot fix. Name
+the check change and ship it first, as its own small PR.>
+
 ## Parking Lot
 <empty at the start; one line per out-of-scope idea (rule:parking-lot)>
 

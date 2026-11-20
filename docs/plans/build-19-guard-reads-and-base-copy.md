@@ -44,6 +44,13 @@ adds a new test or helper kind, a large deletion, binaries or a file type the ch
 ships it first as a small PR. K148: when the base copy cannot load a test file the base already has, test-check says
 "main cannot load this" and names the missing import, not a failed test.
 
+## 4b. K125 gap: a claimed move needs Visuals (added by the owner's pop-up 2026-11-20)
+
+PR 55 claimed the repo lost about 13 MB with no Visuals section, and the audit passed it: the K125 design's presence
+check (a body that claims a measured number moved must carry Visuals, and each such number must sit in its table)
+was never built. The Standard PR audit and the release notes audit gain it, test-first, with PR 55's body as the
+failing case. Tallies (tests, findings, mutants) stay outside it, as the design says.
+
 ## 5. Sweep, recall, PR
 
 Order: 4 (the draft PR rule applies to this build: the PR opens as a draft after the first commit), 2, 3, then one
