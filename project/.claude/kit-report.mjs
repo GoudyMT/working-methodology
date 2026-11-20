@@ -88,6 +88,9 @@ export function draft(args, projectDir, now = new Date()) {
 	return { record: { id: idOf(record), ...record } };
 }
 
+/** The whole SHA-256 of a report as it was sent. */
+const fullHash = (record) => crypto.createHash('sha256').update(JSON.stringify(record)).digest('hex');
+
 /** A report's id: its day and a hash of everything else in it, so the id names the text. */
 export function idOf(record) {
 	const { id: _id, ...rest } = record || {};
@@ -103,12 +106,13 @@ export function send(args, { home, projectDir, now } = {}) {
 	const why = scrub(d.record, knownWords(projectDir, home));
 	if (why.length) return { code: 1, out: ['Refused by the scrub; nothing was sent. Reword it so it names the kit, never the project:', ...why.map((w) => `  ${w}`)] };
 	fs.mkdirSync(p.inbox, { recursive: true });
-	fs.writeFileSync(path.join(p.inbox, `${d.record.id}.json`), `${JSON.stringify(d.record, null, 1)}\n`);
+	// Never over a report already there (wx).
+	try { fs.writeFileSync(path.join(p.inbox, `${d.record.id}.json`), `${JSON.stringify(d.record, null, 1)}\n`, { flag: 'wx' }); } catch { return { code: 1, out: [`${d.record.id} is already in the inbox; nothing was changed.`] }; }
 	append(p.sent, { id: d.record.id, title: d.record.title, area: d.record.area, created: d.record.created });
 	const out = [`Sent ${d.record.id} to the kit's inbox on this PC.`];
 	const route = issueRoute(home);
 	if (route) {
-		append(p.issues, { id: d.record.id, state: 'held', at: d.record.created });
+		append(p.issues, { id: d.record.id, state: 'held', at: d.record.created, sha256: fullHash(d.record) });
 		out.push(`It also goes to ${route.repo} as an issue once the owner reads it: ask the owner with the pop-up, showing the report, to run node .claude/kit-report.mjs release ${d.record.id}`);
 	}
 	return { code: 0, out };
@@ -156,7 +160,8 @@ export function release(id, { home, projectDir, sessionYes = yes.sessionYes } = 
 	if (!record) return { code: 1, out: [`${id} is in neither the inbox nor taken.`] };
 	// The owner's yes names the id, and the id is a hash of the report's text: a report changed after the owner read it is
 	// no longer the one the yes was for (the commit security review).
-	if (idOf(record) !== id) return { code: 1, out: [`${id} no longer matches its own text, so it is not the report the owner read; nothing was sent.`] };
+	// The whole digest kept when it was sent, not the short one in the id (the second review).
+	if (idOf(record) !== id || fullHash(record) !== state.sha256) return { code: 1, out: [`${id} no longer matches its own text, so it is not the report the owner read; nothing was sent.`] };
 	const why = scrub(record, knownWords(projectDir, home));
 	if (why.length) return { code: 1, out: ['Refused by the scrub; nothing was sent:', ...why.map((w) => `  ${w}`)] };
 	const r = github('POST', `/repos/${route.repo}/issues`, { title: `[${record.area}] ${record.title}`, body: JSON.stringify(record) });
