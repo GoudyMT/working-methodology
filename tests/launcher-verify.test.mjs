@@ -185,3 +185,20 @@ test('the launcher holds a kit tool run from another Claude folder, and names th
 	fs.rmSync(path.join(real, 'kit-install.json'));
 	assert.equal(call('node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json'), null);
 });
+
+// The build 22 sweep: the settings line ran a bare sh, found first on the session's PATH, so a planted sh could answer for
+// every guard. It names /bin/sh, and a line that still says sh is not the wired one.
+// why: catches a settings line that runs a sh found on the session's PATH
+test('the settings line runs /bin/sh, and a bare sh line is not the wired one', () => {
+	const { file, L } = launcher();
+	const node = process.execPath;
+	let line = '';
+	assert.doesNotThrow(() => { line = L.launchCommand(file, node); }, 'launchCommand builds the line');
+	assert.ok(line.startsWith("NODE_OPTIONS= /bin/sh '"), line);
+	const settings = (command) => ({ hooks: {
+		PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command, onFailure: 'block' }] }],
+		ConfigChange: [{ hooks: [{ type: 'command', command: L.launchCommand(file, node, 'config-change') }] }],
+	} });
+	assert.equal(L.launcherWired(settings(line), file, node), true, 'the line install writes is wired');
+	assert.equal(L.launcherWired(settings(line.replace('/bin/sh', 'sh')), file, node), false, 'a bare sh is not');
+});

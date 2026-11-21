@@ -939,7 +939,7 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 		'ConfigChange narrowed to skills': (u) => { launch(u.hooks.ConfigChange).matcher = 'skills'; },
 		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/(kit-start\.sh' )'[^']*'/, "$1'/tmp/node'"); },
 		// R7.2: the line without the start script, or without its fallback, is not the line install wrote.
-		'the start script skipped': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/sh '[^']*kit-start\.sh' /, '').replace(/ \|\| printf .*$/, ''); },
+		'the start script skipped': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/\/bin\/sh '[^']*kit-start\.sh' /, '').replace(/ \|\| printf .*$/, ''); },
 		'the fallback dropped': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/ \|\| printf .*$/, ''); },
 	};
 	for (const [name, change] of Object.entries(breakers)) {

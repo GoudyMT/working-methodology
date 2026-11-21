@@ -1003,9 +1003,10 @@ function launchCommand(launcher, nodePath, mode = '') {
 	// ConfigChange runs the launcher directly: its block keeps the old settings, so a start failure there blocks safely.
 	if (mode) return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))} ${mode}`;
 	// R7.2 (the owner's pick, 2026-11-21): every tool call goes through kit-start.sh beside the launcher, which limits a
-	// slow start, retries once and names the cause; the printf answers if the script cannot run at all.
+	// slow start, retries once and names the cause; the printf answers if the script cannot run at all. /bin/sh by its
+	// full path (Git Bash on Windows has it too), so a sh planted first on the session's PATH cannot answer for the guards.
 	const start = posix(path.join(path.dirname(launcher), 'kit-start.sh'));
-	return `NODE_OPTIONS= sh ${shq(start)} ${shq(shellDir(nodePath))} ${shq(posix(launcher))} || printf '%s' ${shq(START_FALLBACK)}`;
+	return `NODE_OPTIONS= /bin/sh ${shq(start)} ${shq(shellDir(nodePath))} ${shq(posix(launcher))} || printf '%s' ${shq(START_FALLBACK)}`;
 }
 
 /** The node install user recorded beside this launcher, or null. */
