@@ -6,7 +6,7 @@
 // the fence is a guard, not the only check (the checker and the lead's integration still review the unit).
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const safeSpawn = require('./safe-spawn.cjs');
 
 // The real path, through any symlink or junction: git reports the worktree's real path, so the target must be
 // compared the same way. A file not yet written resolves through its nearest existing folder.
@@ -27,7 +27,8 @@ function main() {
 	const file = input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path);
 	if (!file) return 0;
 	const cwd = input.cwd || process.cwd();
-	const top = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+	// git from node's own folder, never the worktree (build 23).
+	const top = safeSpawn.gitRead(cwd, ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 	if (top.status !== 0) return 0;
 	const root = real(path.resolve(top.stdout.trim()));
 	const target = real(path.resolve(cwd, file));
@@ -36,7 +37,7 @@ function main() {
 		process.stderr.write(`Blocked: ${target} is outside this builder's worktree (${root}). Edit only files of your unit, in your worktree.\n`);
 		return 2;
 	}
-	const gitPath = spawnSync('git', ['-C', root, 'rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' });
+	const gitPath = safeSpawn.gitRead(root, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' });
 	const listFile = gitPath.status === 0 ? gitPath.stdout.trim() : '';
 	if (listFile && fs.existsSync(listFile)) {
 		const allowed = fs.readFileSync(listFile, 'utf8').split(/\r?\n/).map(norm).filter(Boolean);

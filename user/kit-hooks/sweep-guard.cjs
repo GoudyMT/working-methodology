@@ -14,12 +14,13 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { spawnSync } = require('child_process');
+const safeSpawn = require('./safe-spawn.cjs');
 
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 // A log line as an entry: valid JSON that is no object (null, a number, a list) is a hand edit, as a broken line is.
 const entry = (line) => { const v = JSON.parse(line); if (!v || typeof v !== 'object' || Array.isArray(v)) throw new Error('not an entry'); return v; };
-const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+// git from node's own folder, never the project (build 23).
+const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // HEAD per folder, read once per call: the log only grows, and its lines share a few folders.
 const heads = new Map();
 const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', 'HEAD').stdout.trim()); return heads.get(d); };

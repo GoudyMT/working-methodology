@@ -12,9 +12,10 @@
 // lead's review still stand behind it.
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const safeSpawn = require('./safe-spawn.cjs');
 
-const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+// git from node's own folder, never the project (build 23).
+const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
 // around the phrase (bold, a quote, a heading) and hyphens inside it then compare the same; the space padding
 // keeps a word boundary on both sides.

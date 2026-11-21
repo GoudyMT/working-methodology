@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const safeSpawn = require('./safe-spawn.cjs');
 
 // A worktree's state: the file list plus a hash of every change's content, so a second edit to a file that was
 // already changed still shows. Ignored files are left out: the unit tests a checker may run write caches there,
@@ -14,7 +14,8 @@ const { spawnSync } = require('child_process');
 // hiding its tracks: it fails open on a git error, and a checker that never ran a command (so no snapshot exists)
 // cannot have changed a file, since its role has no Edit or Write.
 function status(cwd) {
-	const git = (...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 });
+	// git from node's own folder, never the worktree (build 23).
+	const git = (...a) => safeSpawn.gitRead(cwd, a, { encoding: 'buffer', maxBuffer: 256 * 1024 * 1024 });
 	const list = git('status', '--porcelain');
 	if (list.status !== 0) return null;
 	const hash = require('crypto').createHash('sha256').update(git('diff', 'HEAD', '--binary').stdout || '');
@@ -27,7 +28,7 @@ function status(cwd) {
 
 // Every worktree of the repo, since a checker reads the builder's worktree, which may not be its own cwd.
 function trees(cwd) {
-	const wt = spawnSync('git', ['-C', cwd, 'worktree', 'list', '--porcelain'], { encoding: 'utf8' });
+	const wt = safeSpawn.gitRead(cwd, ['worktree', 'list', '--porcelain'], { encoding: 'utf8' });
 	const list = wt.status === 0 ? [...wt.stdout.matchAll(/^worktree (.+)$/gm)].map((m) => m[1].trim()) : [cwd];
 	const out = {};
 	for (const t of list) {

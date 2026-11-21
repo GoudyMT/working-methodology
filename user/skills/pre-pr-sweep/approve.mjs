@@ -42,7 +42,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
@@ -52,6 +51,8 @@ const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
 const { sessionYes, unquotedYes, sessionGap } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
+// git starts from node's own folder, never the repo, through the helper the PR audits use (build 23).
+const safeSpawn = createRequire(import.meta.url)('../../kit-tools/audits/safe-spawn.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
@@ -230,10 +231,10 @@ const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const has = (name) => args.includes(name);
 const contractFile = args[0] && !args[0].startsWith('--') ? path.resolve(args[0]) : null;
-const git = (...a) => spawnSync('git', ['-C', contractFile ? path.dirname(contractFile) : process.cwd(), ...a], { encoding: 'utf8' });
-// K218: git for the base copy of the rules, run from node's own folder with fsmonitor off (a planted git.exe in the
-// project folder, or a hook program in its config, never runs).
-const baseGit = (...a) => spawnSync('git', ['-C', contractFile ? path.dirname(contractFile) : process.cwd(), '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', cwd: path.dirname(process.execPath), env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
+const git = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8' });
+// K218: git for the base copy of the rules, through the safe-spawn read (node's own folder, fsmonitor and every fetch
+// protocol off), with lazy fetch off too: a planted git.exe or a hook program in the repo config never runs.
+const baseGit = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8', env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 
 // The log: one per repo, in its git folder.
@@ -391,11 +392,11 @@ const PATCH_MAX = 200;
 // Null when git cannot say: the caller treats that as unknown, never as "no earlier sweep".
 function branchPatches(base) {
 	if (!base) return [];
-	const big = { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 };
-	const diff = spawnSync('git', ['-C', path.dirname(contractFile), 'log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`], big);
+	const big = { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024, timeout: 600000 };
+	const diff = safeSpawn.gitRead(path.dirname(contractFile), ['log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`], big);
 	if (diff.status !== 0 || diff.error) return null;
 	if (!diff.stdout) return [];
-	const ids = spawnSync('git', ['patch-id', '--stable'], { ...big, input: diff.stdout });
+	const ids = safeSpawn.tool('git', ['patch-id', '--stable'], { ...big, input: diff.stdout });
 	return ids.status === 0 && !ids.error ? ids.stdout.split('\n').map((l) => l.split(' ')[0]).filter(Boolean) : null;
 }
 
@@ -1106,7 +1107,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		let ran = (parsed.find((e) => e && e.cwd) || {}).cwd;
 		while (ran && !fs.existsSync(ran) && path.dirname(ran) !== ran) ran = path.dirname(ran);
 		const { GIT_DIR: _d, GIT_COMMON_DIR: _c, ...env } = process.env;
-		const at = ran && spawnSync('git', ['-C', ran, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
+		const at = ran && safeSpawn.gitRead(ran, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
 		if (at && at.status === 0 && path.resolve(at.stdout.trim()).toLowerCase() !== path.dirname(LOG).toLowerCase()) { bad.push(`${id} (ran in another repo)`); return null; }
 		// The brief names its sweep and role, so a transcript counts only for this contract and in its role's place.
 		const asked = (parsed.find((e) => e && e.message && e.message.role === 'user') || {}).message;

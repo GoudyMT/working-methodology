@@ -155,6 +155,11 @@ test('the live notes run the installed release-notes audit, in a temp folder tha
 	const home = kitTemp.makeTemp('rc-home-');
 	fs.mkdirSync(path.join(home, 'skills', 'release-notes'), { recursive: true });
 	fs.copyFileSync(path.resolve('user/skills/release-notes/audit.mjs'), path.join(home, 'skills', 'release-notes', 'audit.mjs'));
+	// The audit starts git through the helper install lays beside the PR audits (build 23); missing only on a base from before it.
+	if (fs.existsSync(path.resolve('user/kit-tools/audits/safe-spawn.cjs'))) {
+		fs.mkdirSync(path.join(home, 'kit-tools', 'audits'), { recursive: true });
+		fs.copyFileSync(path.resolve('user/kit-tools/audits/safe-spawn.cjs'), path.join(home, 'kit-tools', 'audits', 'safe-spawn.cjs'));
+	}
 	const before = process.env.CLAUDE_CONFIG_DIR;
 	process.env.CLAUDE_CONFIG_DIR = home;
 	try {
