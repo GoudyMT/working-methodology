@@ -139,8 +139,26 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   g(bare, 'init', '-q', '--bare', '-b', 'main');
   g(dir, 'remote', 'add', 'origin', bare);
   const sha = g(dir, 'rev-parse', 'HEAD').stdout.trim();
+  // K215 (build 23a): the owner's own push (KIT_OWNER_PUSH) runs on the owner's fresh pop-up yes to it, one per push.
+  // The installed owner-yes.cjs reads the Claude folder install wrote into it, so the yes goes there.
+  const homeIn = JSON.parse(/const INSTALLED_HOME = (".*?");/.exec(fs.readFileSync(path.join(dir, '.claude', 'owner-yes.cjs'), 'utf8'))[1]);
+  const cfg = homeIn.startsWith('{{') ? makeTemp('cfg-') : homeIn;
+  const tap = (act) => {
+    const SID = '11111111-2222-3333-4444-555555555555';
+    const at = new Date().toISOString();
+    const q = `May I run \`${act}\`?`;
+    const id = `toolu_ask_${crypto.randomBytes(6).toString('hex')}`;
+    const qs = [{ question: q, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }];
+    const lines = [{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id, name: 'AskUserQuestion', input: { questions: qs } }] } },
+      { type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source: 'user_temporary' }, toolUseResult: { questions: qs, answers: { [q]: 'Yes' } }, message: { content: [{ type: 'tool_result', tool_use_id: id, content: 'answered' }] } }];
+    const file = path.join(cfg, 'projects', fs.realpathSync.native(dir).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`);
+    fs.mkdirSync(path.dirname(file), { recursive: true });
+    fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    return { CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: SID };
+  };
+  const owner = () => ({ PATH: process.env.PATH, KIT_OWNER_PUSH: '1', ...tap('git push origin feat/first') });
   const hook = () => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${sha} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH, KIT_OWNER_PUSH: '1' } });
+    input: `refs/heads/feat/first ${sha} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: owner() });
   const blocked = hook();
   assert.notEqual(blocked.status, 0);
   assert.match(blocked.stderr, /first-push-check/);
@@ -149,11 +167,11 @@ test('the pre-push hook blocks a first push the check did not pass, and leaves l
   fs.writeFileSync(path.join(dir, 'main.py'), 'print(2)\n');
   commitAll(dir, 'after the check');
   const later = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: { PATH: process.env.PATH, KIT_OWNER_PUSH: '1' } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${'0'.repeat(40)}\n`, env: owner() });
   assert.notEqual(later.status, 0, 'a commit made after the check is checked again');
   g(dir, 'update-ref', 'refs/remotes/origin/main', sha);
   const after = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
-    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${sha}\n`, env: { PATH: process.env.PATH, KIT_OWNER_PUSH: '1' } });
+    input: `refs/heads/feat/first ${g(dir, 'rev-parse', 'HEAD').stdout.trim()} refs/heads/feat/first ${sha}\n`, env: owner() });
   assert.equal(after.status, 0, 'once the remote has a branch, the gate is done');
 });
 

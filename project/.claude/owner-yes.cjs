@@ -287,8 +287,9 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	let used = [];
 	// A push of either kind of ref with this name spends a yes, so one tap to a short name allows one push (the review
 	// on ceecedd).
+	// K215 (build 23a): the owner's own push (owner-hand) now runs on a yes too, so its log line spends one.
 	const kinds = [ref, `refs/heads/${name}`, `refs/tags/${name}`];
-	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
+	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => (p[1] === 'owner' || p[1] === 'owner-hand') && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
 	for (const d of dirs) {
 		let lines;
 		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
