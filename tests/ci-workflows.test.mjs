@@ -81,6 +81,7 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 // main's copies of the secret scan and the name check, before any of the branch's own code.
 // why: guards rule:where-work-runs (a cloud push that skips the PC's push checks)
 test('every feature-branch push runs main\'s secret scan and name check (S1)', () => {
+	assert.ok(fs.existsSync(path.resolve('.github/workflows/branch-push.yml')), 'a workflow runs on each branch push');
 	const flow = read('.github/workflows/branch-push.yml');
 	assert.match(flow, /^on:\n  push:\n    branches-ignore: \[main\]$/m);
 	assert.match(flow, /^permissions:\n  contents: read$/m);

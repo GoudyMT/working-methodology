@@ -297,7 +297,7 @@ test('the candidate arm\'s copied skills name its own Claude folder, not the pla
 
 // K231 (S7): each behaviour arm carries its own global CLAUDE.md (recall.mjs armUserLayer), so a hand-edited one in its
 // throwaway Claude folder is refused before any session, as the wording run refuses it.
-// why: catches a behaviour arm scored on a global CLAUDE.md edited by hand outside the harness
+// why: guards the owner's score gate decision: each arm carries only its own global instructions, never one edited by hand
 test('a behaviour run refuses a throwaway Claude folder whose CLAUDE.md was edited by hand (K231), before any session', async () => {
 	const { install } = await import('../scripts/kit.mjs');
 	const osHome = makeTemp('k231-oshome-');

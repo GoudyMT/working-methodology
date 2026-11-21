@@ -44,7 +44,7 @@ test('under a plugin the start-up hook finds the kit at the plugin root and name
 
 // E36 (proof sweep: five model lines coded by hand, and no check when one names a model the kit never measured): one
 // table in kit.config.json names each role's model and effort, and build writes the role files' lines from it.
-// why: catches a role file whose model or effort line drifts from the role table
+// why: guards rule:agent-role-table (a role file whose model or effort line drifts from the table)
 test('build writes each role file\'s model and effort lines from the role table (E36)', () => {
   const kit = makeTemp('roles-kit-');
   fs.mkdirSync(path.join(kit, 'user/agents'), { recursive: true });

@@ -220,7 +220,7 @@ test('the launcher holds a kit tool run from another Claude folder, and names th
 
 // The build 22 sweep: the settings line ran a bare sh, found first on the session's PATH, so a planted sh could answer for
 // every guard. It names /bin/sh, and a line that still says sh is not the wired one.
-// why: catches a settings line that runs a sh found on the session's PATH
+// why: guards rule:security-standards (a settings line that runs a sh found on the session's PATH)
 test('the settings line runs /bin/sh, and a bare sh line is not the wired one', () => {
 	const { file, L } = launcher();
 	const node = process.execPath;

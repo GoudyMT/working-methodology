@@ -496,6 +496,7 @@
    "low": 27
   },
   "accepted": [
+   "critical K1: a session could build a folder that passed as the verified plugin; K178 is held out of this release on the owner's pick, so none of it ships",
    "high K2: a session can unset the one variable the cloud check reads; predates this build; owner-accepted limit, to fix with K178",
    "high BG5: the plugin write check misses a path opening with an unresolved expansion; the manifest check holds the next call; owner-accepted limit"
   ],
@@ -504,14 +505,6 @@
    "low N9: plugin hook lines unrun on Windows (list item)"
   ],
   "fixes": [
-   {
-    "id": "K1",
-    "severity": "critical",
-    "security": true,
-    "text": "The plugin's own sweep approval (K178) is held out of this release: a session could build a folder that passed as the verified plugin",
-    "commit": "3fb56f5",
-    "test": "tests/kit-sweep.test.mjs::a cloud session cannot clear a sweep or install the kit: both stay on the owner's PC"
-   },
    {
     "id": "G1",
     "severity": "high",
@@ -634,9 +627,9 @@
    {
     "id": "V4",
     "severity": "medium",
-    "text": "The main-branch refusal test reads the runner's own words",
+    "text": "The main-branch refusal test reads the runner's own words, a test-only change",
     "commit": "d8e7052",
-    "test": "tests/worker.test.mjs::main, master, the default branch, a tag and a badly named branch are refused"
+    "test": "no test: no real input"
    },
    {
     "id": "W6",
@@ -810,21 +803,22 @@
     "severity": "medium",
     "text": "The grants-folder holds are checked for their reason, with the spent marks, tee and cp",
     "commit": "d006813",
-    "test": "tests/owner-grant.test.mjs::K176 a worker cannot write into the grants folder, nor run grant.mjs to grant itself"
+    "test": "tests/owner-grant.test.mjs::K176 a worker cannot write into the grants folder, nor run grant.mjs to grant itself",
+    "reason": "the grants-folder test is new in this build; the fix adds its rows"
    },
    {
     "id": "T1",
     "severity": "medium",
-    "text": "The scanner hook check fails when the launcher crashes",
+    "text": "The scanner hook check fails when the launcher crashes; the code already held it, so planted bugs prove the check instead",
     "commit": "4d3c305",
-    "test": "tests/kit-plugin.test.mjs::the plugin launcher runs each role's hooks for the matching agent_type (K174)"
+    "test": "no test: no real input"
    },
    {
     "id": "T2",
     "severity": "medium",
-    "text": "The kit-tool run check fails on a crash, and its output-into-launcher twin is held",
+    "text": "The kit-tool run check fails on a crash, and its output-into-launcher twin is held; the code already held it, so planted bugs prove the check instead",
     "commit": "4d3c305",
-    "test": "tests/kit-plugin.test.mjs::the plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it (K174)"
+    "test": "no test: no real input"
    },
    {
     "id": "T5",
