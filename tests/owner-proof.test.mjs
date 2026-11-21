@@ -285,9 +285,12 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 		['Write', { file_path: path.join(proj, '.claude', 'skills', 'x', 'SKILL.md'), content: 'x' }],
 		['Write', { file_path: path.join(proj, '.claude', 'commands', 'x.md'), content: 'x' }],
 		['Write', { file_path: path.join(cfg, 'skills', 'x', 'SKILL.md'), content: 'x' }],
+		['Write', { file_path: path.join(cfg, 'plugins', 'p', 'hooks', 'hooks.json'), content: '{}' }],
+		['Write', { file_path: path.join(proj, '.claude', 'plugins', 'p', 'plugin.json'), content: '{}' }],
+		['Bash', { command: 'claude mcp serve' }],
 	];
 	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
-	for (const command of ['claude mcp list', 'claude mcp get x', 'claude mcp serve', 'cat .mcp.json', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
+	for (const command of ['claude mcp list', 'claude mcp get x', 'cat .mcp.json', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
 });
 
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
