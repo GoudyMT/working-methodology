@@ -6,6 +6,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
+import { GUARDED } from '../scripts/build-record.mjs';
 
 kitTemp.sessionRoot();
 const require = createRequire(import.meta.url);
@@ -118,4 +119,11 @@ test('the hold says reading is fine and names this session\'s copy, with a full 
 	const ps = run('PowerShell');
 	assert.ok(ps.includes(`node ${posix(userClaude)}/kit-tools/merge-gate.mjs`), ps);
 	assert.ok(!ps.includes('node ~/'), 'PowerShell 5.1 leaves ~ unexpanded');
+});
+
+// why: catches a fix to the guard start script shipping with no test, since it was not on the guarded list
+test('the guard start script is a guarded file, so a fix to it owes a test', () => {
+	assert.equal(GUARDED.test('user/kit-tools/kit-start.sh'), true);
+	assert.equal(GUARDED.test('user/kit-tools/kit-launch.cjs'), true);
+	assert.equal(GUARDED.test('user/kit-tools/kit-start.sh.bak'), false, 'the name ends the match');
 });

@@ -31,7 +31,7 @@ const FIX_CLAIM = /\b(each|every|all)\s+(of\s+the\s+)?(sweep\s+|high\s+|other\s+
 // test names hold words the body audit reads as prose (the build 14 sweep).
 export const fixLine = (f) => `${String(f.text).trim().replace(/\.$/, '')}. Fixed in ${f.commit}, ${f.test === NO_TEST ? NO_TEST : 'with a named test'}.`;
 // The files whose fix owes a test whatever its severity: the guards, the hooks, the owner's yes and the gates.
-export const GUARDED = /^(project\/\.claude\/[^/]+\.cjs$|project\/\.githooks\/|user\/kit-hooks\/|user\/kit-tools\/(owner-yes\.cjs|merge-gate\.mjs|kit-launch\.cjs)$|user\/skills\/pre-pr-sweep\/approve\.mjs$|\.github\/)/;
+export const GUARDED = /^(project\/\.claude\/[^/]+\.cjs$|project\/\.githooks\/|user\/kit-hooks\/|user\/kit-tools\/(owner-yes\.cjs|merge-gate\.mjs|kit-launch\.cjs|kit-start\.sh)$|user\/skills\/pre-pr-sweep\/approve\.mjs$|\.github\/)/;
 
 /** The problems with a record, as plain lines; none when it is whole. */
 export function problems(rec) {
