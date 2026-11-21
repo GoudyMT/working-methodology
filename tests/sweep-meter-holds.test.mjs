@@ -89,3 +89,78 @@ test('the call-cap hook names a missing ceiling of either kind when it lets a ca
 	assert.equal(r.stdout, '');
 	assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"cause":"no ceiling \(Dollar or Token\) line in the brief"/);
 });
+
+const bigFile = (n) => Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n';
+const briefs = (dir) => fs.readdirSync(path.join(dir, 'sweeps')).filter((f) => /-brief-\d+\.md$/.test(f)).sort((a, b) => parseInt(a.match(/-brief-(\d+)/)[1], 10) - parseInt(b.match(/-brief-(\d+)/)[1], 10)).map((f) => read(path.join(dir, 'sweeps', f)));
+const gitLine = (brief) => brief.split('\n').find((l) => l.startsWith('Repository:'));
+
+// A file name git would print C-quoted (a non-ASCII byte) and one a shell would expand ($) must each reach a slice's
+// diff command: a file left out is a file no reviewer of that role reads.
+// why: catches a changed file with a $ or a non-ASCII byte in its path that no split slice's git diff line names
+test('every changed file reaches exactly one slice of a split role, whatever its name holds', () => {
+	const CAFE = 'docs/café.md';
+	const ID = 'src/$id.tsx';
+	const dir = sweepRepo({ [CAFE]: bigFile(300), [ID]: bigFile(300), 'src/b.ts': bigFile(300) });
+	const contract = featureContract();
+	contract.roles[3].context = [CAFE, ID, 'src/b.ts'];
+	contract.roles[4].context = [CAFE, ID, 'src/b.ts'];
+	const r = approveRun(contract, dir);
+	assert.equal(r.status, 0, r.stdout);
+	assert.equal(approvalLog(dir).pop().agents, 7, 'test value and the novel lens are each split in two');
+	const all = briefs(dir);
+	assert.equal(all.length, 7);
+	for (const [first, second] of [[3, 4], [5, 6]]) {
+		for (const name of [CAFE, ID, 'src/b.ts']) {
+			const named = [all[first], all[second]].filter((b) => gitLine(b).includes(name));
+			assert.equal(named.length, 1, `${name} is named by exactly one of briefs ${first + 1} and ${second + 1}`);
+		}
+	}
+	// A $ is shell syntax even inside double quotes, so that name is single-quoted.
+	assert.match(all.map(gitLine).join('\n'), /'src\/\$id\.tsx'/);
+});
+
+// A name no quoting carries through both bash and PowerShell cannot be put in a brief, and a slice without it would
+// leave the file unread: the contract is the lead's to fix, and no reviewer starts.
+// why: catches a changed file dropped from every slice because its name cannot be quoted, with the sweep approved anyway
+test('a split role with a changed file whose name no shell quoting carries is sent back, not approved', () => {
+	const ODD = "src/it's$x.ts";
+	const dir = sweepRepo({ 'src/a.ts': bigFile(300), [ODD]: bigFile(300), 'src/b.ts': bigFile(300) });
+	const contract = featureContract();
+	contract.roles[3].context = ['src/a.ts', ODD, 'src/b.ts'];
+	const r = approveRun(contract, dir);
+	assert.equal(r.status, FIX_EXIT, r.stdout);
+	assert.match(r.stdout, /FIX THE CONTRACT/);
+	assert.match(r.stdout, /cannot be named safely in a reviewer's brief/);
+	assert.equal(approvalLog(dir).pop().decision, 'fix');
+});
+
+// The owner's yes re-reads the diff to write the briefs. If the base moved since the ask, the split is not the one the
+// owner was asked about, and a brief past the logged ceilings would carry "Dollar ceiling: $NaN".
+// why: catches an owner's yes that writes briefs from a different split than the ask logged
+test('the owner\'s yes refuses when the diff splits differently than it did at the ask', () => {
+	const ask = () => {
+		const dir = sweepRepo({ 'src/a.ts': bigFile(300) });
+		fs.writeFileSync(path.join(dir, 'src/b.ts'), bigFile(300));
+		fs.writeFileSync(path.join(dir, 'src/c.ts'), bigFile(300));
+		commitAll(dir, 'more', true);
+		const contract = askContract();
+		contract.roles[0].context = ['src/a.ts', 'src/b.ts', 'src/c.ts'];
+		const r = approveRun(contract, dir);
+		assert.equal(r.status, 1, r.stdout);
+		assert.equal(approvalLog(dir).pop().agents, 4, 'the fix role is split in two');
+		const cfg = kitTemp.makeTemp('cfg-');
+		ownerTaps(cfg, dir, `sweep yes ${r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1]}`);
+		return { r, dir, cfg };
+	};
+	const same = ask();
+	const ok = approveIn(same.dir, [same.r.f, '--owner-yes'], tapEnv(same.cfg));
+	assert.equal(ok.status, 0, ok.stdout);
+	assert.equal(briefs(same.dir).length, 4);
+	const moved = ask();
+	// main moves up to the first feature commit: the diff is now two files, which is one slice.
+	assert.equal(g(moved.dir, 'branch', '-f', 'main', 'HEAD~1').status, 0);
+	const refused = approveIn(moved.dir, [moved.r.f, '--owner-yes'], tapEnv(moved.cfg));
+	assert.notEqual(refused.status, 0, refused.stdout);
+	assert.match(refused.stdout, /splits differently[\s\S]*run approve\.mjs again/i);
+	assert.equal(approvalLog(moved.dir).some((e) => e.kind === 'owner-yes'), false, 'nothing is logged');
+});
