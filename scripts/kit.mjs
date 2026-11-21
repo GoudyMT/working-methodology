@@ -637,7 +637,7 @@ function wireGate(home, dryRun) {
   const wants = [
     ['UserPromptSubmit', 'kit-gate.cjs', { hooks: [{ type: 'command', command: 'node', args: [toPosix(path.join(home, 'kit-hooks', 'kit-gate.cjs'))], timeout: 10 }] }],
     ['PreToolUse', 'kit-launch.cjs', { matcher: '.*', hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath), timeout: 10, onFailure: 'block' }] }],
-    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath, 'config-change'), timeout: 10 }] }],
+    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath, 'config-change'), timeout: 10, onFailure: 'block' }] }],
   ];
   const before = JSON.stringify(settings);
   for (const [event, file, entry] of wants) {

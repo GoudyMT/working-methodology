@@ -229,8 +229,21 @@ test('the settings line runs /bin/sh, and a bare sh line is not the wired one', 
 	assert.ok(line.startsWith("NODE_OPTIONS= /bin/sh '"), line);
 	const settings = (command) => ({ hooks: {
 		PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command, onFailure: 'block' }] }],
-		ConfigChange: [{ hooks: [{ type: 'command', command: L.launchCommand(file, node, 'config-change') }] }],
+		ConfigChange: [{ hooks: [{ type: 'command', command: L.launchCommand(file, node, 'config-change'), onFailure: 'block' }] }],
 	} });
 	assert.equal(L.launcherWired(settings(line), file, node), true, 'the line install writes is wired');
 	assert.equal(L.launcherWired(settings(line.replace('/bin/sh', 'sh')), file, node), false, 'a bare sh is not');
+});
+
+// K216 (build 23b): in config-change mode a thrown error printed nothing, and nothing printed lets a settings change
+// through, so a change that drops the launcher could land while the check was broken. A throw is a named block.
+// why: catches a settings check that fails open when it throws
+test('a settings check that throws holds the change with the cause named (K216)', () => {
+	const { L } = launcher();
+	assert.equal(typeof L.configChangeAnswer, 'function', 'K216: the config-change answer is one function the entry calls');
+	const out = L.configChangeAnswer({ source: 'user_settings', file_path: '/x/settings.json' }, () => { throw new Error('boom'); });
+	assert.equal(out?.decision, 'block');
+	assert.match(out.reason, /could not check.*boom/i);
+	assert.equal(L.configChangeAnswer(null), null, 'no input: no settings file named, nothing to hold');
+	assert.equal(L.configChangeAnswer({ source: 'skills' }), null, 'a change outside the settings files passes as before');
 });

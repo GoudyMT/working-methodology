@@ -1048,7 +1048,8 @@ function launcherWired(s, launcher = __filename, nodePath = installedNode()) {
 	const eq = (a, b) => (WIN ? a.toLowerCase() === b.toLowerCase() : a === b);
 	const has = (event, mode, extra) => (((s && s.hooks) || {})[event] || []).some((e) => everyTool(e.matcher)
 		&& (e.hooks || []).some((h) => h.type === 'command' && !h.args && !h.if && eq(String(h.command || ''), launchCommand(launcher, nodePath, mode)) && extra(h)));
-	return has('PreToolUse', '', (h) => h.onFailure === 'block') && has('ConfigChange', 'config-change', () => true);
+	// K216: both entries block on failure; a settings check that cannot start must hold the change, not apply it.
+	return has('PreToolUse', '', (h) => h.onFailure === 'block') && has('ConfigChange', 'config-change', (h) => h.onFailure === 'block');
 }
 
 // ConfigChange: a settings file changed mid-session. A block keeps the old settings in force for this session.
@@ -1072,6 +1073,16 @@ function configChange(input) {
 	if (!why) return null;
 	const msg = `Kit: the change to ${posix(input.file_path)} was not applied: ${why}. The owner edits that file by hand, then starts a new session.`;
 	return { decision: 'block', reason: msg, systemMessage: msg };
+}
+
+// K216: the ConfigChange answer. A throw is a named block: printing nothing would apply the change, and a change that
+// drops the launcher would then land while its own check was broken.
+function configChangeAnswer(input, check = configChange) {
+	if (!input || typeof input !== 'object') return null;
+	try { return check(input); } catch (e) {
+		const msg = `Kit: the settings change was not applied: the kit could not check it (${String(e && e.message).slice(0, 160)}). Start a new session; run kit.mjs status if this repeats.`;
+		return { decision: 'block', reason: msg, systemMessage: msg };
+	}
 }
 
 /**
@@ -1138,7 +1149,7 @@ if (require.main === module) {
 	let out = null;
 	const inKit = (i) => { try { return Boolean(findProject(i) || unrecorded(i)); } catch { return true; } };
 	try {
-		if (mode === 'config-change') out = input ? configChange(input) : null;
+		if (mode === 'config-change') out = configChangeAnswer(input);
 		// Input it cannot read: inside a kit project the call is held, anywhere else it stays out of the way.
 		else if (!input || typeof input !== 'object') out = inKit({}) ? deny('The kit guard launcher could not read this call.') : null;
 		else out = preToolUse(input);
@@ -1148,4 +1159,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { otherHomeTool, gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { configChangeAnswer, otherHomeTool, gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
