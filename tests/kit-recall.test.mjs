@@ -1636,6 +1636,18 @@ test('recall (K231): an arm carries its own global CLAUDE.md into its probe, and
   assert.match(read(control), /^User layer: none \(control\)$/m);
 });
 
+// K231 (S7, flag F5): user/CLAUDE.md is in every session's start text, but the gate's trigger never named it, so a PR
+// changing only it (K219) passed the gate with no score.
+// why: catches a user/CLAUDE.md change that merged with no recall score
+test('recall gate (K231): a PR that changes only user/CLAUDE.md needs a gate line', async () => {
+  const { checkGate } = await recallTools();
+  const r = checkGate(gateFacts({ changed: ['user/CLAUDE.md'], added: [] }));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /record a recall run/);
+  // The user layer's code and skills stay graded by their tests.
+  for (const f of ['user/kit-tools/kit-launch.cjs', 'user/skills/pr-body/SKILL.md']) assert.equal(checkGate(gateFacts({ changed: [f], added: [] })).ok, true, f);
+});
+
 // K231 (S7): the score tool says when the user layer was not measured, from each run's own header, so the entry's note
 // is never typed: only a gate whose every candidate and release run carried only its own CLAUDE.md drops it.
 // why: catches a scores entry that called the user layer measured when an arm ran on another global file

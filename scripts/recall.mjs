@@ -53,7 +53,9 @@ const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
 // I19 (1.42.0): also what renders or ships text a session reads - the project layer's own text, the memory, kit.mjs that
 // renders them - and the behaviour suite and its runner. The project layer's code (the guards) is graded by its tests.
-const GRADED = /^(rules\/|project\/.*\.md$|memory\/|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
+// K231 (S7, flag F5): the global CLAUDE.md is in every session's start text, and each arm now carries its own, so a
+// change to it is graded too.
+const GRADED = /^(rules\/|project\/.*\.md$|memory\/|user\/CLAUDE\.md$|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
 // T10 (1.42.0): beside the wording gate line, a rule change records the behaviour suite's line, written by
 // recall-behave.mjs line from the saved runs. The base branch's gate reads only the gate line, so this sits apart.
 const BEHAVE_LINE = /^behaviour: (\S+) median (\d+) baseline (\d+) suite v(\d+) control (\d+)( owner-accepted)?$/;
