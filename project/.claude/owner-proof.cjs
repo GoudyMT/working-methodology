@@ -85,16 +85,20 @@ const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json,
 // program name needed, so a name the command builds (c=claude; $c mcp add) is held too. Only the subcommands that
 // read pass (list, get); any other word after mcp, a variable ($S) included, is held (the commit security review). The
 // same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents or
-// loosen permissions, in any command. It is read twice: as written, and with every expansion taken out (an empty $X
-// inside m${X}cp leaves mcp). The one exemption is approve.mjs --agents, the sweep's own outcome step, in a command with
-// no expansion.
-const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|--(mcp-config|plugin-dir|settings|setting-sources|agents|permission-mode|dangerously-skip-permissions|allowed-?tools)\b/i;
+// loosen permissions (any flag naming permission, tools or dangerously), in any command. It is read as written and
+// with every plain expansion taken out (an empty ${X} inside m${X}cp leaves mcp); a brace, an ANSI-C or locale quote,
+// a backtick or a $( beside a claude, mcp or plugin word is held as unsure. The one exemption is approve.mjs --agents,
+// the sweep's own outcome step: a segment that runs node on approve.mjs, in a command that names no claude.
+const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|--(mcp-config|plugin-dir|settings|setting-sources|agents|[\w-]*(permission|tools|dangerously)[\w-]*)\b/i;
+const CLAUDE_WORD = /(^|[^\w./\\-])(claude|mcp|plugins?)(?![\w.-])/i;
 // The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
 // skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
 const LOADED = ['agents', 'skills', 'commands', 'plugins'];
 const mcpCommand = (c) => {
 	let t = String(c || '');
-	if (!/[$`]/.test(t)) t = t.replace(/\bapprove\.mjs\b[^;&|\n]*/g, (seg) => seg.replace(/--agents\b/g, ''));
+	const bare0 = t.replace(/["'`\\^]/g, '');
+	if (CLAUDE_WORD.test(bare0) && /[{`]|\$['"(]/.test(t)) return true;
+	if (!/[$`]/.test(t) && !/(^|[^\w./\\-])claude(?![\w.-])/i.test(bare0)) t = t.split(/([;&|\n]+)/).map((seg) => (/^\s*(\S*[\\/])?node(\.exe)?\s+\S*approve\.mjs(\s|$)/i.test(seg) ? seg.replace(/\s--agents\s+[\w,-]+/g, ' ') : seg)).join('');
 	const bare = t.replace(/["'`\\^]/g, '');
 	const empty = t.replace(/\$(\{[^}]*\}|\([^)]*\)|[A-Za-z_]\w*|'[^']*'|\d)/g, '').replace(/["'`\\^]/g, '');
 	return MCP_ACT.test(bare) || MCP_ACT.test(empty);
