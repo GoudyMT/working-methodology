@@ -1499,6 +1499,28 @@ function stableChannelLine(home) {
   return s && s.autoUpdatesChannel === 'stable' ? `Claude Code: autoUpdatesChannel is "stable", which trails the latest channel and can stay under the kit's floor (${RULES_MIN}). Set it to "latest" in the Claude config folder's settings.json, or check the version at each update.` : '';
 }
 
+// E36: a role on a model the kit has not measured its roles on, or one kit.config.json "models" marks retiring. The
+// role file in use wins over the table (an owner can move one by hand); a kit with no measured list says nothing.
+function roleModelLine(kit, dir) {
+  let config = {};
+  try { config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')); } catch { return ''; }
+  const models = config.models || {};
+  if (!Array.isArray(models.measured)) return '';
+  const retiring = new Set(models.retiring || []);
+  const named = [];
+  for (const role of Object.keys(config.roles || {}).sort()) {
+    let model = config.roles[role].model;
+    try {
+      const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(fs.readFileSync(path.join(dir, 'agents', `${role}.md`), 'utf8'));
+      const m = front && /^model:\s*(\S+)\s*$/m.exec(front[1]);
+      if (m) model = m[1];
+    } catch { /* not installed: the table's model */ }
+    if (retiring.has(model)) named.push(`${role} runs on ${model}, which is marked retiring`);
+    else if (!models.measured.includes(model)) named.push(`${role} runs on ${model}, which the kit has not measured its roles on`);
+  }
+  return named.length ? `Kit roles: ${named.join('; ')}. Move the role in kit.config.json "roles" (then build and install user), or measure the model first.` : '';
+}
+
 /** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
 function doubleRunLines(projectDir) {
   const out = [];
@@ -1544,6 +1566,8 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
   if (old) lines.push(old.line);
   const channel = stableChannelLine(home);
   if (channel) lines.push(channel);
+  const roles = roleModelLine(kit, env.CLAUDE_PLUGIN_ROOT || home);
+  if (roles) lines.push(roles);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   // K153 (build 20): a stale note is named before a thread acts on it, not only at the closeout that fails on it.
@@ -2159,6 +2183,31 @@ export function fixedHomePaths({ kit }) {
   return hits;
 }
 
+// E36 (proof sweep: five model lines set by hand, no check on them): one table, kit.config.json "roles", names each
+// role's model and effort, and build writes the role files' two lines from it; install copies them as built. Read from
+// the tree build checks, so CI's base copy holds a PR's role files to the PR's own table.
+export function roleLines(text, { model, effort } = {}) {
+  const m = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  if (!m) return text;
+  let front = m[1];
+  for (const [key, value] of [['model', model], ['effort', effort]]) {
+    if (!value) continue;
+    const line = `${key}: ${value}`;
+    front = new RegExp(`^${key}:.*$`, 'm').test(front) ? front.replace(new RegExp(`^${key}:.*$`, 'm'), line) : `${front}\n${line}`;
+  }
+  return `---\n${front}\n---\n${text.slice(m[0].length)}`;
+}
+export function roleFiles(kit) {
+  let roles = {};
+  try { roles = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')).roles || {}; } catch { /* no table */ }
+  const out = new Map();
+  for (const role of Object.keys(roles).sort()) {
+    const rel = `user/agents/${role}.md`;
+    if (fs.existsSync(path.join(kit, rel))) out.set(rel, roleLines(fs.readFileSync(path.join(kit, rel), 'utf8'), roles[role]));
+  }
+  return out;
+}
+
 export function build({ kit }) {
   const dir = path.join(kit, 'rules');
   const mods = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
@@ -2192,6 +2241,7 @@ export function build({ kit }) {
   out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
   // approve.mjs reads the owner's pop-up answers the way the guards do (T2): the same exact-copy rule.
   out.set('user/kit-tools/owner-yes.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'owner-yes.cjs'), 'utf8'));
+  for (const [rel, text] of roleFiles(kit)) out.set(rel, text);
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
