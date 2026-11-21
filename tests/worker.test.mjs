@@ -95,11 +95,11 @@ const cloud = { CLAUDE_CODE_REMOTE: 'true', PATH: '/usr/bin', HOME: '/srv/lead',
 // The claude the runner finds on the path (a stand-in for which or where).
 const WHICH = () => ({ status: 0, stdout: '/usr/local/bin/claude' + String.fromCharCode(10), stderr: '' });
 
-async function runIt(r, events, { branch = 'feat/add-login', env = cloud, extra = [], job = 'tests', which = WHICH } = {}) {
+async function runIt(r, events, { branch = 'feat/add-login', env = cloud, extra = [], job = 'tests', which = WHICH, ownKit = () => null } = {}) {
 	const fake = fakeClaude(events);
 	const lines = [];
 	const code = await main(['run', '--plugin', r.plugin, '--branch', branch, '--brief', r.brief, '--repo', r.dir, ...(job ? ['--job', job] : []), ...extra],
-		{ env, start: fake.start, which, print: (s) => lines.push(s) });
+		{ env, start: fake.start, which, ownKit, print: (s) => lines.push(s) });
 	return { code, out: lines.join('\n'), calls: fake.calls };
 }
 
@@ -253,6 +253,12 @@ test('the runner refuses an unchecked plugin, settings that override the worker,
 		assert.match(run.out, /settings/, settings);
 		assert.equal(run.calls.length, 0, settings);
 	}
+	// The commit security review: the manifest only vouches for itself, so the plugin's build must be the release the
+	// runner itself was installed from.
+	const older = await runIt(repo(), good(r.plugin), { ownKit: () => ({ version: '0.0.1' }) });
+	assert.equal(older.code, 2, older.out);
+	assert.match(older.out, /0.0.1/);
+	assert.equal((await runIt(repo(), good(r.plugin), { ownKit: () => ({ version: fs.readFileSync('VERSION', 'utf8').trim() }) })).calls.length, 1);
 	const dash = await runIt(repo(), good(r.plugin), { extra: ['--from', '-f'] });
 	assert.equal(dash.code, 2, dash.out);
 	assert.equal(dash.calls.length, 0);

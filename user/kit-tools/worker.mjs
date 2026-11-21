@@ -38,6 +38,8 @@ const realRun = (cmd, args, opts = {}) => {
 // POSIX: the worker leads its own process group, so a stop reaches every program it started (the build 23b sweep).
 const realStart = (cmd, args, opts) => spawn(cmd, args, { ...opts, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true, detached: process.platform !== 'win32' });
 // The claude on the path, found from node's own folder (which, or where on Windows), never the worktree's.
+// The install record of the kit this runner came from (the Claude folder above kit-tools), or null outside one.
+const realOwnKit = () => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(SELF), '..', 'kit-install.json'), 'utf8')); } catch { return null; } };
 const realWhich = () => realRun(process.platform === 'win32' ? 'where' : 'which', ['claude']);
 
 /** Stop the worker and every program it started: its process group, or taskkill /T on Windows. */
@@ -192,7 +194,7 @@ const USAGE = 'Usage: node worker.mjs run --plugin <dir> --branch <type/name> --
  * Returns:
  *     a promise of the exit code: the worker's own when it ran, 1 when stopped, 2 when refused before the start
  */
-export async function main(argv, { env = process.env, run = realRun, start = realStart, which = realWhich, print = console.log } = {}) {
+export async function main(argv, { env = process.env, run = realRun, start = realStart, which = realWhich, ownKit = realOwnKit, print = console.log } = {}) {
 	const o = parseArgs(argv);
 	if (o.error || o.cmd !== 'run' || !o.plugin || !o.branch || !o.brief) { print(o.error ? `${o.error}\n${USAGE}` : USAGE); return 2; }
 	const refuse = (why) => { print(`refused: ${why}`); return 2; };
@@ -209,6 +211,12 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	let checked = null;
 	try { checked = createRequire(import.meta.url)('./plugin-launch.cjs').checkManifest(plugin); } catch { /* below */ }
 	if (!checked || checked.changed.length) return refuse(`${plugin} does not match its guard manifest (${checked ? checked.changed.slice(0, 3).join(', ') : 'no manifest check'}): build the plugin from a release with kit.mjs build plugin`);
+	// The commit security review: the manifest vouches only for itself, so the build it records must be the release this
+	// runner was installed from (outside an install, as in its tests, there is no record to hold it to).
+	const own = ownKit();
+	let built = null;
+	try { built = JSON.parse(fs.readFileSync(path.join(plugin, 'kit-build.json'), 'utf8')); } catch { /* below */ }
+	if (own && own.version && (!built || built.version !== own.version || (own.commit && built.commit && built.commit !== own.commit))) return refuse(`the plugin is kit ${built ? built.version : 'with no build record'}, the runner's own kit is ${own.version}: build the plugin from the release the runner came from`);
 	let brief;
 	try { brief = fs.readFileSync(path.resolve(o.brief), 'utf8'); } catch { return refuse(`the brief ${o.brief} cannot be read`); }
 	if (!brief.trim()) return refuse('the brief is empty');
