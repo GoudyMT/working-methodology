@@ -198,6 +198,16 @@ function isThrowaway(home, osHome) {
   return Boolean(inside) && !inside.startsWith('..') && !path.isAbsolute(inside);
 }
 
+/**
+ * The 2026-11-21 paired run: the rules name ~/.claude/skills/pre-pr-sweep/approve.mjs, and ~ is always the owner's real
+ * home, so an arm on a throwaway folder reached the real folder's approve.mjs while the release arm on the real folder
+ * reached its own. Every arm of a gate run now runs on its own throwaway Claude folder under kit-probes (gates run in
+ * clean throwaway installs only), so ~ never names a layer one arm has and the other does not.
+ */
+export function checkGateHome(home, osHome = os.homedir()) {
+  if (!isThrowaway(home, osHome)) throw new Error(`${home} is not a throwaway Claude folder under ${path.join(osHome, 'kit-probes')}: every arm of a gate run (candidate, release and control) runs on its own throwaway folder, with install user from that arm's kit and its own login`);
+}
+
 /** Refuses a Claude folder that is not a released kit install or a throwaway one, before any folder or session exists. */
 export function checkUserLayer(home, osHome = os.homedir()) {
   const user = readJson(path.join(home, 'kit-install.json'));
@@ -497,6 +507,7 @@ async function main(argv) {
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   checkUserLayer(home);
+  checkGateHome(home);
   // Loaded here so the gate command runs only this file's code.
   const kitTools = await import('./kit.mjs');
   const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });

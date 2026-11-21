@@ -261,3 +261,15 @@ test('the release arm (K195) gets its installed kit skills and agents in the pro
 	put('kit-install.json', JSON.stringify({ version: '1.47.0', release: true, files: { 'skills/../../x': 'h' } }));
 	assert.throws(() => releasedUserLayer(home, makeTemp('k195-probe-')), /outside/);
 });
+
+// The 2026-11-21 paired run (see recall.mjs checkGateHome): every arm of a behaviour gate run is on its own throwaway
+// Claude folder, so ~/.claude never names one arm's layer and not the other's.
+// why: catches a behaviour gate arm run on the owner's real Claude folder
+test('a behaviour run refuses a Claude folder that is not a throwaway under kit-probes, before any session', () => {
+	const real = makeTemp('realhome-');
+	fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.47.0', release: true, files: {} }));
+	const r = spawnSync(process.execPath, [path.resolve('scripts/recall-behave.mjs'), 'base-1'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: real, CLAUDE_CONFIG_DIR: real } });
+	assert.equal(r.status, 1, r.stdout + r.stderr);
+	assert.match(r.stderr, /is not a throwaway Claude folder under .*kit-probes/);
+	assert.doesNotMatch(r.stdout, /\[1\/\d+\]/);
+});

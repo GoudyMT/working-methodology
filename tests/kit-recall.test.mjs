@@ -1532,6 +1532,24 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
   assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
 });
 
+// The 2026-11-21 paired run: the release arm ran on the real Claude folder, so ~/.claude/skills/pre-pr-sweep/approve.mjs
+// was its own copy, while the branch arm on a throwaway reached the release's copy through the same ~ path. Every arm
+// of a gate run now runs on its own throwaway Claude folder; a released real folder is refused before any session.
+// why: catches a gate arm run on the owner's real Claude folder
+test('a recall run refuses a Claude folder that is not a throwaway under kit-probes, before any session', async () => {
+  const { checkGateHome } = await recallTools();
+  assert.equal(typeof checkGateHome, 'function');
+  const real = makeTemp('realhome-');
+  fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.47.0', release: true, files: {} }));
+  const r = spawnSync(process.execPath, [RECALL, 'base-1'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: real, CLAUDE_CONFIG_DIR: real } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /is not a throwaway Claude folder under .*kit-probes/);
+  assert.doesNotMatch(r.stdout, /answered/);
+  const probe = path.join(os.homedir(), 'kit-probes', 'abcdef', 'home');
+  assert.doesNotThrow(() => checkGateHome(probe, os.homedir()));
+  assert.throws(() => checkGateHome(path.join(os.homedir(), '.claude'), os.homedir()), /not a throwaway/);
+});
+
 // K137 (build 18, the 1.43.0 recall rounds): a run was made on rule text over its size cap, then trimmed, then run
 // again, and extra runs were offered that decision 7 does not count. The run now refuses text over a cap before any
 // session starts, and the score says when no extra run can count.

@@ -17,7 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkUserLayer, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
+import { checkUserLayer, checkGateHome, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = path.join(KIT, 'docs', 'evals', 'behaviour-scenarios.json');
@@ -290,6 +290,8 @@ async function main(argv) {
 	refuseOverCap(kitDir, noKit);
 	const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 	checkUserLayer(home);
+	// Every arm on its own throwaway Claude folder (the 2026-11-21 paired run; see recall.mjs checkGateHome).
+	checkGateHome(home);
 	checkHome(process.env);
 	const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
 	checkSessionHome(home, run);
