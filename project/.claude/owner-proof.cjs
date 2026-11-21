@@ -388,6 +388,24 @@ function moved(segment, cwd) {
 const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
 // Programs a reader may pipe a transcript into: they read their input and write only their output.
 const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
+// K229 (build 23a): readers that are plain only in some forms, so they are kept out of READERS and read by their words:
+// rg with no option that runs another program (--pre, --hostname-bin, a search of zipped files), find with no action
+// that deletes, runs or writes (-delete, -exec, -ok, -fprint, -fls), echo (its redirect is read like any other), date
+// with only a format or a display option (never -s, which sets the clock), and npm ls (npm list), which runs no script.
+// The program by its plain name only: a path keeps the strict reading.
+const FIND_ACTS = /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
+function wordReader(w) {
+	const first = String(w[0] || '');
+	if (/[\\/]/.test(first)) return false;
+	const p = first.toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
+	const args = w.slice(1).map(String);
+	if (p === 'rg') return !args.some((a) => /^--(pre|hostname-bin|search-zip)|^-[A-Za-z]*z/.test(a));
+	if (p === 'find') return !args.some((a) => FIND_ACTS.test(a));
+	if (p === 'echo') return true;
+	if (p === 'date') return args.every((a) => /^(\+[^;&|<>`$]*|-[uRI]+|--utc|--universal|--rfc-email|--iso-8601(=\w+)?)$/.test(a));
+	if (p === 'npm') return (args[0] === 'ls' || args[0] === 'list') && args.slice(1).every((a) => /^(--?[\w-]+|[\w@./-]+)$/.test(a) && !/^--?(prefix|userconfig|globalconfig|cache|script-shell|node-options)\b/.test(a));
+	return false;
+}
 
 // K32 (the plan check's P2): whether a word is <plain folders>/<a wildcard part>, under a folder the guard knows, and
 // that folder, read from the disk, holds nothing a guard shape could name: no name that starts with a dot or kit-,
@@ -935,7 +953,9 @@ function shellWritesFrom(command, tool, start, names) {
 	// behind; &> and >&file still name a file and stay a redirect the words below read.
 	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
 	// A new line ends a folder change as ; does (the 1.36.1 sweep).
-	const DEFINITION = /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i;
+	// K229 (build 23a): rg reads its options (--pre among them) from RIPGREP_CONFIG_PATH and npm from npm_config_*, so
+	// setting either is a definition too.
+	const DEFINITION = /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS|RIPGREP_CONFIG_PATH|npm_config_\w+)\s*\+?=)|function:|alias:/i;
 	// K87 (build 11): a kit script followed by another command was held as a write. A program's exemption holds when
 	// every OTHER command beside it is plain: a reader, a folder change, a plain assignment or a git read. Those define
 	// nothing before it, and after it they cannot write what it was handed. Anything else beside it may: a definition, a
@@ -958,7 +978,7 @@ function shellWritesFrom(command, tool, start, names) {
 		// K145 (build 19): a PowerShell statement that is one quoted string ("==== $i") prints it, as Write-Output does; a
 		// substitution in it ($(...)) keeps the strict reading through the check below.
 		// K158 (build 21): true, : and pwd print or return and define nothing (false stays strict: false || x is a test row).
-		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
+		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || wordReader(w) || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			// K196: git -C <folder> runs the same read from that folder.
@@ -980,7 +1000,7 @@ function shellWritesFrom(command, tool, start, names) {
 	// A pipe after a cd counts only when every stage of every pipeline is a plain reader with no redirect: a file list
 	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
 	const firstPipe = segments.findIndex((g) => g.end === '|');
-	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)) && !g.some((x) => x.redirect); };
+	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
 	const pipesRead = segments.every((g, i) => !(g.end === '|' || (i > 0 && segments[i - 1].end === '|')) || stageReads(g));
 	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|') || (firstPipe >= 0 && !pipesRead);
 	// K228 (build 23a): a bracket inside quotes ("(a.js)", node -e '...(...)') is text, so only one outside quotes, as
@@ -1059,9 +1079,10 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		if (hits.length === 0) continue;
 		if (segment.some((x) => x.redirect && hit(x))) return true;
-		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || printSed(all)) && !definesBefore(s)) {
+		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || wordReader(all) || printSed(all)) && !definesBefore(s)) {
 			// Piped on, the read must go to another reader.
-			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
+			const next = segments[s + 1] && segments[s + 1].filter((x) => !x.redirect).map((x) => x.value);
+			if (segment.end === '|' && next && !PIPE_READERS.has(path.basename(slash(next[0] || '')).replace(/\.(exe|cmd|bat)$/, '')) && !wordReader(next)) return true;
 			continue;
 		}
 		if (COPIERS.has(program) && !definesBefore(s)) {
