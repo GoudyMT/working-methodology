@@ -34,7 +34,7 @@ function findPhrase(cwd) {
 	// it was written for.
 	try {
 		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
-		const head = spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', 'rev-parse', 'HEAD'], { encoding: 'utf8', cwd: path.dirname(process.execPath) });
+		const head = git(cwd, 'rev-parse', 'HEAD');
 		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
 			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
 			if (m && words(m[1]).trim()) return { phrase: m[1], commonDir };
