@@ -4,6 +4,7 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { sortTests } from '../scripts/test-value.mjs';
 
@@ -44,6 +45,28 @@ test('each test lands in one group: guards, unique, machine, repeat, text, windo
 	assert.equal(group(k('six')), 'text');
 	assert.equal(group(k('seven')), 'nothing');
 	assert.equal(Object.values(counts).reduce((a, b) => a + b, 0), rows.length);
+	// K189 (the K160 slips): how many flips reached each test is counted, not only whether one did.
+	assert.equal(rows.find((r) => r.key === k('one')).reached, 2);
+	assert.equal(rows.find((r) => r.key === k('three')).reached, 1);
+});
+
+// K189 (the K160 slips): the command line reads --out wherever it sits, writes the sort there, and prints the flips,
+// the caught count and each group's count.
+// why: catches a test-value run that drops its --out file or prints zeros for the groups it sorted
+test('the test sort writes --out and prints its counts', () => {
+	const dir = kitTemp.makeTemp('value-');
+	fs.mkdirSync(path.join(dir, 'tests'));
+	fs.writeFileSync(path.join(dir, 'tests', 'a.test.mjs'), "test('one', () => {});\ntest('two', () => {});\n");
+	const k = (n) => `tests/a.test.mjs::${n}`;
+	fs.writeFileSync(path.join(dir, 'map.json'), JSON.stringify({ sha: 'x', tests: { [k('one')]: { lines: {}, reads: [] }, [k('two')]: { lines: {}, reads: [] } } }));
+	fs.writeFileSync(path.join(dir, 'flips.json'), JSON.stringify({ sha: 'x', flips: [{ file: 's.cjs', line: 1, tests: [k('one'), k('two')], caughtBy: [k('one')] }, { file: 's.cjs', line: 2, tests: [k('two')], caughtBy: [] }] }));
+	const out = path.join(dir, 'value.json');
+	const r = spawnSync(process.execPath, [path.resolve('scripts/test-value.mjs'), 'map.json', '--out', out, 'flips.json'], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /Test value: 2 tests, 2 flips, 1 caught/);
+	assert.match(r.stdout, /unique: 1\n/);
+	assert.match(r.stdout, /nothing: 1\n/);
+	assert.equal(JSON.parse(fs.readFileSync(out, 'utf8')).flips, 2);
 });
 
 // why: catches a false cut list (K41, the plan check's P6): a measure scoped to a change flips a few lines, so every
@@ -69,14 +92,19 @@ test('a test made in a loop takes the tags above its loop', () => {
 		"for (const n of ['x', 'y']) {",
 		'\ttest(`gate: ${n} is refused`, () => {});',
 		'}',
+		"for (const n of ['p']) {",
+		'\ttest(`open: ${n}`, () => {});',
+		'}',
 		'',
 	].join('\n'));
 	const k = (n) => `tests/a.test.mjs::${n}`;
-	const map = { tests: Object.fromEntries(['plain', 'gate: x is refused', 'gate: y is refused'].map((n) => [k(n), { lines: {}, reads: [] }])) };
+	const map = { tests: Object.fromEntries(['plain', 'gate: x is refused', 'gate: y is refused', 'open: p'].map((n) => [k(n), { lines: {}, reads: [] }])) };
 	const flips = [{ file: 's.cjs', line: 1, tests: Object.keys(map.tests), caughtBy: Object.keys(map.tests) }];
 	const { rows } = sortTests(root, map, flips);
 	const group = (key) => rows.find((r) => r.key === key).group;
 	assert.equal(group(k('gate: x is refused')), 'guards');
 	assert.equal(group(k('gate: y is refused')), 'guards');
 	assert.equal(group(k('plain')), 'repeat');
+	// K189: a loop's test takes its own loop's tags, not the first loop's in the file.
+	assert.equal(group(k('open: p')), 'repeat');
 });

@@ -1,0 +1,11 @@
+{
+ "about": "Flips the mutation check may leave uncaught, each with why no test can catch it (K189, from the K160 slips). Each is named by its file, the text of its line and the flip, so a moved line keeps its entry and a changed line loses it.",
+ "allow": [
+  { "file": "project/.claude/improvement-report.mjs", "line": "\treturn 0;", "in": "create", "flip": "return x to return void x", "why": "main's result is the exit code, and undefined exits 0 as 0 does" },
+  { "file": "project/.claude/improvement-report.mjs", "line": "if (!faults.length) { console.log(`PASS ${path.basename(arg)}`); return 0; }", "flip": "return x to return void x", "why": "main's result is the exit code, and undefined exits 0 as 0 does" },
+  { "file": "project/.claude/size-band.mjs", "line": "\treturn 0;", "in": "main", "flip": "return x to return void x", "why": "main's result is the exit code, and undefined exits 0 as 0 does" },
+  { "file": "project/.claude/project-map.mjs", "line": "+ `<span class=\"edge\" aria-hidden=\"true\"></span><span class=\"verb\">${esc(l.verb)}</span>`", "flip": "true to false", "why": "a drawn line between parts; the verb beside it carries the meaning for a screen reader either way" },
+  { "file": "project/.claude/project-map.mjs", "line": "+ `<span class=\"edge tip\" aria-hidden=\"true\"></span><span class=\"node\">${esc(name(l.to))}</span></div>`).join('');", "flip": "true to false", "why": "the arrow tip, drawn only; the same as the line above" },
+  { "file": "project/.claude/canary-phrase.mjs", "line": "const GIT_SAFE = ['-c', 'core.fsmonitor=false', '-c', 'diff.external=', '-c', 'protocol.allow=never',", "flip": "false to true", "why": "the only git commands here are rev-parse and show, which never refresh the index, so a configured fsmonitor never runs (checked 2026-11-21: a marker script ran on git status, not on these); the option stays as defense in depth" }
+ ]
+}

@@ -889,13 +889,14 @@ test('the folder gate names a launcher node that is gone, and only that', () => 
 test('the project map check passes a sound map and names every fault in a bad one', () => {
   assert.equal(mapRun(mapRepo(GOOD_MAP), ['check']).status, 0);
   const bad = { ...GOOD_MAP, goal: '',
-    parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/gone.ts'] }, GOOD_MAP.parts[1]],
+    // K189: a part with an id and no name is named too.
+    parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/gone.ts'] }, { ...GOOD_MAP.parts[1], name: '' }],
     links: [{ from: 'ask', to: 'nowhere', verb: 'calls' }, { from: 'ask', to: 'corpus', verb: '' }],
     progress: [{ item: 'Offline answers', state: 'done' }, { item: 'Citations', state: 'blocked-ish' }] };
   const r = mapRun(mapRepo(bad), ['check']);
   assert.equal(r.status, 1);
   for (const fault of [/goal is empty/, /part ask: src\/gone\.ts does not exist/, /link ask -> nowhere: unknown part nowhere/,
-    /link ask -> corpus: no verb/, /progress "Offline answers": done needs evidence/, /progress "Citations": state must be done, doing, next or blocked/]) {
+    /link ask -> corpus: no verb/, /part corpus: needs an id and a name/, /progress "Offline answers": done needs evidence/, /progress "Citations": state must be done, doing, next or blocked/]) {
     assert.match(r.stdout, fault);
   }
 });
@@ -912,6 +913,9 @@ test('the project map renders one self-contained page with states as words, and 
   assert.match(html, /Offline answers[\s\S]*?Done[\s\S]*?PR #12/);
   assert.match(html, /Ask[\s\S]*?searches[\s\S]*?Corpus/);
   assert.match(html, /1 of 3 done/);
+  // K189 (the K160 slips): the success bar and the parts table with each part's files are drawn.
+  assert.match(html, /<h2>Success bar<\/h2><ul><li>Answers cite a public source<\/li><\/ul>/);
+  assert.match(html, /<td>Ask<\/td><td>answers questions on the device<\/td><td>src\/ask<\/td>/);
   assert.doesNotMatch(html, /<script|https?:\/\//);
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);

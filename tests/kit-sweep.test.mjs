@@ -552,6 +552,12 @@ test('the size band end check lowers padding and fails a line over its limit', (
   const r = bandRun('final', { band, measured: { page: 103000, lazy: 16000, files: 81 }, limits });
   assert.equal(r.status, 0, r.stdout);
   assert.deepEqual(r.out.limits, { page: 103300, lazy: 16040, files: 81 }, 'lowered to size + margin; the unlisted line kept');
+  // K189 (the K160 slips): only a line that moved is listed, and a limit with no measured size is refused.
+  assert.match(r.stdout, /page: /);
+  assert.doesNotMatch(r.stdout, /^\s+lazy: /m, r.stdout);
+  const unmeasured = bandRun('final', { band, measured: { page: 103000, files: 81 }, limits });
+  assert.equal(unmeasured.status, 1, unmeasured.stdout);
+  assert.match(unmeasured.stdout, /lazy: no measured size/);
   assert.equal(bandRun('final', { band, measured: { page: 106100, lazy: 16000, files: 81 }, limits }).status, 1);
 });
 
