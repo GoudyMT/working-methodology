@@ -519,8 +519,8 @@ function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_tem
 const withYes = (tool_name, tool_input, extra = {}) => decide(tool_name, tool_input, { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now', ...extra });
 // K215 (build 23a): the owner's own push (KIT_OWNER_PUSH) runs on the owner's pop-up yes too. A fresh yes to `act`, in
 // the transcript folder of a repo, and the env the pre-push hook reads it with.
-function ownerTap(repo, act) {
-	popUp({ act, minutesAgo: 0, file: path.join(cfg, 'projects', fs.realpathSync.native(repo).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`) });
+function ownerTap(repo, act, { minutesAgo = 0, source = 'user_temporary' } = {}) {
+	popUp({ act, minutesAgo, source, file: path.join(cfg, 'projects', fs.realpathSync.native(repo).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`) });
 	return { CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: SID };
 }
 
@@ -666,7 +666,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// owner's own push (KIT_OWNER_PUSH, which the guard never lets a tool set) passes the bound.
 	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`).stderr, /no branch yet/);
 	// K215 (build 23a): the marker alone is no owner; with the owner's pop-up yes to that push it goes.
-	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1' }).stderr, /KIT_OWNER_PUSH counts only beside/);
+	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1', CLAUDE_CODE_SESSION_ID: SID, CLAUDE_CONFIG_DIR: kitTemp.makeTemp('no-yes-') }).stderr, /KIT_OWNER_PUSH counts only beside/);
 	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/z') }).status, 0, 'the owner\x27s first push');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /owner-hand refs\/heads\/feat\/z/);
 	// A name built at run time could set the owner's marker past the guard, so it counts only with no AI marker.
@@ -1694,7 +1694,8 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	const after = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
 	assert.equal(after, before, 'a script the session wrote pushed main as the owner; push log: ' + (fs.existsSync(path.join(dir, '.git', 'kit-push.log')) ? fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8').trim() : 'none'));
 	// The owner's own push still goes, on the owner's pop-up yes to it, and that yes is spent by the push.
-	const owner = (env) => spawnSync('git', ['push', '-q', bare, 'main'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', KIT_OWNER_PUSH: '1', ...env } });
+	g('remote', 'add', 'origin', bare);
+	const owner = (env) => spawnSync('git', ['push', '-q', 'origin', 'main'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', KIT_OWNER_PUSH: '1', ...env } });
 	const tap = ownerTap(dir, 'git push origin main');
 	const first = owner(tap);
 	assert.equal(first.status, 0, first.stderr);
@@ -1703,6 +1704,83 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	g('add', '.');
 	g('commit', '-qm', 'three');
 	assert.match(owner(tap).stderr, /KIT_OWNER_PUSH counts only beside/, 'one yes pushed twice');
+});
+
+// The build 23a sweep of K215: the owner's own terminal had no session, so every owner push was refused and the
+// refusal sent the owner to --no-verify, which skips every check; a yes was bound to no remote and no age, a log the
+// owner's push could not write left its yes unspent, and a lock left by a killed push held every later one.
+// why: guards rule:outward-acts (the owner's own push past the bound: typed in their terminal, or one fresh yes to that remote)
+test('the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock', () => {
+	const dir = kitTemp.makeTemp('k215b-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', '-c', 'commit.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, '.githooks'));
+	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
+	const bare = kitTemp.makeTemp('k215b-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+	let n = 0;
+	const commit = () => { fs.writeFileSync(path.join(dir, `f${++n}.md`), `${n}\n`); g('add', '.'); g('commit', '-qm', `c${n}`); };
+	commit();
+	g('push', '-q', '--no-verify', bare, 'main');
+	g('remote', 'add', 'origin', bare);
+	g('config', 'core.hooksPath', '.githooks');
+	const head = () => spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	const owner = (env = {}) => spawnSync('git', ['push', '-q', 'origin', 'main'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', CLAUDE_CODE_SESSION_ID: '', KIT_OWNER_PUSH: '1', ...env } });
+	// With no session and no terminal (a tool's shell), the push is held, and the refusal never sends the owner to
+	// --no-verify, which skips the checks.
+	commit();
+	let was = head();
+	const none = owner();
+	assert.notEqual(none.status, 0, 'no session and no terminal');
+	assert.equal(head(), was);
+	assert.match(none.stderr, /type the ref's name at their own terminal/);
+	assert.doesNotMatch(none.stderr, /no-verify/);
+	// A yes to push another remote is no yes for origin.
+	const other = owner(ownerTap(dir, 'git push backup main'));
+	assert.notEqual(other.status, 0, 'a yes to another remote');
+	assert.equal(head(), was);
+	// A yes older than 10 minutes is no yes for the owner's own push.
+	assert.notEqual(owner(ownerTap(dir, 'git push origin main', { minutesAgo: 15 })).status, 0, 'a yes 15 minutes old');
+	assert.equal(head(), was);
+	// A record whose source only starts with user is no person's tap; the refusal names the canary.
+	const odd = owner(ownerTap(dir, 'git push origin main', { source: 'userSettings' }));
+	assert.notEqual(odd.status, 0, 'a source that only starts with user');
+	assert.match(odd.stderr, /Canary \(R7\.1\)/);
+	// A lock left by a push that was killed more than 10 minutes ago is taken over; a fresh one still holds.
+	const lock = path.join(dir, '.git', 'kit-push.lock');
+	fs.mkdirSync(lock);
+	assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/);
+	const old = new Date(Date.now() - 20 * 60000);
+	fs.utimesSync(lock, old, old);
+	const taken = owner(ownerTap(dir, 'git push origin main'));
+	assert.equal(taken.status, 0, taken.stderr);
+	assert.notEqual(head(), was, 'the push went past the old lock');
+	// A log the push cannot write does not spend the yes, so the push does not go (POSIX file modes only).
+	if (process.platform !== 'win32' && process.getuid && process.getuid() !== 0) {
+		commit();
+		was = head();
+		fs.chmodSync(path.join(dir, '.git', 'kit-push.log'), 0o444);
+		const unlogged = owner(ownerTap(dir, 'git push origin main'));
+		fs.chmodSync(path.join(dir, '.git', 'kit-push.log'), 0o644);
+		assert.notEqual(unlogged.status, 0, 'a push the log cannot record');
+		assert.match(unlogged.stderr, /cannot be written/);
+		assert.equal(head(), was);
+	}
+	// In the owner's own terminal (a real one, made by script on Linux), the typed ref name is the yes.
+	const pty = spawnSync('script', ['--version'], { encoding: 'utf8' });
+	if (process.platform === 'linux' && pty.status === 0) {
+		const typed = (word) => spawnSync('script', ['-qec', 'git push -q origin main', '/dev/null'], { cwd: dir, encoding: 'utf8', input: `${word}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', CLAUDE_CODE_SESSION_ID: '', KIT_OWNER_PUSH: '1' }, timeout: 20000 });
+		commit();
+		was = head();
+		typed('mian');
+		assert.equal(head(), was, 'a mistyped name');
+		const ok = typed('main');
+		assert.notEqual(head(), was, `the typed name: ${ok.stdout}${ok.stderr}`);
+	}
 });
 
 // Lane a6 (build 23a): false refusals the CM5 fuzz found on v1.47.0 (proof-sweep evidence/CM5/false-refusal.md),

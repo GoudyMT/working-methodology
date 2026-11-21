@@ -45,6 +45,14 @@ remote_default() {
   fi
   printf '%s\n' "$d"
 }
+# The lock two pushes on one yes would race for. A lock older than 10 minutes was left by a push that was killed (the
+# build 23a sweep: a closed terminal left it, and every later owner push waited on it), so it is taken over.
+take_lock() {
+  if mkdir "$common/kit-push.lock" 2>/dev/null; then return 0; fi
+  if [ -n "$(find "$common/kit-push.lock" -maxdepth 0 -mmin +10 2>/dev/null)" ] && rmdir "$common/kit-push.lock" 2>/dev/null && mkdir "$common/kit-push.lock" 2>/dev/null; then return 0; fi
+  echo "Push blocked: another push on the owner's yes is running ($common/kit-push.lock). Wait for it; a lock older than 10 minutes is taken over." >&2
+  return 1
+}
 # The push bound and the secret scan, for every pusher (K163).
 {
   common=$(git rev-parse --git-common-dir)
@@ -59,10 +67,7 @@ remote_default() {
     # each ref, as KIT_PUSH_APPROVED does (without its first-push limit on main); the checks below still run. The log
     # line this push writes spends the yes.
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
-    if ! mkdir "$common/kit-push.lock" 2>/dev/null; then
-      echo "Push blocked: another push on the owner's yes is running (or $common/kit-push.lock was left by one that stopped). Wait for it; the owner removes a lock left behind." >&2
-      exit 1
-    fi
+    take_lock || exit 1
     trap 'rmdir "$common/kit-push.lock" 2>/dev/null' EXIT
     while read -r lref lsha rref rsha; do
       [ -n "$rref" ] || continue
@@ -71,8 +76,26 @@ remote_default() {
       case "$rsha" in *[!0]*)
         [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
       esac
-      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common"; then
-        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's fresh pop-up yes to a push naming $rref, in the session CLAUDE_CODE_SESSION_ID names (K215: a script an AI runs can clear its markers). Answer Yes in that session's pop-up first; a push with no session is the owner's own, in their own terminal, by git push --no-verify." >&2
+      if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
+        # The owner's pick (2026-11-21, the build 23a sweep): in the owner's own terminal there is no session to hold a
+        # pop-up yes, so the owner types the ref's name at the terminal. A tool's shell has no terminal to read, so a
+        # script cannot answer; every check below still runs.
+        short=${rref#refs/heads/}
+        short=${short#refs/tags/}
+        if ! (exec 3<>/dev/tty) 2>/dev/null; then
+          echo "Push blocked: KIT_OWNER_PUSH with no Claude session asks the owner to type the ref's name at their own terminal, and this shell has none (K215: a script an AI runs can clear its markers). Run the push in your own terminal; from a Claude session, the owner's pop-up yes to the push and KIT_PUSH_APPROVED=1." >&2
+          exit 1
+        fi
+        exec 3<>/dev/tty
+        printf 'KIT_OWNER_PUSH: type %s%s to push it past the bound: ' "${kind:+$kind }" "$short" >&3
+        IFS= read -r typed <&3 || typed=""
+        exec 3<&-
+        if [ "$typed" != "${kind:+$kind }$short" ]; then
+          echo "Push blocked: the name typed was not ${kind:+$kind }$short." >&2
+          exit 1
+        fi
+      elif [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1" 10; then
+        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref, in the session CLAUDE_CODE_SESSION_ID names (K215: a script an AI runs can clear its markers). Answer Yes in that session's pop-up first, or run the push in your own terminal with no session, where you type the ref's name." >&2
         exit 1
       fi
     done <<EOF
@@ -113,10 +136,7 @@ EOF
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
     # The build 21 sweep: two pushes on one yes, at once, both read the log before either wrote it. One push holds the
     # lock from the yes check to the log line that spends the yes.
-    if ! mkdir "$common/kit-push.lock" 2>/dev/null; then
-      echo "Push blocked: another push on the owner's yes is running (or $common/kit-push.lock was left by one that stopped). Wait for it; the owner removes a lock left behind." >&2
-      exit 1
-    fi
+    take_lock || exit 1
     trap 'rmdir "$common/kit-push.lock" 2>/dev/null' EXIT
     default=$(remote_default "$1" "$2")
     # A new repo is one whose remote has no branch at all, asked of the remote itself: main on a remote that already
@@ -151,7 +171,7 @@ EOF
       case "$rsha" in *[!0]*)
         [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
       esac
-      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common"; then
+      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1"; then
         echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first. $OWNER_WAY" >&2
         exit 1
       fi
@@ -219,7 +239,7 @@ fi
   [ "$KIT_PUSH_APPROVED" = "1" ] && how=owner
   [ "$KIT_OWNER_PUSH" = "1" ] && how=owner-hand
   if ! printf '%s\n' "$refs" | awk -v t="$(node -e 'console.log(new Date().toISOString())')" -v h="$how" 'NF { print t, h, $3, $2 }' >> "$common/kit-push.log" 2>/dev/null; then
-    if [ "$how" = owner ]; then
+    if [ "$how" = owner ] || [ "$how" = owner-hand ]; then
       echo "Push blocked: the push log ($common/kit-push.log) cannot be written, so the owner's yes cannot be spent." >&2
       exit 1
     fi

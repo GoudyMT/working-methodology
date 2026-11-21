@@ -63,7 +63,7 @@ function tailLines(file, cap = TAIL_BYTES) {
 // R7.1 (build 23a): the record shape a person's answer must carry to count, in one place, so the readers here and the
 // use check agree (it once read only whether .decision existed, K224). Claude Code does not document this field: if
 // it changes, no yes is read (fail closed) and yesCanary names why.
-const YES_RECORD = (e) => { const d = e && e.permissionDecision; return Boolean(d && d.decision === 'accept' && /^user/.test(String(d.source || ''))); };
+const YES_RECORD = (e) => { const d = e && e.permissionDecision; return Boolean(d && d.decision === 'accept' && /^user(_temporary)?$/.test(String(d.source || ''))); };
 
 // The code spans of a question: the acts it quotes, each read whole.
 const spans = (question) => [...String(question).matchAll(/`([^`]+)`/g)].map((m) => squash(m[1]));
@@ -246,8 +246,11 @@ function pushAct(act) {
 	if (at < 0 || !w.slice(0, at).includes('git')) return null;
 	const rest = w.slice(at + 1);
 	const flags = rest.filter((x) => x.startsWith('-'));
-	const specs = rest.filter((x) => !x.startsWith('-')).slice(1);
+	const words = rest.filter((x) => !x.startsWith('-'));
+	const specs = words.slice(1);
 	return {
+		// The build 23a sweep: the remote the yes names, so a yes to push one remote is no yes for another.
+		remote: words[0] || '',
 		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop()),
 		force: flags.some((f) => /^(-f|--force|--force-with-lease)/.test(f)) || specs.some((s) => s.startsWith('+')),
 		del: flags.includes('-d') || flags.includes('--delete') || specs.some((s) => s.startsWith(':')),
@@ -257,9 +260,9 @@ function pushAct(act) {
 // Whether a yes to this act covers a push of this ref: a destination written in full (refs/heads/x, refs/tags/x) names
 // only that kind of ref; a short name covers either, as git itself resolves it (the 1.25.0 sweep, R2.9: a yes to push
 // a branch let a tag of the same name go).
-function grantsRef(act, ref, kind = '') {
+function grantsRef(act, ref, kind = '', remote = '') {
 	const p = pushAct(act);
-	if (!p) return false;
+	if (!p || (remote && p.remote !== remote)) return false;
 	const short = String(ref).replace(/^refs\/(heads|tags)\//, '');
 	const named = p.dests.some((d) => (/^refs\//.test(d) ? d === ref : d === short));
 	return named && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del);
@@ -269,7 +272,9 @@ function grantsRef(act, ref, kind = '') {
 // tool shell), in this repo's folder of transcripts, holds a fresh Yes to a push whose destination is this ref, that
 // forces or deletes only if the yes says so, and that no owner push of this ref in the push log has used yet.
 // kind: '' (a plain push), 'force' or 'delete', as the hook read the ref line.
-function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(), now = Date.now()) {
+// remote: the remote the hook pushes to (its first argument), which the yes must name. maxAge: how old a yes may be, in
+// minutes (the owner's own push takes 10, the build 23a sweep: a session id can name any session of the project).
+function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(), now = Date.now(), remote = '', maxAge = FRESH_MS / 60000) {
 	const name = String(ref).replace(/^refs\/(heads|tags)\//, '');
 	if (!name || !/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return false;
 	const root = path.join(home(), 'projects');
@@ -278,7 +283,9 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
-	const keys = above(real).map(key);
+	// The build 23a sweep: the session ran in this repo (or the main checkout of this worktree), not a folder above it
+	// that holds other repos too.
+	const keys = [real, common ? path.dirname(path.resolve(repo, common)) : real].map(key);
 	let dirs = [];
 	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return false; }
 	// The push log the hook writes, in the repo's common git folder (a worktree shares it); unreadable but present
@@ -294,8 +301,8 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 		let lines;
 		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
 		for (const y of yeses(lines)) {
-			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
-			for (const a of y.acts) if (grantsRef(a, ref, kind)) return true;
+			if (now - y.at < 0 || now - y.at > Math.min(FRESH_MS, maxAge * 60000) || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
+			for (const a of y.acts) if (grantsRef(a, ref, kind, remote)) return true;
 		}
 	}
 	return false;
@@ -378,6 +385,31 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 	return best;
 }
 
-if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
+// The build 23a sweep (K224): a refused push names the canary when a Yes to it is there but its record changed shape.
+function pushCanary(ref, sessionId, repo = process.cwd()) {
+	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return '';
+	const root = path.join(home(), 'projects');
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	let dirs = [];
+	try { dirs = fs.readdirSync(root).filter((d) => d.toLowerCase() === key(real)); } catch { return ''; }
+	for (const d of dirs) {
+		const file = path.join(root, d, `${sessionId}.jsonl`);
+		let lines;
+		try { lines = tailLines(file); } catch { continue; }
+		// Every act a pop-up quoted, whatever its record: yeses() skips a record that fails the shape test.
+		const acts = lines.flatMap((l) => { try { const e = JSON.parse(l); return (e.message && Array.isArray(e.message.content) ? e.message.content : []).filter((b) => b && b.type === 'tool_use' && b.name === 'AskUserQuestion' && b.input && Array.isArray(b.input.questions)).flatMap((b) => b.input.questions.flatMap((q) => spans(q && q.question))); } catch { return []; } }).filter((x) => grantsRef(x, ref));
+		const text = acts.length ? yesCanary({ transcript_path: file, session_id: sessionId, cwd: real }, acts) : '';
+		if (text) return text;
+	}
+	return '';
+}
+if (require.main === module && process.argv[2] === '--push') {
+	const [ref, kind, common, remote, age] = process.argv.slice(3);
+	const ok = pushGrant(ref, process.env.CLAUDE_CODE_SESSION_ID, kind || '', common || '', process.cwd(), Date.now(), remote || '', Number(age) || FRESH_MS / 60000);
+	if (!ok) { const c = pushCanary(ref, process.env.CLAUDE_CODE_SESSION_ID); if (c) process.stderr.write(c + '\n'); }
+	process.exitCode = ok ? 0 : 1;
+}
 
 module.exports = { YES_RECORD, yesCanary, home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
