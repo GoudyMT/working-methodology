@@ -1930,10 +1930,13 @@ test('the guard start script retries once, names why a start failed, and lets on
 	const gone = path.join(fakes, 'no-node.exe');
 	const one = run(fake('ok', "process.stdout.write('{}');"), gone);
 	assert.equal(said(one).permissionDecision, 'deny');
-	assert.match(said(one).permissionDecisionReason, /node could not be started[\s\S]*ask the owner to run kit\.mjs status/);
+	assert.match(said(one).permissionDecisionReason, /node could not be started/);
+	assert.match(said(one).permissionDecisionReason, /ask the owner[\s\S]*kit\.mjs status/);
 	assert.doesNotMatch(said(one).permissionDecisionReason, /Try once more/);
 	assert.doesNotMatch(said(run(fake('ok2', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /Try once more/);
-	assert.match(said(run(fake('ok3', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /Stop retrying[\s\S]*ask the owner to run kit\.mjs status[\s\S]*install user/);
+	const third = said(run(fake('ok3', "process.stdout.write('{}');"), gone)).permissionDecisionReason;
+	assert.match(third, /Stop retrying[\s\S]*ask the owner/);
+	assert.match(third, /kit\.mjs status[\s\S]*install user/);
 	// Always slow: denied with the cause, inside Claude Code's 10 second hook limit.
 	const stuck = run(fake('stuck', 'setTimeout(()=>{},20000);'));
 	assert.match(said(stuck).permissionDecisionReason, /did not answer within 4 seconds/);
@@ -1951,7 +1954,8 @@ test('the guard start script retries once, names why a start failed, and lets on
 	fs.rmSync(start);
 	const missing = bash(s, 'git status');
 	assert.equal(missing.decision, 'deny');
-	assert.match(missing.reason, /start script could not run[\s\S]*ask the owner to run kit\.mjs status[\s\S]*install user/);
+	assert.match(missing.reason, /start script could not run[\s\S]*ask the owner/);
+	assert.match(missing.reason, /kit\.mjs status[\s\S]*install user/);
 });
 
 // R7.2: status holds the start script to its install record, as it holds the launcher line.
