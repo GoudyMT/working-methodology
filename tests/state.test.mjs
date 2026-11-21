@@ -136,6 +136,51 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 	assert.match(run(dir, ['decisions'], env).stdout, /D-3 .*NOT found/);
 });
 
+// K211 (build 23a, security-four): decide --from read and deleted the path it was given without inside(), so a ../
+// path, an absolute path or a linked folder in the project removed a file outside it, unseen by the delete guard.
+// why: guards K211, build 23a: decide --from reads and deletes only a plain file inside the project
+test('decide --from refuses a file outside the project and keeps it; a file inside is recorded and removed', () => {
+	const dir = project();
+	const away = kitTemp.makeTemp('state-away-');
+	const J = JSON.stringify({ decision: 'x', words: 'one two three', why: 'y' });
+	for (const f of ['rel', 'abs', 'via', 'hard']) fs.writeFileSync(path.join(away, `${f}.json`), J);
+	const cases = [['a ../ path', path.relative(dir, path.join(away, 'rel.json')), 'rel.json'], ['an absolute path', path.join(away, 'abs.json'), 'abs.json']];
+	let linkedDir = true;
+	try { fs.symlinkSync(away, path.join(dir, 'linkdir'), 'junction'); } catch { linkedDir = false; }
+	if (linkedDir) cases.push(['a linked folder', 'linkdir/via.json', 'via.json']);
+	for (const [what, arg, name] of cases) {
+		const r = run(dir, ['decide', '--from', arg, '--unchecked']);
+		assert.equal(r.status, 1, `${what} is refused`);
+		assert.match(r.stdout, /is not a plain file inside this project/, what);
+		assert.ok(fs.existsSync(path.join(away, name)), `${what}: the outside file is kept`);
+	}
+	// A second name inside the project for a file outside it (a hard link) is refused too.
+	let hard = true;
+	try { fs.linkSync(path.join(away, 'hard.json'), path.join(dir, 'hard.json')); } catch { hard = false; }
+	if (hard) {
+		assert.equal(run(dir, ['decide', '--from', 'hard.json', '--unchecked']).status, 1, 'a hard link is refused');
+		assert.ok(fs.existsSync(path.join(away, 'hard.json')), 'the hard-linked file is kept');
+	}
+	assert.equal(read(dir, '_Decisions.jsonl').trim(), fs.readFileSync(path.join(KIT, 'project', '_Decisions.jsonl'), 'utf8').trim(), 'nothing was recorded');
+	// A plain file inside the project still records and is removed.
+	const r = run(dir, ['decide', '--from', decision(dir, { decision: 'x', words: 'one two three', why: 'y' }), '--unchecked']);
+	assert.match(r.stdout, /D-1 recorded/);
+	assert.equal(fs.existsSync(path.join(dir, 'd.json')), false, 'the input file inside is removed');
+});
+
+// K211 on Windows: a junction in the project to a folder outside it (the security-four case C, as it would be made on
+// the owner's machine). Runs in the Windows slice only.
+// why: guards K211, build 23a: decide --from reads and deletes only a plain file inside the project
+test('decide --from refuses a file reached through a junction and keeps it', { windows: true }, () => {
+	const dir = project();
+	const away = kitTemp.makeTemp('state-away-');
+	fs.writeFileSync(path.join(away, 'via.json'), JSON.stringify({ decision: 'x', words: 'one two three', why: 'y' }));
+	fs.symlinkSync(away, path.join(dir, 'jn'), 'junction');
+	const r = run(dir, ['decide', '--from', 'jn\\via.json', '--unchecked']);
+	assert.equal(r.status, 1, 'a junction out is refused');
+	assert.ok(fs.existsSync(path.join(away, 'via.json')), 'the file behind the junction is kept');
+});
+
 // why: guards rule:tracking-file-functions
 test('a D- pointer with no record fails the check', () => {
 	const dir = project();
