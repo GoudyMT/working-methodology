@@ -50,6 +50,13 @@ function checkManifest(root = ROOT) {
 		if (!b || sha(b) !== files[rel]) changed.push(rel);
 		else bytes.set(rel, b);
 	}
+	// The build 23b sweep: a file added where Claude Code or the launcher loads code or roles from is a change too.
+	const loads = (rel) => /\.(cjs|mjs|js|json|sh|ps1)$/.test(rel) || /^agents\/[^/]+\.md$/.test(rel);
+	for (const dir of ['agents', 'hooks', 'kit-hooks', 'kit-tools']) {
+		let names = [];
+		try { names = fs.readdirSync(path.join(root, dir), { recursive: true }).map((n) => `${dir}/${String(n).split(path.sep).join('/')}`); } catch { continue; }
+		for (const rel of names) if (loads(rel) && !Object.hasOwn(files, rel)) changed.push(`${rel} (not in the manifest)`);
+	}
 	return { changed, bytes };
 }
 

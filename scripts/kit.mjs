@@ -2391,7 +2391,11 @@ export function buildPlugin({ kit, out, release = null }) {
   const k = path.resolve(kit), o = path.resolve(out);
   const inside = (a, b) => { const r = path.relative(b, a); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
   if (inside(o, k) || inside(k, o)) throw new Error('build plugin: --out must be outside the kit folder, and must not hold it');
-  if (fs.existsSync(o) && fs.readdirSync(o).length && !fs.existsSync(path.join(o, '.claude-plugin', 'plugin.json'))) throw new Error(`build plugin: ${toPosix(o)} is not empty and holds no earlier plugin build`);
+  // The build 23b sweep: only a folder an earlier build wrote is emptied (its kit-build.json names the kit, and it holds
+  // no git folder), never a plugin the owner wrote or a clone of the plugin repo.
+  let earlier = false;
+  try { earlier = JSON.parse(fs.readFileSync(path.join(o, 'kit-build.json'), 'utf8')).name === 'kit' && !fs.existsSync(path.join(o, '.git')); } catch { /* none */ }
+  if (fs.existsSync(o) && fs.readdirSync(o).length && !earlier) throw new Error(`build plugin: ${toPosix(o)} is not empty and holds no earlier plugin build`);
   const config = JSON.parse(fs.readFileSync(path.join(k, 'kit.config.json'), 'utf8'));
   const version = fs.readFileSync(path.join(k, 'VERSION'), 'utf8').trim();
   const files = new Map();
@@ -2428,7 +2432,8 @@ export function buildPlugin({ kit, out, release = null }) {
   for (const [rel, b] of [...files].filter(([rel]) => /^kit-(hooks|tools)\//.test(rel)).sort(([a], [b]) => (a < b ? -1 : 1))) stampFiles[rel] = sha(b);
   files.set('kit-install.json', json({ version, release: Boolean(release), via: 'plugin', files: stampFiles }));
   const manifest = {};
-  for (const rel of [...files.keys()].sort()) if (MANIFEST_FILE.test(rel) && !/^kit\/docs\//.test(rel)) manifest[rel] = sha(files.get(rel));
+  // The build 23b sweep: the role files and every skill's SKILL.md (their tools, model and hooks lines) are hashed too.
+  for (const rel of [...files.keys()].sort()) if ((MANIFEST_FILE.test(rel) && !/^kit\/docs\//.test(rel)) || /^agents\/[^/]+\.md$|^skills\/[^/]+\/SKILL\.md$/.test(rel)) manifest[rel] = sha(files.get(rel));
   files.set('guard-manifest.json', json({ files: manifest }));
   fs.rmSync(o, { recursive: true, force: true });
   for (const rel of [...files.keys()].sort()) {

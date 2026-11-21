@@ -195,6 +195,30 @@ test('the plugin launcher refuses every call once one file in its manifest chang
   assert.match(reason(launch(root, call).out), /guard-manifest\.json/);
 });
 
+// The build 23b sweep: the manifest left out the role files (their tools and model lines) and every skill's front
+// matter, and never noticed a file added beside the hooks; and build emptied any folder holding a plugin.json, so a
+// plugin the owner wrote, or a clone of the plugin repo, was deleted.
+// why: guards rule:security-standards: a plugin role widened by an edit the manifest never sees, or an owner's folder wiped by a build
+test('the plugin manifest covers role and skill front matter and refuses an added hook file; build keeps a foreign folder', () => {
+  const src = plugin();
+  const man = JSON.parse(fs.readFileSync(path.join(src, 'guard-manifest.json'), 'utf8')).files;
+  for (const f of ['agents/builder.md', 'agents/reviewer.md', 'skills/pre-pr-sweep/SKILL.md']) assert.ok(man[f], f);
+  const repo = gitRepo();
+  const call = { tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: repo, session_id: 's1' };
+  for (const [name, change] of [['a role\'s tools line', (r) => fs.appendFileSync(path.join(r, 'agents', 'scanner.md'), '\ntools: Bash\n')], ['an added hook file', (r) => fs.writeFileSync(path.join(r, 'kit-hooks', 'extra.cjs', ), '')], ['an added agent', (r) => fs.writeFileSync(path.join(r, 'agents', 'helper.md'), '---\nname: helper\n---\n')]]) {
+    const root = path.join(makeTemp('plugin-copy-'), 'kit-plugin');
+    fs.cpSync(src, root, { recursive: true });
+    change(root);
+    assert.equal(decision(launch(root, call).out), 'deny', name);
+  }
+  for (const setup of [(o) => { fs.mkdirSync(path.join(o, '.claude-plugin'), { recursive: true }); fs.writeFileSync(path.join(o, '.claude-plugin', 'plugin.json'), '{"name":"mine"}'); }, (o) => { fs.mkdirSync(path.join(o, '.claude-plugin'), { recursive: true }); fs.writeFileSync(path.join(o, '.claude-plugin', 'plugin.json'), '{"name":"kit"}'); fs.writeFileSync(path.join(o, 'kit-build.json'), '{"name":"kit"}'); fs.mkdirSync(path.join(o, '.git')); }]) {
+    const out = path.join(makeTemp('plugin-own-'), 'p');
+    setup(out);
+    assert.throws(() => buildPlugin({ kit: path.resolve('.'), out, release: RELEASE }), /earlier plugin build/);
+    assert.ok(fs.existsSync(path.join(out, '.claude-plugin', 'plugin.json')), 'the folder was kept');
+  }
+});
+
 // why: guards rule:security-standards: a session that edits the plugin's own guard files and so turns them off
 test('the plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it (K174)', () => {
   const root = plugin();
