@@ -26,6 +26,7 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
+import safeSpawn from './safe-spawn.cjs';
 import { scrub, knownWords, AREAS, SEVERITIES } from './report-scrub.mjs';
 import { loadList } from './list-data.mjs';
 
@@ -188,11 +189,14 @@ export function held({ home, projectDir } = {}) {
 	return { code: 0, out: out.length ? out : ['No report waits for the owner\'s read.'] };
 }
 
-/** One GitHub call through gh. Tests and the build before the intake repo exists pass recorded replies instead. */
+/**
+ * One GitHub call through gh. Tests and the build before the intake repo exists pass recorded replies instead. gh runs
+ * from node's own folder, never the project, where a gh.exe could wait (K212); the path names the repo itself.
+ */
 export function github(method, apiPath, fields = {}) {
 	const args = ['api', '--method', method, apiPath];
 	for (const [k, v] of Object.entries(fields)) args.push('-f', `${k}=${v}`);
-	const r = spawnSync('gh', args, { encoding: 'utf8' });
+	const r = safeSpawn.tool('gh', args, { encoding: 'utf8' });
 	if (r.status !== 0) return { ok: false, why: (r.stderr || 'gh failed').trim().split('\n')[0] };
 	try { return { ok: true, body: JSON.parse(r.stdout) }; } catch { return { ok: false, why: 'gh gave no JSON' }; }
 }

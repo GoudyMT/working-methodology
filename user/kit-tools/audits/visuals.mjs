@@ -20,6 +20,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import safeSpawn from './safe-spawn.cjs';
 
 export const IMPACTS = ['cost', 'time', 'room'];
 const MAX_ROWS = 6;
@@ -430,7 +431,8 @@ function main(args) {
 	const opt = (n, d) => { const i = args.indexOf(n); return i >= 0 ? args[i + 1] : d; };
 	const [base, head] = args;
 	if (!base || !head || /^-/.test(base) || /^-/.test(head)) { console.log('usage: node .claude/visuals.mjs <base> <head> [--config <file>] [--body <file>] [--level ###|##] [--before "<line>"] [--fold] [--out <dir>]'); return 2; }
-	const git = (...a) => spawnSync('git', ['-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', maxBuffer: 64 << 20 });
+	// git reads the repo this runs in with -C, from node's own folder: started there, a git.exe in it would run (K214).
+	const git = (...a) => safeSpawn.gitRead(process.cwd(), a, { encoding: 'utf8', maxBuffer: 64 << 20 });
 	const cfgFile = opt('--config', '.kit/visuals.json');
 	let cfg;
 	try { cfg = JSON.parse(fs.readFileSync(cfgFile, 'utf8')); } catch (e) { console.log(`visuals: cannot read ${cfgFile}: ${e.message}`); return 1; }
