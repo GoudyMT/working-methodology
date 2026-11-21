@@ -1,0 +1,437 @@
+{
+ "version": "1.50.0",
+ "date": "2026-11-21",
+ "level": "minor",
+ "area": "Delegation",
+ "title": "feat: cloud worker runner, plugin build and one-time owner grant",
+ "headline": "Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm is graded on its own global instructions.",
+ "alignment": "v1.50.0 is build 23b of the v2.0 plan: K177, K216, K219, T12 with E24, K176, K175, E36, K174, K179, K230, K232, K231 and the T2 cues, each test seen failing first. K178 ships only on the owner's yes.",
+ "items": [
+  {
+   "id": "K177-RULER",
+   "kind": "fixed",
+   "reach": "kit",
+   "text": "Recall and behaviour sessions start with `--strict-mcp-config`, so an MCP server listed in the probe project no longer joins a scored session.",
+   "evidence": "scripts/recall.mjs, scripts/recall-behave.mjs"
+  },
+  {
+   "id": "K216",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The settings-change guard blocks when it cannot run: its hook entry says `onFailure: block`, the wiring check asks for it, and a check that throws holds the change and names the cause.",
+   "evidence": "user/kit-tools/kit-launch.cjs, scripts/kit.mjs",
+   "where": "A settings change while the settings check is broken",
+   "before": "Let through with nothing printed",
+   "after": "Held, cause named",
+   "test": "tests/launcher-verify.test.mjs::a settings check that throws holds the change with the cause named (K216)"
+  },
+  {
+   "id": "K219",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The global instructions name the three arrow code points they ban by number, and the year line says the rules are current as of the session date instead of a fixed year range.",
+   "evidence": "`user/CLAUDE.md`",
+   "test": "tests/kit-rules.test.mjs::the arrow rule bans none of the spellings it requires, and no instruction pins a year range (K219)"
+  },
+  {
+   "id": "T12",
+   "kind": "added",
+   "reach": "projects",
+   "text": "A where-work-runs rule and a worker brief template name the five jobs that may run in the cloud; the rule, the brief, the sweep approval refusal and the runner hold one list.",
+   "evidence": "rules/agent-teams.md, project/_Templates/_Worker Brief Template.md",
+   "test": "tests/kit-rules.test.mjs::the where-work-runs rule, the cloud refusals and the worker brief name one job list (T12)"
+  },
+  {
+   "id": "K177-JOBS",
+   "kind": "added",
+   "reach": "projects",
+   "text": "The worker runner starts only a job on the fixed list, and names the list when it refuses one.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::the runner starts only a job on the fixed list, and names the list when it refuses (T12)"
+  },
+  {
+   "id": "K177-ENV",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The worker runner hands the worker only allow-listed variables, drops tokens and preload options, and always sets the cloud marker.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::the worker env keeps only the allow-listed variables and always carries the cloud marker"
+  },
+  {
+   "id": "K177-FLAGS",
+   "kind": "added",
+   "reach": "projects",
+   "text": "The worker starts `claude -p` with the pinned plugin folder, user and project settings only, `--strict-mcp-config` and the default permission mode.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::the worker starts claude -p with every fixed flag and the pinned plugin"
+  },
+  {
+   "id": "K177-BRANCH",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The worker runner refuses main, master, the default branch, a tag and a badly named branch.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::main, master, the default branch, a tag and a badly named branch are refused"
+  },
+  {
+   "id": "K177-CLOUD",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The worker runner refuses to start outside the cloud or on a refused branch, before it starts anything.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "where": "A worker run on the PC or on main",
+   "before": "No runner",
+   "after": "Refused before start",
+   "test": "tests/worker.test.mjs::the runner refuses outside the cloud and on a refused branch, before any spawn"
+  },
+  {
+   "id": "K177-RUN",
+   "kind": "added",
+   "reach": "projects",
+   "text": "A worker run goes to the end in its own worktree and config folder, with the scrubbed variables, a set folder and a time limit.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::a good stream runs to the end in its own worktree with the scrubbed env, a cwd and a timeout"
+  },
+  {
+   "id": "K177-START",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The worker runner stops a worker whose start shows another permission mode, no kit plugin, or no kit start-up line before its first tool call.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::the start check stops a stream without the start-up line, with another mode, or without the kit plugin"
+  },
+  {
+   "id": "K177-LINE",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The start check reads the kit start-up line from plain hook output or the hook JSON, and only at the start of a line.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::the start check reads the line from plain hook stdout or the kit hook JSON, and only at a line start"
+  },
+  {
+   "id": "K176",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A one-time grant turns the owner's card yes into one call for a cloud worker: it lifts only the hold it names, once, and says which card it came from.",
+   "evidence": "user/kit-tools/owner-grant.cjs, user/kit-tools/grant.mjs",
+   "where": "An owner's yes for a cloud worker's held act",
+   "before": "No way to give it",
+   "after": "One call, once",
+   "test": "tests/owner-grant.test.mjs::K176 a grant lifts the one hold it names, once, with a note naming the card"
+  },
+  {
+   "id": "K176-SPENT",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A grant is spent on first use, so the same act again is held.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a grant is spent on first use: the same act again is held (replay refused)"
+  },
+  {
+   "id": "K176-AGE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A grant older than an hour, or dated ahead of the clock, is refused.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a grant older than an hour, or dated ahead of the clock, is refused"
+  },
+  {
+   "id": "K176-BIND",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A grant is bound to one session, one tool and the exact act, letter for letter.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a grant binds one session, one tool and the exact act"
+  },
+  {
+   "id": "K176-SUB",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A grant never lifts a hold for a helper session started by the worker; the act goes back to the main session, and the grant stays unspent.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a subagent call is never lifted: it hands the act back"
+  },
+  {
+   "id": "K176-ONLY",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A grant lifts only an \"Owner's yes needed\" hold, never another refusal or a refusal merged beside it.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 only an \"Owner's yes needed\" hold is lifted, never another refusal or one merged beside it"
+  },
+  {
+   "id": "K176-EDIT",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A grant edited by hand is refused.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a hand-edited grant is refused"
+  },
+  {
+   "id": "K176-FOLDER",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A missing, unreadable or linked grants folder, or a linked grant file, lifts nothing.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a missing, unreadable or linked grants folder fails closed"
+  },
+  {
+   "id": "K176-RACE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Two calls racing for one grant: exactly one is let through.",
+   "evidence": "user/kit-tools/owner-grant.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 two calls racing for one grant: exactly one is let through"
+  },
+  {
+   "id": "K176-CLI",
+   "kind": "security",
+   "reach": "projects",
+   "text": "grant.mjs refuses a bad session id, a card id that is not a card name, an empty act, and a session granting itself.",
+   "evidence": "user/kit-tools/grant.mjs",
+   "test": "tests/owner-grant.test.mjs::K176 grant.mjs refuses a bad session id, a card id that is no name, an empty act, and a session granting itself"
+  },
+  {
+   "id": "K176-LIVE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The installed launcher lifts a held act once with a grant, and holds it again after.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 the installed launcher lifts a held act once with a grant, and holds it again after"
+  },
+  {
+   "id": "K176-SELF",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A worker cannot write into the grants folder, nor run grant.mjs to grant itself.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 a worker cannot write into the grants folder, nor run grant.mjs to grant itself"
+  },
+  {
+   "id": "K176-BESIDE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The launcher lifts nothing when another check refuses the same call beside the owner's-yes hold.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "test": "tests/owner-grant.test.mjs::K176 the launcher lifts nothing when another check refuses the same call beside the owner's-yes hold"
+  },
+  {
+   "id": "K175",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "Under a plugin the start-up hook finds the kit at the plugin root, and its texts name `/kit:methodology-kit`.",
+   "evidence": "project/.claude/kit-hook.cjs",
+   "test": "tests/kit-plugin.test.mjs::under a plugin the start-up hook finds the kit at the plugin root and names /kit:methodology-kit (K175)"
+  },
+  {
+   "id": "E36",
+   "kind": "added",
+   "reach": "projects",
+   "text": "One role table in kit.config.json names each role's model and effort, and the build writes every role file's model and effort lines from it.",
+   "evidence": "kit.config.json, scripts/kit.mjs",
+   "test": "tests/kit-plugin.test.mjs::build writes each role file's model and effort lines from the role table (E36)"
+  },
+  {
+   "id": "E36-START",
+   "kind": "added",
+   "reach": "projects",
+   "text": "Session start adds a `Kit roles:` line for a role on a model the kit has not measured or marks retiring.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/kit-plugin.test.mjs::session start names a role on a model the kit has not measured or marks retiring (E36)"
+  },
+  {
+   "id": "K174",
+   "kind": "added",
+   "reach": "kit",
+   "text": "`kit.mjs build plugin` turns the release into a plugin folder, the same bytes on every run.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/kit-plugin.test.mjs::build plugin writes the plugin layout, the same bytes on every run (K174)"
+  },
+  {
+   "id": "K174-FAIL",
+   "kind": "security",
+   "reach": "kit",
+   "text": "The plugin's hooks file blocks on failure for tool calls and settings changes, and wires every event the kit uses.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/kit-plugin.test.mjs::the plugin hooks.json blocks on failure for PreToolUse and ConfigChange, and wires every event (K174, K216)"
+  },
+  {
+   "id": "K174-MANIFEST",
+   "kind": "security",
+   "reach": "kit",
+   "text": "The plugin launcher refuses every call once one file in its manifest has changed.",
+   "evidence": "user/kit-tools/plugin-launch.cjs",
+   "test": "tests/kit-plugin.test.mjs::the plugin launcher refuses every call once one file in its manifest changed (K174)"
+  },
+  {
+   "id": "K174-WRITE",
+   "kind": "security",
+   "reach": "kit",
+   "text": "The plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it.",
+   "evidence": "user/kit-tools/plugin-launch.cjs",
+   "test": "tests/kit-plugin.test.mjs::the plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it (K174)"
+  },
+  {
+   "id": "K174-HOME",
+   "kind": "security",
+   "reach": "kit",
+   "text": "The plugin launcher denies another config folder's sweep approval script.",
+   "evidence": "user/kit-tools/plugin-launch.cjs",
+   "test": "tests/kit-plugin.test.mjs::the plugin launcher denies another Claude folder's approve.mjs (K174, K206)"
+  },
+  {
+   "id": "K174-ROLES",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The plugin launcher runs each role's hooks for the matching role type.",
+   "evidence": "user/kit-tools/plugin-launch.cjs",
+   "test": "tests/kit-plugin.test.mjs::the plugin launcher runs each role's hooks for the matching agent_type (K174)"
+  },
+  {
+   "id": "K174-GRANT",
+   "kind": "security",
+   "reach": "kit",
+   "text": "The plugin launcher hands an owner's-yes hold to the grant check only for a main-session call.",
+   "evidence": "user/kit-tools/plugin-launch.cjs",
+   "test": "tests/kit-plugin.test.mjs::the plugin launcher hands an owner's hold to owner-grant.cjs only for a main-session call (K174, K176)"
+  },
+  {
+   "id": "K179",
+   "kind": "added",
+   "reach": "kit",
+   "text": "`build plugin --marketplace` writes a marketplace entry pinned to the release tag and commit, and refuses a folder that is not its release.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/kit-plugin.test.mjs::build plugin writes the marketplace pinned to tag and commit, and refuses a folder off its release (K179)"
+  },
+  {
+   "id": "K179-CHECK",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The release check with `--plugin` names a plugin build whose recorded tag or commit is not the kit tag's.",
+   "evidence": "project/.claude/release-check.mjs",
+   "test": "tests/release-check.test.mjs::a plugin build whose recorded tag or commit is not the kit tag's is missing (K179)"
+  },
+  {
+   "id": "K230",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "Priority index item 11 names the size-budget rule by its id and the file that holds it.",
+   "evidence": "rules/core.md",
+   "test": "tests/kit-rules.test.mjs::the priority index names the size-budget rule by ID and by the file that holds it (K230)"
+  },
+  {
+   "id": "K232",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "`measure --real` also counts the role list each session loads (names, descriptions and tools) and the start-up hook text.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/kit-rules.test.mjs::measureReal also counts the agent list and the start-up hook text (K232)"
+  },
+  {
+   "id": "K231",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "Each score gate arm carries its own installed global instructions into its probe, checked against its install record and its own kit source; one edited by hand is refused before any session.",
+   "evidence": "scripts/recall.mjs",
+   "test": "tests/kit-recall.test.mjs::recall (K231): an arm carries its own global CLAUDE.md into its probe, and a hand-edited one is refused"
+  },
+  {
+   "id": "K231-BEHAVE",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "A behaviour run refuses a throwaway config folder whose global instructions were edited by hand, before any session.",
+   "evidence": "scripts/recall-behave.mjs",
+   "test": "tests/recall-behave.test.mjs::a behaviour run refuses a throwaway Claude folder whose CLAUDE.md was edited by hand (K231), before any session"
+  },
+  {
+   "id": "K231-GATE",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "A change to `user/CLAUDE.md` alone now needs a score gate line.",
+   "evidence": "scripts/recall.mjs",
+   "test": "tests/kit-recall.test.mjs::recall gate (K231): a PR that changes only user/CLAUDE.md needs a gate line"
+  },
+  {
+   "id": "K231-SCORE",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "The score says the user layer was measured only when every candidate and release run carried its own; otherwise it prints a Not measured line naming the arm and why.",
+   "evidence": "scripts/recall-score.mjs",
+   "test": "tests/kit-recall.test.mjs::recall-score (K231): the user layer is called measured only when every candidate and release run carried its own"
+  },
+  {
+   "id": "T2",
+   "kind": "added",
+   "reach": "projects",
+   "text": "The prompt hook cues the pop-up yes rules when a message asks for the owner's yes, and the wireframe rule when it decides a screen layout, each in the rule's own words.",
+   "evidence": "rules/cues.json"
+  }
+ ],
+ "verification": [
+  "Every new test fails first on the 1.49.0 code, on an assertion; the test check reports no finding.",
+  "A live plugin session named the plugin root and `/kit:methodology-kit` at start, held a push to main, and the runner stopped a plugin with its hooks removed.",
+  "Pending: the score gate run of record on the owner's PC, recall and behaviour."
+ ],
+ "decisions": [
+  {
+   "decision": "The Q13 cue is left out",
+   "why": "A cloud trial tied 5 of 5 against 5 of 5; the owner's pick (2026-11-21)."
+  },
+  {
+   "decision": "A grant lifts one hold, once, for the main session only",
+   "why": "A card yes names one act; a helper session has no card."
+  },
+  {
+   "decision": "The worker runner refuses outside the cloud",
+   "why": "Workers run only in the cloud, by the where-work-runs rule."
+  },
+  {
+   "decision": "A minor release",
+   "why": "New tools, a new rule and new holds reach every project."
+  }
+ ],
+ "upgrading": "Run install user, then install project: the launcher, owner-proof, the start-up hook, the global instructions, the team rules, the worker brief template and the new kit tools worker.mjs, grant.mjs, owner-grant.cjs and plugin-launch.cjs change.",
+ "limits": "The git pre-push hook reads its own yes record, not grants, so a granted push past the bound is still held there. A program, not a tool call, that writes a whole new grant file is not stopped: the grant hash catches slips, not an attacker. The global instructions do not reach a plugin session. On a machine whose own global instructions load beside the arm's, the score keeps its Not measured line.",
+ "tests": {
+  "before": 1092,
+  "after": 1134,
+  "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "PENDING",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Pending: the build sweep fills this"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Pending: the build sweep fills this"
+   },
+   {
+    "name": "Legal",
+    "result": "Pending: the build sweep fills this"
+   },
+   {
+    "name": "Code security",
+    "result": "Pending: the build sweep fills this"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Pending: the build sweep fills this"
+   },
+   {
+    "name": "Alignment",
+    "result": "Pending: the build sweep fills this"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "fixes": []
+ }
+}

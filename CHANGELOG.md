@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.50.0 - 2026-11-21
+
+Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm is graded on its own global instructions.
+
+### Added
+- A where-work-runs rule and a worker brief template name the five jobs that may run in the cloud; the rule, the brief, the sweep approval refusal and the runner hold one list.
+- The worker runner starts only a job on the fixed list, and names the list when it refuses one.
+- The worker starts `claude -p` with the pinned plugin folder, user and project settings only, `--strict-mcp-config` and the default permission mode.
+- A worker run goes to the end in its own worktree and config folder, with the scrubbed variables, a set folder and a time limit.
+- One role table in kit.config.json names each role's model and effort, and the build writes every role file's model and effort lines from it.
+- Session start adds a `Kit roles:` line for a role on a model the kit has not measured or marks retiring.
+- `kit.mjs build plugin` turns the release into a plugin folder, the same bytes on every run.
+- The plugin launcher runs each role's hooks for the matching role type.
+- `build plugin --marketplace` writes a marketplace entry pinned to the release tag and commit, and refuses a folder that is not its release.
+- The release check with `--plugin` names a plugin build whose recorded tag or commit is not the kit tag's.
+- The prompt hook cues the pop-up yes rules when a message asks for the owner's yes, and the wireframe rule when it decides a screen layout, each in the rule's own words.
+
+### Changed
+- `measure --real` also counts the role list each session loads (names, descriptions and tools) and the start-up hook text.
+- Each score gate arm carries its own installed global instructions into its probe, checked against its install record and its own kit source; one edited by hand is refused before any session.
+- A behaviour run refuses a throwaway config folder whose global instructions were edited by hand, before any session.
+- A change to `user/CLAUDE.md` alone now needs a score gate line.
+- The score says the user layer was measured only when every candidate and release run carried its own; otherwise it prints a Not measured line naming the arm and why.
+
+### Fixed
+- Recall and behaviour sessions start with `--strict-mcp-config`, so an MCP server listed in the probe project no longer joins a scored session.
+- The global instructions name the three arrow code points they ban by number, and the year line says the rules are current as of the session date instead of a fixed year range.
+- The start check reads the kit start-up line from plain hook output or the hook JSON, and only at the start of a line.
+- Under a plugin the start-up hook finds the kit at the plugin root, and its texts name `/kit:methodology-kit`.
+- Priority index item 11 names the size-budget rule by its id and the file that holds it.
+
+### Security
+- The settings-change guard blocks when it cannot run: its hook entry says `onFailure: block`, the wiring check asks for it, and a check that throws holds the change and names the cause.
+- The worker runner hands the worker only allow-listed variables, drops tokens and preload options, and always sets the cloud marker.
+- The worker runner refuses main, master, the default branch, a tag and a badly named branch.
+- The worker runner refuses to start outside the cloud or on a refused branch, before it starts anything.
+- The worker runner stops a worker whose start shows another permission mode, no kit plugin, or no kit start-up line before its first tool call.
+- A one-time grant turns the owner's card yes into one call for a cloud worker: it lifts only the hold it names, once, and says which card it came from.
+- A grant is spent on first use, so the same act again is held.
+- A grant older than an hour, or dated ahead of the clock, is refused.
+- A grant is bound to one session, one tool and the exact act, letter for letter.
+- A grant never lifts a hold for a helper session started by the worker; the act goes back to the main session, and the grant stays unspent.
+- A grant lifts only an "Owner's yes needed" hold, never another refusal or a refusal merged beside it.
+- A grant edited by hand is refused.
+- A missing, unreadable or linked grants folder, or a linked grant file, lifts nothing.
+- Two calls racing for one grant: exactly one is let through.
+- grant.mjs refuses a bad session id, a card id that is not a card name, an empty act, and a session granting itself.
+- The installed launcher lifts a held act once with a grant, and holds it again after.
+- A worker cannot write into the grants folder, nor run grant.mjs to grant itself.
+- The launcher lifts nothing when another check refuses the same call beside the owner's-yes hold.
+- The plugin's hooks file blocks on failure for tool calls and settings changes, and wires every event the kit uses.
+- The plugin launcher refuses every call once one file in its manifest has changed.
+- The plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it.
+- The plugin launcher denies another config folder's sweep approval script.
+- The plugin launcher hands an owner's-yes hold to the grant check only for a main-session call.
+
 ## 1.49.0 - 2026-11-21
 
 Every program the installed kit starts by name now starts from node's own folder; an owner push past the bound needs the owner's yes; reviewers read rules from the merge base; and harmless reads the guards held now pass.
