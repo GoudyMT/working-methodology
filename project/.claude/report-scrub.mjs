@@ -8,9 +8,9 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
 import { SECRET_VALUE } from './secret-patterns.mjs';
+import safeSpawn from './safe-spawn.cjs';
 
 export const AREAS = ['guards', 'install', 'rules', 'skills', 'tools', 'templates', 'ci', 'docs', 'other'];
 export const SEVERITIES = ['critical', 'high', 'medium', 'low'];
@@ -57,7 +57,8 @@ const COMMON = new Set(['kit', 'the', 'and', 'app', 'web', 'api', 'src', 'main',
  */
 export function knownWords(projectDir, home) {
 	const out = [];
-	const git = (...a) => { const r = spawnSync('git', a, { cwd: projectDir, encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : ''; };
+	// git reads the project with -C, from node's own folder: started in the project, a git.exe there would run (K213).
+	const git = (...a) => { const r = safeSpawn.gitRead(projectDir, a, { encoding: 'utf8' }); return r.status === 0 ? r.stdout.trim() : ''; };
 	out.push(path.basename(path.resolve(projectDir)));
 	const top = git('rev-parse', '--show-toplevel');
 	if (top) out.push(path.basename(top));

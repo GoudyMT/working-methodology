@@ -32,7 +32,7 @@ export function copyKitCli(kit) {
   // The retired-wording check the session-start report reads (build 20).
   for (const f of ['retired-check.mjs', 'retired-wording.json']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(kit, 'project/.claude', f));
   // The report channel's start-up lines (build 21) and what it imports.
-  for (const f of ['kit-report.mjs', 'report-scrub.mjs', 'list-data.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(kit, 'project/.claude', f));
+  for (const f of ['kit-report.mjs', 'report-scrub.mjs', 'list-data.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(kit, 'project/.claude', f));
   // The guard launcher, which kit.mjs reads its record names and entries from (1.25.1).
   fs.mkdirSync(path.join(kit, 'user/kit-tools'), { recursive: true });
   fs.copyFileSync(path.resolve('user/kit-tools/kit-launch.cjs'), path.join(kit, 'user/kit-tools/kit-launch.cjs'));
