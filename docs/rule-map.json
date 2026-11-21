@@ -14,7 +14,9 @@
    "scripts": [
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
-   "tests": [],
+   "tests": [
+    "tests/kit-install.test.mjs"
+   ],
    "workflows": []
   },
   "patterns-and-dispatch": {
@@ -86,7 +88,8 @@
     "project/.claude/size-band.mjs"
    ],
    "tests": [
-    "tests/kit-helpers.mjs"
+    "tests/kit-helpers.mjs",
+    "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
   },
@@ -164,6 +167,7 @@
     "tests/recall-ci.test.mjs",
     "tests/release-verify.test.mjs",
     "tests/rule-map.test.mjs",
+    "tests/run-records-kept.test.mjs",
     "tests/test-check.test.mjs",
     "tests/test-value.test.mjs",
     "tests/use-check.test.mjs"
@@ -226,9 +230,11 @@
    "guards": [],
    "scripts": [],
    "tests": [
+    "tests/gate-seen-twice.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
-    "tests/recall-behave.test.mjs"
+    "tests/recall-behave.test.mjs",
+    "tests/run-records-kept.test.mjs"
    ],
    "workflows": []
   },
@@ -367,6 +373,7 @@
     "tests/kit-recall.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep-outcome.test.mjs",
+    "tests/lean-fit-holds.test.mjs",
     "tests/visuals.test.mjs"
    ],
    "workflows": []
@@ -488,6 +495,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
+    "tests/rule-cues-quiet.test.mjs",
     "tests/task-gate.test.mjs"
    ],
    "workflows": []
@@ -561,7 +569,8 @@
    "tests": [
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
-    "tests/kit-sweep-outcome.test.mjs"
+    "tests/kit-sweep-outcome.test.mjs",
+    "tests/launcher-other-home.test.mjs"
    ],
    "workflows": []
   },
@@ -625,7 +634,9 @@
    "scripts": [],
    "tests": [
     "tests/kit-helpers.mjs",
-    "tests/kit-sweep-budget.test.mjs"
+    "tests/kit-install.test.mjs",
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/rule-cues-quiet.test.mjs"
    ],
    "workflows": []
   },
@@ -656,7 +667,9 @@
    "scripts": [
     "project/.claude/tracking-check.mjs"
    ],
-   "tests": [],
+   "tests": [
+    "tests/kit-install.test.mjs"
+   ],
    "workflows": []
   },
   "security-standards": {
@@ -692,8 +705,10 @@
    "guards": [],
    "scripts": [],
    "tests": [
+    "tests/gate-seen-twice.test.mjs",
     "tests/kit-hooks.test.mjs",
-    "tests/kit-recall.test.mjs"
+    "tests/kit-recall.test.mjs",
+    "tests/recall-behave.test.mjs"
    ],
    "workflows": []
   },
@@ -755,7 +770,8 @@
     "tests/pin-check.test.mjs",
     "tests/rule-map.test.mjs",
     "tests/test-check.test.mjs",
-    "tests/test-format.test.mjs"
+    "tests/test-format.test.mjs",
+    "tests/test-value.test.mjs"
    ],
    "workflows": []
   },
@@ -823,8 +839,11 @@
   },
   "compact-ritual": {
    "guards": [],
-   "scripts": [],
+   "scripts": [
+    "scripts/kit.mjs"
+   ],
    "tests": [
+    "tests/kit-install.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/resume-packet.test.mjs"
    ],
