@@ -87,3 +87,41 @@ test('an answer recorded with state.mjs decide is not named, and a session with 
 	assert.equal(r.status, 0, r.stdout);
 	assert.match(r.stdout, /^Owner answers: .*\(\d+ read\)$/m, 'the pass line counts what it read');
 });
+
+// The build 23a sweep (G2, N1, N2, D5, N5, T4): a decision asked with a code span was skipped as an act yes; one short
+// row ("Narrow it") stood for every answer with the same words; the repair line did not say a short answer needs
+// --unchecked; a run from a subfolder read no decisions, and .kit as a file threw; the pass line's count was not checked.
+// why: catches an owner's pop-up answer left out of the decision record at closeout
+test('a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder', () => {
+	const dir = project();
+	const h = home(dir, [
+		...popup(1, 'Which wording for `rule:x`?', 'Keep the short one'),
+		...popup(2, 'Run `git push origin feat/x`?', 'No, wait for CI first'),
+		...popup(3, 'Narrow K154 or widen it?', 'Narrow it'),
+		...popup(4, 'Close K170 now?', 'Narrow it'),
+		...popup(5, 'Run `git push origin feat/y`?', 'Yes (Recommended)'),
+	]);
+	let r = run(ANSWERS, dir, [], h);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stdout, /4 owner answer\(s\) no decision row quotes/);
+	assert.match(r.stdout, /under three words is recorded with --unchecked/);
+	assert.ok(!r.stdout.includes('ans-5#1'), 'an act yes is not listed');
+	// One short row quotes one answer: the other "Narrow it" is still named.
+	fs.writeFileSync(path.join(dir, 'd.json'), JSON.stringify({ decision: 'narrow K154', words: 'Narrow it', why: 'the owner picked it' }));
+	assert.match(run(STATE, dir, ['decide', '--from', 'd.json', '--unchecked'], h).stdout, /D-1 recorded/);
+	r = run(ANSWERS, dir, [], h);
+	assert.match(r.stdout, /3 owner answer\(s\)/);
+	assert.ok(r.stdout.includes('ans-4#1') && !r.stdout.includes('ans-3#1'), r.stdout);
+	// From a subfolder, the project's own decisions are read; .kit as a file is named, not a crash.
+	fs.mkdirSync(path.join(dir, 'sub'));
+	assert.match(run(ANSWERS, path.join(dir, 'sub'), [], h).stdout, /3 owner answer\(s\)/);
+	fs.writeFileSync(path.join(dir, '.kit'), '');
+	r = run(ANSWERS, dir, ['not', 'ans-4#1', 'the same call as D-1'], h);
+	assert.equal(r.status, 1, r.stdout + r.stderr);
+	assert.match(r.stdout, /\.kit is a link, a file/);
+	fs.rmSync(path.join(dir, '.kit'));
+	for (const id of ['ans-1#1', 'ans-2#1', 'ans-4#1']) assert.equal(run(ANSWERS, path.join(dir, 'sub'), ['not', id, 'checked by hand in this test'], h).status, 0, id);
+	r = run(ANSWERS, dir, [], h);
+	assert.equal(r.status, 0, r.stdout);
+	assert.match(r.stdout, /\(4 read\)$/m);
+});

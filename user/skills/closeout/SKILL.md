@@ -24,6 +24,8 @@ It starts on its own only as rule:compact-ritual says.
    and words not found there go in only with `--unchecked`, marked so. Then run `node <this skill's folder>/answers.mjs`
    (K208): it names each answer the owner tapped in this session's pop-ups that no decision row quotes, and the scan
    fails until each is recorded with `state.mjs decide` or marked `answers.mjs not <id> <reason>` as not a decision.
+   An answer under three words is recorded with `--unchecked`, one row per answer. With no transcript of this session to
+   read (no session id, or another machine) it passes with "not checked", and the answers are checked by hand.
    Then run `state.mjs render` and `state.mjs check` until it passes. Never edit a generated block by hand: render refuses a block edited since the
    last render, and only `render --overwrite`, after the change is in the data, writes over it. A project with no
    generated block yet runs `state.mjs init` once. Where the project keeps its improvement list as data

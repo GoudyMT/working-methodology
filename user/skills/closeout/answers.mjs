@@ -10,16 +10,22 @@
 //                                            (kept in .kit/not-decisions.jsonl)
 //
 // An owner answer is read as state.mjs reads one: a person's turn (not a subagent's, not a meta line) whose pop-up
-// record is accepted by the user. A question quoting one act in a code span, answered Yes or No, is an owner yes to
-// that act (owner-yes.cjs), not a decision, and is not listed. A row quotes an answer when its words_from names that
-// turn, its words are the answer, or one holds the other (three words or more) word for word. Limit: a card answered
-// in a project thread is not in the transcript, so it is not read here.
-// Exit 0 = every answer recorded or marked (or no transcript to read, said so); 1 = answers left; 2 = usage.
+// record is accepted by the user. A question quoting one act in one code span, answered exactly Yes, Yes (Recommended)
+// or No, is an owner yes to that act (owner-yes.cjs), not a decision, and is not listed; any other answer to it is
+// (the build 23a sweep: a decision asked with a code span was skipped). A row quotes an answer when its words_from names
+// that turn, its words are the answer, or one holds the other (three words or more) word for word; each row quotes one
+// answer only, so one "Narrow it" row does not stand for every answer with the same words. Limit: a card answered
+// in a project thread is not in the transcript, so it is not read here; two answers with the same words need a row each.
+// It reads the project the folder it runs from is in (as state.mjs does from a subfolder).
+// Exit 0 = every answer recorded or marked; 0 with "not checked" when no transcript of this session can be read (no
+// session id, or another machine), said so; 1 = answers left; 2 = usage.
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-const ROOT = process.cwd();
+// The project: the nearest folder up from here that holds a tracking file, else here.
+const isProject = (d) => ['_State.json', '_List.jsonl', '_Decisions.jsonl'].some((f) => fs.existsSync(path.join(d, f)));
+const ROOT = (() => { for (let d = process.cwd(); ; d = path.dirname(d)) { if (isProject(d)) return d; if (path.dirname(d) === d) return process.cwd(); } })();
 const SESSION = String(process.env.CLAUDE_CODE_SESSION_ID || '');
 const MARKS = path.join('.kit', 'not-decisions.jsonl');
 const home = () => process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
@@ -53,7 +59,7 @@ function answers(files) {
 			const got = e.toolUseResult && e.toolUseResult.answers;
 			if (!got || typeof got !== 'object' || d.decision !== 'accept' || !/^user/.test(String(d.source || ''))) continue;
 			Object.entries(got).forEach(([question, answer], i) => {
-				const act = /`[^`]+`/.test(question) && /^(yes(\s*\(recommended\))?|no\b.*)$/i.test(String(answer).trim());
+				const act = /^[^`]*`[^`]+`[^`]*$/.test(question) && /^(yes(\s*\(recommended\))?|no)$/i.test(String(answer).trim());
 				if (!act) out.push({ id: `${e.uuid}#${i + 1}`, question: String(question), answer: String(answer), turn: e.uuid });
 			});
 		}
@@ -61,10 +67,11 @@ function answers(files) {
 	return out;
 }
 
-/** Whether a decision row quotes the answer: it points at the turn, or its words and the answer hold one another. */
-function quoted(a, rows) {
+/** Whether a decision row not yet used quotes the answer: it points at the turn, or its words and the answer hold one another. */
+function quoted(a, rows, used) {
 	const want = words(a.answer);
-	return rows.some((r) => {
+	const k = rows.findIndex((r, i) => {
+		if (used.has(i)) return false;
 		if (String(r.words_from || '') === `${SESSION}:${a.turn}`) return true;
 		// A short answer ("Yes") is quoted only whole: inside a longer row's words it could be any word of another call.
 		const have = words(r.words || '');
@@ -72,6 +79,9 @@ function quoted(a, rows) {
 		if (!n(have) || !n(want)) return false;
 		return have === want || (n(have) >= 3 && want.includes(have)) || (n(want) >= 3 && have.includes(want));
 	});
+	if (k < 0) return false;
+	used.add(k);
+	return true;
 }
 
 function main(argv) {
@@ -87,7 +97,7 @@ function main(argv) {
 		if (!id || !why.join(' ').trim()) { console.log('Usage: node answers.mjs not <id> <reason why it is not a decision>'); return 2; }
 		if (!all.some((a) => a.id === id)) { console.log(`${show(id)} is not an owner answer in this session: run node answers.mjs to list them`); return 1; }
 		const dir = path.join(ROOT, '.kit');
-		try { if (fs.lstatSync(dir).isSymbolicLink()) throw new Error('link'); } catch (e) { if (e.code !== 'ENOENT') { console.log('.kit is a link or cannot be read; nothing written'); return 1; } fs.mkdirSync(dir); }
+		try { const st = fs.lstatSync(dir); if (st.isSymbolicLink() || !st.isDirectory()) throw new Error('link'); } catch (e) { if (e.code !== 'ENOENT') { console.log('.kit is a link, a file or cannot be read; nothing written'); return 1; } fs.mkdirSync(dir); }
 		try { const st = fs.lstatSync(path.join(ROOT, MARKS)); if (st.isSymbolicLink() || !st.isFile() || st.nlink > 1) { console.log(`${MARKS} is a link or not a plain file; nothing written`); return 1; } } catch { /* new */ }
 		fs.appendFileSync(path.join(ROOT, MARKS), `${JSON.stringify({ id, session: SESSION, date: new Date().toISOString().slice(0, 10), reason: show(why.join(' ')) })}\n`);
 		console.log(`${show(id)} marked not a decision`);
@@ -96,12 +106,16 @@ function main(argv) {
 	if (argv.length) { console.log('Usage: node answers.mjs | node answers.mjs not <id> <reason>'); return 2; }
 	const rows = lines(readText('_Decisions.jsonl'));
 	const marked = new Set(marks.filter((m) => m.session === SESSION && String(m.reason || '').trim()).map((m) => m.id));
-	const left = all.filter((a) => !marked.has(a.id) && !quoted(a, rows));
+	// A row taken by the answer it points at (words_from) is never spent on another first.
+	const used = new Set();
+	const order = [...all].sort((x, y) => Number(!rows.some((r) => String(r.words_from || '') === `${SESSION}:${x.turn}`)) - Number(!rows.some((r) => String(r.words_from || '') === `${SESSION}:${y.turn}`)));
+	const open = new Set(order.filter((a) => !marked.has(a.id) && !quoted(a, rows, used)).map((a) => a.id));
+	const left = all.filter((a) => open.has(a.id));
 	if (!left.length) {
 		console.log(`Owner answers: every owner answer in this session is recorded or marked (${all.length} read)`);
 		return 0;
 	}
-	console.log(`Owner answers: ${left.length} owner answer(s) no decision row quotes. Record each with node .claude/state.mjs decide --from <file.json> (its words the owner's answer, its why the reason), or mark it: node <this skill's folder>/answers.mjs not <id> <reason>`);
+	console.log(`Owner answers: ${left.length} owner answer(s) no decision row quotes. Record each with node .claude/state.mjs decide --from <file.json> (its words the owner's answer, its why the reason; an answer under three words is recorded with --unchecked, one row per answer), or mark it: node <this skill's folder>/answers.mjs not <id> <reason>`);
 	for (const a of left) console.log(`  ${a.id}: "${show(a.question)}" -> "${show(a.answer)}"`);
 	return 1;
 }
