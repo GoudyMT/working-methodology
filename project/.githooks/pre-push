@@ -181,7 +181,7 @@ if [ -f "$gatelog" ]; then
     case "$rsha" in *[!0]*) ;; *) continue ;; esac
     pr=$(awk -v sha="$rsha" '$2=="ARMED" && $4==sha { n=$3; sub(/.*\//,"",n); armed[n]=1 } $2=="DISARMED" { delete armed[$3] } END { s=""; for (n in armed) { printf "%s%s", s, n; s=" " } }' "$gatelog")
     if [ -n "$pr" ]; then
-      echo "Push blocked: PR $pr is armed at this head. Run node ~/.claude/kit-tools/merge-gate.mjs disarm $pr first, then the gate again after the push." >&2
+      echo "Push blocked: PR $pr is armed at this head. Run merge-gate.mjs disarm $pr first (the start-up line \"Kit tools this session\" has its command), then the gate again after the push." >&2
       exit 1
     fi
   done <<EOF

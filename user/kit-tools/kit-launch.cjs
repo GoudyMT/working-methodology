@@ -833,12 +833,35 @@ function forgets(input, dir) {
 	return same(path.resolve(cwd, m[5] || m[6]), path.resolve(dir));
 }
 
+// K206 P3: the rules once named a fixed ~/.claude path, and ~ is always the real home, so a session on another Claude
+// folder (a throwaway, a probe, a plugin) ran that folder's kit tool, or none. Running a kit tool from a Claude folder
+// other than the one this launcher was installed into is held, with this session's own command; reading one is not.
+// A folder counts only when it holds a kit install, so the kit source's user/ tree and plain files pass.
+function otherHomeTool(input, home = HOME, userHome = require('os').homedir()) {
+	if (!input || !SHELLS.includes(input.tool_name)) return null;
+	const command = String((input.tool_input && input.tool_input.command) ?? '');
+	const cwd = path.resolve(String(input.cwd || process.cwd()));
+	const fold = (p) => (WIN ? p.toLowerCase() : p);
+	const user = posix(userHome);
+	const text = command.replace(/(^|[\s=(:;&|"'])(~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)(?=[/\\])/gi, (m, a) => a + user).replace(/\\/g, '/');
+	const own = fold(posix(path.resolve(home)));
+	const spell = posix(path.resolve(home)).toLowerCase() === posix(path.resolve(userHome, '.claude')).toLowerCase() ? '~/.claude' : posix(path.resolve(home));
+	const RUN = /(?:^|[\s;&|(])["']?(?:[^\s"';&|]*[/])?node(?:\.exe)?["']?\s+["']?([^\s"';&|]*?)[/](skills[/][\w.-]+[/][\w.-]+\.[cm]js|kit-tools[/][\w./-]+|kit-hooks[/][\w./-]+)/gi;
+	for (const m of text.matchAll(RUN)) {
+		const dir = path.resolve(cwd, m[1] || '.');
+		if (fold(posix(dir)) === own) continue;
+		if (!fs.existsSync(path.join(dir, 'kit-install.json'))) continue;
+		return deny(`this runs ${m[2]} from another Claude folder (${posix(dir)}), not this session's own. Run this session's copy: node ${spell}/${m[2]} (the start-up line "Kit tools this session" names it).`);
+	}
+	return null;
+}
+
 function preToolUse(input) {
 	const here = projectCheck(input);
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
 	// a call started there. The strictest answer wins: a refusal, then an ask, then the rest (as guard.cjs merges).
 	const mine = findProject(input);
-	const answers = [here];
+	const answers = [here, otherHomeTool(input)];
 	const named = namedProjects(input);
 	// One the reader cannot read for sure is held with its reason, never fanned out over every project (1.33.1).
 	if (named.unreadable && recordedProjects().some((d) => !(mine && !mine.ambiguous && same(mine.dir, d)))) {
@@ -1031,4 +1054,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { otherHomeTool, gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

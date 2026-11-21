@@ -627,8 +627,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
-    // 1.33.0: the PowerShell tool never runs a $HOME path unasked, so the rules give it the full path.
-    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*PowerShell: full path/, f);
+    // K206 (build 22): a fixed ~/.claude path sent a session on another Claude folder to the wrong copy, so the rules name
+    // the tool and the start-up line names this session's full command (the PowerShell spelling included).
+    assert.match(text, /`approve\.mjs` \(its command is in the start-up line "Kit tools this session"\)/, f);
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }

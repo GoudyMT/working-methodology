@@ -15,7 +15,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
-import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
+import { mergeOnGreen, renderMergeOnGreen, homeSpelling } from './merge-on-green.mjs';
 import { retiredHits, retiredList, hitLine } from '../project/.claude/retired-check.mjs';
 import { waiting as reportWaiting, unheard as reportUnheard, intakeHere as reportIntakeHere } from '../project/.claude/kit-report.mjs';
 
@@ -1524,8 +1524,18 @@ function doubleRunLines(projectDir) {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source, session, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
+// K206: the rules name a kit tool, not a folder; this line names where this session's copy is. A plugin's root wins, as
+// its tools live there. Said again after a compact, since session start runs again then.
+export function kitToolsLine(dir) {
+  const { full, tilde } = homeSpelling(dir);
+  const tool = (p) => `node ${tilde}/${p}`;
+  const ps = tilde === full ? '' : ` (PowerShell: the full path, ${full}/kit-tools/merge-gate.mjs)`;
+  return `Kit tools this session: sweep approval ${tool('skills/pre-pr-sweep/approve.mjs')}; merge gate ${tool('kit-tools/merge-gate.mjs')}${ps}. Run these copies, not another Claude folder's.`;
+}
+
+export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
+  lines.push(kitToolsLine(env.CLAUDE_PLUGIN_ROOT || home));
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
   const channel = stableChannelLine(home);
@@ -2106,6 +2116,35 @@ export function sourceHooks(kit) {
   return spawnSync('git', ['-C', kit, 'config', 'core.hooksPath', '.githooks']).status === 0 ? 'set' : 'not a git repository';
 }
 
+// K206 P4: instruction text names a kit tool, not a folder; a fixed home path sends a session on another Claude folder
+// (a throwaway, a probe, a plugin) to the wrong copy. The folder alone may still be named as the default place.
+const FIXED_HOME = /(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)[/\\]\.claude[/\\][\w*]/;
+export function fixedHomePaths({ kit }) {
+  const files = [];
+  const walk = (rel, keep) => {
+    let names = [];
+    try { names = fs.readdirSync(path.join(kit, rel), { withFileTypes: true }); } catch { return; }
+    for (const d of names) {
+      const r = `${rel}/${d.name}`;
+      if (d.isDirectory()) walk(r, keep);
+      else if (keep(d.name)) files.push(r);
+    }
+  };
+  const md = (n) => n.endsWith('.md');
+  walk('rules', md);
+  walk('user/agents', md);
+  walk('user/skills', md);
+  walk('project/.githooks', () => true);
+  if (fs.existsSync(path.join(kit, 'user/CLAUDE.md'))) files.push('user/CLAUDE.md');
+  const hits = [];
+  for (const file of files.sort()) {
+    fs.readFileSync(path.join(kit, file), 'utf8').split(/\r?\n/).forEach((text, i) => {
+      if (FIXED_HOME.test(text)) hits.push({ file, line: i + 1, text: text.trim().slice(0, 160) });
+    });
+  }
+  return hits;
+}
+
 export function build({ kit }) {
   const dir = path.join(kit, 'rules');
   const mods = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
@@ -2525,6 +2564,12 @@ function main(argv) {
     if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
   } else if (cmd === 'build') {
     const tree = checkRoot(kit);
+    const fixed = fixedHomePaths({ kit: tree });
+    if (fixed.length) {
+      console.error(`build: ${fixed.length} line(s) name a file under a fixed ~/.claude path; name the tool and point to the start-up line ("Kit tools this session") instead (K206):`);
+      for (const h of fixed) console.error(`  ${h.file}:${h.line}: ${h.text}`);
+      process.exit(1);
+    }
     const out = build({ kit: tree });
     for (const [rel, text] of out) {
       fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true });

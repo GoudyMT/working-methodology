@@ -159,3 +159,28 @@ test('a recorded folder whose parent cannot be listed is not gone', () => {
 	}
 	assert.equal(L.gone(path.join(parent, 'app')), true, 'a folder that is really gone still is');
 });
+
+// K206 P3: a session ran another Claude folder's kit tool (the rules named ~/.claude, and ~ is always the real home), so
+// a throwaway or probe session judged its sweep by the owner's copy. Running one is held with this session's command;
+// reading one is not.
+// why: catches a session that runs approve.mjs or the merge gate from a Claude folder other than its own
+test('the launcher holds a kit tool run from another Claude folder, and names this session\'s own (K206)', () => {
+	const { home, L } = launcher();
+	const user = kitTemp.makeTemp('lv-user-');
+	const real = path.join(user, '.claude');
+	for (const d of [home, real]) { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'kit-install.json'), '{}'); }
+	const call = (command, tool = 'Bash') => L.otherHomeTool({ tool_name: tool, tool_input: { command }, cwd: user }, home, user);
+	const own = home.split(path.sep).join('/');
+	const held = call('node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json');
+	assert.equal(held?.hookSpecificOutput?.permissionDecision, 'deny');
+	assert.match(held.hookSpecificOutput.permissionDecisionReason, new RegExp(`node ${own.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/pre-pr-sweep/approve\\.mjs`));
+	assert.equal(call('node "$env:USERPROFILE\\.claude\\kit-tools\\merge-gate.mjs" arm 5', 'PowerShell')?.hookSpecificOutput?.permissionDecision, 'deny');
+	assert.equal(call(`node "${own}/skills/pre-pr-sweep/approve.mjs" c.json`), null, 'its own copy runs');
+	assert.equal(call('cat ~/.claude/skills/pre-pr-sweep/approve.mjs'), null, 'a read is not held');
+	assert.equal(call('node scripts/kit.mjs build'), null);
+	// The default folder's own session spells it with ~, as its allow rules do.
+	assert.equal(L.otherHomeTool({ tool_name: 'Bash', tool_input: { command: 'node ~/.claude/kit-tools/merge-gate.mjs arm 5' }, cwd: user }, real, user), null);
+	// A folder with no kit install is not a Claude folder the kit runs from (the kit source's user/ tree, say).
+	fs.rmSync(path.join(real, 'kit-install.json'));
+	assert.equal(call('node ~/.claude/skills/pre-pr-sweep/approve.mjs c.json'), null);
+});
