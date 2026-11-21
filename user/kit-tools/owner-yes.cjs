@@ -99,7 +99,7 @@ function yeses(lines, { all = false } = {}) {
 				// K144 (build 18): each question of a pop-up is its own tap, kept by the pop-up's id and the question's place;
 				// a pop-up of one question keeps the plain id, as taps spent before 1.44.0 were kept.
 				const id = qs.length > 1 ? `${b.tool_use_id}_q${k}` : String(b.tool_use_id);
-				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id, yes });
+				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id, yes, answer });
 			}
 		}
 	}
@@ -322,9 +322,10 @@ function sessionYeses(sessionId, repo, { all = false } = {}) {
 	return out;
 }
 // Every answer the owner gave to one act after a time (with act null, to any pop-up), oldest first, a No included:
-// { at, yes }. For the loop's plan shadow (T7 slice 2), which counts a plan the owner answered No to as a disagreement.
+// { at, yes, answer }. For the loop's plan shadow (T7 slice 2), which counts a plan the owner answered No to as a
+// disagreement, and (K210) reads what a No said to match it against the risks the verdict named.
 function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
-	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes })).sort((a, b) => a.at - b.at);
+	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes, answer: y.answer })).sort((a, b) => a.at - b.at);
 }
 // The owner's latest answer to one act after a time, as the guards read it: { at, yes, single, tap } or null. single is
 // whether the question quoted this act alone (the build 13 sweep: the loop took any Yes, the newest even after a No, and
