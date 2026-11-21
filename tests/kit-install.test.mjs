@@ -1288,6 +1288,9 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   for (const quiet of ['yes, ship it', 'Yes please, go ahead.', 'ask for help on the parser', 'she said yes to the plan', 'fix the grid layout in the css', 'what is the folder layout of this repo?', 'the layout test fails', 'the app layout is broken on narrow widths', 'print the page layout']) assert.equal(cue(quiet), '', quiet);
   assert.equal(kitTools.ruleCues({ kit: path.resolve('.'), prompt: 'Push the branch.', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
   for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?']) assert.equal(cue(quiet), '', quiet);
+  // The build 23b sweep: an ask in the product, a person's sign-off and a test mock are no owner's yes or layout.
+  for (const quiet of ['make the form ask the user for approval', 'asked Bob for sign-off on the budget', 'mock up the API response in the test', 'we mocked up a client for the tests']) assert.equal(cue(quiet), '', quiet);
+  assert.match(cue('Before the merge, ask me for a yes.'), /rule:outward-acts/);
   // Through the hook, beside the kit check.
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));

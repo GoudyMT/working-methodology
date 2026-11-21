@@ -47,7 +47,7 @@
       "rule": "outward-acts",
       "home": "AGENTS.md",
       "source": "rules/core.md",
-      "when": "\\bask\\w*\\b[^.?!]*\\bfor (a |an |the |my |their |the owner'?s )?(yes|approval|sign-?off)\\b|\\bowner'?s yes\\b",
+      "when": "\\bask\\w*\\b[^.?!]*\\b(the owner|me|us)\\b[^.?!]*\\bfor (a |an |the |my |their |his |her )?(yes|approval|sign-?off)\\b|\\bowner'?s yes\\b",
       "quotes": [
         "\"The owner's yes\" = the owner's Yes in a choice pop-up quoting the act exactly.",
         "Name the act, wait for the owner's yes (the guards read that tap, never Claude's word)"
@@ -57,7 +57,7 @@
       "rule": "blocked-prompts",
       "home": "standards/evidence-and-failures.md",
       "source": "rules/evidence-and-failures.md",
-      "when": "\\bask\\w*\\b[^.?!]*\\bfor (a |an |the |my |their |the owner'?s )?(yes|approval|sign-?off)\\b|\\bowner'?s yes\\b",
+      "when": "\\bask\\w*\\b[^.?!]*\\b(the owner|me|us)\\b[^.?!]*\\bfor (a |an |the |my |their |his |her )?(yes|approval|sign-?off)\\b|\\bowner'?s yes\\b",
       "quotes": [
         "ask with the choice pop-up, the question quoting the exact act: the owner's tap clears it. Typed words only where the tool or model has no pop-up."
       ]
@@ -66,7 +66,7 @@
       "rule": "visual-design-collaboration",
       "home": ".claude/rules/design-and-ux.md",
       "source": "rules/design-and-ux.md",
-      "when": "\\b(choos|decid|pick|design|redesign|new)\\w*\\b[^.?!]*\\b(screen|page|ui|app|visual) layouts?\\b|\\bwire-?frames?\\b|\\bmock(s|ed|ing)? ?-?ups?\\b",
+      "when": "\\b(choos|decid|pick|design|redesign|new)\\w*\\b[^.?!]*\\b(screen|page|ui|app|visual) layouts?\\b|\\bwire-?frames?\\b|\\bmock(s|ed|ing)? ?-?ups?\\b[^.?!]*\\b(screen|page|ui|app|layout|view|form|dashboard)s?\\b|\\b(screen|page|ui|app|layout|view|form|dashboard)s?\\b[^.?!]*\\bmock(s|ed|ing)? ?-?ups?\\b",
       "quotes": [
         "**Visual decisions (how the product LOOKS) are collaborative, never unilateral:**",
         "Every undecided visual (layout, component, state set, number or date format) is decided from a rendered wireframe, never prose."
