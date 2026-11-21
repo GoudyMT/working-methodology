@@ -1,0 +1,8 @@
+{
+  "lines": [
+    {
+      "before": "11. Size Budgets: Trim Before You Ask",
+      "after": "11. Size Budgets: Trim Before You Ask -> rule:size-budgets in `.claude/rules/code.md`"
+    }
+  ]
+}

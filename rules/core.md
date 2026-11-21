@@ -45,7 +45,7 @@ On conflict, the higher tier wins (after Instruction Priority).
 10. Test Integrity
 
 **Tier 3 - Process discipline (violation = waste + bloat)**
-11. Size Budgets: Trim Before You Ask
+11. Size Budgets: Trim Before You Ask -> rule:size-budgets in `.claude/rules/code.md`
 12. Simplicity Lens + Dual-Horizon + Success Charter
 13. Tracking-file discipline (unique function, anti-duplication, batching, caps)
 14. Mid-Design Red-Team + Pre-PR Deep Sweep (never self-asserted) + Pre-Push Op-Test + Parking Lot

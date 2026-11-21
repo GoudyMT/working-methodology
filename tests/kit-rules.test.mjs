@@ -1383,3 +1383,18 @@ test('the where-work-runs rule, the cloud refusals and the worker brief name one
   const runner = /export const JOBS = \[([^\]]+)\]/.exec(read(path.resolve('user/kit-tools/worker.mjs')))?.[1] || '';
   assert.deepEqual(list(runner.replace(/'/g, '')), jobs, 'worker.mjs starts only the same jobs');
 });
+
+// K230 (build 23b): the start text named the size-budget rule by its title only, and the rule sits in a module that
+// loads only when a code file is opened, so recall question 8 took 5 to 7 searches and ran out of its 8 turns at
+// random (startup-size measure, 6 of 17 trial sessions). The priority index names its ID and the file that holds it.
+// why: guards rule:size-budgets
+test('the priority index names the size-budget rule by ID and by the file that holds it (K230)', () => {
+  const core = read(path.resolve('rules/core.md'));
+  const line = /^11\. Size Budgets[^\n]*$/m.exec(core)?.[0] || '';
+  assert.ok(line.includes('rule:size-budgets'), line);
+  const agents = read(path.resolve('project/AGENTS.md'));
+  const file = /^\| code \| `([^`]+)` \|/m.exec(agents)?.[1];
+  assert.ok(file && read(path.resolve('rules/code.md')).includes('{#size-budgets}'), 'the rule lives in the code module');
+  assert.ok(line.includes(file), `the index line names ${file}: ${line}`);
+  assert.ok(agents.includes(line), 'the built AGENTS.md carries the same line');
+});
