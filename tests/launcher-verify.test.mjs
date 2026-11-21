@@ -95,6 +95,20 @@ test('a settings file that sets ANTHROPIC_BASE_URL or an apiKeyHelper is named a
 	assert.equal(L.verify(dir, rec, [], shims).settings.length, 1);
 });
 
+// The build 23a sweep: other env keys send the model traffic elsewhere, trust another certificate, export telemetry or
+// name a program git runs, and other settings keys run a command or switch on a project's MCP servers.
+// why: guards rule:outward-acts (a project settings file that reroutes the session or runs a program is the owner's)
+test('a settings file that reroutes the model, trusts another certificate or runs a command is named as a fault', () => {
+	const { L } = launcher();
+	const env = ['GIT_EXTERNAL_DIFF', 'GIT_PAGER', 'ANTHROPIC_AUTH_TOKEN', 'ANTHROPIC_CUSTOM_HEADERS', 'ANTHROPIC_FOUNDRY_RESOURCE', 'CLAUDE_CODE_USE_BEDROCK',
+		'CLAUDE_CODE_USE_VERTEX', 'AWS_PROFILE', 'NODE_EXTRA_CA_CERTS', 'SSL_CERT_FILE', 'NODE_TLS_REJECT_UNAUTHORIZED', 'OTEL_EXPORTER_OTLP_ENDPOINT', 'NO_PROXY'];
+	for (const k of env) assert.match(L.settingsProblem(JSON.stringify({ env: { [k]: 'x' } })), new RegExp(k), k);
+	for (const k of ['awsAuthRefresh', 'awsCredentialExport', 'otelHeadersHelper', 'enableAllProjectMcpServers', 'enabledMcpjsonServers']) {
+		assert.match(L.settingsProblem(JSON.stringify({ [k]: k.startsWith('enable') ? true : 'sh ./x.sh' })), new RegExp(k), k);
+	}
+	for (const text of ['{"env":{"ANTHROPIC_MODEL":"x"}}', '{"env":{"MAX_THINKING_TOKENS":"8000"}}', '{"model":"opus"}']) assert.equal(L.settingsProblem(text), '', text);
+});
+
 // why: guards rule:outward-acts (core.hooksPath moved off the kit's hooks turns every commit and push check off)
 // planted: {"file":"user/kit-tools/kit-launch.cjs","was":"const x = String(p || '')","to":"const x = String(p && '')"}
 // planted: {"file":"user/kit-tools/kit-launch.cjs","was":"if (!line || line[0] === '#' || line[0] === ';') continue;","to":"if (!line || line[0] !== '#' || line[0] === ';') continue;"}

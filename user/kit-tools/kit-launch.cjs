@@ -102,11 +102,15 @@ function findProject(input, only = false) {
 // every hook and every command Claude Code runs, so one of these in a project file is a hold.
 // The shell's own start-up variables are here too (the review of 670b3a2): an exported function, SHELLOPTS with PS4,
 // or BASH_ENV runs code in the shell line before node starts.
-const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_SSH\w*|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|HTTPS?_PROXY|ALL_PROXY|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*|ANTHROPIC_\w*BASE_URL)$/i;
+const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_\w*|SSH_ASKPASS|HTTPS?_PROXY|ALL_PROXY|NO_PROXY|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*|ANTHROPIC_\w*BASE_URL|ANTHROPIC_AUTH_TOKEN|ANTHROPIC_CUSTOM_HEADERS|ANTHROPIC_FOUNDRY_\w*|CLAUDE_CODE_USE_\w*|AWS_\w*|CLOUD_ML_REGION|NODE_EXTRA_CA_CERTS|SSL_CERT_\w*|NODE_TLS_REJECT_UNAUTHORIZED|OTEL_\w*)$/i;
 
 // K217 (build 23a): apiKeyHelper is a command Claude Code runs for the API key, so a settings file that sets one runs
 // code of its own choosing at every start.
 const HELPER = '"apiKeyHelper" runs a command of the settings file\'s choosing for the API key';
+// The build 23a sweep: other keys run a command too (cloud credentials, telemetry headers), and two switch on the MCP
+// servers a project's .mcp.json names, which start programs.
+const COMMANDS = { awsAuthRefresh: 'runs a command for cloud credentials', awsCredentialExport: 'runs a command for cloud credentials', otelHeadersHelper: 'runs a command for telemetry headers', enableAllProjectMcpServers: 'switches on every MCP server the project names', enabledMcpjsonServers: 'switches on MCP servers the project names' };
+const commandKey = (keys) => { const k = keys.find((x) => Object.prototype.hasOwnProperty.call(COMMANDS, x)); return k ? `"${k}" ${COMMANDS[k]}` : ''; };
 /** Why a settings file's text would take the guards off, or ''. */
 function settingsProblem(text) {
 	const body = String(text).replace(/^\uFEFF/, '');
@@ -116,11 +120,14 @@ function settingsProblem(text) {
 		// A file JSON.parse cannot read may still be one another reader takes (a comment, a stray comma): the safe side.
 		if (/"disableAllHooks"\s*:\s*true/.test(body)) return '"disableAllHooks": true turns off every hook, the kit guards with them';
 		if (/"apiKeyHelper"\s*:/.test(body)) return HELPER;
+		const cmd = commandKey([...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]));
+		if (cmd) return cmd;
 		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => k !== 'env' && ENV_KEYS.test(k));
 		return named.length ? `its env may set ${[...new Set(named)].join(', ')}, which changes how the guards start` : '';
 	}
 	if (s.disableAllHooks === true) return '"disableAllHooks": true turns off every hook, the kit guards with them';
 	if (Object.prototype.hasOwnProperty.call(s, 'apiKeyHelper')) return HELPER;
+	if (commandKey(Object.keys(s))) return commandKey(Object.keys(s));
 	const env = s.env && typeof s.env === 'object' ? Object.keys(s.env).filter((k) => ENV_KEYS.test(k)) : [];
 	if (env.length) return `its env sets ${env.join(', ')}, which changes how the guards start or where they look`;
 	return '';
