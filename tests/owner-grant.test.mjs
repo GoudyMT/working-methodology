@@ -107,6 +107,7 @@ test('K176 only an "Owner\'s yes needed" hold is lifted, never another refusal o
 });
 
 // why: guards rule:outward-acts
+// planted: {"file":"user/kit-tools/owner-grant.cjs","was":"g.act, g.card, g.at]","to":"g.act, g.card]"}
 test('K176 a hand-edited grant is refused', () => {
 	const home = granted();
 	const dir = path.join(home, 'kit-grants');
@@ -116,6 +117,20 @@ test('K176 a hand-edited grant is refused', () => {
 	assert.equal(decision(grantLib().lift(held(), call({ session_id: OTHER }), home)), 'deny', 'session changed');
 	fs.writeFileSync(path.join(dir, f), JSON.stringify({ ...g, card: 'cmsg_other' }));
 	assert.equal(decision(grantLib().lift(held(), call(), home)), 'deny', 'card changed');
+	// The build 23b sweep: every field is under the hash, so a grant moved to a later hour, another act or another tool
+	// is refused though it would match the call.
+	fs.writeFileSync(path.join(dir, f), JSON.stringify({ ...g, at: new Date(Date.now() - 1000).toISOString() }));
+	assert.equal(decision(grantLib().lift(held(), call(), home)), 'deny', 'time moved');
+	const other = 'git push --force origin feat/y';
+	fs.writeFileSync(path.join(dir, f), JSON.stringify({ ...g, act: other }));
+	const otherCall = call({ tool_input: { command: other } });
+	assert.equal(decision(grantLib().lift(held(otherCall), otherCall, home)), 'deny', 'act changed');
+	fs.writeFileSync(path.join(dir, f), JSON.stringify({ ...g, tool: 'PowerShell' }));
+	const psCall = call({ tool_name: 'PowerShell' });
+	assert.equal(decision(grantLib().lift(held(psCall), psCall, home)), 'deny', 'tool changed');
+	// The unchanged grant still lifts: the refusals above are the hash's.
+	fs.writeFileSync(path.join(dir, f), JSON.stringify(g));
+	assert.equal(decision(grantLib().lift(held(), call(), home)), 'allow', 'the grant as written');
 });
 
 // why: guards rule:outward-acts
