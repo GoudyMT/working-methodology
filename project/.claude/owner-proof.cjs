@@ -94,11 +94,18 @@ const CLAUDE_WORD = /(^|[^\w./\\-])(claude|mcp|plugins?)(?![\w.-])/i;
 // The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
 // skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
 const LOADED = ['agents', 'skills', 'commands', 'plugins'];
+// A glob that could expand to claude, mcp or plugin (cl*de, m?p, plugi[n]), in a program word or the word after one
+// of those names, is unsure too (the commit security review).
+const NAMES = ['claude', 'mcp', 'plugin', 'plugins'];
+const globMay = (w) => { let re; try { re = new RegExp('^' + w.split(/[\\/]/).pop().replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\[[^\]]*\]/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; } return NAMES.some((n) => re.test(n)); };
+const globNames = (t) => t.split(/[;&|()\n]+/).some((seg) => { const w = seg.trim().split(/\s+/); return w.some((x, i) => /[?*[]/.test(x) && (i === 0 || NAMES.includes(w[i - 1].toLowerCase().split(/[\\/]/).pop().replace(/\.(exe|cmd)$/, '')) || globMay(w[i - 1])) && globMay(x)); });
 const mcpCommand = (c) => {
 	let t = String(c || '');
 	const bare0 = t.replace(/["'`\\^]/g, '');
-	if (CLAUDE_WORD.test(bare0) && /[{`]|\$['"(]/.test(t)) return true;
-	if (!/[$`]/.test(t) && !/(^|[^\w./\\-])claude(?![\w.-])/i.test(bare0)) t = t.split(/([;&|\n]+)/).map((seg) => (/^\s*(\S*[\\/])?node(\.exe)?\s+\S*approve\.mjs(\s|$)/i.test(seg) ? seg.replace(/\s--agents\s+[\w,-]+/g, ' ') : seg)).join('');
+	if ((CLAUDE_WORD.test(bare0) && /[{`]|\$['"(]/.test(t)) || globNames(bare0)) return true;
+	// The sweep's own outcome step: one plain node invocation of approve.mjs, with no other command, expansion,
+	// redirection or wildcard beside it.
+	if (/^\s*(\S*[\\/])?node(\.exe)?\s+[\w.:\\/-]*approve\.mjs(\s+[\w.:\\/,=-]+)*\s*$/i.test(t)) t = t.replace(/\s--agents\s+[\w,-]+/g, ' ');
 	const bare = t.replace(/["'`\\^]/g, '');
 	const empty = t.replace(/\$(\{[^}]*\}|\([^)]*\)|[A-Za-z_]\w*|'[^']*'|\d)/g, '').replace(/["'`\\^]/g, '');
 	return MCP_ACT.test(bare) || MCP_ACT.test(empty);
