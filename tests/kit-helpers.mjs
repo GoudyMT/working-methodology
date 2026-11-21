@@ -536,7 +536,8 @@ export function leadQuestion(dir, prompt) {
   if (!tag || !at) return '';
   try { return ` ${(JSON.parse(read(at[1].contract)).roles[Number(tag[1]) - 1] || {}).question || ''}`; } catch { return ''; }
 }
-export const sweepGuard = (dir, { raw, noCeiling, ...extra } = {}) => {
+const GUARD_CFG = makeTemp('guard-cfg-');
+export const sweepGuard = (dir,{ raw, noCeiling, ...extra } = {}) => {
   const input = { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'review. Call cap: 5.' }, ...extra };
   const p = input.tool_input && input.tool_input.prompt;
   if (typeof p === 'string' && !p.includes('Sweep:')) input.tool_input = { ...input.tool_input, prompt: p + leadTag(dir, p) };
@@ -547,7 +548,8 @@ export const sweepGuard = (dir, { raw, noCeiling, ...extra } = {}) => {
     if (e) input.tool_input = { ...input.tool_input, prompt: `${p} Token ceiling: ${e.ceilings[Number(tag[2]) - 1]}.` };
   }
   if (!raw && typeof input.tool_input?.prompt === 'string') input.tool_input.prompt += leadQuestion(dir, input.tool_input.prompt);
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', input);
+  // A Claude folder of its own, so the owner's real reviewer file never decides a test's start (K266).
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', input, { CLAUDE_CONFIG_DIR: GUARD_CFG });
   return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 };
 

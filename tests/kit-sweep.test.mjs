@@ -703,6 +703,26 @@ test('C4/C9e: each brief names its sweep and role, so ids in any order count for
   assert.match(brief((h, i) => `Sweep: ${h} role ${i + 2}`), /brief names role 6; the contract has 5/);
 });
 
+// The 1.49.0 sweep paused auto-approval: four roles the contract set to the top model ran on the reviewer file's
+// mid-model pin, because the starts named no model. The guard now holds a start whose model is not its role's.
+// why: guards rule:sweep-auto-approval
+test('the guard refuses a reviewer start that would run on another model than its role names', () => {
+  const r = approveRun(featureContract());
+  const hash = approvalLog(r.dir).pop().hash;
+  fs.mkdirSync(path.join(r.dir, '.claude', 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(r.dir, '.claude', 'agents', 'reviewer.md'), '---\nname: reviewer\nmodel: claude-sonnet-5-5\n---\nReview.\n');
+  const start = (n, model) => sweepGuard(r.dir, { tool_input: { subagent_type: 'reviewer', prompt: `go. Call cap: 5. Sweep: ${hash} role ${n}`, ...(model ? { model } : {}) } });
+  // Role 1 is a security role, on the top model: with no model named the file's pin would run it on the mid one.
+  const bare = start(1);
+  assert.equal(bare.permissionDecision, 'deny');
+  assert.match(bare.permissionDecisionReason, /Role 1[\s\S]*claude-opus-5-5[\s\S]*model "opus"/);
+  assert.equal(start(1, 'sonnet').permissionDecision, 'deny', 'the mid model named for a top-model role');
+  assert.equal(start(1, 'opus').permissionDecision, 'allow');
+  // Role 4 (test value) is on the mid model: the file's pin is that model, so a start with none named runs.
+  assert.equal(start(4).permissionDecision, 'allow');
+  assert.equal(start(5, 'claude-opus-5-5').permissionDecision, 'allow', 'the novel lens, its full model id named');
+});
+
 // why: guards rule:sweep-auto-approval
 test('C4: the guard starts each role once, by the sweep and role its brief names', () => {
   const c = featureContract();

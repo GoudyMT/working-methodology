@@ -24,6 +24,19 @@ const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // HEAD per folder, read once per call: the log only grows, and its lines share a few folders.
 const heads = new Map();
 const headOf = (d) => { if (!heads.has(d)) heads.set(d, git(d, 'rev-parse', 'HEAD').stdout.trim()); return heads.get(d); };
+// The model the reviewer file pins, the project's own before the Claude folder's (as Claude Code picks the file), or ''.
+function reviewerPin(cwd) {
+	const top = git(cwd, 'rev-parse', '--show-toplevel').stdout.trim();
+	const home = process.env.CLAUDE_CONFIG_DIR || path.join(require('node:os').homedir(), '.claude');
+	for (const f of [top && path.join(top, '.claude', 'agents', 'reviewer.md'), path.join(home, 'agents', 'reviewer.md')]) {
+		let text;
+		try { text = f && fs.readFileSync(f, 'utf8'); } catch { continue; }
+		if (!text) continue;
+		const m = /^---\r?\n[\s\S]*?^model:\s*['"]?([\w.:-]+)/m.exec(text);
+		return m ? m[1] : '';
+	}
+	return '';
+}
 const deny = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: reason } });
 const RUN_FIRST = 'Run approve.mjs on the Swarm Contract before any reviewer starts (rule:sweep-auto-approval): `node <pre-pr-sweep skill folder>/approve.mjs <contract.json>` (add `--base <ref>` when it cannot find the base). FIX THE CONTRACT: fix it and run it again. APPROVED: post its start notice and go. ASK THE OWNER: show the table with its reasons and stop.';
 
@@ -167,6 +180,23 @@ function check(input) {
 		// K182: a split role's reviewers each carry the question of the contract role the decision maps them to.
 		const question = String((JSON.parse(raw).roles?.[Array.isArray(e.roleOf) ? e.roleOf[n] : n] || {}).question || '');
 		if (question && !prompt.includes(question)) return deny(`A reviewer's brief carries its role's question as the contract wrote it. Role ${n + 1}: "${question}"`);
+		// K266 (the 1.49.0 sweep): four top-model roles ran on the reviewer file's mid-model pin, as their starts named no
+		// model. A start runs on the model it names, else the reviewer file's pin (the project's, then the Claude
+		// folder's); one that would run on another model than its role's is held. A pin the guard cannot read is left to
+		// the outcome's check.
+		let models = e.models;
+		for (let k = i - 1; k >= 0 && !Array.isArray(models) && e.kind === 'owner-yes'; k--) {
+			let d = null;
+			try { d = entry(lines[k]); } catch { /* checked above */ }
+			if (d && d.kind === 'decision' && d.contract === e.contract && d.hash === e.hash) models = d.models;
+		}
+		const wantModel = Array.isArray(models) ? String(models[n] || '') : '';
+		if (wantModel) {
+			const family = (m) => { const s = String(m).toLowerCase(); return ['opus', 'sonnet', 'haiku'].find((f) => s.includes(f)) || s; };
+			const asked = String((input.tool_input || {}).model || '');
+			const runs = asked || reviewerPin(input.cwd || process.cwd());
+			if (runs && family(runs) !== family(wantModel)) return deny(`Role ${n + 1} of the cleared contract runs on ${wantModel}; this start would run on ${runs}${asked ? '' : ' (the reviewer file\'s pin)'}. Start it with model "${family(wantModel)}" in the Agent call.`);
+		}
 		// A lead in another checkout may run a worktree's sweep, so long as the brief sends the reviewer there.
 		if (headOf(input.cwd || process.cwd()) !== e.head) {
 			const root = git(path.dirname(e.contract), 'rev-parse', '--show-toplevel').stdout.trim();
