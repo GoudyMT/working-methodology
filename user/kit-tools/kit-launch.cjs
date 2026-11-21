@@ -655,6 +655,10 @@ function namedProjects(input) {
 	const unrec = [];
 	const seen = new Set();
 	const dirs = [];
+	// K242 (build 23a): the folder cap bounds the folders a wildcard is read from. Matches of the last wildcard are read
+	// from by nothing after them, so past the cap they are still named and checked, never held for the count alone
+	// (du -sh node_modules/* over a few hundred packages was held). capOn is off only while that last wildcard expands.
+	let capOn = true;
 	const resolveTo = (t, from = cwd) => {
 		// A climb through a link also names where bash lands: the link target's parent (L5).
 		if (/(^|[\\/])\.\.($|[\\/])/.test(t)) {
@@ -675,8 +679,8 @@ function namedProjects(input) {
 		seen.add(real);
 		try {
 			if (fs.statSync(real).isDirectory()) {
-				if (dirs.length >= DIRS_MAX) unreadable = `more than ${DIRS_MAX} folders to read its wildcards from`;
-				else dirs.push(real);
+				if (dirs.length < DIRS_MAX) dirs.push(real);
+				else if (capOn) unreadable = `more than ${DIRS_MAX} folders to read its wildcards from`;
 			}
 		} catch { /* gone */ }
 		text += ` ${norm(real)}`;
@@ -739,9 +743,14 @@ function namedProjects(input) {
 			for (const base of [cwd, ...dirs]) if (namesIn(base).has(key(t))) resolveTo(path.join(base, t));
 		}
 	}
-	for (const t of tokens) {
+	const lastGlob = tokens.reduce((at, t, i) => (isGlob(t) ? i : at), -1);
+	for (const [i, t] of tokens.entries()) {
 		if (unreadable) break;
-		if (isGlob(t)) for (const m of expandGlob(t)) resolveTo(m);
+		if (!isGlob(t)) continue;
+		const matches = expandGlob(t);
+		capOn = i !== lastGlob;
+		for (const m of matches) resolveTo(m);
+		capOn = true;
 	}
 	const WORD = /[A-Za-z0-9_.-]/;
 	// p appears with no name character after it; bounded, with none before it either (a name may hold a space, so it
