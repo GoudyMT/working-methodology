@@ -98,7 +98,7 @@ const LOADED = ['agents', 'skills', 'commands', 'plugins'];
 // of those names, is unsure too (the commit security review).
 const NAMES = ['claude', 'mcp', 'plugin', 'plugins'];
 const globMay = (w) => { let re; try { re = new RegExp('^' + w.split(/[\\/]/).pop().replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\[[^\]]*\]/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; } return NAMES.some((n) => re.test(n)); };
-const globNames = (t) => t.split(/[;&|()\n]+/).some((seg) => { const w = seg.trim().split(/\s+/); const named = w.some((x) => NAMES.includes(x.toLowerCase().split(/[\\/]/).pop().replace(/\.(exe|cmd)$/, ''))); return w.some((x, i) => /[?*[]/.test(x) && (i === 0 || named || globMay(w[i - 1])) && globMay(x)); });
+const globNames = (t) => t.split(/[;&|\n]+/).some((seg) => { const w = seg.trim().split(/\s+/); const named = w.some((x) => NAMES.includes(x.toLowerCase().split(/[\\/]/).pop().replace(/\.(exe|cmd)$/, ''))); return w.some((x, i) => /[?*[]/.test(x) && (i === 0 || named || globMay(w[i - 1])) && globMay(x)); });
 const mcpCommand = (c) => {
 	let t = String(c || '');
 	const bare0 = t.replace(/["'`\\^]/g, '');
@@ -1177,10 +1177,10 @@ function shellWritesFrom(command, tool, start, names) {
 	// dot made by quoting ('.'*) is still matched.
 	const quoteSign = tool === 'PowerShell' ? /["'`]/ : /["'`\\]/;
 	// The shell drops a backslash inside double quotes before a sign it keeps (\*), so each sign may follow one.
-	// R1 (the build 23a sweep): each piece of inert code is taken out once, with the quotes around it, so its text
-	// elsewhere in the command (a '.' took every dot out) is still read.
-	const spelled = (c) => new RegExp(`(["'])${[...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('')}\\1`);
-	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), ' '), t);
+	// R1 (the build 23a sweep): each piece of inert code is taken out once, at its own word (with its quotes in the
+	// source, bare in the plain text), so its text elsewhere in the command (a '.' took every dot out) is still read.
+	const spelled = (c) => new RegExp(`(^|[\\s;|&()])(["']?)${[...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('')}\\2(?=$|[\\s;|&()])`);
+	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), (m, lead) => `${lead} `), t);
 	return [raw, text].map(textOnly).some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
 		const quoted = quoteSign.test(word);
 		return word.split(/["'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
