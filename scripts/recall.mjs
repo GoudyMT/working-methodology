@@ -473,7 +473,7 @@ export function prepare({ projectDir, label, home, osHome, text, when, cli, only
 export function askAll({ qs, projectDir, run }) {
   const lines = [];
   for (const { n, q, key } of qs) {
-    const r = run('claude', ['-p', '--model', RECALL_MODEL, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
+    const r = run('claude', ['-p', '--model', RECALL_MODEL, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--strict-mcp-config', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
       '--no-session-persistence'], { cwd: projectDir, input: q, encoding: 'utf8', timeout: 600000 });
     const answer = (r.stdout || '').trim();

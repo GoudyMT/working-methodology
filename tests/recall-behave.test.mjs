@@ -96,6 +96,8 @@ test('a behaviour run allows no edit or shell, and seeds no file outside its fol
 	assert.equal(opt('--allowedTools'), 'Read,Grep,Glob,Skill');
 	assert.equal(opt('--permission-mode'), 'default');
 	assert.equal(opt('--setting-sources'), 'project');
+	// K177 (build 23b): a scenario's planted .mcp.json must not start a server or add tools.
+	assert.ok(argv.includes('--strict-mcp-config'), 'a behaviour session ignores project MCP servers (K177)');
 	assert.ok(!argv.some((a) => /bypass|dangerously/i.test(a)), argv.join(' '));
 	const dir = makeTemp('behave-');
 	const run = () => ({ status: 0, stdout: '', stderr: '' });

@@ -229,7 +229,7 @@ export function releasedUserLayer(home, dir) {
 /** One session on one scenario: the record, the grades and the reads outside. */
 export function runScenario({ s, dir, home, run }) {
 	const r = run('claude', ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL, '--effort', EFFORT,
-		'--setting-sources', 'project', '--permission-mode', 'default', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
+		'--setting-sources', 'project', '--strict-mcp-config', '--permission-mode', 'default', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
 		'--max-turns', MAX_TURNS, '--no-session-persistence'], { cwd: dir, input: s.prompt, encoding: 'utf8', timeout: 900000, maxBuffer: 1 << 28 });
 	if (/Not logged in/i.test(r.stdout || '')) throw new Error(`${s.id}: Claude Code is not logged in for the sessions' config folder`);
 	const ev = parseStream(r.stdout || '');

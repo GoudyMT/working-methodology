@@ -888,6 +888,8 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.match(calls[0].opts.cwd.replace(/\\/g, '/'), /kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
   assert.deepEqual(calls.map((c) => c.opts.input), ['First?', 'Second?']);
   assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
+  // K177 (build 23b): a planted .mcp.json in the probe must not add tools or start a server in a scored session.
+  assert.ok(calls.every((c) => c.args.includes('--strict-mcp-config')), 'every recall session ignores project MCP servers (K177)');
   // MC2: recall names its model and effort, pinned to what the main session really runs (workbench MEASURE.md), so a
   // saved default or a new release never moves the ruler.
   assert.equal(calls[0].args[calls[0].args.indexOf('--model') + 1], 'claude-opus-5-5');
