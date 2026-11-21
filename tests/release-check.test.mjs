@@ -335,3 +335,22 @@ test('a plugin build whose recorded tag or commit is not the kit tag\'s is missi
 	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /kit-build\.json/);
 	assert.equal(argsOf(['v1', '--pr', '5', '--plugin', 'p']).plugin, 'p');
 });
+
+// The build 23b sweep: the tag and commit a plugin records are two fields anyone can write, so with the release copy
+// the check builds the plugin again from it and holds the guard manifests equal.
+// why: catches a published plugin whose files are not the release's though its record says they are
+test('a plugin build whose files differ from a build of the release copy is missing', () => {
+	const t = setup();
+	const plugin = kitTemp.makeTemp('rc-plugin-');
+	fs.writeFileSync(path.join(plugin, 'kit-build.json'), JSON.stringify({ name: 'kit', version: '1.1.0', tag: 'v1.1.0', commit: t.merged }));
+	const manifest = (files) => JSON.stringify({ files });
+	fs.writeFileSync(path.join(plugin, 'guard-manifest.json'), manifest({ 'launch.cjs': 'aa' }));
+	const built = [];
+	const buildFrom = (want) => (copy, out) => { built.push(copy); fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'guard-manifest.json'), manifest(want)); return { status: 0 }; };
+	const same = releaseCheck({ ...t.opts, copy: t.copy, plugin }, { ...t.deps, buildPlugin: buildFrom({ 'launch.cjs': 'aa' }) });
+	assert.ok(t.lines.some((l) => /PASS plugin files match a build of the release copy/.test(l)), t.lines.join('\n'));
+	assert.deepEqual(built, [t.copy]);
+	assert.ok(!same.missing.some((m) => /plugin files/.test(m)), same.missing.join('\n'));
+	const other = releaseCheck({ ...t.opts, copy: t.copy, plugin }, { ...t.deps, buildPlugin: buildFrom({ 'launch.cjs': 'bb' }) });
+	assert.match(all(other), /plugin files match a build of the release copy: .*launch\.cjs/);
+});

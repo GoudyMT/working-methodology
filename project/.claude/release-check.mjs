@@ -96,6 +96,8 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 	const g = deps.git || git;
 	const log = deps.log || ((l) => process.stdout.write(`${l}\n`));
 	const audit = deps.audit || auditNotes;
+	// The build 23b sweep: a plugin built again from the release copy, into a folder of its own.
+	const buildPlugin = deps.buildPlugin || ((dir, out) => spawnSync(process.execPath, [path.join(dir, 'scripts', 'kit.mjs'), 'build', 'plugin', '--out', out], { cwd: dir, encoding: 'utf8', timeout: 120000 }));
 	const state = deps.state || ((dir) => (fs.existsSync(path.join(dir, '.claude', 'state.mjs')) ? spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8', timeout: 60000 }) : null));
 	// The tag and the PR go into git and gh arguments: a plain name and a whole number only, never an option.
 	if (!/^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/.test(String(tag)) || /\.\./.test(tag) || !/^\d{1,9}$/.test(String(pr))) {
@@ -111,7 +113,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 	// release; a project with no record is not asked.
 	const ver = String(tag).replace(/^v/, '');
 	const recRoot = [copy, project].find((d) => d && fs.existsSync(path.join(d, 'docs', 'builds', `${ver}.json`)));
-	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0) + (recRoot ? 1 : 0) + (plugin ? 1 : 0);
+	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0) + (recRoot ? 1 : 0) + (plugin ? 1 : 0) + (plugin && copy ? 1 : 0);
 	const missing = [];
 	let n = 0;
 	const step = (title, why) => {
@@ -198,6 +200,23 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 			: rec.tag !== tag ? `the plugin build records ${one(rec.tag)}, not ${tag}`
 				: !atTag ? `no tag ${tag} on GitHub to compare`
 					: rec.commit !== atTag.sha ? `the plugin build records commit ${one(rec.commit).slice(0, 12)}, not ${tag}'s ${atTag.sha.slice(0, 12)}: rebuild it from the release copy` : null);
+		// The build 23b sweep: the record is two fields; the files are held to a build of the release copy, manifest for
+		// manifest (the manifest hashes every file a hook loads).
+		if (copy) {
+			const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kit-rc-plugin-')), 'kit');
+			let why = null;
+			try {
+				const r = buildPlugin(copy, out);
+				const read = (d) => JSON.parse(fs.readFileSync(path.join(d, 'guard-manifest.json'), 'utf8')).files || {};
+				if (!r || r.status !== 0) why = `the release copy did not build (${one(r && (r.stderr || r.stdout) || 'no answer')})`;
+				else {
+					const want = read(out), got = read(plugin);
+					const diff = [...new Set([...Object.keys(want), ...Object.keys(got)])].filter((k) => want[k] !== got[k]).sort();
+					if (diff.length) why = `${diff.length} file(s) differ (${diff.slice(0, 5).join(', ')}): rebuild the plugin from the release copy`;
+				}
+			} catch (e) { why = `the manifests could not be read (${one(e.message)})`; } finally { fs.rmSync(path.dirname(out), { recursive: true, force: true }); }
+			step('plugin files match a build of the release copy', why);
+		}
 	}
 	// J1 (build 11): one number the result file recorded is run again before the item moves; a re-run that differs
 	// stops it. The line: "Re-run: <what>: recorded <n>, re-run <n>".
