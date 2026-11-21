@@ -457,23 +457,23 @@
  "decisions": [
   {
    "decision": "The launcher gets Git for Windows' own folder, not the session's PATH",
-   "why": "Handing over the session PATH would let a planted git answer the guards' questions (the commit security review)."
+   "why": "A session PATH could hold a planted git."
   },
   {
    "decision": "A wildcard in inline node code is text only where the code can reach no file",
-   "why": "The owner picked the narrow fix over a named limit (2026-11-21); code that lists, writes or runs keeps the strict reading."
+   "why": "The owner's pick (2026-11-21); code that lists, writes or runs is read strictly."
   },
   {
    "decision": "An owner push marker needs a pop-up yes per ref",
-   "why": "The owner's option A (2026-11-21): a script that clears the markers could push main."
+   "why": "The owner's pick (2026-11-21)."
   },
   {
    "decision": "A minor release",
-   "why": "New holds, a new commit check and a new CI check reach every project."
+   "why": "New holds and checks reach every project."
   },
   {
    "decision": "The K229 test reads `find -delete` from the `.claude` folder",
-   "why": "Its first case held only because of its pipe."
+   "why": "Its first case held only by its pipe."
   },
   {
    "decision": "A short closeout answer needs its own row",
@@ -484,8 +484,12 @@
    "why": "The sweep report gives each reason."
   },
   {
-   "decision": "R1 ships as hardening with no test",
+   "decision": "R1 ships as hardening",
    "why": "125 probes gave the same decision before and after."
+  },
+  {
+   "decision": "The owner push rule line is reworded in build 23b",
+   "why": "The owner's pick (2026-11-21): a rewording needs a paid recall run, and the hook's refusal already names the typed ref."
   }
  ],
  "upgrading": "Run install user, then install project: the guard start script, the launcher, the commit-msg and pre-push hooks, owner-proof, owner-yes, the safe-spawn helper copies, name-check, state.mjs, loop.mjs and the closeout and brainstorm skills change. The owner's own push now asks for the ref's name at their terminal (or a pop-up yes in a session); a person whose name matches a code tool commits once listed with `git config --add kit.allowedIdent \"<name> <email>\"`.",
@@ -543,8 +547,8 @@
     "id": "U1",
     "severity": "high",
     "security": true,
-    "text": "The rule on the owner's own push names the typed ref and the remote",
-    "commit": "ac9fd3a",
+    "text": "The owner's own push from a terminal with no session works without `--no-verify`; the rule line is reworded in build 23b",
+    "commit": "122adc2",
     "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
    },
    {
