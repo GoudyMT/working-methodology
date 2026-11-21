@@ -2,6 +2,7 @@
 // for the release that just went out, and no rule line sends a session to a fixed ~/.claude path.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
+import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { makeTemp } from './kit-helpers.mjs';
@@ -92,4 +93,20 @@ test('the closeout cue fires only when HEAD is the newest release tag', async ()
   assert.equal(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), '', '1.9.0 is older than 1.10.0');
   g('checkout', '-q', 'v1.10.0');
   assert.match(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), /v1\.10\.0/);
+});
+
+// why: catches a rule line that names a file under a fixed ~/.claude path in the spellings the first check missed
+test('fixedHomePaths reports ~/.claude/... and ~/.claude) and passes the Claude folder by name', async () => {
+  const kitTools = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitTools.fixedHomePaths, 'function', 'fixedHomePaths exists');
+  const root = makeTemp('fixed-home-spell-');
+  fs.mkdirSync(path.join(root, 'rules'));
+  fs.writeFileSync(path.join(root, 'rules', 'a.md'), [
+    'in each spelling (Bash `~/.claude/...`, PowerShell the full path)',
+    'run `kit.mjs install user` for ~/.claude), then start fresh',
+    'run `kit.mjs install user` for {{CLAUDE_HOME}}, then start fresh',
+    'run `kit.mjs install user` for the Claude config folder',
+    'Your Claude folder (`~/.claude` by default) holds it.',
+  ].join('\n'));
+  assert.deepEqual(kitTools.fixedHomePaths({ kit: root }).map((h) => `${h.file}:${h.line}`), ['rules/a.md:1', 'rules/a.md:2']);
 });

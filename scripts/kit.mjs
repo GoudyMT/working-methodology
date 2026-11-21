@@ -2128,7 +2128,7 @@ export function sourceHooks(kit) {
 
 // K206 P4: instruction text names a kit tool, not a folder; a fixed home path sends a session on another Claude folder
 // (a throwaway, a probe, a plugin) to the wrong copy. The folder alone may still be named as the default place.
-const FIXED_HOME = /(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)[/\\]\.claude[/\\][\w*]/;
+const FIXED_HOME = /(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)[/\\]\.claude(?:[/\\][\w*.]|\))/;
 export function fixedHomePaths({ kit }) {
   const files = [];
   const walk = (rel, keep) => {
