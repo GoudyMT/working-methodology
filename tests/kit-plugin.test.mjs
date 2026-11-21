@@ -276,7 +276,12 @@ test('the plugin launcher refuses a write into the plugin folder, and lets a kit
     assert.match(reason(r.out), /plugin folder/);
   }
   const run = launch(root, { tool_name: 'Bash', tool_input: { command: `node "${fwd(root)}/skills/pre-pr-sweep/approve.mjs" --help` }, cwd: repo });
-  assert.doesNotMatch(reason(run.out), /plugin folder|another Claude folder/);
+  assert.equal(run.status, 0, run.stderr);
+  assert.notEqual(decision(run.out), 'deny', reason(run.out));
+  // Its twin: the same kit tool, its output sent into the plugin's launcher.
+  const into = launch(root, { tool_name: 'Bash', tool_input: { command: `node "${fwd(root)}/skills/pre-pr-sweep/approve.mjs" --help > "${fwd(root)}/launch.cjs"` }, cwd: repo });
+  assert.equal(decision(into.out), 'deny');
+  assert.match(reason(into.out), /plugin folder/);
 });
 
 // The build 23b sweep: the plugin launcher never ran the grant-tool hold the PC launcher runs, and it found the plugin
@@ -327,7 +332,10 @@ test('the plugin launcher runs each role\'s hooks for the matching agent_type (K
   const fenced = write('kit:builder');
   assert.equal(decision(fenced.out), 'deny');
   assert.match(reason(fenced.out), /outside this builder's worktree/);
-  assert.doesNotMatch(reason(write('kit:scanner').out), /outside this builder's worktree/);
+  // The build 23b sweep: a launcher that crashed printed nothing, and the check below passed on it.
+  const scan = write('kit:scanner');
+  assert.equal(scan.status, 0, scan.stderr);
+  assert.doesNotMatch(reason(scan.out), /outside this builder's worktree/);
   // The checker's clean-tree pair: a snapshot at its first shell call, and its stop held when files changed since.
   const sid = `s3-${process.pid}`;
   launch(root, { tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: repo, agent_type: 'kit:checker', agent_id: 'c1', session_id: sid, hook_event_name: 'PreToolUse' });
