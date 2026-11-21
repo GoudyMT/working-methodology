@@ -17,7 +17,7 @@ const cfg = kitTemp.makeTemp('cfg-');
 // The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
 fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
 for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
-const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs', 'safe-spawn.cjs'].filter((f) => fs.existsSync(path.resolve('project/.claude', f))); // the helper is missing only on a base from before build 23
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs', 'safe-spawn.cjs'].filter((f) => f !== 'safe-spawn.cjs' || fs.existsSync(path.resolve('project/.claude', f))); // the helper is missing only on a base from before build 23
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
 	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
@@ -1703,7 +1703,11 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	fs.writeFileSync(path.join(dir, 'c.md'), 'c\n');
 	g('add', '.');
 	g('commit', '-qm', 'three');
-	assert.match(owner(tap).stderr, /KIT_OWNER_PUSH counts only beside/, 'one yes pushed twice');
+	const pushed = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	const twice = owner(tap);
+	assert.notEqual(twice.status, 0, 'one yes pushed twice');
+	assert.match(twice.stderr, /KIT_OWNER_PUSH counts only beside/);
+	assert.equal(spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), pushed, 'the remote moved on a spent yes');
 });
 
 // The build 23a sweep of K215: the owner's own terminal had no session, so every owner push was refused and the
@@ -1849,6 +1853,24 @@ test('a program piped into a reader after a cd keeps the folder, and a writer ta
 test('a wildcard in inline node code that reaches no file is text, and code that lists or writes files is still held', () => {
 	for (const c of [`node -e "console.log(/\\*\\*/.test('a**b'))"`, `node -e "console.log('*/*')"`, `node -e "console.log('*')"`, `node -p "'a*b'.split('*').length"`, `cd src && node -e "console.log('*/*')"`]) assert.equal(bash(c), 'allow', c);
 	for (const c of [`node -e "require('fs').globSync('*/*').forEach((f) => require('fs').writeFileSync(f, ''))"`, `node -e "for (const f of require('fs').readdirSync('.')) require('fs').rmSync(f + '/*')"`, `node -e "import('fs').then((m) => m.writeFileSync('*/guard.cjs', ''))"`, `node -e "process.mainModule.require('fs').writeFileSync('.claude/*', '')"`, `node -e "[]['con'+'structor']('x')('*')"`, `node -e "console.log('.claude/guard.cjs')" > .claude/guard.cjs`, `node -e "x('.claude/guard.cjs')"`, `node -e "console.log('*')" > .claude/guard.cjs`, `node -e "console.log('*')"; echo x > .claude/guard.cjs`, `node -e "console.log('$(tee .clau*/guard.cjs </dev/null)')"`, `node -e "console.log('\${X:=*}')"; echo x > $X/guard.cjs`, `node -e "console.log('$(cp x */guard.cjs)')"`]) assert.equal(bash(c), 'deny', c);
+});
+
+// T3 (the build 23a sweep): find's other writing and running actions (-fprintf, -fls, -fprint0, -ok, -okdir, and
+// -exec closed by a quoted ';') were in the list but in no test, so dropping one from it passed every test.
+// why: guards rule:outward-acts (a find that writes or runs beside a cd is no plain read)
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"fprint|fprint0|fprintf|fls)$/;","to":"fprint)$/;"}
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"/^-(delete|exec|execdir|ok|okdir|","to":"/^-(delete|exec|execdir|"}
+test('find with an action that writes a file or asks to run a program is still refused beside a cd', () => {
+	for (const c of ['cd src; find . -name x -fprintf ../.claude/guard.cjs %p', 'cd src; find . -name x -fls ../.claude/guard.cjs', 'cd src; find . -name x -fprint0 ../.claude/guard.cjs', 'cd src; find . -name x -ok rm {} \\;', 'cd src; find . -name x -okdir rm {} \\;', "cd src; find . -name x -exec rm {} ';'"]) assert.equal(bash(c), 'deny', c);
+});
+
+// R2 (the build 23a sweep): npm ls was plain unless an option was on a short deny list, but npm takes an option by
+// any start of its name (--userconf is --userconfig) and some options run code (--onload-script). It is plain now only
+// with the options that change what it shows.
+// why: catches npm ls loading a script or another config beside a cd, read as a plain read
+test('npm ls reads as plain only with its display options; a config, a script or a shortened option is refused', () => {
+	for (const c of ['cd src; node ./x.mjs; npm ls --all --depth=2 --json', 'cd src; node ./x.mjs; npm ls -g', 'cd src; node ./x.mjs; npm ls --omit dev react']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['cd src; node ./x.mjs; npm ls --onload-script=./x.js', 'cd src; node ./x.mjs; npm ls --userconf ./c', 'cd src; node ./x.mjs; npm ls --globalconf=./c', 'cd src; node ./x.mjs; npm ls --registry=http://x']) assert.equal(bash(c), 'deny', c);
 });
 
 // K241 (build 23a): bash leaves a brace group with no comma as text ({x}), so a group holding one ({{x},de}) still
