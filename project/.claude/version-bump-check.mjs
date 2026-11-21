@@ -40,6 +40,8 @@ const GATE = /(^|\/)\.(github|githooks|claude)\//;
 export function leanFitCheck(cwd = process.cwd()) {
 	const git = (...a) => spawnSync('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
 	if (git('rev-parse', '--show-toplevel').status !== 0) return { ok: true, detail: 'not a git repository' };
+	// A branch with no commit yet has no diff to raise the body (and no PR to open).
+	if (git('rev-parse', '-q', '--verify', 'HEAD^{commit}').status !== 0) return { ok: true, detail: 'no commit yet' };
 	const base = [process.env.PR_BASE, 'origin/main', 'main', 'origin/master', 'master'].filter(Boolean)
 		.find((b) => git('rev-parse', '-q', '--verify', `${b}^{commit}`).status === 0);
 	if (!base) return { ok: false, detail: 'no base branch found: set PR_BASE' };

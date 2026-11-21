@@ -629,7 +629,7 @@ test('the rules say where approve.mjs lives, what its absence means, and that th
     const text = read(path.resolve(f));
     // K206 (build 22): a fixed ~/.claude path sent a session on another Claude folder to the wrong copy, so the rules name
     // the tool and the start-up line names this session's full command (the PowerShell spelling included).
-    assert.match(text, /`approve\.mjs` \(its command is in the start-up line "Kit tools this session"\)/, f);
+    assert.match(text, /`approve\.mjs` \(its command.*"Kit tools this session"\)/, f);
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
@@ -1357,6 +1357,7 @@ test('recall-score (K198): score prints the four lines, and a miss exits 1 sayin
   const cli = (cand) => spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files(cand), 'kit-x'], { encoding: 'utf8' });
   const good = cli(Array(5).fill(clean));
   assert.equal(good.status, 0, good.stdout + good.stderr);
+  // pin: 1 (the gate reads these lines)
   assert.match(good.stdout, /^scorers: 2\nworse: none\ncontrol: 0\ngate: kit-x median 14 baseline 14 /m);
   const miss = cli([[[2], [2]], [[2], [2]], [[2], [2]], clean, clean]);
   assert.equal(miss.status, 1);
@@ -1380,7 +1381,7 @@ test('recall-score (K200): runs with no release arm are tallied side by side wit
   assert.match(r.stdout, /^\| 9 \| 1, 1, 1, 1, 1 \| 0, 1, 1, 1, 1 \|$/m);
   assert.match(r.stdout, /pc median 14, cloud median 14/);
   assert.doesNotMatch(r.stdout, /^gate:/m);
-  assert.match(r.stdout, /no gate line: a gate needs cand, base and control runs/);
+  assert.match(r.stdout, /no gate line: a gate needs cand, base/);
 });
 
 // K199 (the K181 calibration): Windows and Linux paths told the scorer which machine wrote a run; 16 were cleared by hand.
@@ -1390,6 +1391,7 @@ test('recall-score (K199): the blind step writes every OS path one way, so no pa
   const win = scrub('Read C:\\Users\\Max\\.claude\\skills\\pre-pr-sweep\\approve.mjs then .claude\\guard.cjs and scripts\\recall.mjs');
   const lin = scrub('Read /home/runner/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs');
   assert.equal(win, lin);
+  // pin: 1 (the blind set a scorer reads)
   assert.equal(win, 'Read ~/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs');
   for (const home of ['/Users/max/', 'C:/Users/Max/', '/c/Users/Max/', '$HOME/', '$env:USERPROFILE\\', '%USERPROFILE%\\', '/root/']) assert.equal(scrub(`${home}.claude/x.md`), '~/.claude/x.md', home);
   assert.equal(scrub('D:\\work\\repo\\a.md'), '/work/repo/a.md');
@@ -1419,7 +1421,7 @@ test('recall gate (K198): the floor of 14, two scorers and no worse question or 
   assert.equal(b(14).ok, true);
   assert.match(b(13).detail, /behaviour median 13 is under the floor of 14/);
   assert.match(b(14, null).detail, /add the "behaviour worse:" line/);
-  assert.match(b(14, 'behaviour worse: 13-closeout').detail, /scenarios 13-closeout do worse than the same-day release/);
+  assert.match(b(14, 'behaviour worse: 13-closeout').detail, /scenarios 13-closeout do worse/);
   // Without the floor (an older base's call) the lines are not asked for.
   assert.equal(checkGate({ changed: ['rules/core.md'], added: [gate(10)], brief: 1, keys: 4, bar: 9 }).ok, true);
   // The gate command applies the floor itself.

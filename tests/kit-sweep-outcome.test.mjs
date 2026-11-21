@@ -41,7 +41,7 @@ test('a new improvement report starts from the kit template with its facts fille
   assert.equal(fs.readdirSync(path.join(dir, '.kit', 'reports')).length, 2);
   assert.equal(fs.existsSync(path.join(dir, 'sub', '.kit')), false);
   const bare = makeTemp('ir-bare-');
-  g(bare, 'init', '-q');
+  g(bare, 'init', '-q', '-b', 'main');
   const b = reportRun(bare, ['new', 'No kit folder yet']);
   assert.equal(b.status, 0, b.stdout + b.stderr);
   assert.equal(fs.readdirSync(path.join(bare, '.kit', 'reports')).length, 1);

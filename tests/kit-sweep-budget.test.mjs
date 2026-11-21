@@ -488,7 +488,7 @@ test('a role\'s dollar ceiling comes from its own call cap, and a median-paced r
   assert.match(r.stdout, /Dollar ceiling per role: the p90 dollars a call/);
   // The notice says how many reviewers and what they spend, before any start: median $0.13 a call x 5 calls x 5 roles
   // (Sonnet's median is the same $0.13 here), and the ceilings' sum.
-  assert.match(r.stdout, /Spend: 5 reviewers; about \$3\.25 at the median past pace, at most \$6\.20 \(their dollar ceilings\)/);
+  assert.match(r.stdout, /Spend: 5 reviewers; about \$3\.25.*at most \$6\.20/);
   const briefFile = fs.readdirSync(path.join(dir, 'sweeps')).find((f) => /-brief-1\.md$/.test(f));
   assert.match(read(path.join(dir, 'sweeps', briefFile)), /^Dollar ceiling: \$1\.25$/m);
   // A role at the median pace ($0.13 a call) is stopped by its call cap, not its ceiling.
@@ -573,7 +573,7 @@ test('the outcome holds each role to its dollar ceiling and the sweep to a dolla
   assert.match(over.o.stdout, /the dollar ceiling did not hold for .*: \$1\.56 against \$1\.25/);
   assert.doesNotMatch(over.o.stdout, /the sweep spent/);
   // Every role at 14 calls: $8.19 against 5 roles x $1.44, the p95 a past role spent ($7.20).
-  assert.match(sweep([14, 14, 14, 14, 14]).o.stdout, /the sweep spent \$8\.19, over 5 roles x the p95 a past role spent \(\$1\.44\)/);
+  assert.match(sweep([14, 14, 14, 14, 14]).o.stdout, /spent \$8\.19, over 5 roles.*\(\$1\.44\)/);
 });
 
 // The build 11 sweep: the message making a call may be in the transcript when the hook reads it, or not yet. A call

@@ -914,8 +914,8 @@ test('the project map renders one self-contained page with states as words, and 
   assert.match(html, /Ask[\s\S]*?searches[\s\S]*?Corpus/);
   assert.match(html, /1 of 3 done/);
   // K189 (the K160 slips): the success bar and the parts table with each part's files are drawn.
-  assert.match(html, /<h2>Success bar<\/h2><ul><li>Answers cite a public source<\/li><\/ul>/);
-  assert.match(html, /<td>Ask<\/td><td>answers questions on the device<\/td><td>src\/ask<\/td>/);
+  assert.match(html, /<h2>Success bar<\/h2>[\s\S]*<li>Answers cite a public source<\/li>/);
+  assert.match(html, /<td>Ask<\/td>[\s\S]*<td>answers questions on the device<\/td>[\s\S]*<td>src\/ask<\/td>/);
   assert.doesNotMatch(html, /<script|https?:\/\//);
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);

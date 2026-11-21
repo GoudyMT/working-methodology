@@ -224,6 +224,7 @@ test('the behaviour line (K198) needs 5 runs a side from the same day and names 
 	};
 	const five = (side, fails = []) => Array.from({ length: 5 }, (_, i) => save(side, i === 0 ? fails : []));
 	const control = [save('control', ['1-a', '2-b', '3-c'])];
+	// pin: 1 (the gate reads this line)
 	assert.equal(behaviourLine({ label: 'x', cand: five('cand'), base: five('base'), control }), 'behaviour: x median 3 baseline 3 suite v2 control 0\nbehaviour worse: none');
 	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base'), control }), /\nbehaviour worse: 2-b$/);
 	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base', ['2-b']), control }), /\nbehaviour worse: none$/);
@@ -272,4 +273,21 @@ test('a behaviour run refuses a Claude folder that is not a throwaway under kit-
 	assert.equal(r.status, 1, r.stdout + r.stderr);
 	assert.match(r.stderr, /is not a throwaway Claude folder under .*kit-probes/);
 	assert.doesNotMatch(r.stdout, /\[1\/\d+\]/);
+});
+// K206: the candidate's skills and agents name kit files as {{CLAUDE_HOME}}/..., which install fills; copied raw into a
+// probe, a session read the placeholder itself. The copy fills it with the arm's own Claude folder, as install would.
+// why: catches a candidate arm whose copied skills name {{CLAUDE_HOME}} instead of its Claude folder
+test('the candidate arm\'s copied skills name its own Claude folder, not the placeholder (K206)', async () => {
+	const { copyUserLayer } = await import('../scripts/recall-behave.mjs');
+	const kit = makeTemp('k206-kit-');
+	const home = makeTemp('k206-home-');
+	const dir = makeTemp('k206-probe-');
+	fs.mkdirSync(path.join(kit, 'user/skills/s'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'user/agents'), { recursive: true });
+	fs.writeFileSync(path.join(kit, 'user/skills/s/SKILL.md'), 'run {{CLAUDE_HOME}}/skills/pre-pr-sweep/approve.mjs\n');
+	fs.writeFileSync(path.join(kit, 'user/agents/o.md'), 'see {{CLAUDE_HOME}}/agents/\n');
+	copyUserLayer(kit, dir, home);
+	const own = home.split(path.sep).join('/');
+	assert.equal(fs.readFileSync(path.join(dir, '.claude/skills/s/SKILL.md'), 'utf8'), `run ${own}/skills/pre-pr-sweep/approve.mjs\n`);
+	assert.equal(fs.readFileSync(path.join(dir, '.claude/agents/o.md'), 'utf8'), `see ${own}/agents/\n`);
 });

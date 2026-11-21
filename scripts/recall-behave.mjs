@@ -178,11 +178,22 @@ export function seed(dir, files = {}, run, merged = false) {
  * S22-A5: a candidate's user layer is measured, not the released one in the Claude folder: its skills and agent files
  * are copied into the probe's .claude folder, which a session reads beside the Claude folder's.
  */
-export function copyUserLayer(kitDir, dir) {
+export function copyUserLayer(kitDir, dir, home) {
 	for (const part of ['skills', 'agents']) {
 		const from = path.join(kitDir, 'user', part);
 		if (fs.existsSync(from)) fs.cpSync(from, path.join(dir, '.claude', part), { recursive: true });
 	}
+	// K206: the text names kit files as {{CLAUDE_HOME}}/..., which install fills; filled here with the arm's own folder.
+	if (!home) return;
+	const own = path.resolve(home).split(path.sep).join('/');
+	const fill = (d) => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const p = path.join(d, e.name);
+			if (e.isDirectory()) fill(p);
+			else if (e.name.endsWith('.md')) { const t = fs.readFileSync(p, 'utf8'); if (t.includes('{{CLAUDE_HOME}}')) fs.writeFileSync(p, t.replaceAll('{{CLAUDE_HOME}}', own)); }
+		}
+	};
+	for (const part of ['skills', 'agents']) if (fs.existsSync(path.join(dir, '.claude', part))) fill(path.join(dir, '.claude', part));
 }
 
 /**
@@ -323,7 +334,7 @@ async function main(argv) {
 		const dir = probePath(os.homedir());
 		try {
 			setupProbe({ dir, kitDir: kit, noKit, released, run });
-			if (!noKit && !released) copyUserLayer(kit, dir);
+			if (!noKit && !released) copyUserLayer(kit, dir, home);
 				else if (!noKit) releasedUserLayer(home, dir);
 			readOnlyProbe(dir);
 			seed(dir, s.files, run, s.merged === true);

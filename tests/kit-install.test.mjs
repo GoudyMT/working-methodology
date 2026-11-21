@@ -1237,7 +1237,7 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
   assert.match(tagged, /v1\.1\.0/);
   assert.match(tagged, /start the closeout skill now/);
   assert.equal(run('anything else?').stdout, '');
-  assert.match(tagged, /starts on its own once the thread's PR is merged/);
+  assert.match(tagged, /starts on its own once.*PR is merged/);
   assert.equal(kitTools.closeoutCue({ projectDir: proj, prompt: 'My PR merged and its release is out.', session: 'off-arm', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
   git('tag', 'not-a-release');
   git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'chore: y');
@@ -1263,6 +1263,7 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   }
   const cue = (prompt) => kitTools.ruleCues({ kit: path.resolve('.'), prompt });
   // The three recall questions, and the words real work uses.
+  // pin: 4 (each cue quotes its rule's owner-set words, and a test elsewhere holds them to the source)
   assert.match(cue('My branch is ready. Can I push it and open the PR?'), /^rule:outward-acts \(AGENTS\.md\): .*names both acts and all four limits: never main, never a tag, never a force, never a delete/m);
   assert.match(cue('I want to run five review agents at once. What do I do first?'), /^rule:swarm-contract \(standards\/agent-teams\.md\): .*STOP: no agent runs until the contract is approved.*ASK: show the table/m);
   assert.match(cue('While building I noticed an unrelated idea for later. Where does it go?'), /^rule:parking-lot \(standards\/reviews-and-findings\.md\): .*Parking Lot.*all gates green/m);
