@@ -21,8 +21,10 @@ It starts on its own only as rule:compact-ritual says.
    the owner, what only waits for the owner's eyes, the carry-overs, the phase, the kit version and the last session
    are data: change them with `node .claude/state.mjs set | add | done`, one command per call. Record each owner
    decision with `state.mjs decide --from <file.json>`: its words are the owner's exact words from this session,
-   and words not found there go in only with `--unchecked`, marked so. Then run `state.mjs render` and
-   `state.mjs check` until it passes. Never edit a generated block by hand: render refuses a block edited since the
+   and words not found there go in only with `--unchecked`, marked so. Then run `node <this skill's folder>/answers.mjs`
+   (K208): it names each answer the owner tapped in this session's pop-ups that no decision row quotes, and the scan
+   fails until each is recorded with `state.mjs decide` or marked `answers.mjs not <id> <reason>` as not a decision.
+   Then run `state.mjs render` and `state.mjs check` until it passes. Never edit a generated block by hand: render refuses a block edited since the
    last render, and only `render --overwrite`, after the change is in the data, writes over it. A project with no
    generated block yet runs `state.mjs init` once. Where the project keeps its improvement list as data
    (`_List.jsonl`), each row the session moved changes with `state.mjs item set <id> <field> <value>`: a row tagged
