@@ -63,6 +63,8 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 		const map = JSON.parse(text);
 		const n = Object.keys(map.rules).length;
 		process.stdout.write(`Rule map: ${n} rules: ${n - map.prose.length} held by code, ${map.prose.length} by prose only (${OUT})\n`);
+		// K170: the rules no code names, by name, so the diet (T9) sees them without opening the JSON.
+		if (map.prose.length) process.stdout.write(`Prose only: ${map.prose.join(', ')}\n`);
 	} else if (cmd === 'check') {
 		let now = '';
 		try { now = fs.readFileSync(path.join(root, OUT), 'utf8').replace(/\r\n/g, '\n'); } catch { /* none */ }
