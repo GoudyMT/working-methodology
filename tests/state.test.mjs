@@ -168,6 +168,38 @@ test('decide --from refuses a file outside the project and keeps it; a file insi
 	assert.equal(fs.existsSync(path.join(dir, 'd.json')), false, 'the input file inside is removed');
 });
 
+// D1, D4 (the build 23a sweep): decide --from removes the file it records, so --from _Decisions.jsonl deleted every
+// decision; a run stopped between the row and the removal left the file, and a second run added the same row again,
+// or found the lock it left and refused for good.
+// why: catches decide --from deleting the decisions file or adding one decision twice
+test('decide --from takes only a decision file of its own, records it once, and takes over a stale lock', () => {
+	const dir = project();
+	const base = read(dir, '_Decisions.jsonl');
+	for (const f of ['_Decisions.jsonl', '_State.json', '_List.jsonl', 'notes.txt']) {
+		if (!fs.existsSync(path.join(dir, f))) fs.writeFileSync(path.join(dir, f), JSON.stringify({ decision: 'x', words: 'one two three', why: 'y' }));
+		const r = run(dir, ['decide', '--from', f, '--unchecked']);
+		assert.equal(r.status, 1, f);
+		assert.match(r.stdout, /is not a decision file/, f);
+		assert.ok(fs.existsSync(path.join(dir, f)), `${f} is kept`);
+	}
+	assert.equal(read(dir, '_Decisions.jsonl'), base, 'the decisions file is unchanged');
+	const one = { decision: 'x', words: 'one two three', why: 'y' };
+	assert.match(run(dir, ['decide', '--from', decision(dir, one), '--unchecked']).stdout, /D-1 recorded/);
+	// The run stopped before the removal: the same file again is refused, by the row it already has.
+	const again = run(dir, ['decide', '--from', decision(dir, one), '--unchecked']);
+	assert.equal(again.status, 1);
+	assert.match(again.stdout, /already recorded as D-1/);
+	// A lock from a stopped run: a fresh one still refuses, one older than ten minutes is taken over.
+	const lock = path.join(dir, '_Decisions.jsonl.lock');
+	fs.writeFileSync(lock, '');
+	const two = { decision: 'z', words: 'four five six', why: 'w' };
+	assert.match(run(dir, ['decide', '--from', decision(dir, two), '--unchecked']).stdout, /being written by another session/);
+	const old = new Date(Date.now() - 20 * 60 * 1000);
+	fs.utimesSync(lock, old, old);
+	assert.match(run(dir, ['decide', '--from', decision(dir, two), '--unchecked']).stdout, /D-2 recorded/);
+	assert.equal(fs.existsSync(lock), false, 'the lock is gone after the run');
+});
+
 // K211 on Windows: a junction in the project to a folder outside it (the security-four case C, as it would be made on
 // the owner's machine). Runs in the Windows slice only.
 // why: catches decide --from deleting a file outside the project through a path or link

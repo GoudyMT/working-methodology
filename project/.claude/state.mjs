@@ -543,18 +543,45 @@ function decide(fromFile, unchecked) {
 	// path, an absolute path or a link on the way would otherwise read and delete a file outside the project.
 	const src = inside(fromFile);
 	if (!src) return `${clean(fromFile)} is not a plain file inside this project; put the decision file in the project and name it from there`;
+	// D1 (the build 23a sweep): the file is removed once recorded, so it must be a .json file of its own, never the
+	// decisions file, its lock or a tracking file (decide --from _Decisions.jsonl deleted every decision).
+	const rel = path.relative(ROOT, src);
+	const kept = [...TRACKING, DECISIONS, `${DECISIONS}.lock`].map((f) => f.toLowerCase());
+	if (!/\.json$/i.test(src) || kept.includes(rel.toLowerCase())) return `${clean(fromFile)} is not a decision file: name a .json file of its own (it is removed once recorded), never a tracking file or ${DECISIONS}`;
+	// S3 (the build 23a sweep): the file is opened once and read through that handle, and it must still be the plain
+	// file inside() checked, so a swap to a link between the check and the read reads nothing outside.
 	let input;
-	try { input = JSON.parse(fs.readFileSync(src, 'utf8')); } catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
+	let opened;
+	try {
+		const fdIn = fs.openSync(src, 'r');
+		try {
+			opened = fs.fstatSync(fdIn);
+			const named = fs.lstatSync(src);
+			if (!opened.isFile() || opened.nlink !== 1 || named.ino !== opened.ino || named.dev !== opened.dev || !realUnder(src)) return `${clean(fromFile)} is not a plain file inside this project; put the decision file in the project and name it from there`;
+			input = JSON.parse(fs.readFileSync(fdIn, 'utf8'));
+		} finally { fs.closeSync(fdIn); }
+	} catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
 	const { decision, words, why, supersedes = null } = input || {};
 	if (![decision, words, why].every((v) => typeof v === 'string' && clean(v))) return 'A decision needs "decision", "words" (the owner\'s own words) and "why" (the reason).';
 	const from = ownerSaid(words, process.env.CLAUDE_CODE_SESSION_ID);
 	if (!from && !unchecked) return 'The words (at least three whole words) were not found word for word in the owner\'s messages or pop-up answers in this session\'s transcript. Quote the owner exactly, or record them with --unchecked, marked as the session recorded them.';
 	const lock = file(`${DECISIONS}.lock`);
+	// D4 (the build 23a sweep): a lock older than ten minutes is left by a run that stopped, and is taken over.
+	const takeLock = () => fs.openSync(lock, 'wx');
 	let fd;
-	try { fd = fs.openSync(lock, 'wx'); } catch { return `${DECISIONS} is being written by another session (${DECISIONS}.lock); try again, or remove the lock if no session is running`; }
+	try { fd = takeLock(); } catch {
+		let stale = false;
+		try { stale = Date.now() - fs.statSync(lock).mtimeMs > 10 * 60 * 1000; } catch { /* gone: try again */ stale = true; }
+		try { if (stale) { fs.rmSync(lock, { force: true }); fd = takeLock(); } } catch { /* another session took it */ }
+		if (fd === undefined) return `${DECISIONS} is being written by another session (${DECISIONS}.lock); try again, or remove the lock if no session is running (a lock older than ten minutes is taken over)`;
+	}
 	try {
 		const dec = loadDecisions();
 		if (dec.why) return dec.why;
+		// D4: a run that stopped between the row and the file's removal leaves the file; the same decision again is
+		// that one, not a new row.
+		const last = dec.rows[dec.rows.length - 1];
+		if (last && last.decision === clean(decision) && last.words === clean(words) && last.why === clean(why) && (last.supersedes ?? null) === supersedes) return `This decision is already recorded as ${last.id}; remove ${clean(fromFile)} by hand.`;
 		if (supersedes !== null && !dec.rows.some((d) => d.id === supersedes)) return `${clean(supersedes)} is not a decision on record, so it cannot be superseded.`;
 		if (supersedes !== null && dec.rows.some((d) => d.supersedes === supersedes)) return `${clean(supersedes)} is already superseded; supersede the newest decision in its line.`;
 		const d = { id: `D-${dec.rows.length + 1}`, date: today(), decision: clean(decision), words: clean(words), words_from: from, why: clean(why), supersedes };
@@ -567,7 +594,7 @@ function decide(fromFile, unchecked) {
 		// Checked again right before the delete: still a plain file with one name, and still under the real project.
 		try {
 			const now = fs.lstatSync(src);
-			if (now.isFile() && now.nlink === 1 && realUnder(src)) fs.rmSync(src);
+			if (now.isFile() && now.nlink === 1 && now.ino === opened.ino && now.dev === opened.dev && realUnder(src)) fs.rmSync(src);
 		} catch { /* the owner's file to remove */ }
 		console.log(`${d.id} recorded${from ? '' : ' (words not checked)'}`);
 		return null;
