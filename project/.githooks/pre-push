@@ -54,7 +54,30 @@ remote_default() {
     echo "Push blocked: KIT_OWNER_PUSH is the owner's own, from their own terminal; this shell is an AI's. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
     exit 1
   elif [ "$KIT_OWNER_PUSH" = "1" ]; then
-    : # The owner's own push: the checks below still run.
+    # K215 (build 23a): a script an AI session writes and runs can clear both markers in its own shell, so the marker
+    # alone is no owner. The owner's push passes the bound only beside the owner's own fresh pop-up yes to a push naming
+    # each ref, as KIT_PUSH_APPROVED does (without its first-push limit on main); the checks below still run. The log
+    # line this push writes spends the yes.
+    yes="$(dirname "$0")/../.claude/owner-yes.cjs"
+    if ! mkdir "$common/kit-push.lock" 2>/dev/null; then
+      echo "Push blocked: another push on the owner's yes is running (or $common/kit-push.lock was left by one that stopped). Wait for it; the owner removes a lock left behind." >&2
+      exit 1
+    fi
+    trap 'rmdir "$common/kit-push.lock" 2>/dev/null' EXIT
+    while read -r lref lsha rref rsha; do
+      [ -n "$rref" ] || continue
+      kind=""
+      case "$lsha" in *[!0]*) ;; *) kind=delete ;; esac
+      case "$rsha" in *[!0]*)
+        [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
+      esac
+      if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common"; then
+        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's fresh pop-up yes to a push naming $rref, in the session CLAUDE_CODE_SESSION_ID names (K215: a script an AI runs can clear its markers). Answer Yes in that session's pop-up first; a push with no session is the owner's own, in their own terminal, by git push --no-verify." >&2
+        exit 1
+      fi
+    done <<EOF
+$refs
+EOF
   elif [ "$KIT_PUSH_APPROVED" != "1" ]; then
     default=$(remote_default "$1" "$2")
     sent=0

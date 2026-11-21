@@ -517,6 +517,12 @@ function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_tem
 	fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 }
 const withYes = (tool_name, tool_input, extra = {}) => decide(tool_name, tool_input, { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now', ...extra });
+// K215 (build 23a): the owner's own push (KIT_OWNER_PUSH) runs on the owner's pop-up yes too. A fresh yes to `act`, in
+// the transcript folder of a repo, and the env the pre-push hook reads it with.
+function ownerTap(repo, act) {
+	popUp({ act, minutesAgo: 0, file: path.join(cfg, 'projects', fs.realpathSync.native(repo).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`) });
+	return { CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: SID };
+}
 
 // why: guards rule:outward-acts
 test('a held command runs once on the owner\'s own pop-up yes for that exact command', () => {
@@ -658,7 +664,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// The build 21 sweep: the first branch pushed to an empty remote becomes its default, so it waits for the owner; the
 	// owner's own push (KIT_OWNER_PUSH, which the guard never lets a tool set) passes the bound.
 	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`).stderr, /no branch yet/);
-	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s first push');
+	// K215 (build 23a): the marker alone is no owner; with the owner's pop-up yes to that push it goes.
+	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1' }).stderr, /KIT_OWNER_PUSH counts only beside/);
+	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/z') }).status, 0, 'the owner\x27s first push');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /owner-hand refs\/heads\/feat\/z/);
 	// A name built at run time could set the owner's marker past the guard, so it counts only with no AI marker.
 	assert.match(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, { KIT_OWNER_PUSH: '1' }).stderr, /this shell is an AI's/);
@@ -707,7 +715,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(r.status, 0, 'a secret in a pushed commit');
 	assert.match(r.stdout + r.stderr, /github token in b\.md/);
 	assert.doesNotMatch(r.stdout + r.stderr, /Zx9Qk2Lm/, 'the value is never printed');
-	assert.notEqual(push(`refs/heads/feat/x ${head} refs/heads/feat/x ${Z}`, { KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s push is scanned too');
+	const own = push(`refs/heads/feat/x ${head} refs/heads/feat/x ${Z}`, { CLAUDECODE: '', KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/x') });
+	assert.notEqual(own.status, 0, 'the owner\x27s push is scanned too');
+	assert.match(own.stdout + own.stderr, /github token in b\.md/, 'the owner\x27s push reached the scan');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /auto refs\/heads\/feat\/x/);
 	// The 1.25.0 sweep: a decoy remote-tracking ref does not hide the commits from the scan.
 	g('update-ref', 'refs/remotes/origin/decoy', head);
@@ -1492,7 +1502,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	// K163 (build 21): the hook scans every pusher's push, so the scan sits beside it as install puts it.
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
@@ -1500,7 +1510,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
 	g('update-ref', 'refs/remotes/origin/decoy', 'HEAD');
 	const head = g('rev-parse', 'HEAD').stdout.trim();
-	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_OWNER_PUSH: '1' } });
+	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/x') } });
 	assert.notEqual(r.status, 0, 'the first push went out past a fake remote ref');
 	assert.match(r.stderr, /First push blocked/);
 	assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-first-push-done')), false);
@@ -1644,4 +1654,51 @@ test('three read-only shapes pass, and their write twins stay held (K187, K196)'
 	for (const c of [`Get-ChildItem -Filter "Name='a'" | Remove-Item`, `Get-CimInstance Win32_Process -Filter "Name='x'"; Copy-Item x .claude/guard.cjs`,
 		`foreach ($i in 'a','b') { node .claude/state.mjs item $i --json | Out-File .claude/guard.cjs }`, `foreach ($i in 'a') { node x.js $i-- .claude/guard.cjs }`]) assert.equal(ps(c), 'deny', c);
 	for (const c of ['git -C . grep -n A -- .claude > .claude/guard.cjs', 'git -C . -c core.pager=x grep -n A -- .claude', 'git -C . checkout -- .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+});
+
+// K215 (build 23a, flag F3): the pre-push hook takes KIT_OWNER_PUSH=1 as the owner's own push whenever the shell has
+// neither AI marker. The guard refuses a command that clears the markers or sets the owner's marker, but a Claude
+// session can write a script with the Write tool and run it with Bash: both calls pass the guard, and the script's own
+// shell clears CLAUDECODE and AI_AGENT, sets KIT_OWNER_PUSH=1 and pushes main past the bound.
+// why: guards rule:outward-acts (a Claude session must not pass the owner's own push bound)
+test('a script a Claude session writes and runs cannot clear its markers and push main as the owner', () => {
+	const dir = kitTemp.makeTemp('k215-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', '-c', 'commit.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, '.githooks'));
+	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
+	g('add', '.');
+	g('commit', '-qm', 'one');
+	const bare = kitTemp.makeTemp('k215-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+	g('push', '-q', '--no-verify', bare, 'main');
+	const before = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	g('config', 'core.hooksPath', '.githooks');
+	fs.writeFileSync(path.join(dir, 'b.md'), 'b\n');
+	g('add', '.');
+	g('commit', '-qm', 'two');
+	// The two tool calls, as the guard sees them: neither is held.
+	const script = path.join(dir, 'p.sh');
+	const body = `unset CLAUDECODE AI_AGENT\nKIT_OWNER_PUSH=1 git push -q ${bare} main\n`;
+	assert.equal(decide('Write', { file_path: script, content: body }), 'allow');
+	assert.equal(decide('Bash', { command: 'sh p.sh' }), 'allow');
+	fs.writeFileSync(script, body);
+	// Run as the Bash tool runs it: a shell with the AI markers set.
+	spawnSync('sh', ['p.sh'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: 'claude-code', KIT_PUSH_APPROVED: '' } });
+	const after = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	assert.equal(after, before, 'a script the session wrote pushed main as the owner; push log: ' + (fs.existsSync(path.join(dir, '.git', 'kit-push.log')) ? fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8').trim() : 'none'));
+	// The owner's own push still goes, on the owner's pop-up yes to it, and that yes is spent by the push.
+	const owner = (env) => spawnSync('git', ['push', '-q', bare, 'main'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', KIT_OWNER_PUSH: '1', ...env } });
+	const tap = ownerTap(dir, 'git push origin main');
+	const first = owner(tap);
+	assert.equal(first.status, 0, first.stderr);
+	assert.notEqual(spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), before, 'the owner\x27s push on a yes');
+	fs.writeFileSync(path.join(dir, 'c.md'), 'c\n');
+	g('add', '.');
+	g('commit', '-qm', 'three');
+	assert.match(owner(tap).stderr, /KIT_OWNER_PUSH counts only beside/, 'one yes pushed twice');
 });
