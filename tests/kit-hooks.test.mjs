@@ -848,6 +848,7 @@ test('the folder gate finds its own config folder, reads a project from its top,
   const home = makeTemp('cfg-');
   fs.mkdirSync(path.join(home, 'kit-hooks'));
   fs.copyFileSync(path.resolve('user/kit-hooks/kit-gate.cjs'), path.join(home, 'kit-hooks', 'kit-gate.cjs'));
+  if (fs.existsSync(path.resolve('user/kit-hooks/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('user/kit-hooks/safe-spawn.cjs'), path.join(home, 'kit-hooks', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
   fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node', args: ['kit-tools/kit-launch.cjs'] }] }] } }));
   const env = { ...process.env };
   delete env.KIT_CLAUDE_HOME;
@@ -880,6 +881,7 @@ test('the folder gate names a launcher node that is gone, and only that', () => 
   fs.mkdirSync(path.join(home, 'kit-hooks'));
   fs.mkdirSync(path.join(home, 'kit-tools'));
   fs.copyFileSync(path.resolve('user/kit-hooks/kit-gate.cjs'), path.join(home, 'kit-hooks', 'kit-gate.cjs'));
+  if (fs.existsSync(path.resolve('user/kit-hooks/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('user/kit-hooks/safe-spawn.cjs'), path.join(home, 'kit-hooks', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
   fs.writeFileSync(path.join(home, 'kit-tools', 'kit-launch.cjs'), 'module.exports = 1;\n');
   const wired = { hooks: { PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: 'node', args: ['kit-tools/kit-launch.cjs'] }] }] } };
   fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify(wired));
@@ -1215,7 +1217,7 @@ function armedRepo() {
   run('commit', '-qm', 'two');
   const other = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
   fs.mkdirSync(path.join(dir, '.claude'));
-  for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+  for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
   return { dir, head, other, bare };
 }
@@ -1319,6 +1321,7 @@ test('the first push check reads only the repository it runs in, whatever KIT_HO
   // A copy of the script placed in the decoy and run from there is held the same way.
   fs.mkdirSync(path.join(decoy, '.claude'));
   for (const f of ['first-push-check.mjs', 'secret-patterns.mjs', 'github-scanning.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(decoy, '.claude', f));
+  if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(decoy, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
   const env = { ...process.env };
   delete env.KIT_HOOK_PROJECT;
   const c = run(process.execPath, [path.join(decoy, '.claude', 'first-push-check.mjs'), '--staged'], { cwd: app, encoding: 'utf8', env });

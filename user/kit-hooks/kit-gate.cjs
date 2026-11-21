@@ -8,7 +8,7 @@
 // prompt through.
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const safeSpawn = require('./safe-spawn.cjs');
 
 /**
  * Whether the guard launcher the user settings run is missing or cannot load (V3, 1.25.1). Its entry blocks on
@@ -45,7 +45,8 @@ function main() {
 	}
 	if (/methodology-kit|kit\.mjs/i.test(String(input.prompt || ''))) return;
 	const cwd = input.cwd || process.cwd();
-	const top = spawnSync('git', ['-C', cwd, 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+	// git from node's own folder, never the folder of the prompt (build 23).
+	const top = safeSpawn.gitRead(cwd, ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 	const root = top.status === 0 ? top.stdout.trim() : cwd;
 	const has = (f) => fs.existsSync(path.join(root, f));
 	if (has('.kit/kit-version.json') || has('.kit/no-kit') || (has('scripts/kit.mjs') && has('rules'))) return;
