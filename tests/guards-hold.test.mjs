@@ -1845,6 +1845,36 @@ test('a program piped into a reader after a cd keeps the folder, and a writer ta
 	for (const c of ['cd .claude && ls | xargs -n1 cp /dev/null', 'cd src && node x.mjs 2>&1 | tee ../.claude/guard.cjs', 'cd src && node x.mjs > ../.claude/guard.cjs | tail', 'cd src && node x.mjs | tail; echo x > ../.claude/guard.cjs', 'cd .claude && node x.mjs | tail; echo x > guard.cjs', 'cd $D && node x.mjs | tail; echo x > guard.cjs', 'cd src && node x.mjs 2>../.claude/guard.cjs | tail; ls', 'cd src && node x.mjs | sh; ls']) assert.equal(bash(c), 'deny', c);
 });
 
+// The 1.49.0 workbench (held live, F2, F3, F7, F8): K252 read Bash pipes only, so PowerShell's own pipe readers after
+// a kit script lost the plain reading: a member taken from each line (% Line), a bracketed pipeline's count, a shown
+// variable turned back to JSON, and Tee-Object to a file. A member taken from a file object (% Delete) runs a method,
+// so it is plain only on lines of text or matches; a script block, a method call and a write to a guard stay held.
+// why: catches a PowerShell pipe after a kit script held as a write to a protected file
+test('PowerShell pipe readers after a kit script keep the plain reading, and a method or a guard write is still held', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	fs.writeFileSync(path.join(proj, '.claude', 'state.mjs'), 'x\n');
+	for (const c of [
+		"node .claude/state.mjs list | Select-String -Pattern 'SUSPECT' | Select-Object -First 8 | % Line",
+		"node .claude/state.mjs list | Select-String -Pattern 'yes|pop-up' | ForEach-Object Line",
+		"(node .claude/state.mjs list | Select-String -Pattern 'SUSPECT').Count",
+		"node .claude/state.mjs list | Select-String -Pattern 'SUSPECT' | Select-Object -First 8 | % Line; (node .claude/state.mjs list | Select-String -Pattern 'SUSPECT').Count",
+		'$j = Get-Content docs/b.json -Raw | ConvertFrom-Json; $j.PSObject.Properties.Name; ($j | ConvertTo-Json -Depth 3).Length',
+		'node .claude/state.mjs list 2>&1 | Tee-Object results/list.txt',
+	]) assert.equal(ps(c), 'allow', c);
+	for (const c of [
+		'Get-ChildItem .claude | % Delete',
+		'Get-ChildItem .claude | Select-Object -First 1 | ForEach-Object -MemberName Delete',
+		"node .claude/state.mjs list | Get-Item | % Delete",
+		"node .claude/state.mjs list | Select-String x | % { Remove-Item .claude/guard.cjs }",
+		"(node .claude/state.mjs list | Select-String x).Delete()",
+		'(Get-ChildItem .claude | Select-Object -First 1).Delete()',
+		'$j = Get-Content docs/b.json -Raw | ConvertFrom-Json; ($j | ConvertTo-Json | Set-Content .claude/guard.cjs).Length',
+		'node .claude/state.mjs list | Tee-Object .claude/guard.cjs',
+		'node .claude/state.mjs list | Tee-Object -FilePath .claude/guard.cjs',
+		'node .claude/state.mjs list | Tee-Object -Variable v; Set-Content .claude/guard.cjs $v',
+	]) assert.equal(ps(c), 'deny', c);
+});
+
 // K154 (build 23a, the owner's pick 2026-11-21: narrow it): a quoted wildcard inside node -e code ('*', /\*\*/) was
 // read as a file name that could be .claude, so a print was held. Code that can reach no file (no require, import,
 // process, constructor, bracket access or a file, list or run call) cannot use a wildcard, so its wildcards are text;
