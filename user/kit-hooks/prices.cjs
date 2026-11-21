@@ -6,8 +6,10 @@ const PRICE = {
 	'opus-5-5': [4, 20, 5, 0.2], 'sonnet-5-5': [2, 10, 2.5, 0.1], 'haiku-5-5': [0.1, 0.5, 0.125, 0.01],
 	'opus-5': [5, 25, 6.25, 0.5], 'sonnet-5': [2, 10, 2.5, 0.2], 'opus-4': [5, 25, 6.25, 0.5],
 };
-// The dearest current model: what an unknown model is priced as, so a ceiling never lets a run go on cheaper than it is.
+// An unknown model is priced at the dearest row of each column (no one row is dearest in all four), so a ceiling never
+// lets a run go on cheaper than it is. DEAREST is only the table key its past roles are grouped under.
 const DEAREST = 'opus-5-5';
+const MAX_PRICE = [0, 1, 2, 3].map((i) => Math.max(...Object.values(PRICE).map((p) => p[i])));
 
 /**
  * The prices for a model id, the most specific key first (opus-5-5 is never read as opus-5).
@@ -21,7 +23,7 @@ const DEAREST = 'opus-5-5';
 function price(model) {
 	const m = String(model || '').toLowerCase();
 	const key = Object.keys(PRICE).sort((a, b) => b.length - a.length).find((k) => m.includes(k));
-	const [input, output, cacheWrite, cacheRead] = PRICE[key || DEAREST];
+	const [input, output, cacheWrite, cacheRead] = key ? PRICE[key] : MAX_PRICE;
 	return { input, output, cacheWrite, cacheRead, known: Boolean(key), key: key || DEAREST };
 }
 
