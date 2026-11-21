@@ -35,6 +35,8 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - The name check reads a list code typed in lowercase (k212) or with a dot (R7.1) as a code, in a commit subject, a PR title and a branch; versions and known words (v8, x86, sha256, utf8) still pass.
 - Install adds a limit the kit added (such as the ci-fix cap) to an existing project's bounds file at the kit's value, keeping every value the owner set and a copy of the old file.
 - The guard reads PowerShell pipe readers after a kit script as plain (% Line on text, a bracketed pipe's count, Tee-Object to a file); a member taken from a file object, a script block or a guard write stays held.
+- The sweep guard holds a reviewer start that would run on another model than its role names, and says which model to pass.
+- The worker runner reports a run only when the worker answered and its result is a success; a blocked brief, an error or no result is a stop.
 
 ### Security
 - The settings-change guard blocks when it cannot run: its hook entry says `onFailure: block`, the wiring check asks for it, and a check that throws holds the change and names the cause.

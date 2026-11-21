@@ -414,6 +414,22 @@
    "test": "tests/kit-hooks.test.mjs::the kit source records its own commit and push hooks as executable, so git runs them off Windows"
   },
   {
+   "id": "K266",
+   "kind": "fixed",
+   "reach": "kit",
+   "text": "The sweep guard holds a reviewer start that would run on another model than its role names, and says which model to pass.",
+   "evidence": "user/kit-hooks/sweep-guard.cjs",
+   "test": "tests/kit-sweep.test.mjs::the guard refuses a reviewer start that would run on another model than its role names"
+  },
+  {
+   "id": "K177-DONE",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The worker runner reports a run only when the worker answered and its result is a success; a blocked brief, an error or no result is a stop.",
+   "evidence": "user/kit-tools/worker.mjs",
+   "test": "tests/worker.test.mjs::a worker that never answered, ended in an error or sent no result is stopped, not reported as ran"
+  },
+  {
    "id": "K178",
    "kind": "security",
    "reach": "projects",
