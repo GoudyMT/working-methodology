@@ -40,6 +40,10 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 
 **One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down.
 
+### Where Work Runs {#where-work-runs}
+
+A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. Kit installs, sweeps and release verification stay on the owner's PC. A worker runs only through the kit's worker runner (`worker.mjs`), on the owner's own feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
+
 ### Agent Role Table {#agent-role-table}
 
 Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that: a test holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from the last column. Why: access widened in one file alone is invisible.

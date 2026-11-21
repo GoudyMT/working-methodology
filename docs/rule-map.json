@@ -25,6 +25,14 @@
    "tests": [],
    "workflows": []
   },
+  "where-work-runs": {
+   "guards": [],
+   "scripts": [],
+   "tests": [
+    "tests/kit-rules.test.mjs"
+   ],
+   "workflows": []
+  },
   "agent-role-table": {
    "guards": [
     "user/kit-hooks/clean-tree.cjs",

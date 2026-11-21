@@ -1359,3 +1359,24 @@ test('the arrow rule bans none of the spellings it requires, and no instruction 
     .filter(([l]) => /\b(19|20)\d\d\s*(-|to)\s*(19|20)\d\d\b/.test(l)).map(([, i]) => `${path.basename(f)}:${i}`));
   assert.deepEqual(pinned, [], 'say "current" or tie it to the date in context, not a year range');
 });
+
+// T12 + E24 C (build 23b): a cloud thread loads no repo hooks, so it takes only the fixed worker jobs. The rule, the
+// cloud refusals and the worker brief name one job list, so a session reading any of them sends the same work out.
+// why: guards rule:where-work-runs
+test('the where-work-runs rule, the cloud refusals and the worker brief name one job list (T12)', () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const start = text.indexOf('{#where-work-runs}');
+  assert.ok(start > 0, 'rule:where-work-runs is in the agent-teams module');
+  const rule = text.slice(start, text.indexOf('\n#', start));
+  const list = (s) => s.split(/,\s*|\s+or\s+/).map((w) => w.trim().toLowerCase()).filter(Boolean);
+  const jobs = list(/fixed jobs: ([^.]+)\./.exec(rule)?.[1] || '');
+  assert.deepEqual(jobs, ['tests', 'builds', 'gate checks', 'research', 'read-only review']);
+  const refusal = /worker jobs only \(([^)]+)\)/.exec(read(path.resolve('user/skills/pre-pr-sweep/approve.mjs')))?.[1] || '';
+  assert.deepEqual(list(refusal), jobs, 'approve.mjs refuses a sweep in the cloud with the same list');
+  for (const pc of ['Kit installs', 'sweeps', 'release verification', "owner's PC"]) assert.ok(rule.includes(pc), pc);
+  assert.match(rule, /worker runner \(`worker\.mjs`\), on the owner's own feature branch/);
+  const brief = /`(_Templates\/[^`]+\.md)`/.exec(rule)?.[1];
+  assert.ok(brief && fs.existsSync(path.resolve('project', brief)), 'the rule names the brief template that ships');
+  const job = /\*\*Job:\*\* <one of: ([^>]+)>/.exec(read(path.resolve('project', brief)))?.[1] || '';
+  assert.deepEqual(list(job), jobs, 'the brief offers the same jobs');
+});

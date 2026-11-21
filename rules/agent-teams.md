@@ -6,6 +6,7 @@ tags:
   multi-agent-discipline: agents, subagents, parallel, swarm, fan-out
   swarm-contract: many agents, roles, review agents, approval table
   patterns-and-dispatch: dispatch, sessions, prongs, worktrees
+  where-work-runs: cloud, worker, PC, remote, offload
   agent-role-table: agent roles, access, tools, permissions, preloaded rules
   agent-team-adapter: agent team, builders, checkers, brief rules
   agent-canary: confirmation phrase, canary, drift check, close out, hand-off, respawn
@@ -50,6 +51,10 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 **Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review. Record tokens, time and real catches; recalibrate every 3-5 dispatches.
 
 **One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down.
+
+### Where Work Runs {#where-work-runs}
+
+A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. Kit installs, sweeps and release verification stay on the owner's PC. A worker runs only through the kit's worker runner (`worker.mjs`), on the owner's own feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
 
 ### Agent Role Table {#agent-role-table}
 
