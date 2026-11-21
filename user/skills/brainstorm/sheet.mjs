@@ -33,8 +33,11 @@ function parseQuestion(n, text, topic, body) {
   const q = { n, text, topic, options: [], choice: null, why: '', pick: null, pickWhy: '' };
   const answerAt = body.findIndex((l) => clean(l) === 'Your answer:' || clean(l).startsWith('Your answer: '));
   if (answerAt < 0) fail(`Q${n} has no "Your answer:" line`);
-  const thoughtAt = body.findIndex((l, i) => i > answerAt && (clean(l) === 'What I thought:' || clean(l).startsWith('What I thought: ')));
+  const isThought = (l) => clean(l) === 'What I thought:' || clean(l).startsWith('What I thought: ');
+  const thoughtAt = body.findIndex((l, i) => i > answerAt && isThought(l));
   if (thoughtAt < 0) fail(`Q${n} has no "What I thought:" line after "Your answer:"`);
+  // K207 F1: a second label line cannot be told from the real one, so the owner's words would land in the wrong box.
+  if (body.some((l, i) => i > thoughtAt && isThought(l))) fail(`Q${n} has two "What I thought:" lines; the first one is inside the answer. Change the words of the first one (it starts a line with the label), or move them under the last "What I thought:"`);
   let inOptions = false;
   for (const raw of body.slice(0, answerAt)) {
     const line = clean(raw);
@@ -88,6 +91,9 @@ export function parseSheet(text) {
   for (const raw of lines.slice(1, groundingAt)) {
     const line = clean(raw);
     if (!line) continue;
+    // K207 F2: an empty seal or send line is named, not refused as a line the top does not have.
+    const empty = line.match(/^(sealed|sent):\s*$/);
+    if (empty) fail(`"${empty[1]}:" is empty: leave the line out, ${empty[1] === 'sealed' ? 'the seal command' : 'the page export'} writes it`);
     const m = line.match(/^(id|asked by|sealed|sent): (.+)$/);
     if (!m) fail(`a line the sheet's top does not have, and it would be lost: ${line.slice(0, 60)}`);
     meta[m[1]] = m[2];
@@ -200,7 +206,8 @@ export function sheetFromRows({ sheet, questions, answers }) {
   const text = renderSheet(parsed);
   // The file must say what the rows say: reading it back proves no owner text was taken for structure.
   let back;
-  try { back = parseSheet(text); } catch (e) { fail(`an answer holds a line that reads as sheet structure; the owner must change it on the page (${e.message})`); }
+  // A refusal that names its question keeps the name in front, as the checks below give it.
+  try { back = parseSheet(text); } catch (e) { const q = String(e.message).match(/\bQ(\d+) /); fail(`${q ? `Q${q[1]}: ` : ''}an answer holds a line that reads as sheet structure; the owner must change it on the page (${e.message})`); }
   const same = (a, b) => value(String(a).split('\n')) === value(String(b).split('\n'));
   if (back.questions.length !== parsed.questions.length || !same(back.missed, parsed.missed)) fail('an answer holds a line that reads as sheet structure; the owner must change it on the page');
   parsed.questions.forEach((q, i) => {
