@@ -267,6 +267,7 @@ test('the plugin manifest covers role and skill front matter and refuses an adde
 });
 
 // why: guards rule:security-standards: a session that edits the plugin's own guard files and so turns them off
+// planted: {"file":"user/kit-tools/plugin-launch.cjs","was":"function preTool(input, root = ROOT) {","to":"function preTool(input, root = ROOT) { if (String(input.tool_input && input.tool_input.command).endsWith('--help')) process.exit(3);"}
 test('the plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it (K174)', () => {
   const root = plugin();
   const repo = gitRepo();
@@ -324,6 +325,7 @@ test('the plugin launcher denies another Claude folder\'s approve.mjs (K174, K20
 // The proof (gap-fixes r9): plugin agents ignore the hooks: block in their own file, so the launcher runs them by
 // agent_type, which Claude Code hands every hook of a subagent's call.
 // why: guards rule:agent-role-table: a plugin builder that edits outside its worktree, or a checker that changes files, unheld
+// planted: {"file":"user/kit-tools/plugin-launch.cjs","was":"function preTool(input, root = ROOT) {","to":"function preTool(input, root = ROOT) { if (input.agent_type === 'kit:scanner') process.exit(3);"}
 test('the plugin launcher runs each role\'s hooks for the matching agent_type (K174)', () => {
   const root = plugin();
   const repo = gitRepo();
