@@ -10,7 +10,7 @@
 // Exit 0 clean, 1 faults named, 2 the plan has no Units table or cannot be read.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import safeSpawn from './safe-spawn.cjs';
 import { pathToFileURL } from 'node:url';
 
 /** The units of a plan's text: [{ id, files: Set, runs: 'parallel' | 'alone' | 'after', after: [] }]. */
@@ -95,7 +95,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	} else {
 		const found = faults(list);
 		process.stdout.write(found.length ? `Plan graph: ${list.length} units, ${found.length} fault(s)\n${found.map((f) => `    ${f}`).join('\n')}\n` : `Plan graph: ${list.length} units, no shared file between units that may run at once\n`);
-		const g = spawnSync('git', ['rev-parse', '--git-common-dir'], { cwd: path.dirname(path.resolve(file)), encoding: 'utf8' });
+		const g = safeSpawn.gitRead(path.dirname(path.resolve(file)), ['rev-parse', '--git-common-dir'], { encoding: 'utf8' });
 		if (g.status === 0) {
 			const dir = path.resolve(path.dirname(path.resolve(file)), g.stdout.trim());
 			try { fs.appendFileSync(path.join(dir, 'kit-plan-graph.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), plan: path.basename(file), units: list.length, faults: found.length })}\n`); } catch { /* a trace only */ }

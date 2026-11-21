@@ -45,6 +45,7 @@ import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
+import safeSpawn from './safe-spawn.cjs';
 
 const yesReader = createRequire(import.meta.url)('./owner-yes.cjs');
 const PHRASE = 'begin loop workflow';
@@ -56,7 +57,7 @@ const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 
 // The project is the folder above this script's .claude, not the caller's folder (the build 12 sweep: run from another
 // repo, it read that repo's bounds file and kept its log there).
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
-const common = spawnSync('git', ['-C', ROOT, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+const common = safeSpawn.gitRead(ROOT, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
 const GIT = common.status === 0 ? common.stdout.trim() : null;
 const LOG = GIT ? path.join(GIT, 'kit-loop.jsonl') : null;
 const HEAD = LOG ? `${LOG}.head` : null;

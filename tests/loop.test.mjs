@@ -20,7 +20,7 @@ function repo({ session = SID } = {}) {
 	const dir = kitTemp.makeTemp('loop-');
 	spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['loop.mjs', 'owner-yes.cjs', 'bounds.json']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['loop.mjs', 'owner-yes.cjs', 'bounds.json', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	if (session) fs.writeFileSync(path.join(dir, '.git', 'kit-loop-session'), session);
 	const cfg = kitTemp.makeTemp('loop-cfg-');
 	return { dir, cfg };

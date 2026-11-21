@@ -468,7 +468,8 @@ function boundedPr(input) {
 		}
 		i++;
 	}
-	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
+	// git starts from node's own folder, with safe-spawn.cjs's options written out in this guard (build 23).
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath), windowsHide: true, env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
 	const remotes = git('remote');
 	if (remotes.status !== 0 || remotes.stdout.trim() !== 'origin' || originMoved(input)) return false;
 	const branch = git('symbolic-ref', '--short', 'HEAD');
@@ -606,7 +607,7 @@ function uncheckedRepo(input) {
 	if (!cwd) return true;
 	const fold = (p) => (process.platform === 'win32' ? p.toLowerCase() : p);
 	const inside = Boolean(root) && (fold(cwd) === fold(path.resolve(root)) || fold(cwd).startsWith(fold(path.resolve(root)) + path.sep));
-	const git = (dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8', timeout: 3000 });
+	const git = (dir, ...a) => require('node:child_process').spawnSync('git', ['-C', dir, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath), windowsHide: true, env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
 	const real = (p) => { try { return fs.realpathSync.native(p).toLowerCase(); } catch { return path.resolve(p).toLowerCase(); } };
 	const common = (dir) => { const r = git(dir, 'rev-parse', '--git-common-dir'); return r.status === 0 ? real(path.resolve(dir, r.stdout.trim())) : ''; };
 	// By its git folder, not its path: a nested repo or a submodule under the project is another repo (the plan
@@ -626,7 +627,7 @@ function uncheckedRepo(input) {
 function originMoved(input) {
 	const cwd = input && input.cwd ? path.resolve(String(input.cwd)) : null;
 	if (!cwd) return true;
-	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8', timeout: 3000 });
+	const git = (...a) => require('node:child_process').spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath), windowsHide: true, env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
 	const fetch = git('remote', 'get-url', 'origin');
 	// No repo here pushes nothing. A repo with no origin still takes the word as a URL and rewrites it (the 1.29.0
 	// sweep), so that asks, as any other failure does.

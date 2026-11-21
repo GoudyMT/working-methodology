@@ -27,7 +27,9 @@ function topProcesses(n = 3) {
 	const r = process.platform === 'win32'
 		? spawnSync(require('node:path').join(process.env.SystemRoot || 'C:\\Windows', 'System32', 'WindowsPowerShell', 'v1.0', 'powershell.exe'), ['-NoProfile', '-Command',
 			`Get-Process | Sort-Object CPU -Descending | Select-Object -First ${n} -ExpandProperty ProcessName`], { encoding: 'utf8', timeout: 10000 })
-		: spawnSync('ps', ['-eo', 'comm', '--sort=-pcpu', '--no-headers'], { encoding: 'utf8', timeout: 10000 });
+		// ps runs off Windows only, where no folder is searched first; it starts from node's own folder all the same, so
+		// the spawn check (scripts/spawn-check.mjs) can see it is safe rather than take it on trust (build 23).
+		: require('./safe-spawn.cjs').tool('ps', ['-eo', 'comm', '--sort=-pcpu', '--no-headers'], { encoding: 'utf8', timeout: 10000 });
 	return (r.stdout || '').split(/\r?\n/).map((s) => s.trim()).filter(Boolean).slice(0, n);
 }
 
