@@ -476,16 +476,16 @@
    "why": "Its first case held only because of its pipe."
   },
   {
-   "decision": "A short closeout answer is quoted by its own row, one row per answer",
+   "decision": "A short closeout answer needs its own row",
    "why": "decide records no words_from below three words."
   },
   {
    "decision": "Four sweep findings closed with no change",
-   "why": "Each was shown not real or right as built; the sweep report gives each reason."
+   "why": "The sweep report gives each reason."
   },
   {
    "decision": "R1 ships as hardening with no test",
-   "why": "125 probe commands gave the same decision before and after."
+   "why": "125 probes gave the same decision before and after."
   }
  ],
  "upgrading": "Run install user, then install project: the guard start script, the launcher, the commit-msg and pre-push hooks, owner-proof, owner-yes, the safe-spawn helper copies, name-check, state.mjs, loop.mjs and the closeout and brainstorm skills change. The owner's own push now asks for the ref's name at their terminal (or a pop-up yes in a session); a person whose name matches a code tool commits once listed with `git config --add kit.allowedIdent \"<name> <email>\"`.",

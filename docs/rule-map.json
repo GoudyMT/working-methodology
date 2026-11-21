@@ -168,6 +168,7 @@
     "tests/release-verify.test.mjs",
     "tests/rule-map.test.mjs",
     "tests/run-records-kept.test.mjs",
+    "tests/safe-spawn.test.mjs",
     "tests/test-check.test.mjs",
     "tests/test-value.test.mjs",
     "tests/use-check.test.mjs"
@@ -330,6 +331,8 @@
     "user/kit-tools/audits/name-check.mjs"
    ],
    "tests": [
+    "tests/author-check.test.mjs",
+    "tests/ci-commit-names.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs"
    ],
@@ -681,6 +684,7 @@
     "tests/kit-install.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
+    "tests/launcher-verify.test.mjs",
     "tests/link-scan.test.mjs",
     "tests/owner-proof.test.mjs",
     "tests/recall-behave.test.mjs",
