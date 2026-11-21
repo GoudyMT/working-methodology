@@ -4,9 +4,10 @@
 // session, one tool and the exact act the guard quoted, good for one hour (the pop-up yes's own limit), spent on first
 // use. The launcher (kit-launch.cjs, and the plugin launcher) lifts one "Owner's yes needed" hold with it, never a
 // subagent's call and never any other refusal.
-// Limits: the grants folder is on the same machine and user as the worker. The guards refuse a tool write there and a
-// run of grant.mjs, and the content hash catches a hand edit, but a program that writes a whole new grant outside the
-// tools is not stopped: a slip-catcher like the pop-up path, not a lock.
+// Limits: the grants folder is on the same machine and user as the worker. The guards refuse a tool write there and
+// any runtime call that names the grant code, and the content hash catches a hand edit, but a program that writes a
+// whole new grant some other way is not stopped (the hash has no key the worker cannot read): a slip-catcher like the
+// pop-up path, not a lock.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -102,8 +103,11 @@ function lift(answer, input, home, now = Date.now()) {
 function runsGrantTool(input) {
 	if (!input || !['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'].includes(String(input.tool_name))) return null;
 	const command = String((input.tool_input && input.tool_input.command) ?? '');
-	// A run of it by node, by any path; naming it otherwise (git add, a read) is no run.
-	if (!/\bnode(\.exe)?\b[^;&|\n]*(^|[^A-Za-z0-9_.-])grant\.mjs\b/i.test(command.replace(/["'\\]/g, ''))) return null;
+	// The build 23b sweep: a run keyed on "node ... grant.mjs" missed its library (node -e require), a copy, a quoted
+	// node path and a pipe into node. Any command that starts a JavaScript runtime and names the grant code or its folder
+	// is held; naming the files with no runtime (git add, a read) is no run.
+	const flat = command.replace(/["'`\\]/g, ' ');
+	if (!/(^|[^A-Za-z0-9_])(node|nodejs|bun|deno)(\.exe)?([^A-Za-z0-9_]|$)/i.test(flat) || !/(^|[^A-Za-z0-9_.-])grant\.mjs\b|owner-grant\.cjs|writeGrant|kit-grants/i.test(flat)) return null;
 	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Never by a tool: grant.mjs records the owner\'s tap on a card, so only the lead thread runs it, never a session the kit guards. Hand the act back to the lead, quoted exactly.' } };
 }
 

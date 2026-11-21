@@ -214,6 +214,30 @@ test('K176 a worker cannot write into the grants folder, nor run grant.mjs to gr
 	assert.equal(fs.existsSync(path.join(home, 'kit-grants')), false);
 });
 
+// The build 23b sweep: the hold keyed on a node run of the name grant.mjs, so loading its library, a copy, a quoted
+// node path or a pipe into node minted a grant unheld. Any node, bun or deno call that names the grant code is held,
+// with the grant reason; naming the files in git or running their tests still passes.
+// why: guards rule:outward-acts
+test('K176 a worker cannot reach the grant code by its library, a copy, a quoted node or a pipe', () => {
+	const { home, launch } = installed();
+	// The grant check's own answer, whichever hold the launcher shows first, and the launcher's decision beside it.
+	const why = (command, tool_name = 'Bash') => String(grantLib().runsGrantTool(call({ tool_name, tool_input: { command } }))?.hookSpecificOutput?.permissionDecisionReason || '');
+	const held = (command, tool_name = 'Bash') => decision(launch(call({ tool_name, tool_input: { command } })));
+	const lib = `${path.join(home, 'kit-tools', 'owner-grant.cjs').split(path.sep).join('/')}`;
+	for (const [c, tool] of [
+		[`node -e "require('${lib}').writeGrant({ session: '${SESSION}', tool: 'Bash', act: 'x', card: 'c1' })"`],
+		['cp ~/.claude/kit-tools/grant.mjs g.mjs; node g.mjs x'],
+		['cat ~/.claude/kit-tools/grant.mjs | node --input-type=module'],
+		['& "C:\\Program Files\\nodejs\\node.exe" ~/.claude/kit-tools/grant.mjs x', 'PowerShell'],
+		['bun ~/.claude/kit-tools/grant.mjs x'],
+	]) {
+		assert.match(why(c, tool), /grant\.mjs records the owner's tap/, c);
+		assert.equal(held(c, tool), 'deny', c);
+	}
+	for (const c of ['git add user/kit-tools/grant.mjs user/kit-tools/owner-grant.cjs', 'node --test tests/owner-grant.test.mjs']) assert.doesNotMatch(why(c), /records the owner's tap/, c);
+	assert.equal(fs.existsSync(path.join(home, 'kit-grants')), false);
+});
+
 // why: guards rule:outward-acts
 test('K176 the launcher lifts nothing when another check refuses the same call beside the owner\'s-yes hold', () => {
 	const { home, launch } = installed();
