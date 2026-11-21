@@ -1,7 +1,7 @@
 # S1 (the build 23b sweep): a cloud build thread pushes its own feature branch, and a cloud session loads no pre-push
 # hook, so the secret scan and the name check the PC runs at push never ran; the PR's scans come only once a PR is open,
-# and this repo is public. Every push to a branch other than main runs main's copies of both, so the branch cannot
-# change the check that reads it. About one minute a push.
+# and this repo is public. Every push to a branch other than main runs main's copies of both: a slip-catcher for a
+# cloud push, not a lock (the branch carries this file; see the Same check as main step). About one minute a push.
 # Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
 name: Branch push
 
@@ -40,11 +40,24 @@ jobs:
           mkdir -p "$RUNNER_TEMP/main"
           git archive origin/main project/.claude | tar -x -C "$RUNNER_TEMP/main"
 
-      # Every line and file the branch adds past main, with the pre-commit hook's patterns; never prints a value.
+      # The branch carries this file, so it could change its own check: once main has the file, a branch that changes
+      # it fails here. Still a slip-catcher (a branch can edit this step too); GitHub's own secret scanning and push
+      # protection, on for this repo, are the block a branch cannot change.
+      - name: Same check as main
+        shell: bash
+        run: |
+          if git cat-file -e origin/main:.github/workflows/branch-push.yml 2> /dev/null; then
+            git diff --quiet origin/main HEAD -- .github/workflows/branch-push.yml || { echo "this branch changes branch-push.yml; main's copy is the check"; exit 1; }
+          fi
+
+      # Every commit the branch holds past main, one by one, as the pre-push hook reads a push (a key added and then
+      # removed still went out); each run reads the whole branch, so a run cancelled by a later push loses nothing.
+      # Never prints a value.
       - name: Secret scan
         shell: bash
         run: |
-          node "$RUNNER_TEMP/main/project/.claude/secret-shapes.mjs" origin/main
+          printf 'refs/heads/%s %s refs/heads/%s %s\n' "$GITHUB_REF_NAME" "$(git rev-parse HEAD)" "$GITHUB_REF_NAME" "$(git rev-parse origin/main)" \
+            | node "$RUNNER_TEMP/main/project/.claude/secret-shapes.mjs" --push
 
       - name: Branch and commit names
         shell: bash

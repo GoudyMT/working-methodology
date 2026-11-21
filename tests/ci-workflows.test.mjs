@@ -91,6 +91,11 @@ test('every feature-branch push runs main\'s secret scan and name check (S1)', (
 		assert.ok(flow.indexOf(`- name: ${name}`) > flow.indexOf("- name: Main's scripts"), `${name} runs after the unpack`);
 		for (const line of s.split('\n').filter((l) => /\bnode\b/.test(l))) assert.match(line, /node "\$RUNNER_TEMP\/main\/project\/\.claude\//, line);
 	}
-	assert.match(step(flow, 'Secret scan'), /secret-shapes\.mjs" origin\/main/);
+	// The commit review: a net diff misses a key added and then removed, which the push still sent, so every commit of
+	// the branch past main is read one by one, by the push mode.
+	assert.match(step(flow, 'Secret scan'), /secret-shapes\.mjs" --push\b/);
+	assert.match(step(flow, 'Secret scan'), /git rev-parse origin\/main/);
+	// The branch carries this file, so a change to it shows: it is held to main's copy once main has one.
+	assert.match(step(flow, 'Same check as main'), /git diff --quiet origin\/main HEAD -- \.github\/workflows\/branch-push\.yml/);
 	assert.match(step(flow, 'Branch and commit names'), /name-check\.mjs" branch "\$GITHUB_REF_NAME"/);
 });
