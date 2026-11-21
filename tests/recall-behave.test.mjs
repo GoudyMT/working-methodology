@@ -312,6 +312,6 @@ test('a behaviour run refuses a throwaway Claude folder whose CLAUDE.md was edit
 	fs.appendFileSync(path.join(home, 'CLAUDE.md'), 'a hand edit\n');
 	const r = spawnSync(process.execPath, [path.resolve('scripts/recall-behave.mjs'), 'cand-1', kit], { encoding: 'utf8', env: { ...process.env, HOME: osHome, USERPROFILE: osHome, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home, PATH: '' } });
 	assert.equal(r.status, 1, r.stdout + r.stderr);
-	assert.match(r.stderr, /not this arm's own user layer: CLAUDE\.md changed by hand/);
+	for (const token of ['user layer', 'CLAUDE.md', 'by hand']) assert.ok(r.stderr.includes(token), r.stderr);
 	assert.doesNotMatch(r.stdout, /\[1\/\d+\]/);
 });

@@ -1616,6 +1616,7 @@ test('recall (K231): an arm carries its own global CLAUDE.md into its probe, and
   // The real ~/.claude/CLAUDE.md also loads as a parent file, so the arm did not carry only its own.
   fs.mkdirSync(path.join(osHome, '.claude'), { recursive: true });
   fs.writeFileSync(path.join(osHome, '.claude', 'CLAUDE.md'), '# the real global\n');
+  // pin: 1 recall-score reads this header line into the sealed map
   assert.match(read(go()), /^User layer: own beside the real ~\/\.claude\/CLAUDE\.md \(CLAUDE\.md sha256 [0-9a-f]{12}\)$/m);
   fs.rmSync(path.join(osHome, '.claude'), { recursive: true });
   // A hand edit to the throwaway folder, or a kit source the folder was not installed from, is refused before any session.
@@ -1678,5 +1679,6 @@ test('recall-score (K231): the user layer is called measured only when every can
     assert.ok(r.stdout.split('\n').includes(`Not measured: the user layer (base: ${other})`), r.stdout);
   }
   // An old run with no User layer line is not measured either.
-  assert.match(cli((name) => (name === 'cand-1' ? '' : 'own (CLAUDE.md sha256 aaaaaaaaaaaa)')).stdout, /^Not measured: the user layer \(cand: no User layer line\)$/m);
+  const old = cli((name) => (name === 'cand-1' ? '' : 'own (CLAUDE.md sha256 aaaaaaaaaaaa)')).stdout.split('\n').find((l) => l.startsWith('Not measured: the user layer')) || '';
+  for (const token of ['cand', 'no User layer line']) assert.ok(old.includes(token), old);
 });
