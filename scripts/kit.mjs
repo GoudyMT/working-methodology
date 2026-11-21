@@ -2516,6 +2516,13 @@ function skillListing(file, prefix) {
   return Buffer.byteLength(`${prefix}${name}: ${desc}`);
 }
 
+// K232: an agent is listed as its name and description, then the tools it may use (all of them when none are named).
+function agentListing(file, prefix) {
+  const front = (fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---/) || [])[1] || '';
+  const tools = ((front.match(/^tools:[ \t]*(.+)$/m) || [])[1] || '*').trim();
+  return skillListing(file, prefix) + Buffer.byteLength(` (Tools: ${tools})`);
+}
+
 /**
  * Measure what really loads before a session's first message (rule:kit-standards item 14): the project's own
  * start load (measure), the memory index, the global CLAUDE.md and its imports, and the listing line of every
@@ -2523,12 +2530,12 @@ function skillListing(file, prefix) {
  * organization's catalog are not on disk here and are not counted.
  *
  * Args:
- *     ctx: { projectDir, home }
+ *     ctx: { projectDir, home, hookText }: hookText is the start-up hook's text, counted as sent (K232)
  *
  * Returns:
- *     { parts: { project, memoryIndex, globalClaude, userSkills, plugins }, total }
+ *     { parts: { project, memoryIndex, globalClaude, userSkills, plugins, agents, startHook }, total }
  */
-export function measureReal({ projectDir, home }) {
+export function measureReal({ projectDir, home, hookText = '' }) {
   const size = (p) => (fs.existsSync(p) ? fs.statSync(p).size : 0);
   const skillFiles = (root) => walk(root).filter((f) => path.basename(f) === 'SKILL.md');
   const homeLoad = fs.existsSync(path.join(home, 'CLAUDE.md')) ? measure({ projectDir: home }).files.filter((f) => !f.file.startsWith('.claude/')) : [];
@@ -2538,6 +2545,10 @@ export function measureReal({ projectDir, home }) {
     globalClaude: homeLoad.reduce((s, f) => s + f.bytes, 0),
     userSkills: skillFiles(path.join(home, 'skills')).reduce((s, f) => s + skillListing(f, ''), 0),
     plugins: 0,
+    agents: [path.join(home, 'agents'), path.join(projectDir, '.claude', 'agents')]
+      .flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => n.endsWith('.md')).map((n) => path.join(d, n)) : []))
+      .reduce((s, f) => s + agentListing(f, ''), 0),
+    startHook: Buffer.byteLength(String(hookText || '')),
   };
   let installed = {};
   try { installed = JSON.parse(fs.readFileSync(path.join(home, 'plugins', 'installed_plugins.json'), 'utf8')).plugins || {}; } catch { /* none */ }
@@ -2547,6 +2558,8 @@ export function measureReal({ projectDir, home }) {
     if (!entry || !fs.existsSync(entry.installPath)) continue;
     const prefix = key.split('@')[0] + ':';
     parts.plugins += skillFiles(path.join(entry.installPath, 'skills')).reduce((s, f) => s + skillListing(f, prefix), 0);
+    const agentDir = path.join(entry.installPath, 'agents');
+    if (fs.existsSync(agentDir)) parts.agents += fs.readdirSync(agentDir).filter((n) => n.endsWith('.md')).reduce((s, n) => s + agentListing(path.join(agentDir, n), prefix), 0);
   }
   return { parts, total: Object.values(parts).reduce((a, b) => a + b, 0) };
 }
@@ -2728,7 +2741,10 @@ function main(argv) {
     console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);
   } else if (cmd === 'measure' && argv.includes('--real')) {
     const dir = argv.slice(1).find((a) => a !== '--real') || process.cwd();
-    const r = measureReal({ projectDir: dir, home });
+    // K232: the start-up hook's text is part of what loads; built here as the hook builds it for a fresh session.
+    let hookText = '';
+    try { hookText = sessionStartReport({ kit, home, projectDir: dir, source: 'startup', session: '' }) || ''; } catch { /* counted as none */ }
+    const r = measureReal({ projectDir: dir, home, hookText });
     for (const [k, v] of Object.entries(r.parts)) console.log(`${String(v).padStart(8)}  ${k}`);
     console.log(`${String(r.total).padStart(8)}  loaded before the first message (cap ${(loadKit(kit).config.caps || {}).realLoad || 'none'}); desktop-app catalog plugins not counted`);
   } else if (cmd === 'measure') {

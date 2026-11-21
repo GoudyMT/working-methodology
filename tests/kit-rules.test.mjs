@@ -51,12 +51,29 @@ test('measureReal counts the memory index, global CLAUDE.md and the skill listin
   w(home, 'settings.json', JSON.stringify({ enabledPlugins: { 'on@m': true, 'off@m': false } }));
   const listing = (name, desc) => Buffer.byteLength(`${name}: ${desc}`);
   let r = measureReal({ projectDir: proj, home });
-  assert.deepEqual(r.parts, { project: 100, memoryIndex: 30, globalClaude: 50, userSkills: listing('mine', 'abc'), plugins: listing('on:s', 'one two') });
+  assert.deepEqual(r.parts, { project: 100, memoryIndex: 30, globalClaude: 50, userSkills: listing('mine', 'abc'), plugins: listing('on:s', 'one two'), agents: 0, startHook: 0 });
   assert.equal(r.total, 100 + 30 + 50 + listing('mine', 'abc') + listing('on:s', 'one two'));
   // A project turning a standby plugin on counts it there.
   w(proj, '.claude/settings.local.json', JSON.stringify({ enabledPlugins: { 'off@m': true } }));
   r = measureReal({ projectDir: proj, home });
   assert.equal(r.parts.plugins, listing('on:s', 'one two') + listing('off:s', 'one two'));
+});
+
+// K232 (build 23b): the raw start request held 43,173 B where measure --real said 41,683 B; it left out the agent
+// list (each agent's name, description and tools) and the SessionStart hook text, so a trim was judged on a short count.
+// why: guards rule:kit-standards
+test('measureReal also counts the agent list and the start-up hook text (K232)', () => {
+  const proj = makeTemp('real-proj-');
+  const home = makeTemp('real-home-');
+  const w = (root, rel, body) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), body); };
+  w(home, 'agents/builder.md', '---\nname: builder\ndescription: builds\ntools: Read, Edit\n---\nbody not loaded\n');
+  w(proj, '.claude/agents/scout.md', '---\nname: scout\ndescription: looks\n---\nbody\n');
+  const r = measureReal({ projectDir: proj, home, hookText: 'Kit tools this session: x' });
+  const line = (s) => Buffer.byteLength(s);
+  assert.equal(r.parts.agents, line('builder: builds (Tools: Read, Edit)') + line('scout: looks (Tools: *)'));
+  assert.equal(r.parts.startHook, line('Kit tools this session: x'));
+  assert.equal(r.total, Object.values(r.parts).reduce((a, b) => a + b, 0));
+  assert.equal(measureReal({ projectDir: proj, home }).parts.startHook, 0, 'no hook text given, none counted');
 });
 
 // why: guards rule:kit-standards
