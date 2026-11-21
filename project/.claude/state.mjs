@@ -539,8 +539,12 @@ function proven(d) {
 
 /** Record one decision, under a lock so two sessions never take the same id; the row is appended, never rewritten. */
 function decide(fromFile, unchecked) {
+	// K211 (build 23a): the input is resolved once, through inside(), and that one path is read and later removed: a ../
+	// path, an absolute path or a link on the way would otherwise read and delete a file outside the project.
+	const src = inside(fromFile);
+	if (!src) return `${clean(fromFile)} is not a plain file inside this project; put the decision file in the project and name it from there`;
 	let input;
-	try { input = JSON.parse(fs.readFileSync(path.resolve(ROOT, fromFile), 'utf8')); } catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
+	try { input = JSON.parse(fs.readFileSync(src, 'utf8')); } catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
 	const { decision, words, why, supersedes = null } = input || {};
 	if (![decision, words, why].every((v) => typeof v === 'string' && clean(v))) return 'A decision needs "decision", "words" (the owner\'s own words) and "why" (the reason).';
 	const from = ownerSaid(words, process.env.CLAUDE_CODE_SESSION_ID);
@@ -560,7 +564,11 @@ function decide(fromFile, unchecked) {
 		try { st = fs.lstatSync(file(DECISIONS)); } catch { /* new */ }
 		if (st && (st.isSymbolicLink() || !st.isFile() || st.nlink > 1)) return `${DECISIONS} is a link or not a plain file, which state.mjs never writes through`;
 		fs.appendFileSync(file(DECISIONS), row);
-		try { fs.rmSync(path.resolve(ROOT, fromFile)); } catch { /* the owner's file to remove */ }
+		// Checked again right before the delete: still a plain file with one name, and still under the real project.
+		try {
+			const now = fs.lstatSync(src);
+			if (now.isFile() && now.nlink === 1 && realUnder(src)) fs.rmSync(src);
+		} catch { /* the owner's file to remove */ }
 		console.log(`${d.id} recorded${from ? '' : ' (words not checked)'}`);
 		return null;
 	} finally {
