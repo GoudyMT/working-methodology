@@ -985,7 +985,8 @@ function preToolUse(input) {
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
 	const best = answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);
 	// K176: a grant lifts a refusal only when it is the one refusal (the others are not merged into it).
-	return answers.filter((o) => rank(o) === 3).length === 1 ? grant.lift(best, input, HOME) : best;
+	// The build 23b sweep: an ask beside the one refusal is a hold too, so a grant lifts only a lone hold of either kind.
+	return answers.filter((o) => rank(o) >= 2).length === 1 ? grant.lift(best, input, HOME) : best;
 }
 
 function projectCheck(input, only = false) {

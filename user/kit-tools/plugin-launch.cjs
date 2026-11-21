@@ -72,10 +72,31 @@ function writesPlugin(input, root = ROOT) {
 	// Each kit tool run from the plugin is taken out first; any other mention of the folder is a reach into it.
 	const RUN = /(?:^|[\s;&|(])["']?(?:[^\s"';&|]*\/)?node(?:\.exe)?["']?\s+["']?([^\s"';&|]+?)\/(skills\/[\w.-]+\/[\w.-]+\.[cm]js|kit-tools\/[\w.-]+\.[cm]js)["']?(?=\s|$|[;&|)])/gi;
 	const rest = command.replace(RUN, (m, dir) => (spelled.includes(fold(posix(path.resolve(cwd, dir)))) ? ' ' : m));
-	if (spelled.some((r) => fold(rest).includes(r)) || /CLAUDE_PLUGIN_(ROOT|DATA)/.test(rest) || roots.some((r) => within(cwd, r))) {
+	if (spelled.some((r) => fold(rest).includes(r)) || /CLAUDE_PLUGIN_(ROOT|DATA)/.test(rest) || roots.some((r) => within(cwd, r)) || reachesBy(rest, cwd, roots)) {
 		return 'Kit plugin: a command that reaches the plugin folder is refused; the plugin folder holds the guards. Run a kit tool from it as node <plugin root>/skills/... or kit-tools/..., with nothing else naming the folder.';
 	}
 	return '';
+}
+
+// The build 23b sweep: the folder found only by its exact spelling let ./, a doubled slash, .. or a wildcard from the
+// parent through. Each path word is resolved (from a cd's folder after one), and a wildcard whose fixed part sits on
+// the way to the plugin and whose next part could name it reaches it.
+const GLOB = /[*?[]/;
+const globPart = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, WIN ? 'i' : '');
+function reachesBy(command, cwd, roots) {
+	let base = cwd;
+	const words = command.split(/[\s"';&|<>()]+/).filter(Boolean);
+	for (let i = 0; i < words.length; i++) {
+		const w = words[i];
+		if (/^(cd|pushd|set-location|sl)$/i.test(w) && words[i + 1]) { base = path.resolve(base, words[++i]); if (roots.some((r) => within(base, r))) return true; continue; }
+		if (!/[/\\]/.test(w) && !/^\.\.?$/.test(w)) continue;
+		const parts = w.replace(/\\/g, '/').split('/');
+		const cut = parts.findIndex((x) => GLOB.test(x));
+		if (cut < 0) { if (roots.some((r) => within(path.resolve(base, parts.join('/')), r))) return true; continue; }
+		const fixed = path.resolve(base, parts.slice(0, cut).join('/') || '.');
+		if (roots.some((r) => { const rel = posix(path.relative(fixed, r)); return within(r, fixed) && (rel === '' || globPart(parts[cut]).test(rel.split('/')[0])); })) return true;
+	}
+	return false;
 }
 
 let rolesRead = null;
@@ -115,14 +136,14 @@ function roleHooks(input, event, root = ROOT) {
 
 /**
  * K176's hook point: a card grant may lift an "Owner's yes needed" hold for the main session's own call, never a
- * subagent's. Only when owner-grant.cjs sits beside this launcher (built in, and in the manifest); a grant that throws
+ * subagent's. Only when kit-tools/owner-grant.cjs is in the plugin (built in, and in the manifest); a grant that throws
  * leaves the hold as it was. lift(answer, input, home) returns the answer to give, home being the plugin root.
  */
 function liftOwnerHold(answer, input, root = ROOT) {
 	const h = answer && answer.hookSpecificOutput;
 	if (!h || !['deny', 'ask'].includes(h.permissionDecision) || !/Owner's yes needed/.test(String(h.permissionDecisionReason || ''))) return answer;
 	if (!input || input.agent_id) return answer;
-	const grant = path.join(root, 'owner-grant.cjs');
+	const grant = path.join(root, 'kit-tools', 'owner-grant.cjs');
 	if (!fs.existsSync(grant)) return answer;
 	try {
 		const out = require(grant).lift(answer, input, root);
@@ -160,6 +181,9 @@ function preTool(input, root = ROOT) {
 	const files = new Map();
 	for (const [rel, b] of m.bytes) if (/\.c?js$/.test(rel)) files.set(fold(path.resolve(root, rel)), b.toString('utf8'));
 	const answer = launch.runGuard(path.join(root, 'kit', 'project'), files, input, 'Reinstall the kit plugin from its tag');
+	// The build 23b sweep: the PC launcher's hold on a session running the grant tool, here too. Loaded after runGuard,
+	// so it comes from the checked bytes like the guard.
+	try { const held = require(path.join(root, 'kit-tools', 'owner-grant.cjs')).runsGrantTool(input); if (held) return held; } catch { return deny('Held: the kit plugin\'s grant check could not load. Reinstall the kit plugin from its tag.'); }
 	return liftOwnerHold(answer, input, root);
 }
 

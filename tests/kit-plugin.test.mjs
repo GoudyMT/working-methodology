@@ -207,6 +207,25 @@ test('the plugin launcher refuses a write into the plugin folder, and lets a kit
   assert.doesNotMatch(reason(run.out), /plugin folder|another Claude folder/);
 });
 
+// The build 23b sweep: the plugin launcher never ran the grant-tool hold the PC launcher runs, and it found the plugin
+// folder in a command only by its exact spelling, so ./, a doubled slash, .. or a wildcard from the parent reached it.
+// why: guards rule:outward-acts: a plugin worker that grants itself, or rewrites the plugin's guards by another spelling
+test('the plugin launcher holds a run of the grant tool and every spelling of the plugin folder', () => {
+  const root = plugin();
+  const repo = gitRepo();
+  const parent = fwd(path.dirname(root));
+  const base = path.basename(root);
+  const run = (command) => launch(root, { tool_name: 'Bash', tool_input: { command }, cwd: repo, session_id: '11111111-2222-3333-4444-555555555555' });
+  const g = run(`node "${fwd(root)}/kit-tools/grant.mjs" 11111111-2222-3333-4444-555555555555 Bash "git push origin main" c1`);
+  assert.equal(decision(g.out), 'deny', JSON.stringify(g.out));
+  assert.match(reason(g.out), /grant\.mjs records the owner's tap/);
+  for (const c of [`echo x > "${parent}/./${base}/launch.cjs"`, `echo x > "${parent}//${base}/launch.cjs"`, `echo x > "${fwd(root)}/../${base}/launch.cjs"`, `cd "${parent}" && echo x > ${base.slice(0, 4)}*/launch.cjs`]) {
+    const r = run(c);
+    assert.equal(decision(r.out), 'deny', c);
+    assert.match(reason(r.out), /plugin folder/, c);
+  }
+});
+
 // K206 P3: a kit tool from another Claude folder than the plugin's own is refused, with this session's command.
 // why: guards rule:security-standards: a plugin session that runs another Claude folder's approve.mjs
 test('the plugin launcher denies another Claude folder\'s approve.mjs (K174, K206)', () => {
@@ -253,14 +272,37 @@ test('the plugin launcher hands an owner\'s hold to owner-grant.cjs only for a m
   const hold = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'ask', permissionDecisionReason: "Owner's yes needed: git push origin main." } };
   const dir = makeTemp('grant-');
   assert.equal(lib.liftOwnerHold(hold, { tool_name: 'Bash' }, dir), hold, 'no grant file: the hold stands');
-  fs.writeFileSync(path.join(dir, 'owner-grant.cjs'), 'exports.lift = (answer, input, home) => ({ lifted: true, home, tool: input.tool_name });');
+  fs.mkdirSync(path.join(dir, 'kit-tools'));
+  fs.writeFileSync(path.join(dir, 'kit-tools', 'owner-grant.cjs'), 'exports.lift = (answer, input, home) => ({ lifted: true, home, tool: input.tool_name });');
   assert.deepEqual(lib.liftOwnerHold(hold, { tool_name: 'Bash' }, dir), { lifted: true, home: dir, tool: 'Bash' });
   assert.equal(lib.liftOwnerHold(hold, { tool_name: 'Bash', agent_id: 'a1' }, dir), hold, 'a subagent\'s call is never lifted');
   const other = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Never by a tool: x.' } };
   assert.equal(lib.liftOwnerHold(other, { tool_name: 'Bash' }, dir), other, 'only an owner\'s hold is handed over');
   const broken = makeTemp('grant-');
-  fs.writeFileSync(path.join(broken, 'owner-grant.cjs'), 'exports.lift = () => { throw new Error("x"); };');
+  fs.mkdirSync(path.join(broken, 'kit-tools'));
+  fs.writeFileSync(path.join(broken, 'kit-tools', 'owner-grant.cjs'), 'exports.lift = () => { throw new Error("x"); };');
   assert.equal(lib.liftOwnerHold(hold, { tool_name: 'Bash' }, broken), hold);
+});
+
+// The build 23b sweep: the plugin's lift was tested only with a stub, and the real grant file at the plugin root could
+// not load its owner-yes helper, so no grant ever lifted a hold in a plugin session. A real build, a real grant.
+// why: guards rule:outward-acts: the owner's card yes that never reaches the plugin worker it was given for
+test('in a built plugin a real grant lifts the owner\'s hold it names once, then the hold is back', () => {
+  const root = fs.mkdtempSync(path.join(makeTemp('plugin-grant-'), 'kit-'));
+  fs.rmSync(root, { recursive: true });
+  buildPlugin({ kit: path.resolve('.'), out: root, release: RELEASE });
+  const repo = gitRepo();
+  const SID = '11111111-2222-3333-4444-555555555555';
+  const act = 'git push origin main';
+  const call = (id) => launch(root, { tool_name: 'Bash', tool_input: { command: act }, cwd: repo, session_id: SID, tool_use_id: id, hook_event_name: 'PreToolUse' });
+  const before = call('toolu_1');
+  assert.equal(decision(before.out), 'deny', JSON.stringify(before.out));
+  assert.match(reason(before.out), /^Owner's yes needed/);
+  createRequire(import.meta.url)(path.resolve('user/kit-tools/owner-grant.cjs')).writeGrant({ home: root, session: SID, tool: 'Bash', act, card: 'cmsg_c1' });
+  const lifted = call('toolu_2');
+  assert.equal(decision(lifted.out), 'allow', JSON.stringify(lifted.out));
+  assert.match(reason(lifted.out), /card cmsg_c1/);
+  assert.equal(decision(call('toolu_3').out), 'deny', 'spent');
 });
 
 // K179: the marketplace file pins the plugin to the release tag and the plugin repo's commit (a git-subdir source, as

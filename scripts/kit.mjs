@@ -2398,8 +2398,6 @@ export function buildPlugin({ kit, out, release = null }) {
   const sorted = (obj) => Object.fromEntries(Object.keys(obj).sort().map((key) => [key, obj[key]]));
   files.set('roles.json', json(sorted(roles)));
   files.set('launch.cjs', fs.readFileSync(path.join(k, 'user', 'kit-tools', 'plugin-launch.cjs')));
-  // K176 builds the grant; its file rides along, in the manifest, when the release has one.
-  if (list.includes('user/kit-tools/owner-grant.cjs')) files.set('owner-grant.cjs', fs.readFileSync(path.join(k, 'user', 'kit-tools', 'owner-grant.cjs')));
   files.set('hooks/hooks.json', json(pluginHooks()));
   files.set('.claude-plugin/plugin.json', json({ name: 'kit', version, description: `Methodology kit ${version} as a Claude Code plugin (built by kit.mjs build plugin; never edited by hand)` }));
   files.set('kit-build.json', json({ name: 'kit', version, tag: release ? release.tag : null, commit: release ? release.commit : null }));
