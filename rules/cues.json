@@ -15,7 +15,7 @@
       "rule": "swarm-contract",
       "home": "standards/agent-teams.md",
       "source": "rules/agent-teams.md",
-      "when": "\\b(swarm|fan-?out|sub-?agents?|review agents?|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (\\w+ )?agents)\\b",
+      "when": "\\b(swarm|fan-?out|sub-?agents?|review agents|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (\\w+ )?agents)\\b",
       "quotes": [
         "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract.",
         "STOP: no agent runs until the contract is approved",
