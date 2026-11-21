@@ -24,6 +24,8 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 	const body = read('.github/workflows/pr-body.yml');
 	const judged = [
 		[job(ci, 'test-check'), 'Test check'],
+		// Build 23: the spawn check holds every installed launch of a bare program name to node's own folder.
+		[job(ci, 'unit-tests'), 'Spawn check'],
 		[job(ci, 'windows-tests'), 'Test check, Windows part'],
 		[job(ci, 'kit-tests'), 'Branch and commit names'],
 		[job(ci, 'kit-tests'), 'Secret scan'],
