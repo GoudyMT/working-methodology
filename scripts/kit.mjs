@@ -339,7 +339,7 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // is never merged into it (the 1.36.0 template _State.json clashed in every project), updated, or folded back.
 // T7 (build 12): the loop's bounds file too, the owner's from the first install, so no kit change loosens it.
 export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
-// 1.49.0 step 6: a limit added to the kit (ciFix) reached fresh installs only. A limit the owner's bounds file lacks is
+// 1.49.0 step 6: a limit added to the kit (ciFix) reached fresh installs only. A limit missing from the bounds file is
 // added at the kit's value; nothing the owner set changes, and a file that does not read as one flat limits object is
 // left alone. Returns whether the file changed (or would, on a dry run); the old copy goes to `keep` first.
 function addMissingLimits(dest, want, dryRun, keep) {
