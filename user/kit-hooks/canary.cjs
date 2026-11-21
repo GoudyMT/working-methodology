@@ -22,12 +22,23 @@ const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/g
 
 // The phrase lives in the file the agent is sent to: the one the rule index names for rule:agent-team-adapter
 // (a project may fill its adapter in its own module), else the kit's agent-teams module. It is read from the main
-// checkout, so an agent in a worktree (where the notes may be untracked) finds it.
+// checkout, so an agent in a worktree (where the notes may be untracked) finds it, unless a sweep recorded its base copy.
 function findPhrase(cwd) {
 	const common = git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir');
 	if (common.status !== 0) return null;
 	const commonDir = common.stdout.trim();
 	const root = path.dirname(commonDir);
+	// K218: during a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
+	// branch cannot swap the phrase its own reviewers are checked against. That copy is read while HEAD is the commit
+	// it was written for.
+	try {
+		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
+		const head = spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', 'rev-parse', 'HEAD'], { encoding: 'utf8', cwd: path.dirname(process.execPath) });
+		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
+			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
+			if (m && words(m[1]).trim()) return { phrase: m[1], commonDir };
+		}
+	} catch { /* no sweep record, or its copy is gone: read the main checkout */ }
 	let file = 'standards/agent-teams.md';
 	const index = path.join(root, 'standards', 'INDEX.md');
 	if (fs.existsSync(index)) {
