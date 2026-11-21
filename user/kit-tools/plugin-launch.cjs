@@ -81,11 +81,23 @@ function writesPlugin(input, root = ROOT) {
 // The build 23b sweep: the folder found only by its exact spelling let ./, a doubled slash, .. or a wildcard from the
 // parent through. Each path word is resolved (from a cd's folder after one), and a wildcard whose fixed part sits on
 // the way to the plugin and whose next part could name it reaches it.
-const GLOB = /[*?[]/;
-const globPart = (g) => new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, WIN ? 'i' : '');
+// The commit security review: the home folder and the Claude folder as the shell spells them (~, $HOME, %USERPROFILE%,
+// $CLAUDE_CONFIG_DIR) are read as those folders, and a part the shell still expands (another variable, a substitution,
+// a brace list) is read as a wildcard that may name anything.
+const GLOB = /[*?[{$%`]/;
+const globPart = (g) => {
+	if (/[$%`]/.test(g)) return /^/;
+	const alts = /\{([^{}]*,[^{}]*)\}/.exec(g);
+	if (alts) return { test: (s) => alts[1].split(',').some((a) => globPart(g.replace(alts[0], a)).test(s)) };
+	return new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, WIN ? 'i' : '');
+};
+const HOME_DIR = require('os').homedir();
+const expandHome = (w) => w.replace(/^~(?=\/|\\|$)/, HOME_DIR)
+	.replace(/^(\$\{?HOME\}?|\$\{?USERPROFILE\}?|\$env:(HOME|USERPROFILE)|%USERPROFILE%|%HOME%)(?=\/|\\|$)/i, HOME_DIR)
+	.replace(/^(\$\{?CLAUDE_CONFIG_DIR\}?|\$env:CLAUDE_CONFIG_DIR|%CLAUDE_CONFIG_DIR%)(?=\/|\\|$)/i, process.env.CLAUDE_CONFIG_DIR || path.join(HOME_DIR, '.claude'));
 function reachesBy(command, cwd, roots) {
 	let base = cwd;
-	const words = command.split(/[\s"';&|<>()]+/).filter(Boolean);
+	const words = command.split(/[\s"';&|<>()]+/).filter(Boolean).map(expandHome);
 	for (let i = 0; i < words.length; i++) {
 		const w = words[i];
 		if (/^(cd|pushd|set-location|sl)$/i.test(w) && words[i + 1]) { base = path.resolve(base, words[++i]); if (roots.some((r) => within(base, r))) return true; continue; }

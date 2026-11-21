@@ -4,6 +4,7 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import os from 'node:os';
 import { spawnSync } from 'node:child_process';
 import { caseKit, copyKitCli, makeTemp, sessionStartReport } from './kit-helpers.mjs';
 import { build, buildPlugin, roleFiles } from '../scripts/kit.mjs';
@@ -219,6 +220,10 @@ test('the plugin launcher holds a run of the grant tool and every spelling of th
   const g = run(`node "${fwd(root)}/kit-tools/grant.mjs" 11111111-2222-3333-4444-555555555555 Bash "git push origin main" c1`);
   assert.equal(decision(g.out), 'deny', JSON.stringify(g.out));
   assert.match(reason(g.out), /grant\.mjs records the owner's tap/);
+  // The commit security review: a home folder or variable spelled for the shell to expand reaches it too.
+  const home = fwd(os.homedir());
+  if (fwd(root).startsWith(`${home}/`)) for (const c of [`echo x > ~/${fwd(root).slice(home.length + 1)}/launch.cjs`, `echo x > $HOME/${fwd(root).slice(home.length + 1)}/launch.cjs`]) assert.equal(decision(run(c).out), 'deny', c);
+  for (const c of [`echo x > "${parent}/{${base},other}/launch.cjs"`, `echo x > "${parent}/$X/launch.cjs"`]) assert.equal(decision(run(c).out), 'deny', c);
   for (const c of [`echo x > "${parent}/./${base}/launch.cjs"`, `echo x > "${parent}//${base}/launch.cjs"`, `echo x > "${fwd(root)}/../${base}/launch.cjs"`, `cd "${parent}" && echo x > ${base.slice(0, 4)}*/launch.cjs`]) {
     const r = run(c);
     assert.equal(decision(r.out), 'deny', c);
