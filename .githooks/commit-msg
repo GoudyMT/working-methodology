@@ -2,5 +2,6 @@
 # The kit source installs no kit, so its own commits are checked here: one line, "type: subject", no AI or tool
 # trailer (rule:commit-message-format), and an author and committer that are not an AI tool. CI checks the message on
 # a PR; catching it at commit spares a history rewrite.
-node "$(dirname "$0")/../project/.claude/name-check.mjs" ident || exit 1
-exec node "$(dirname "$0")/../project/.claude/name-check.mjs" message "$1"
+node "$(dirname "$0")/../project/.claude/name-check.mjs" ident; who=$?
+node "$(dirname "$0")/../project/.claude/name-check.mjs" message "$1"; what=$?
+[ "$who" -eq 0 ] && [ "$what" -eq 0 ]

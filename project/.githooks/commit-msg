@@ -3,5 +3,7 @@
 # and committer are not an AI tool (the owner's rule, 2026-11-21: no AI reference anywhere in a commit).
 check="$(dirname "$0")/../.claude/name-check.mjs"
 [ -f "$check" ] || exit 0
-node "$check" ident || exit 1
-exec node "$check" message "$1"
+# Both checks run, so a refused author does not hide a refused message (the build 23a sweep).
+node "$check" ident; who=$?
+node "$check" message "$1"; what=$?
+[ "$who" -eq 0 ] && [ "$what" -eq 0 ]

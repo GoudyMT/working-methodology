@@ -28,7 +28,7 @@ function stepRun() {
 
 // A repo with a main commit by a person and a PR branch whose one commit is by whoever the case names; the base copy
 // of the scripts sits where the unpack step puts it.
-function run({ author, committer, baseCopy = true }) {
+function run({ author, committer, baseCopy = true, mergeBy = null }) {
 	const dir = kitTemp.makeTemp('ci-names-');
 	const repo = path.join(dir, 'repo');
 	fs.mkdirSync(repo);
@@ -39,6 +39,13 @@ function run({ author, committer, baseCopy = true }) {
 	if (author) Object.assign(env, { GIT_AUTHOR_NAME: author[0], GIT_AUTHOR_EMAIL: author[1] });
 	if (committer) Object.assign(env, { GIT_COMMITTER_NAME: committer[0], GIT_COMMITTER_EMAIL: committer[1] });
 	assert.equal(git(repo, ['commit', '-q', '--allow-empty', '-m', 'fix: a plain change'], env).status, 0);
+	// A merge of a side branch, made by whoever mergeBy names (the build 23a sweep: merges were left out).
+	if (mergeBy) {
+		git(repo, ['checkout', '-q', '-b', 'side', 'main']);
+		git(repo, ['commit', '-q', '--allow-empty', '-m', 'fix: a side change']);
+		git(repo, ['checkout', '-q', 'fix/plain-words']);
+		assert.equal(git(repo, ['merge', '-q', '--no-ff', '-m', 'fix: take the side change', 'side'], { GIT_AUTHOR_NAME: mergeBy[0], GIT_AUTHOR_EMAIL: mergeBy[1], GIT_COMMITTER_NAME: mergeBy[0], GIT_COMMITTER_EMAIL: mergeBy[1] }).status, 0);
+	}
 	const head = git(repo, ['rev-parse', 'HEAD']).stdout.trim();
 	fs.mkdirSync(path.join(repo, 'project', '.claude'), { recursive: true });
 	const base = path.join(dir, 'base', 'project', '.claude');
@@ -69,6 +76,15 @@ test('CI refuses a PR commit whose author or committer names an AI tool, and pas
 	}
 	// A person whose name only holds the letters passes.
 	assert.equal(run({ author: ['Claudia Owner', 'claudia@example.com'] }).status, 0);
+});
+
+// why: guards rule:commit-message-format (a merge commit's author and committer reach the history too)
+test('CI checks who a merge commit in the PR is by, as it checks every other commit', () => {
+	const person = run({ mergeBy: ['Max Owner', 'max@example.com'] });
+	assert.equal(person.status, 0, person.stdout + person.stderr);
+	const r = run({ mergeBy: ['Claude', 'noreply@anthropic.com'] });
+	assert.equal(r.status, 1, `an AI merge passed CI: ${r.stdout}${r.stderr}`);
+	assert.match(r.stderr, /names an AI tool/);
 });
 
 // why: guards rule:commit-message-format (CI still checks authors when the base copy predates the check)

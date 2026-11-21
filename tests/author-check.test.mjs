@@ -63,6 +63,34 @@ test('the commit-msg hook refuses a commit by an AI author or committer, and pas
 	assert.equal(count(dir), people.length);
 });
 
+// The build 23a sweep of K243: the check missed a tool name glued to a word, a digit or a lookalike letter, other makers'
+// tools and domains; a person named Claude could never commit; the refusal named only git config, which cannot change
+// a replayed author; and a refused author hid a refused message.
+// why: guards rule:commit-message-format (who a commit is by: no AI tool however it is spelled, and every repair named)
+test('the author check reads a tool name however it is spelled, names each repair, and passes an allowed person', () => {
+	const dir = hooked();
+	const refused = ['ClaudeCode <x@example.com>', 'claude2 <x@example.com>', 'claudebot <x@example.com>', '\uFF23\uFF4C\uFF41\uFF55\uFF44\uFF45 <x@example.com>',
+		'\u0421laude <x@example.com>', 'Cl\u200Baude <x@example.com>', 'Bot <bot@claude.ai>', 'Gemini <x@example.com>', 'Codex <x@example.com>',
+		'Cursor Agent <cursoragent@cursor.com>'].map((a) => JSON.parse(`"${a}"`));
+	for (const author of refused) {
+		const r = commit(dir, { author });
+		assert.equal(r.status, 1, `${author} is refused: ${r.stderr}`);
+		assert.match(r.stderr, /--reset-author/, 'the repair for a replayed author is named');
+		assert.match(r.stderr, /kit\.allowedIdent/, 'the owner\'s allow list is named');
+	}
+	// A person named Claude commits once the owner lists that exact identity in the repo's own git config.
+	const claude = 'Claude Dupont <claude.dupont@example.fr>';
+	assert.equal(commit(dir, { author: claude }).status, 1, 'refused until listed');
+	git(dir, ['config', '--add', 'kit.allowedIdent', claude]);
+	assert.equal(commit(dir, { author: claude }).status, 0, 'the listed person commits');
+	assert.equal(commit(dir, { author: 'Claude Dupont <other@example.fr>' }).status, 1, 'only the exact identity');
+	// A refused author and a refused message are both named in one go.
+	const both = git(dir, ['commit', '-q', '--allow-empty', '-m', 'an untyped message', '--author', 'Claude <noreply@anthropic.com>']);
+	assert.equal(both.status, 1);
+	assert.match(both.stderr, /names an AI tool/);
+	assert.match(both.stderr, /type: subject|"type: subject"|one of/);
+});
+
 // why: guards rule:commit-message-format (an installed project whose commits skip the kit's commit-msg hook)
 test('install wires the hooks path, so a commit by an AI author is refused in an installed project', () => {
 	const root = kitTemp.makeTemp('author-install-');

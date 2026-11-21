@@ -428,9 +428,12 @@ jobs:
           # K244: who each commit is by, author and committer, held to the same check as the commit-msg hook (a commit
           # made with --no-verify, on the web or in a cloud session skipped that hook).
           I="$RUNNER_TEMP/base/project/.claude/name-check.mjs"; grep -q "mode === 'ident'" "$I" 2> /dev/null || { echo "the base has no author check in name-check.mjs: this PR's copy runs"; I=project/.claude/name-check.mjs; }
-          for c in $(git rev-list --no-merges "$PR_BASE..$PR_HEAD"); do
-            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
-            node "$N" message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+          # The build 23a sweep: a merge commit is checked for who made it too; its message is git's own.
+          for c in $(git rev-list "$PR_BASE..$PR_HEAD"); do
+            if [ -z "$(git rev-list --no-walk --merges "$c")" ]; then
+              git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
+              node "$N" message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+            fi
             GIT_AUTHOR_NAME="$(git log -1 --format=%an "$c")" GIT_AUTHOR_EMAIL="$(git log -1 --format=%ae "$c")" \
               GIT_COMMITTER_NAME="$(git log -1 --format=%cn "$c")" GIT_COMMITTER_EMAIL="$(git log -1 --format=%ce "$c")" \
               node "$I" ident || { echo "commit $c"; exit 1; }
