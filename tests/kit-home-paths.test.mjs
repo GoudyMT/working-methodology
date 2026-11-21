@@ -18,7 +18,7 @@ test('session start names this session\'s kit tool commands, in the allow rules\
   assert.match(own, new RegExp(`^Kit tools this session: sweep approval node ${full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/pre-pr-sweep/approve\\.mjs; merge gate node ${full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/kit-tools/merge-gate\\.mjs`, 'm'));
   const tilde = sessionStartReport({ kit, home: path.join(os.homedir(), '.claude'), projectDir: proj, env: {} });
   // pin: 1 (the allow rules match this exact spelling)
-  assert.match(tilde, /^Kit tools this session: sweep approval node ~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs; merge gate node ~\/\.claude\/kit-tools\/merge-gate\.mjs \(PowerShell: the full path, .*\/\.claude\/kit-tools\/merge-gate\.mjs\)/m);
+  assert.match(tilde, /^Kit tools this session: sweep approval node ~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs; merge gate node ~\/\.claude\/kit-tools\/merge-gate\.mjs \(PowerShell: the full paths, .*\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs and .*\/\.claude\/kit-tools\/merge-gate\.mjs\)/m);
   const plugin = path.join(kit, 'plugin-root');
   assert.match(sessionStartReport({ kit, home, projectDir: proj, env: { CLAUDE_PLUGIN_ROOT: plugin } }), new RegExp(`sweep approval node ${plugin.split(path.sep).join('/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/`));
 });

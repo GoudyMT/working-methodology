@@ -1529,7 +1529,7 @@ function doubleRunLines(projectDir) {
 export function kitToolsLine(dir) {
   const { full, tilde } = homeSpelling(dir);
   const tool = (p) => `node ${tilde}/${p}`;
-  const ps = tilde === full ? '' : ` (PowerShell: the full path, ${full}/kit-tools/merge-gate.mjs)`;
+  const ps = tilde === full ? '' : ` (PowerShell: the full paths, ${full}/skills/pre-pr-sweep/approve.mjs and ${full}/kit-tools/merge-gate.mjs)`;
   return `Kit tools this session: sweep approval ${tool('skills/pre-pr-sweep/approve.mjs')}; merge gate ${tool('kit-tools/merge-gate.mjs')}${ps}. Run these copies, not another Claude folder's.`;
 }
 
