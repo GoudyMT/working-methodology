@@ -117,6 +117,7 @@ test('the three installed copies of the safe-spawn helper are the same bytes', (
 
 // why: guards rule:outward-acts (each launch starts in node's own folder, hidden, timed, and git names its folder with -C)
 test('the helper starts every program from node\'s own folder, hidden, with a time limit, and git on the folder it names', () => {
+	assert.ok(fs.existsSync(path.resolve(COPIES[0])), `${COPIES[0]} is not in the kit`);
 	const s = require(path.resolve(COPIES[0]));
 	const o = s.options({ encoding: 'utf8', cwd: '/somewhere/else', env: { A: '1' } });
 	assert.equal(o.cwd, path.dirname(process.execPath), 'a caller\'s cwd never wins');

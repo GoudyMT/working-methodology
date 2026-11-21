@@ -27,7 +27,7 @@ function hooked() {
 	fs.mkdirSync(path.join(dir, '.claude'));
 	fs.copyFileSync(path.join(KIT, 'project', '.githooks', 'commit-msg'), path.join(dir, '.githooks', 'commit-msg'));
 	fs.chmodSync(path.join(dir, '.githooks', 'commit-msg'), 0o755);
-	for (const f of ['name-check.mjs', 'safe-spawn.cjs']) fs.copyFileSync(path.join(KIT, 'project', '.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.join(KIT, 'project', '.claude', x)))) fs.copyFileSync(path.join(KIT, 'project', '.claude', f), path.join(dir, '.claude', f));
 	git(dir, ['init', '-q', '-b', 'main']);
 	git(dir, ['config', 'core.hooksPath', '.githooks']);
 	return dir;

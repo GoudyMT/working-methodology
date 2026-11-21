@@ -43,7 +43,7 @@ function run({ author, committer, baseCopy = true }) {
 	fs.mkdirSync(path.join(repo, 'project', '.claude'), { recursive: true });
 	const base = path.join(dir, 'base', 'project', '.claude');
 	fs.mkdirSync(base, { recursive: true });
-	for (const f of ['name-check.mjs', 'safe-spawn.cjs']) {
+	for (const f of ['name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.join(KIT, 'project', '.claude', x)))) {
 		fs.copyFileSync(path.join(KIT, 'project', '.claude', f), path.join(repo, 'project', '.claude', f));
 		if (baseCopy) fs.copyFileSync(path.join(KIT, 'project', '.claude', f), path.join(base, f));
 	}
@@ -71,7 +71,7 @@ test('CI refuses a PR commit whose author or committer names an AI tool, and pas
 	assert.equal(run({ author: ['Claudia Owner', 'claudia@example.com'] }).status, 0);
 });
 
-// why: catches the check dropping out when the base's name-check has no author check yet (the first PR that adds it)
+// why: guards rule:commit-message-format (CI still checks authors when the base copy predates the check)
 test('with no author check in the base copy, CI runs the PR copy for it and says so', () => {
 	const r = run({ author: ['Claude', 'noreply@anthropic.com'], baseCopy: false });
 	assert.equal(r.status, 1, r.stdout + r.stderr);

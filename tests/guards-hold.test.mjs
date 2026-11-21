@@ -1321,7 +1321,7 @@ test('PR text and repo names are checked where they are written, and a failing o
 	spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
 	spawnSync('git', ['-C', repo, 'checkout', '-q', '-b', 'feat/x']);
 	fs.mkdirSync(path.join(repo, '.claude'));
-	for (const f of AUDIT_FILES) fs.copyFileSync(path.resolve('project/.claude', f), path.join(repo, '.claude', f));
+	for (const f of AUDIT_FILES.filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(repo, '.claude', f));
 	const run = (command, tool_name = 'Bash') => {
 		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, CLAUDE_CONFIG_DIR: cfg } });
 		const h = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : null;
@@ -1671,7 +1671,7 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
