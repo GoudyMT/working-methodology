@@ -77,7 +77,7 @@ function quoted(a, rows) {
 function main(argv) {
 	const files = transcripts();
 	if (!files.length) {
-		console.log(`Owner answers: not checked: no transcript of this session (${show(SESSION) || 'no CLAUDE_CODE_SESSION_ID'}) under ${show(path.join(home(), 'projects'))}`);
+		console.log(`Owner answers: not checked: no transcript of this session (${SESSION ? 'its id is set' : 'no CLAUDE_CODE_SESSION_ID'}) under ${show(path.join(home(), 'projects'))}`);
 		return 0;
 	}
 	const all = answers(files);

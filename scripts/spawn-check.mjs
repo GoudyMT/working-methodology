@@ -117,7 +117,7 @@ export function scanText(src) {
 	const inCode = (k) => masked[k] === src[k];
 	const safeNames = new Set([...src.matchAll(new RegExp(String.raw`\b([A-Za-z_$][\w$]*)\s*=\s*${SAFE_VALUE}`, 'g'))]
 		.filter((m) => inCode(m.index)).map((m) => m[1]));
-	const safeCwd = new RegExp(String.raw`\bcwd\s*:\s*(?:${SAFE_VALUE}|(${[...safeNames].map((s) => s.replace(/\$/g, '\\$')).join('|') || '(?!)'})\b)`);
+	const safeCwd = new RegExp(String.raw`\bcwd\s*:\s*(?:${SAFE_VALUE}|(${[...safeNames].map((s) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')).join('|') || '(?!)'})\b)`);
 	const found = [];
 	// A call by its bare name, or through an object (child_process.spawnSync, require('node:child_process').spawnSync),
 	// never a method of something else (a regex's .exec).
