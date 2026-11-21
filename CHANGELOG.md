@@ -24,6 +24,7 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - A change to `user/CLAUDE.md` alone now needs a score gate line.
 - The score says the user layer was measured only when every candidate and release run carried its own; otherwise it prints a Not measured line naming the arm and why.
 - The owner-push rule line names the ref the owner types when the pre-push hook asks, and the fresh pop-up yes to that push and remote in a session.
+- The where-work-runs rule lets a cloud build thread push its own feature branch; kit installs, sweeps, the PR, its body and release verification stay on the owner's PC.
 
 ### Fixed
 - Recall and behaviour sessions start with `--strict-mcp-config`, so an MCP server listed in the probe project no longer joins a scored session.
@@ -59,6 +60,7 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - The plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it.
 - The plugin launcher denies another config folder's sweep approval script.
 - The plugin launcher hands an owner's-yes hold to the grant check only for a main-session call.
+- The kit source records its own commit and push hooks as executable, so git runs them on Linux and macOS clones.
 - The sweep approval runs in the cloud only inside a plugin whose manifest verifies and lists the running approval script; the owner's yes is unchanged.
 - A cloud session with no plugin is still refused the sweep approval.
 - A plugin whose files differ from its manifest is refused the sweep approval.

@@ -398,6 +398,22 @@
    "evidence": "rules/core.md"
   },
   {
+   "id": "K270",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "The where-work-runs rule lets a cloud build thread push its own feature branch; kit installs, sweeps, the PR, its body and release verification stay on the owner's PC.",
+   "evidence": "rules/agent-teams.md",
+   "test": "tests/kit-rules.test.mjs::the where-work-runs rule lets a cloud build push its own branch and keeps the PR on the owner's PC"
+  },
+  {
+   "id": "K275",
+   "kind": "security",
+   "reach": "kit",
+   "text": "The kit source records its own commit and push hooks as executable, so git runs them on Linux and macOS clones.",
+   "evidence": ".githooks/commit-msg",
+   "test": "tests/kit-hooks.test.mjs::the kit source records its own commit and push hooks as executable, so git runs them off Windows"
+  },
+  {
    "id": "K178",
    "kind": "security",
    "reach": "projects",
