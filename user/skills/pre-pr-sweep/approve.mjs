@@ -207,13 +207,15 @@ const perCall = (r) => dollars(r.split, r.model) / Number(r.calls);
 const cents = (x) => Math.ceil(x * 100) / 100;
 function dollarCeilings(log, roles) {
 	const out = [];
+	let expected = 0;
 	for (const r of roles) {
 		const model = roleModel(r);
 		const past = dollarRoles(log, price(model).key);
 		if (past.length < CEILING_MIN) return null;
 		out.push(cents(Number(r.calls) * nearestRank(past.map(perCall), CEILING_PCT) + reportDollars(model)));
+		expected += Number(r.calls) * median(past.map(perCall));
 	}
-	return { ceilings: out, unit: 'dollars', from: `the p90 dollars a call of the last ${CEILING_ROLES} roles on each role's model, x its call cap, plus its report` };
+	return { ceilings: out, unit: 'dollars', expected: cents(expected), from: `the p90 dollars a call of the last ${CEILING_ROLES} roles on each role's model, x its call cap, plus its report` };
 }
 function ceilingsFor(log, budgets, roles = []) {
 	const d = roles.length ? dollarCeilings(log, roles) : null;
@@ -607,7 +609,9 @@ function decide() {
 	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens' } = ceilingsFor(s.log, budgets, c.roles || []);
+	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, budgets, c.roles || []);
+	// K182: the reviewer count and the dollars, said before the owner's yes and in the start notice.
+	const spendLine = ceilingUnit === 'dollars' ? `${(c.roles || []).length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
 	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, ceilingUnit, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
 	write(entry);
 	if (fix.length) {
@@ -621,12 +625,14 @@ function decide() {
 		if (hookState(facts && facts.base) === 'none') console.log(HOOK_NONE);
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
 		for (const w of why) console.log(`    ${w}`);
+		if (spendLine) console.log(`    Spend: ${spendLine}`);
 		console.log(`    The owner answers in the pop-up: ${popUpHow(`sweep yes ${askCode(entry.hash)}`)}; after their Yes, log it with --owner-yes.`);
 		const now = state();
 		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		const f = triage(`${c.tier} sweep sent to the owner`, why, [
 			`${entry.agents} roles, budget ${entry.budget.toLocaleString('en-US')}${extras === undefined ? ', no floor counted (this tier always goes to the owner)' : `, ${extras} beyond the floor (cap ${cap.maxExtras})`}`,
 			...(c.roles || []).map((r, i) => `role ${i + 1}: ${r.role || r.kind} (${r.kind}, ${roleModel(r)})${budgets[i] === undefined ? '' : `, ${r.calls} calls, budget ${budgets[i]}`}${r.callsReason ? ` (${r.callsReason})` : ''}`),
+			...(spendLine ? [`spend: ${spendLine}`] : []),
 			...(now.paused ? [`paused since ${String(now.pausedAt || '').slice(0, 10)}: ${now.paused}`] : []),
 		]);
 		console.log(`    Triage report for the owner: ${f}`);
@@ -634,14 +640,14 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom, ceilingUnit));
+	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom, ceilingUnit, spendLine));
 	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(c, entry.hash, ceilings, facts, ceilingUnit).join(', ')}`);
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
 
 // The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
-function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilings, ceilingFrom, unit = 'tokens') {
+function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilings, ceilingFrom, unit = 'tokens', spendLine = null) {
 	const roles = c.roles || [];
 	const n = (x) => x.toLocaleString('en-US');
 	const kinds = {};
@@ -654,6 +660,7 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilin
 		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${roleModel(r)}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}; brief: "Call cap: ${r.calls}. ${ceilingLine(unit, ceilings[i])}."`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason); expected, not a trip once the log has a baseline`,
 		`    ${unit === 'dollars' ? 'Dollar' : 'Token'} ceiling per role: ${ceilingFrom}; the call-cap hook stops a reviewer there`,
+		...(spendLine ? [`    Spend: ${spendLine}`] : []),
 		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
 		`    Extras: ${extras} of ${cap.maxExtras} allowed beyond the floor`,
 		`    ${sweepLine(hash)}`,

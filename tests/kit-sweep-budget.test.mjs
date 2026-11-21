@@ -478,6 +478,9 @@ test('a role\'s dollar ceiling comes from its own call cap, and a median-paced r
   assert.equal(d.ceilingUnit, 'dollars');
   assert.deepEqual(d.ceilings, [1.25, 1.25, 1.25, 1.2, 1.25]);
   assert.match(r.stdout, /Dollar ceiling per role: the p90 dollars a call/);
+  // The notice says how many reviewers and what they spend, before any start: median $0.13 a call x 5 calls x 5 roles
+  // (Sonnet's median is the same $0.13 here), and the ceilings' sum.
+  assert.match(r.stdout, /Spend: 5 reviewers; about \$3\.25 at the median past pace, at most \$6\.20 \(their dollar ceilings\)/);
   const briefFile = fs.readdirSync(path.join(dir, 'sweeps')).find((f) => /-brief-1\.md$/.test(f));
   assert.match(read(path.join(dir, 'sweeps', briefFile)), /^Dollar ceiling: \$1\.25$/m);
   // A role at the median pace ($0.13 a call) is stopped by its call cap, not its ceiling.
@@ -492,6 +495,10 @@ test('a role\'s dollar ceiling comes from its own call cap, and a median-paced r
   };
   assert.equal(hook(2).permissionDecision, 'allow');
   assert.match(hook(3).permissionDecisionReason, /^Call cap reached/);
+  // A contract that goes to the owner says the same before the yes.
+  const askDir = sweepRepo();
+  seedOutcomes(askDir, [...past('claude-opus-5-5', 20), ...past('claude-sonnet-5-5', 10)]);
+  assert.match(approveRun(askContract(), askDir).stdout, /ASK THE OWNER[\s\S]*Spend: 3 reviewers; about \$/);
   // With no dollar baseline for a role's model, the token ceiling stays, as before.
   const cold = approveRun(featureContract());
   assert.equal(approvalLog(cold.dir).pop().ceilingUnit, 'tokens');
