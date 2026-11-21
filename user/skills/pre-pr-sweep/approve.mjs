@@ -45,6 +45,9 @@ import crypto from 'node:crypto';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+// K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
+// source and in the Claude folder alike).
+const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../kit-hooks/prices.cjs');
 
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
@@ -182,7 +185,9 @@ const TIER_RANK = { triage: 0, fix: 1, feature: 2, 'first push': 3, 'launch gate
 const FIX_EXIT = 3;
 // The line each reviewer's brief carries: the cleared contract's hash and the role's place in it (the sweep guard reads it).
 const SWEEP_TAG = /Sweep: ([0-9a-f]{16}) role (\d+)/;
-const sweepLine = (hash) => `Each brief carries "Sweep: ${hash} role <n>" (n is the role's place in the contract), its role's "Call cap: <n>" and its "Token ceiling: <n>".`;
+const sweepLine = (hash) => `Each brief carries "Sweep: ${hash} role <n>" (n is the role's place in the contract), its role's "Call cap: <n>" and its ceiling line ("Dollar ceiling: $<x>", or "Token ceiling: <n>" on a log with no dollar baseline).`;
+// K182: the brief's ceiling line, in the unit the decision set.
+const ceilingLine = (unit, x) => (unit === 'dollars' ? `Dollar ceiling: $${Number(x).toFixed(2)}` : `Token ceiling: ${x}`);
 
 // The roles the log measured, the last CEILING_ROLES of them: what a ceiling and the drift baselines are read from.
 // A role whose reviewer crashed and was retried counts as its retry: each run had a whole ceiling of its own.
@@ -191,7 +196,28 @@ const measuredRoles = (log) => log.filter((e) => e.kind === 'outcome' && Array.i
 // Nearest rank, so the value is one a real role spent.
 const nearestRank = (values, p) => { const v = [...values].sort((a, b) => a - b); return v.length ? v[Math.max(0, Math.ceil(p * v.length) - 1)] : 0; };
 const median = (values) => nearestRank(values, 0.5);
-function ceilingsFor(log, budgets) {
+// K182 (build 22): a role's ceiling in list-price dollars, forward from its own call cap: its cap x the p90 of what past
+// roles on the same model spent a call, plus room for its report. A token ceiling counted cache re-reads (84% of the
+// kit's reviewer tokens, 12% of its dollars) and came from other roles' totals, so a bigger diff hit it sooner: 16 roles
+// stopped before their cap, where this ceiling stops 4 (bt-meter on the kit's own log, 2026-11-21). Used when every
+// role's model has CEILING_MIN past roles with their spend split by kind; otherwise the token ceiling below, as before.
+const dollarRoles = (log, key) => log.filter((e) => e.kind === 'outcome' && Array.isArray(e.roles)).flatMap((e) => e.roles).map(ownRun)
+	.filter((r) => r && r.split && Number(r.calls) > 0 && !r.crashedTokens && price(r.model).key === key).slice(-CEILING_ROLES);
+const perCall = (r) => dollars(r.split, r.model) / Number(r.calls);
+const cents = (x) => Math.ceil(x * 100) / 100;
+function dollarCeilings(log, roles) {
+	const out = [];
+	for (const r of roles) {
+		const model = roleModel(r);
+		const past = dollarRoles(log, price(model).key);
+		if (past.length < CEILING_MIN) return null;
+		out.push(cents(Number(r.calls) * nearestRank(past.map(perCall), CEILING_PCT) + reportDollars(model)));
+	}
+	return { ceilings: out, unit: 'dollars', from: `the p90 dollars a call of the last ${CEILING_ROLES} roles on each role's model, x its call cap, plus its report` };
+}
+function ceilingsFor(log, budgets, roles = []) {
+	const d = roles.length ? dollarCeilings(log, roles) : null;
+	if (d) return d;
 	const past = measuredRoles(log);
 	if (past.length < CEILING_MIN) return { ceilings: budgets.map((b) => Math.round(b * OVERRUN)), from: `${OVERRUN}x each role's budget (fewer than ${CEILING_MIN} roles measured in this repo's log)` };
 	const at = nearestRank(past.map((r) => Number(r.tokens)), CEILING_PCT);
@@ -581,8 +607,8 @@ function decide() {
 	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const { ceilings, from: ceilingFrom } = ceilingsFor(s.log, budgets);
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
+	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens' } = ceilingsFor(s.log, budgets, c.roles || []);
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, ceilingUnit, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -608,14 +634,14 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom));
-	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(c, entry.hash, ceilings, facts).join(', ')}`);
+	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom, ceilingUnit));
+	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(c, entry.hash, ceilings, facts, ceilingUnit).join(', ')}`);
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
 
 // The owner's start notice, written from the checked contract so it carries no hand count. Post it as is.
-function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilings, ceilingFrom) {
+function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilings, ceilingFrom, unit = 'tokens') {
 	const roles = c.roles || [];
 	const n = (x) => x.toLocaleString('en-US');
 	const kinds = {};
@@ -625,9 +651,9 @@ function notice(c, need, extras, cap, first, budgets, total, facts, hash, ceilin
 		`    ${c.tier} sweep, ${roles.length} roles: ${Object.entries(kinds).map(([k, v]) => `${k} x${v}`).join(', ')}`,
 		`    Modifiers: ${(Array.isArray(c.modifiers) && c.modifiers.join(', ')) || 'none'}; diff against ${facts.baseName}`,
 		...(hookState(facts.base) === 'none' ? [HOOK_NONE] : []),
-		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${roleModel(r)}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}; brief: "Call cap: ${r.calls}. Token ceiling: ${ceilings[i]}."`),
+		...roles.map((r, i) => `    ${i + 1}. ${r.role || r.kind} (${r.kind}, ${roleModel(r)}), ${r.calls} calls, budget ${n(budgets[i])}${r.callsReason ? ` (over standard: ${r.callsReason})` : ''}; brief: "Call cap: ${r.calls}. ${ceilingLine(unit, ceilings[i])}."`),
 		`    Budget: ${n(total)} processed tokens, computed from each role's call cap (standard ${STANDARD_CALLS} calls, up to ${SPECIAL}x with a reason); expected, not a trip once the log has a baseline`,
-		`    Token ceiling per role: ${ceilingFrom}; the call-cap hook stops a reviewer there`,
+		`    ${unit === 'dollars' ? 'Dollar' : 'Token'} ceiling per role: ${ceilingFrom}; the call-cap hook stops a reviewer there`,
 		`    Floor met: ${Object.entries(need).map(([k, v]) => `${k} ${kinds[k] || 0} of ${v} needed`).join(', ') || 'none for this tier'}`,
 		`    Extras: ${extras} of ${cap.maxExtras} allowed beyond the floor`,
 		`    ${sweepLine(hash)}`,
@@ -662,7 +688,7 @@ function rulesBlock() {
 	}
 	return null;
 }
-function writeBriefs(c, hash, ceilings, facts) {
+function writeBriefs(c, hash, ceilings, facts, unit = 'tokens') {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
 	const block = rulesBlock();
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
@@ -686,7 +712,7 @@ function writeBriefs(c, hash, ceilings, facts) {
 			'',
 			`Sweep: ${hash} role ${n}`,
 			`Call cap: ${r.calls}. A call is one message from you, however many tools it runs, so run independent reads together in one message. ${hooked ? 'A hook counts your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did not get to as \'not checked\'.' : 'No hook counts them here, so count your own calls.'} The cap's last two calls are for the report.`,
-			`Token ceiling: ${ceilings[i]}`,
+			ceilingLine(unit, ceilings[i]),
 			'',
 			`Role: ${r.role || r.kind} (${r.kind})`,
 			`Question: ${r.question || ''}`,
@@ -867,10 +893,10 @@ function ownerYes() {
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
 	// The ask's ceilings travel with the yes: the reviewers' guard reads the clearing line, and a yes without them
 	// started reviewers with no ceiling at all (the 1.23.0 sweep).
-	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings } : {}), ...proof });
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings, ...(last.ceilingUnit ? { ceilingUnit: last.ceilingUnit } : {}) } : {}), ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
 	const facts = diffFacts();
-	if (facts && Array.isArray(last.ceilings)) console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(JSON.parse(raw), last.hash, last.ceilings, facts).join(', ')}`);
+	if (facts && Array.isArray(last.ceilings)) console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(JSON.parse(raw), last.hash, last.ceilings, facts, last.ceilingUnit).join(', ')}`);
 	return 0;
 }
 
@@ -1009,6 +1035,9 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			split,
 			firstCall: calls.length ? per(calls[0]) - u(calls[0], 'output_tokens') : 0,
 			maxCall: Math.max(0, ...calls.map(per)),
+			// K182: the role's list-price dollars and its dearest call, each call at its own model's price.
+			dollars: Math.round(calls.reduce((t, m) => t + dollars(m.usage, m.model), 0) * 1e4) / 1e4,
+			maxCallDollars: Math.round(Math.max(0, ...calls.map((m) => dollars(m.usage, m.model))) * 1e4) / 1e4,
 			lastCall: calls.length ? per(calls[calls.length - 1]) : 0,
 			// Only after a gap the cache can expire in (5 minutes): a call soon after the last that reads back less is a
 			// context the model trimmed, not an expired cache. After such a gap any read short of the last context is one;
@@ -1021,7 +1050,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 			// alone cannot tell a role that was stopped from one that was done.
 			// Only a refusal counts, with the hook's numbers in it: a reviewer that read the hook's source or this script
 			// sees the words too (the 1.23.0 sweep).
-			stopped: parsed.some((e) => e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) && e.message.content.some((x) => x && x.type === 'tool_result' && x.is_error === true && /Token ceiling reached \(\d[\d,]* of \d/.test(typeof x.content === 'string' ? x.content : JSON.stringify(x.content)))),
+			stopped: parsed.some((e) => e && e.message && e.message.role === 'user' && Array.isArray(e.message.content) && e.message.content.some((x) => x && x.type === 'tool_result' && x.is_error === true && /Token ceiling reached \(\d[\d,]* of \d|Dollar ceiling reached \(\$\d/.test(typeof x.content === 'string' ? x.content : JSON.stringify(x.content)))),
 		};
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
@@ -1195,7 +1224,19 @@ function outcome() {
 	if (!bounded && decision.budget && nums.tokens >= OVERRUN * decision.budget) trips.push(`tokens ${nums.tokens} ran ${Math.round((nums.tokens / decision.budget - 1) * 100)}% over the budget of ${decision.budget}`);
 	const n = (x) => Math.round(x).toLocaleString('en-US');
 	// A crash and its retry each had the whole ceiling, so the check reads the retry alone, as the call check does.
-	for (const x of per) { const own = x.tokens - (x.crashedTokens || 0); if (x.ceiling && own > x.ceiling + x.maxCall) trips.push(`the token ceiling did not hold for ${x.role}: ${n(own)} against ${n(x.ceiling)} (${x.stopped ? 'the hook stopped it too late' : 'the hook is missing or did not fire'})`); }
+	// K182: a dollar ceiling is held to the role's own dollars (the retry's alone, read from its own transcript).
+	const inDollars = decision.ceilingUnit === 'dollars';
+	const usd = (x) => `$${Number(x).toFixed(2)}`;
+	for (const x of per) {
+		const own = inDollars ? Number(x.dollars) || 0 : x.tokens - (x.crashedTokens || 0);
+		const margin = inDollars ? Number(x.maxCallDollars) || 0 : x.maxCall;
+		if (x.ceiling && own > x.ceiling + margin) trips.push(`the ${inDollars ? 'dollar' : 'token'} ceiling did not hold for ${x.role}: ${inDollars ? usd(own) : n(own)} against ${inDollars ? usd(x.ceiling) : n(x.ceiling)} (${x.stopped ? 'the hook stopped it too late' : 'the hook is missing or did not fire'})`);
+	}
+	// K182: the sweep's whole spend in dollars, against the p95 a role of past sweeps spent x this sweep's roles: the
+	// dollar watch the token ceiling claimed to be. A bigger change adds roles, so the bound grows with it in a line.
+	const pastDollars = s.log.filter((e) => e.kind === 'outcome' && Array.isArray(e.roles)).flatMap((e) => e.roles).filter((r) => r && r.split && Number(r.calls) > 0).slice(-CEILING_ROLES).map((r) => dollars(r.split, r.model));
+	const sweepDollars = per.reduce((t, x) => t + (Number(x.dollars) || 0), 0);
+	if (pastDollars.length >= CEILING_MIN && sweepDollars > nearestRank(pastDollars, CONTENT_PCT) * per.length) trips.push(`the sweep spent ${usd(sweepDollars)}, over ${per.length} roles x the p95 a past role spent (${usd(nearestRank(pastDollars, CONTENT_PCT))})`);
 	// K151 (build 20): the call-cap meter lets a call through when it cannot read the transcript, and logs why. Each such
 	// line for one of this sweep's reviewers keeps auto-approval paused and names the role: a silent meter is a gap.
 	let opens = [];
@@ -1214,7 +1255,7 @@ function outcome() {
 	}
 	if (bounded) {
 		const stopped = per.filter((x) => x.stopped).length;
-		if (stopped > STOPPED_SHARE * per.length) trips.push(`${stopped} of ${per.length} roles stopped at their token ceiling (the work outgrew it)`);
+		if (stopped > STOPPED_SHARE * per.length) trips.push(`${stopped} of ${per.length} roles stopped at their ${inDollars ? 'dollar' : 'token'} ceiling (the work outgrew it)`);
 		const firsts = past.filter((r) => Number(r.firstCall) > 0).map((r) => Number(r.firstCall));
 		const start = median(per.map((x) => x.firstCall));
 		if (firsts.length >= CEILING_MIN && start > START_DRIFT * median(firsts)) trips.push(`the starting context (${n(start)}) is ${Math.round((start / median(firsts) - 1) * 100)}% over its median of ${n(median(firsts))} (rules or tools grew)`);

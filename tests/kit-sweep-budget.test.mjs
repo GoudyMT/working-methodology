@@ -431,7 +431,98 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   fs.writeFileSync(path.join(repo, 't', 'subagents', 'agent-r8.jsonl'), `${JSON.stringify({ message: { role: 'user', content: 'Sweep: abc role 1\nCall cap: 15' } })}\n`);
   assert.equal(runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', cwd: repo, transcript_path: path.join(repo, 't.jsonl'), agent_id: 'r8', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } }).stdout, '');
   // pin: 1 (the sweep outcome reads the cause into its pause reason)
-  assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"agent":"r8","cause":"no Token ceiling line in the brief"/);
+  assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"agent":"r8","cause":"no Dollar ceiling line in the brief"/);
+});
+
+// K182 (build 22): the ceiling counts list-price dollars, so a re-read of the context (a twentieth of the input price)
+// weighs what it costs. On the kit's own log re-reads were 84% of reviewer tokens and 12% of the dollars, and the token
+// ceiling stopped 16 roles where a dollar ceiling would have stopped 4.
+// why: catches a reviewer stopped early by cheap cache re-reads, or one let past its ceiling by a model priced too low
+test('the call-cap hook meters a dollar ceiling in list-price dollars, re-reads at their own price', () => {
+  const dir = makeTemp('dollar-');
+  const session = path.join(dir, 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  // Each call: a 30,000-token re-read and 1,500 output tokens on Sonnet 5.5 = $0.003 + $0.015 = $0.018.
+  const hook = (calls, { model = 'claude-sonnet-5-5', read = 30000, ceiling = '0.20' } = {}) => {
+    const lines = [{ message: { role: 'user', content: `a brief. Call cap: 40. Dollar ceiling: $${ceiling}.` } }];
+    for (let i = 0; i < calls; i++) lines.push({ message: { role: 'assistant', id: `m${i}`, model, usage: { input_tokens: 0, cache_read_input_tokens: read, cache_creation_input_tokens: 0, output_tokens: 1500 } } });
+    fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
+    return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  // Held back: three more calls ($0.054) and the report (5,000 output tokens, $0.05). 5 calls ($0.09): fits.
+  assert.equal(hook(5).permissionDecision, 'allow');
+  const stop = hook(6);
+  assert.equal(stop.permissionDecision, 'deny', '$0.108 spent; with three more calls and the report it passes $0.20');
+  assert.match(stop.permissionDecisionReason, /Dollar ceiling reached \(\$0\.11 of \$0\.20\)[\s\S]*hand in your report/);
+  // Two calls re-reading 300,000 tokens each are 603,000 tokens, but $0.09: a re-read costs a twentieth of new input.
+  assert.equal(hook(2, { read: 300000, ceiling: '0.40' }).permissionDecision, 'allow', '$0.09 spent, $0.185 held back');
+  // A model the table does not know is priced as the dearest one (Opus 5.5), never as a cheap one.
+  assert.equal(hook(1).permissionDecision, 'allow', 'one Sonnet call fits');
+  assert.equal(hook(1, { model: 'claude-mystery-9' }).permissionDecision, 'deny', 'one call priced as Opus 5.5 does not');
+});
+
+// K182 (build 22): with a dollar baseline in the log, each role's ceiling is its own call cap x the p90 dollars a call of
+// past roles on its model, plus its report, so it is the same for every build and a role at a normal pace reaches its
+// call cap before its ceiling.
+// why: catches a ceiling read from other roles' totals, which stops a bigger diff's reviewers before their cap
+test('a role\'s dollar ceiling comes from its own call cap, and a median-paced role reaches its cap first', () => {
+  const dir = sweepRepo();
+  // 25 past roles a model, 6 calls each, spending $0.01 to $0.25 a call in output tokens.
+  const past = (model, perMillion) => Array.from({ length: 25 }, (_, i) => ((out) => pastRole(out, { model, calls: 6, split: { input: 0, cacheRead: 0, cacheWrite: 0, output: out } }))(Math.round((0.06 * (i + 1) * 1e6) / perMillion)));
+  seedOutcomes(dir, [...past('claude-opus-5-5', 20), ...past('claude-sonnet-5-5', 10)]);
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const d = approvalLog(dir).pop();
+  // p90 is $0.23 a call: 5 calls x $0.23 plus the report (5,000 output tokens: $0.10 on Opus, $0.05 on Sonnet).
+  assert.equal(d.ceilingUnit, 'dollars');
+  assert.deepEqual(d.ceilings, [1.25, 1.25, 1.25, 1.2, 1.25]);
+  assert.match(r.stdout, /Dollar ceiling per role: the p90 dollars a call/);
+  const briefFile = fs.readdirSync(path.join(dir, 'sweeps')).find((f) => /-brief-1\.md$/.test(f));
+  assert.match(read(path.join(dir, 'sweeps', briefFile)), /^Dollar ceiling: \$1\.25$/m);
+  // A role at the median pace ($0.13 a call) is stopped by its call cap, not its ceiling.
+  const session = path.join(makeTemp('pace-'), 'session-1');
+  fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
+  const hook = (calls) => {
+    const lines = [{ message: { role: 'user', content: `Call cap: 5. Dollar ceiling: $1.25.` } }];
+    for (let i = 0; i < calls; i++) lines.push({ message: { role: 'assistant', id: `m${i}`, model: 'claude-opus-5-5', usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: 6500 } } });
+    fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
+    const h = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
+    return h.stdout ? JSON.parse(h.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
+  };
+  assert.equal(hook(2).permissionDecision, 'allow');
+  assert.match(hook(3).permissionDecisionReason, /^Call cap reached/);
+  // With no dollar baseline for a role's model, the token ceiling stays, as before.
+  const cold = approveRun(featureContract());
+  assert.equal(approvalLog(cold.dir).pop().ceilingUnit, 'tokens');
+});
+
+// K182: at the outcome, a dollar ceiling is held to the role's own dollars (K151's hold, in the unit the brief carried),
+// and the whole sweep's dollars to its roles x the p95 a past role spent.
+// why: catches a role run past its dollar ceiling unseen, and a sweep whose total spend no check reads
+test('the outcome holds each role to its dollar ceiling and the sweep to a dollar bound', () => {
+  const sweep = (callsEach) => {
+    const dir = sweepRepo();
+    const past = (model, perMillion) => Array.from({ length: 25 }, (_, i) => ((out) => pastRole(out, { model, calls: 6, split: { input: 0, cacheRead: 0, cacheWrite: 0, output: out } }))(Math.round((0.06 * (i + 1) * 1e6) / perMillion)));
+    seedOutcomes(dir, [...past('claude-opus-5-5', 20), ...past('claude-sonnet-5-5', 10)]);
+    const r = approveRun(featureContract(), dir);
+    assert.equal(r.status, 0, r.stdout);
+    const ids = cheapRoles(5);
+    // Each call: 6,500 output tokens, $0.13 on Opus 5.5 and $0.065 on Sonnet 5.5.
+    const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, Array(callsEach[i]).fill([0, 0, 0, 6500])])), {}, undefined, undefined, roleModels(ids, featureContract().roles));
+    const o = logOutcome(r, ids, cfg);
+    assert.equal(o.status, 0, o.stdout);
+    return { o, line: approvalLog(dir).filter((e) => e.kind === 'outcome').pop() };
+  };
+  const calm = sweep([3, 3, 3, 3, 3]);
+  assert.equal(calm.line.roles[0].dollars, 0.39);
+  assert.doesNotMatch(calm.o.stdout, /paused/);
+  // Role 1, 12 calls: $1.56 against its $1.25 ceiling and a $0.13 call.
+  const over = sweep([12, 3, 3, 3, 3]);
+  assert.match(over.o.stdout, /the dollar ceiling did not hold for .*: \$1\.56 against \$1\.25/);
+  assert.doesNotMatch(over.o.stdout, /the sweep spent/);
+  // Every role at 14 calls: $8.19 against 5 roles x $1.44, the p95 a past role spent ($7.20).
+  assert.match(sweep([14, 14, 14, 14, 14]).o.stdout, /the sweep spent \$8\.19, over 5 roles x the p95 a past role spent \(\$1\.44\)/);
 });
 
 // The build 11 sweep: the message making a call may be in the transcript when the hook reads it, or not yet. A call

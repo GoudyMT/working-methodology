@@ -142,15 +142,21 @@ function check(input) {
 		// Each role's slot takes only its own cap, so one role cannot borrow another's.
 		if (Array.isArray(e.calls) && e.calls[n] !== Number(cap[1])) return deny(`Role ${n + 1} of the cleared contract has a call cap of ${e.calls[n]}, not ${cap[1]}: the brief carries its own role's cap.`);
 		// The call-cap hook stops a reviewer at the token ceiling its brief carries, so the brief carries its role's own.
-		const ceiling = prompt.match(/Token ceiling: (\d+)/);
 		// An owner's yes cleared an ask, and the ask's decision set the ceilings: a yes line without them still has them.
 		let ceilings = e.ceilings;
+		let unit = e.ceilingUnit;
 		for (let k = i - 1; k >= 0 && !Array.isArray(ceilings) && e.kind === 'owner-yes'; k--) {
 			let d = null;
 			try { d = entry(lines[k]); } catch { /* checked above */ }
-			if (d && d.kind === 'decision' && d.contract === e.contract && d.hash === e.hash) ceilings = d.ceilings;
+			if (d && d.kind === 'decision' && d.contract === e.contract && d.hash === e.hash) { ceilings = d.ceilings; unit = d.ceilingUnit; }
 		}
-		if (Array.isArray(ceilings) && !(ceiling && Number(ceiling[1]) === ceilings[n])) return deny(`A reviewer's brief carries its role's token ceiling, as the line "Token ceiling: <n>", from the cleared contract (role ${n + 1}: ${ceilings[n]}): the start notice has it.`);
+		// K182 (build 22): a ceiling in list-price dollars is the line "Dollar ceiling: $x.xx"; a log with no dollar
+		// baseline keeps the token line.
+		const dollarsLine = unit === 'dollars';
+		const ceiling = dollarsLine ? prompt.match(/Dollar ceiling: \$(\d+(?:\.\d+)?)/) : prompt.match(/Token ceiling: (\d+)/);
+		const want = Array.isArray(ceilings) ? (dollarsLine ? `$${Number(ceilings[n]).toFixed(2)}` : String(ceilings[n])) : '';
+		const same = ceiling && (dollarsLine ? Math.abs(Number(ceiling[1]) - Number(ceilings[n])) < 0.005 : Number(ceiling[1]) === ceilings[n]);
+		if (Array.isArray(ceilings) && !same) return deny(`A reviewer's brief carries its role's ceiling, as the line "${dollarsLine ? 'Dollar ceiling: $<x>' : 'Token ceiling: <n>'}", from the cleared contract (role ${n + 1}: ${want}): the start notice has it.`);
 		// The slot is for this role's review of this checkout: a brief carries its question, and runs where it was cleared.
 		const question = String((JSON.parse(raw).roles?.[n] || {}).question || '');
 		if (question && !prompt.includes(question)) return deny(`A reviewer's brief carries its role's question as the contract wrote it. Role ${n + 1}: "${question}"`);
