@@ -39,6 +39,7 @@ test('a question lower on one look is asked again alone, and is worse only when 
   const { summarize } = await import('../scripts/recall-score.mjs');
   const first = scoreSets(fiveEach(lowerOn(4)));
   const look = (again) => summarize(first.sets, first.map, 14, { when: at(first.map), again });
+  assert.doesNotThrow(() => look(), 'seen twice: the first look is scored');
   const one = look();
   assert.deepEqual(one.lower, [4], 'seen twice: the first look names what summed lower');
   assert.equal(one.pending, true);
