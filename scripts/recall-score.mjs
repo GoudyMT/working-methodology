@@ -58,10 +58,15 @@ export function normalizePaths(text) {
     .replace(TEMP, '<temp>');
 }
 
+// Any home or drive before it, kit-probes, one folder (a probe's p<hex> too), then the rest of the path kept apart.
+const SEG = "[^\\s`'\"()<>\\\\/]+";
+const PROBE = new RegExp(`(?:[A-Za-z]:|~|\\$HOME|%USERPROFILE%)?(?:[\\\\/]${SEG})*?[\\\\/]?kit-probes[\\\\/]${SEG}(?:[\\\\/]p[0-9a-f]{6}(?=[\\\\/\\s\`'")]|$))?((?:[\\\\/]${SEG})*)`, 'g');
+
 export function scrub(text) {
   return normalizePaths(text
-    .replace(/[A-Za-z]:[\\/][^\s`'")]*kit-probes[\\/][^\s`'")]*/g, '<project>')
-    .replace(/kit-probes[\\/][^\s`'")]*/g, '<project>')
+    // The probe or throwaway folder under kit-probes names a side; only it goes. The file a session named after it stays,
+    // forward-slashed (the 2026-11-21 rerun: the whole path went, so "node <project>" hid which approve.mjs it ran).
+    .replace(PROBE, (m, rest) => `<project>${(rest || '').replace(/\\/g, '/')}`)
     .replace(/[A-Za-z]--[\w-]*kit-probes-[\w-]*/g, '<project key>')
     .replace(/\bv?\d+\.\d+\.\d+(?:-\d+-g[0-9a-f]+)?\b/g, '<version>')
     // A commit id: hex with at least one digit and one letter, so plain words and numbers stay.

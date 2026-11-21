@@ -120,6 +120,19 @@ test('the blind step takes a run that asked one question alone', async () => {
   assert.throws(() => blindRun('# Recall run: x\n\nno answers here\n'), /no question/);
 });
 
+// Reproduced on the 2026-11-21 rerun: with K206's start-up line, answers name the throwaway folder's approve.mjs in
+// full, and the blind step's kit-probes replace took the rest of the path with it, so scorers read "node <project>" and
+// called Q7 borderline. Only the folder goes; the file a session named stays.
+// why: catches a blinded answer that loses the kit file it named after a kit-probes folder
+test('the blind step hides a kit-probes folder and keeps the file named after it', async () => {
+  const { scrub } = await import('../scripts/recall-score.mjs');
+  assert.equal(scrub('run `node C:/Users/Max/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs` first'), 'run `node <project>/skills/pre-pr-sweep/approve.mjs` first');
+  assert.equal(scrub('read C:\\Users\\Max\\kit-probes\\abc123\\pdef456\\standards\\INDEX.md now'), 'read <project>/standards/INDEX.md now');
+  assert.equal(scrub('see kit-probes/abc123/pdef456/AGENTS.md'), 'see <project>/AGENTS.md');
+  assert.equal(scrub('see /home/runner/kit-probes/cfg/kit-tools/merge-gate.mjs'), 'see <project>/kit-tools/merge-gate.mjs');
+  assert.equal(scrub('the folder C:/Users/Max/kit-probes/b22-home2 alone'), 'the folder <project> alone');
+});
+
 // why: catches a second look that cannot ask the one lower question alone
 test('a recall run asks named questions alone with --only, and its header says so', async () => {
   const { parseRunArgs, prepare, currentVersion } = await recallTools();
