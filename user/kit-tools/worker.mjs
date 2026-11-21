@@ -8,7 +8,7 @@
 // Usage (cloud only):
 //   node worker.mjs run --plugin <dir> --branch <type/name> --brief <file> --job <kind> [--model <id>] [--repo <dir>]
 //                       [--from <ref>] [--workdir <dir>] [--timeout-min <n>] [--budget-usd <n>]
-// Prints "ran: ..." (exit code of the worker) or "stopped: <why>" (exit 1); a refusal before the start exits 2.
+// Prints "ran: ..." (exit code of the worker, once it answered and its result is a success) or "stopped: <why>" (exit 1); a refusal before the start exits 2.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
@@ -203,6 +203,10 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	const out = fs.createWriteStream(log);
 	const check = startCheck({ plugin });
 	let stopWhy = null;
+	// The cloud sweep bench: a worker the prompt gate blocked did nothing and still exited 0. A run counts only when the
+	// worker answered and its result event says it succeeded.
+	let answered = false;
+	let outcome = null;
 	const stop = (why) => { if (stopWhy) return; stopWhy = why; try { child.kill('SIGKILL'); } catch { /* already gone */ } };
 	const timer = setTimeout(() => stop(`timed out after ${timeoutMin} min`), timeout);
 	let buf = '';
@@ -216,6 +220,8 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 			buf = buf.slice(i + 1);
 			let e;
 			try { e = JSON.parse(line); } catch { continue; }
+			if (e && e.type === 'assistant') answered = true;
+			if (e && e.type === 'result') outcome = e;
 			const why = check.feed(e);
 			if (why) stop(why);
 		}
@@ -229,6 +235,9 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	clearTimeout(timer);
 	await new Promise((resolve) => out.end(resolve));
 	if (!stopWhy) { const why = check.end(); if (why) stopWhy = why; }
+	if (!stopWhy && !outcome) stopWhy = `the worker sent no result event (exit ${code ?? signal}), so it may not have finished`;
+	if (!stopWhy && (outcome.is_error !== false || outcome.subtype !== 'success')) stopWhy = `the worker ended in an error (${outcome.subtype || 'no subtype'})`;
+	if (!stopWhy && !answered) stopWhy = 'the worker did no work: it never answered (a hook may have blocked its brief)';
 	if (stopWhy) { print(`stopped: ${stopWhy} (worktree ${tree}, log ${log})`); return 1; }
 	print(`ran: exit ${code ?? signal}, worktree ${tree}, log ${log}`);
 	return typeof code === 'number' ? code : 1;

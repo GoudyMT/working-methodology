@@ -192,6 +192,25 @@ test('the start check stops a stream without the start-up line, with another mod
 	assert.equal(run.calls[0].child.killed, true);
 });
 
+// The cloud sweep bench (1.50.0 build): a worker whose brief the kit's prompt gate blocked did nothing, and the runner
+// still printed "ran: exit 0". A run counts only when the worker answered and its result says it succeeded.
+// why: catches a worker that did nothing, or ended in an error, reported as ran
+test('a worker that never answered, ended in an error or sent no result is stopped, not reported as ran', async () => {
+	const blocked = { type: 'system', subtype: 'hook_response', hook_name: 'UserPromptSubmit', hook_event: 'UserPromptSubmit', output: '', exit_code: 2, outcome: 'error', session_id: 's1' };
+	const cases = (p) => [
+		['the prompt blocked, no answer', [hookStarted, hookResponse(kitHookOut), init(p), blocked, result], /did no work/],
+		['an error result', [hookStarted, hookResponse(kitHookOut), init(p), toolUse, text, { ...result, subtype: 'error_during_execution', is_error: true }], /error/],
+		['no result at all', [hookStarted, hookResponse(kitHookOut), init(p), toolUse, text], /no result/],
+	];
+	for (const [name, events, why] of cases('PLUGIN')) {
+		const r = repo();
+		const run = await runIt(r, events.map((e) => (e.plugins ? { ...e, plugins: e.plugins.map((x) => (x.path === 'PLUGIN' ? { ...x, path: r.plugin } : x)) } : e)));
+		assert.equal(run.code, 1, `${name}: ${run.out}`);
+		assert.match(run.out, /^stopped: /m, name);
+		assert.match(run.out, why, `${name}: ${run.out}`);
+	}
+});
+
 // why: catches a start check that misses the line in the kit hook JSON, or takes it mid-line
 test('the start check reads the line from plain hook stdout or the kit hook JSON, and only at a line start', () => {
 	const feed = (events) => { const c = startCheck({ plugin: '/p' }); for (const e of events) { const why = c.feed(e); if (why) return why; } return c.end(); };
