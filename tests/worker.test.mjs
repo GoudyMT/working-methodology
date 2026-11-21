@@ -309,7 +309,7 @@ test('a worker past its time is stopped, and the stop ends the programs it start
 	// A real worker that started a program of its own: the stop ends that program too.
 	const t = repo();
 	const marker = path.join(t.root, 'child.pid');
-	const real = (cmd, args, opts) => spawn(process.execPath, ['-e', `const { spawn } = require('child_process'); const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(marker)}, String(c.pid)); console.log(JSON.stringify({ type: 'system', subtype: 'init', permissionMode: 'acceptEdits', plugins: [] })); setInterval(() => {}, 1000);`], { ...opts, stdio: ['pipe', 'pipe', 'inherit'] });
+	const real = (cmd, args, opts) => spawn(process.execPath, ['-e', `const { spawn } = require('child_process'); const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(marker)}, String(c.pid)); console.log(JSON.stringify({ type: 'system', subtype: '${INIT}', permissionMode: 'acceptEdits', plugins: [] })); setInterval(() => {}, 1000);`], { ...opts, stdio: ['pipe', 'pipe', 'inherit'] });
 	const out = [];
 	const c2 = await main(['run', '--plugin', t.plugin, '--branch', 'feat/add-login', '--brief', t.brief, '--repo', t.dir, '--job', 'tests'], { env: cloud, start: real, which: WHICH, print: (s) => out.push(s) });
 	assert.equal(c2, 1, out.join('\n'));

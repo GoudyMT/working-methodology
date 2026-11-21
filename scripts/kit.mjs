@@ -1563,13 +1563,19 @@ function roleModelLine(kit, dir) {
     let model = config.roles[role].model;
     try {
       const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(fs.readFileSync(path.join(dir, 'agents', `${role}.md`), 'utf8'));
-      const m = front && /^model:\s*(\S+)\s*$/m.exec(front[1]);
+      // The build 23b sweep: a quoted value is the value inside the quotes.
+      const m = front && /^model:\s*['"]?([^'"\s]+)['"]?\s*$/m.exec(front[1]);
       if (m) model = m[1];
     } catch { /* not installed: the table's model */ }
-    if (retiring.has(model)) named.push(`${role} runs on ${model}, which is marked retiring`);
-    else if (!models.measured.includes(model)) named.push(`${role} runs on ${model}, which the kit has not measured its roles on`);
+    // A family name (opus) is measured when the kit measured a model of that family.
+    const measured = models.measured.includes(model) || (/^(opus|sonnet|haiku)$/i.test(model) && models.measured.some((x) => x.toLowerCase().includes(model.toLowerCase())));
+    const file = `${toPosix(dir)}/agents/${role}.md`;
+    if (retiring.has(model)) named.push(`${role} runs on ${model}, which is marked retiring (${file})`);
+    else if (!measured) named.push(`${role} runs on ${model}, which the kit has not measured its roles on (${file})`);
   }
-  return named.length ? `Kit roles: ${named.join('; ')}. Move the role in kit.config.json "roles" (then build and install user), or measure the model first.` : '';
+  // The build 23b sweep: the repair is on the owner's side (the role file wins over the kit's table, and changing the
+  // table leaves the release checkout).
+  return named.length ? `Kit roles: ${named.join('; ')}. Set the model line in that role file to a measured model, or measure the model first; the next release's table may move it.` : '';
 }
 
 /** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
@@ -1653,7 +1659,10 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
     if (closed && source === 'resume' && !since.includes(sid)) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
   }
   const ahead = readOnly ? { count: 0 } : remote(kit);
-  if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run ${skill} update.`);
+  // The build 23b sweep: a plugin's kit copy has no git, so the plugin itself is updated.
+  if (ahead.count > 0) lines.push(env.CLAUDE_PLUGIN_ROOT
+    ? `GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Update the kit plugin to ${ahead.newest}, then run ${skill} update.`
+    : `GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run ${skill} update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.

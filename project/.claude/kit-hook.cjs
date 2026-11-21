@@ -68,8 +68,11 @@ async function main() {
 	const stampPath = path.join(HOME, 'kit-install.json');
 	let kit = null;
 	try { kit = JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir || null; } catch { /* no stamp, or not JSON: the full stop below */ }
-	// K175: a plugin has no install step, so no stamp names the kit; it ships its own copy at <plugin root>/kit.
-	if (!kit && process.env.CLAUDE_PLUGIN_ROOT) kit = path.join(process.env.CLAUDE_PLUGIN_ROOT, 'kit');
+	// K175: a plugin has no install step, so no stamp names the kit; it ships its own copy at <plugin root>/kit. The build
+	// 23b sweep: under a plugin that copy is the kit in use, before any user install's record (one naming a kit that
+	// moved full-stopped every prompt, and an older one beat the plugin's own).
+	const pluginKit = process.env.CLAUDE_PLUGIN_ROOT ? path.join(process.env.CLAUDE_PLUGIN_ROOT, 'kit') : null;
+	if (pluginKit) kit = pluginKit;
 	if (!kit || !fs.existsSync(path.join(kit, 'scripts', 'kit.mjs'))) {
 		// A missing kit is a full stop (the owner, 2026-10-31): every prompt is refused with the fix, except a prompt
 		// that installs it.
@@ -83,7 +86,10 @@ async function main() {
 			const steps = kitDir
 				? `(1) git -C "${kitDir}" fetch --tags, then check out the newest release tag (git -C "${kitDir}" tag --sort=-v:refname lists it first); (2) in PowerShell: $env:CLAUDE_CONFIG_DIR='${where}'; node "${kitDir}/scripts/kit.mjs" install user`
 				: `(1) in your kit folder, git fetch --tags, then check out the newest release tag; (2) with CLAUDE_CONFIG_DIR set to ${where}, run node <kit folder>/scripts/kit.mjs install user`;
-			process.stdout.write(JSON.stringify({ decision: 'block', reason: `Full stop: the methodology kit is not installed in the Claude config folder ${where}. Install the latest in a terminal: ${steps}. Then start a fresh session.` }));
+			const reason = pluginKit
+				? `Full stop: the kit plugin has no kit copy at ${pluginKit.split(path.sep).join('/')}. Reinstall the kit plugin from its release, then start a fresh session.`
+				: `Full stop: the methodology kit is not installed in the Claude config folder ${where}. Install the latest in a terminal: ${steps}. Then start a fresh session.`;
+			process.stdout.write(JSON.stringify({ decision: 'block', reason }));
 			return;
 		}
 		emit(`${packet ? `${packet}\n` : ''}Methodology kit not found in the Claude config folder ${HOME.split(path.sep).join('/')} (no kitDir in its kit-install.json). Run "node <kit>/scripts/kit.mjs install user" with CLAUDE_CONFIG_DIR set to that folder.`);

@@ -75,7 +75,7 @@ test('session start names a role on a model the kit has not measured or marks re
   fs.writeFileSync(path.join(home, 'agents/scanner.md'), '---\nname: scanner\nmodel: claude-z-9\n---\n');
   const text = sessionStartReport({ kit, home, projectDir: proj, env: {}, ahead: () => ({ count: 0 }) });
   const line = text.split('\n').find((l) => l.startsWith('Kit roles:'));
-  assert.match(line, /^Kit roles: checker\b.*claude-c-1\b.*retiring; scanner\b.*claude-z-9\b.*not measured\b.*kit\.config\.json "roles"/);
+  assert.match(line, /^Kit roles: checker\b.*claude-c-1\b.*retiring\b.*; scanner\b.*claude-z-9\b.*not measured\b.*model line in that role file/);
   // A plugin's role files sit at its root.
   const root = makeTemp('plugin-root-');
   fs.mkdirSync(path.join(root, 'agents'));
@@ -84,6 +84,53 @@ test('session start names a role on a model the kit has not measured or marks re
   // All measured and none retiring: no line.
   fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ownerName: 'Pat', roles: { builder: { model: 'claude-a-1', effort: 'high' } }, models: { measured: ['claude-a-1'], retiring: [] } }));
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, env: {}, ahead: () => ({ count: 0 }) }), /Kit roles:/);
+});
+
+// The build 23b sweep: under a plugin, a user install's record naming a kit that moved full-stopped every prompt (the
+// plugin's own copy was never tried), an older user kit beat the plugin's, the missing-kit stop sent a plugin user to
+// install user, and a newer release said to check out a tag in a plugin copy that has no git.
+// why: guards rule:kit-standards: a plugin session that full-stops or reads an older kit than the plugin it runs
+test('under a plugin the hook uses the plugin\'s kit over a user record, and its texts name the plugin', () => {
+  const { kit } = caseKit();
+  copyKitCli(kit);
+  const root = path.dirname(kit);
+  const cfg = makeTemp('plugin-cfg-');
+  const fresh = makeTemp('plugin-proj-');
+  const hook = path.resolve('project/.claude/kit-hook.cjs');
+  const run = (mode, input, env = {}) => spawnSync(process.execPath, [hook, mode], { cwd: fresh, input: JSON.stringify(input), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: cfg, CLAUDE_PROJECT_DIR: fresh, CLAUDE_PLUGIN_ROOT: root, ...env } });
+  // A user install's record whose kit folder is gone.
+  fs.writeFileSync(path.join(cfg, 'kit-install.json'), JSON.stringify({ kitDir: fwd(path.join(makeTemp('moved-'), 'gone')) }));
+  const prompt = run('prompt', { prompt: 'go' });
+  assert.equal(prompt.status, 0, prompt.stderr);
+  assert.doesNotMatch(prompt.stdout, /"decision"\s*:\s*"block"/, 'the plugin kit was not tried');
+  // A plugin with no kit copy: the stop names the plugin folder and its repair, not install user.
+  const bare = makeTemp('plugin-bare-');
+  const stop = JSON.parse(run('prompt', { prompt: 'go' }, { CLAUDE_PLUGIN_ROOT: bare }).stdout);
+  assert.match(stop.reason, new RegExp(esc(fwd(bare))));
+  assert.match(stop.reason, /reinstall the kit plugin/i);
+  assert.doesNotMatch(stop.reason, /install user/);
+  // A newer release under a plugin: update the plugin, not a tag checkout in its copy.
+  const { home, proj } = caseKit();
+  const text = sessionStartReport({ kit, home, projectDir: proj, env: { CLAUDE_PLUGIN_ROOT: root }, ahead: () => ({ count: 1, newest: 'v9.9.9' }) });
+  const line = text.split('\n').find((l) => /newer kit release/.test(l));
+  assert.match(line, /update the kit plugin to v9\.9\.9/i);
+  assert.doesNotMatch(line, /[Cc]heck out/);
+});
+
+// The build 23b sweep: a quoted model or a family name (opus) in a role file read as unmeasured on every start, and the
+// repair named the kit's own table, which the owner's release checkout cannot change without leaving the release.
+// why: catches a roles line that warns on every phone session for a measured model, or names a repair that breaks the install
+test('the roles line reads a quoted or family model as written, and names a repair on the owner\'s side', () => {
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ownerName: 'Pat', roles: { builder: { model: 'claude-a-1', effort: 'high' }, scanner: { model: 'claude-b-1', effort: 'low' } }, models: { measured: ['claude-opus-5-5', 'claude-a-1', 'claude-b-1'], retiring: [] } }));
+  fs.mkdirSync(path.join(home, 'agents'), { recursive: true });
+  fs.writeFileSync(path.join(home, 'agents/builder.md'), '---\nname: builder\nmodel: "claude-a-1"\n---\n');
+  fs.writeFileSync(path.join(home, 'agents/scanner.md'), '---\nname: scanner\nmodel: opus\n---\n');
+  assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, env: {}, ahead: () => ({ count: 0 }) }), /Kit roles:/);
+  fs.writeFileSync(path.join(home, 'agents/scanner.md'), '---\nname: scanner\nmodel: claude-z-9\n---\n');
+  const line = sessionStartReport({ kit, home, projectDir: proj, env: {}, ahead: () => ({ count: 0 }) }).split('\n').find((l) => l.startsWith('Kit roles:'));
+  assert.match(line, new RegExp(esc(`${fwd(home)}/agents/scanner.md`)));
+  assert.doesNotMatch(line, /kit\.config\.json/);
 });
 
 // K174: one command turns the checked-out release into a plugin. The plugin root is the Claude-folder stand-in
