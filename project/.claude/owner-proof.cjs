@@ -98,7 +98,7 @@ const LOADED = ['agents', 'skills', 'commands', 'plugins'];
 // wherever it sits: after a keyword, a wrapper or $( it may run as a command (the commit security reviews).
 const NAMES = ['claude', 'mcp', 'plugin', 'plugins'];
 const globMay = (w) => { let re; try { re = new RegExp('^' + w.split(/[\\/]/).pop().replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\[[^\]]*\]/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; } return NAMES.some((n) => re.test(n)); };
-const globNames = (t) => t.split(/\s+/).map((x) => x.replace(/^[^\w./\\*?[]+|[^\w./\\*?\]]+$/g, '').split(/[\\/]/).pop()).some((x) => /[?*[]/.test(x) && /[a-z]/i.test(x) && globMay(x));
+const globNames = (t) => t.split(/[\s;&|<>()`{}]+/).map((x) => x.replace(/^[^\w./\\*?[]+|[^\w./\\*?\]]+$/g, '').split(/[\\/]/).pop()).some((x) => /[?*[]/.test(x) && /[a-z]/i.test(x) && globMay(x));
 const mcpCommand = (c) => {
 	let t = String(c || '');
 	const bare0 = t.replace(/["'`\\^]/g, '');

@@ -315,6 +315,7 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 		['Bash', { command: '{ claude m?p add x -- sh; }' }],
 		['Bash', { command: 'if true; then cl?ude mcp add x -- sh; fi' }],
 		['Bash', { command: 'env X=1 cl?ude mcp add x -- sh' }],
+		['Bash', { command: 'claude m?p>o add x -- sh' }],
 		['Bash', { command: 'claude --verbose m?p add x -- sh' }],
 		['Bash', { command: 'node approve.mjs c.json --outcome\n--agents x' }],
 		['Bash', { command: 'node approve.mjs c.json --outcome --agents auto > out.txt' }],
@@ -322,6 +323,7 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
 	// A wildcard program word is refused outright by the dash check, more strictly still.
 	assert.notEqual(why('Bash', { command: '/usr/bin/cl*de mcp add x -- sh' }), '');
+	assert.notEqual(why('Bash', { command: 'true;cl?ude m?p add x -- sh' }), '');
 	for (const command of ['claude mcp list', 'claude mcp get x', 'claude plugin list', 'npm i eslint-plugin-x', 'node approve.mjs c.json --outcome --agents auto', 'node C:/Users/x/.claude/skills/pre-pr-sweep/approve.mjs c.json --outcome --agents a1,b2 --findings 3', 'node .claude/state.mjs decide --from $F', 'ls .claude/{a,b}', 'ls *.md', 'rm -f tests/*.tmp', 'cat .mcp.json', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
 });
 
