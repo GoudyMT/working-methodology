@@ -76,6 +76,23 @@ test('measureReal also counts the agent list and the start-up hook text (K232)',
   assert.equal(measureReal({ projectDir: proj, home }).parts.startHook, 0, 'no hook text given, none counted');
 });
 
+// The build 23b sweep: measure --real built the hook text by running the whole start-up report, which asked GitHub for
+// newer releases and wrote the project's notice file, so a measure hid the next release's notice.
+// why: guards rule:kit-standards: a read command that changes what the next session is told
+test('measure --real builds the start-up text without asking GitHub or writing the project\'s notice', async () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const notice = path.join(proj, '.kit', 'last-kit-notice.json');
+  fs.rmSync(notice, { force: true });
+  // The text measure --real counts: the start-up report as a fresh session gets it, built read-only.
+  const kitLib = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitLib.startHookText, 'function', 'measure --real has a read-only builder for the start-up text');
+  const text = kitLib.startHookText({ kit, home, projectDir: proj, ahead: () => { throw new Error('asked GitHub'); } });
+  assert.match(text, /Kit tools this session/);
+  assert.equal(fs.existsSync(notice), false, 'measure wrote the notice');
+});
+
 // why: guards rule:kit-standards
 test('every rule heading has a unique, plain-word ID', () => {
   const seen = new Map(), bad = [];

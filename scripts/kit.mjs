@@ -1609,7 +1609,14 @@ export function kitToolsLine(dir) {
 // K175: under the plugin the kit's skill is named with the plugin's prefix; a session told /methodology-kit finds none.
 export const skillCommand = (env = process.env) => (env.CLAUDE_PLUGIN_ROOT ? '/kit:methodology-kit' : '/methodology-kit');
 
-export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
+/**
+ * The start-up text a fresh session gets, built read-only for measure --real (the build 23b sweep): no question to GitHub
+ * about newer releases (the count is left out), and no notice or session list written in the project.
+ */
+export function startHookText({ kit, home, projectDir, ahead = () => ({ count: 0 }) }) {
+  return sessionStartReport({ kit, home, projectDir, source: 'startup', session: '', ahead, readOnly: true }) || '';
+}
+export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead, readOnly = false }) {
   const lines = [];
   const skill = skillCommand(env);
   lines.push(kitToolsLine(env.CLAUDE_PLUGIN_ROOT || home));
@@ -1640,17 +1647,17 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
     try { after = JSON.parse(fs.readFileSync(listFile, 'utf8')); } catch { /* none yet */ }
     const since = closed && after.closed === closed[1] ? after.sessions : [];
     const sid = String(session || '').replace(/[^\w.-]/g, '').slice(0, 64);
-    if (closed && source !== 'resume' && sid && !since.includes(sid)) {
+    if (!readOnly && closed && source !== 'resume' && sid && !since.includes(sid)) {
       try { fs.writeFileSync(listFile, `${JSON.stringify({ closed: closed[1], sessions: [...since, sid].slice(-50) })}\n`); } catch { /* the note is only a hint */ }
     }
     if (closed && source === 'resume' && !since.includes(sid)) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
   }
-  const ahead = remote(kit);
+  const ahead = readOnly ? { count: 0 } : remote(kit);
   if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run ${skill} update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
-  if (stamp.version) writeNotice(projectDir, kitVersion);
+  if (stamp.version && !readOnly) writeNotice(projectDir, kitVersion);
   if (!stamp.version) {
     lines.push(`This project has no kit install record. Run ${skill} existing to adopt kit ${kitVersion}.`);
   } else if (semverAbove(kitVersion, stamp.version)) {
@@ -2797,7 +2804,7 @@ function main(argv) {
     const dir = argv.slice(1).find((a) => a !== '--real') || process.cwd();
     // K232: the start-up hook's text is part of what loads; built here as the hook builds it for a fresh session.
     let hookText = '';
-    try { hookText = sessionStartReport({ kit, home, projectDir: dir, source: 'startup', session: '' }) || ''; } catch { /* counted as none */ }
+    try { hookText = startHookText({ kit, home, projectDir: dir }); } catch { /* counted as none */ }
     const r = measureReal({ projectDir: dir, home, hookText });
     for (const [k, v] of Object.entries(r.parts)) console.log(`${String(v).padStart(8)}  ${k}`);
     console.log(`${String(r.total).padStart(8)}  loaded before the first message (cap ${(loadKit(kit).config.caps || {}).realLoad || 'none'}); desktop-app catalog plugins not counted`);
