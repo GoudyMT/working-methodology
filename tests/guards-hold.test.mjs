@@ -17,7 +17,7 @@ const cfg = kitTemp.makeTemp('cfg-');
 // The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
 fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
 for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
-const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs'];
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs', 'safe-spawn.cjs'];
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
 	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
@@ -628,6 +628,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	fs.mkdirSync(path.join(dir, '.githooks'));
 	fs.mkdirSync(path.join(dir, '.claude'));
 	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(dir, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'one\n');
 	g('add', '.');
@@ -1503,6 +1504,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	// K163 (build 21): the hook scans every pusher's push, so the scan sits beside it as install puts it.
 	fs.mkdirSync(path.join(dir, '.claude'));
 	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(dir, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
