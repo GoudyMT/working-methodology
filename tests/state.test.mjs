@@ -138,7 +138,7 @@ test('a decision is recorded only with the owner\'s own words, appended, and the
 
 // K211 (build 23a, security-four): decide --from read and deleted the path it was given without inside(), so a ../
 // path, an absolute path or a linked folder in the project removed a file outside it, unseen by the delete guard.
-// why: guards K211, build 23a: decide --from reads and deletes only a plain file inside the project
+// why: catches decide --from deleting a file outside the project through a path or link
 test('decide --from refuses a file outside the project and keeps it; a file inside is recorded and removed', () => {
 	const dir = project();
 	const away = kitTemp.makeTemp('state-away-');
@@ -170,7 +170,7 @@ test('decide --from refuses a file outside the project and keeps it; a file insi
 
 // K211 on Windows: a junction in the project to a folder outside it (the security-four case C, as it would be made on
 // the owner's machine). Runs in the Windows slice only.
-// why: guards K211, build 23a: decide --from reads and deletes only a plain file inside the project
+// why: catches decide --from deleting a file outside the project through a path or link
 test('decide --from refuses a file reached through a junction and keeps it', { windows: true }, () => {
 	const dir = project();
 	const away = kitTemp.makeTemp('state-away-');

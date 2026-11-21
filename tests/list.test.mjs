@@ -786,7 +786,7 @@ test('a step counts its open rows by name, build or release, never a closed one'
 // until it is reproduced, so done or closed needs a verify file that is not empty and measured throwaway, ci or
 // real-use, on both write paths (item set and item add), and list marks it SUSPECT until then. Owner and outside
 // rows keep the old rule. Cases from the narrowing proof (proof-sweep/narrowing/K209/run.mjs).
-// why: guards K209, build 23a: a self-found row ships only with its recorded repro
+// why: catches a self-found row tagged done or closed with no recorded repro
 test('a self-found row is done or closed only with a repro file and a measured label, and list shows it SUSPECT until then', () => {
 	const dir = project();
 	const add = (o) => st(dir, 'item', 'add', '--from', json(dir, { title: o.id, tag: 'later', at: 'build 23', severity: 'medium', origin: 'self', caught_by: 'self', ...o }));
