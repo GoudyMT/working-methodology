@@ -1,6 +1,6 @@
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import safeSpawn from './safe-spawn.cjs';
 
 // A PR that changes shipped code must bump the version (the release after the merge needs it) or say in its body
 // "No user-facing change". Without the bump, no release can be cut for the change. Both PR-body audits run it.
@@ -22,7 +22,7 @@ const DEFAULTS = { shipped: ['src/'], exclude: ['.test.', '.spec.'], versionFile
  *     { ok, detail }
  */
 // A program the repo's own git config names (core.fsmonitor, an external diff, a textconv) never runs here: the guard
-// runs these audits inside a hook (the K61 sweep).
+// runs these audits inside a hook (the K61 sweep). git starts from node's own folder, never the repo (build 23).
 // Nothing is fetched either: a partial clone fetches a missing object through a transport the config names.
 const GIT_SAFE = ['-c', 'core.fsmonitor=false', '-c', 'diff.external=', '-c', 'protocol.allow=never',
 	...['ext', 'file', 'ssh', 'git', 'http', 'https'].flatMap((p) => ['-c', `protocol.${p}.allow=never`])];
@@ -40,7 +40,7 @@ const GATE = /(^|\/)\.(github|githooks|claude)\//;
 
 /** Whether the branch's diff is a small change a Lean body may describe, as one audit row. */
 export function leanFitCheck(cwd = process.cwd()) {
-	const git = (...a) => spawnSync('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
+	const git = (...a) => safeSpawn.tool('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
 	if (git('rev-parse', '--show-toplevel').status !== 0) return { ok: true, detail: 'not a git repository' };
 	// A branch with no commit yet has no diff to raise the body (and no PR to open).
 	if (git('rev-parse', '-q', '--verify', 'HEAD^{commit}').status !== 0) return { ok: true, detail: 'no commit yet' };
@@ -68,7 +68,7 @@ export function leanFitCheck(cwd = process.cwd()) {
 }
 
 export function versionBumpCheck(body, cwd = process.cwd()) {
-	const git = (...a) => spawnSync('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
+	const git = (...a) => safeSpawn.tool('git', ['-C', cwd, ...GIT_SAFE, ...a], { encoding: 'utf8', env: GIT_ENV });
 	const top = git('rev-parse', '--show-toplevel');
 	if (top.status !== 0) return { ok: true, detail: 'not a git repository' };
 	const root = top.stdout.trim();

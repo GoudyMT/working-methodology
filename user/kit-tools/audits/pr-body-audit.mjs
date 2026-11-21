@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import safeSpawn from './safe-spawn.cjs';
 import { carriesPhrase } from './canary-phrase.mjs';
 import { versionBumpCheck } from './version-bump-check.mjs';
 import { attributionFaults, entities } from './no-attribution.mjs';
@@ -21,8 +21,8 @@ const squash = title.length + (/^\d+$/.test(number || '') ? number.length + 4 : 
 // keep, the extra lines the review must name - come from .kit/pr-body.json (rule:pr-body; adapter A16):
 //   { "dimensions": ["Code security", ...], "auditLine": "0 high", "verifiedClean": ["..."] }
 // Without it, code security is the one dimension required; the secrets line is required always.
-// No program the repo's git config names runs here (the K61 sweep).
-const top = spawnSync('git', ['-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+// No program the repo's git config names runs here (the K61 sweep), and git starts from node's own folder (build 23).
+const top = safeSpawn.gitRead(process.cwd(), ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 const root = top.status === 0 ? top.stdout.trim() : process.cwd();
 // The build 17 sweep: judging a PR (PR_BASE set, in CI), the file is read from the base, so a PR cannot set the rows
 // its own body is held to.
@@ -30,7 +30,7 @@ const base = process.env.PR_BASE;
 let project = {};
 try {
 	const raw = base
-		? spawnSync('git', ['-c', 'core.fsmonitor=false', 'show', `${base}:.kit/pr-body.json`], { cwd: root, encoding: 'utf8' })
+		? safeSpawn.gitRead(root, ['show', `${base}:.kit/pr-body.json`], { encoding: 'utf8' })
 		: { status: 0, stdout: readFileSync(path.join(root, '.kit', 'pr-body.json'), 'utf8') };
 	if (raw.status === 0) project = JSON.parse(raw.stdout) || {};
 } catch { /* the defaults */ }
@@ -109,7 +109,7 @@ const wanted = ['Summary', 'Design decisions', 'Verification', 'Review'];
 // it (rule:pr-body).
 row('the four ### sections, in order', [wanted, [...wanted, 'Visuals']].some((w) => JSON.stringify(sections) === JSON.stringify(w)), sections.join(' / '));
 // The chart image must come from this repo: origin's owner and name.
-const origin = spawnSync('git', ['-c', 'core.fsmonitor=false', '-C', root, 'remote', 'get-url', 'origin'], { encoding: 'utf8' });
+const origin = safeSpawn.gitRead(root, ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
 const visualsFaults = checkSection(body.replace(/\r\n/g, '\n'), '###', { repo: repoOf(origin.stdout) });
 const visualsSections = locateAll(body.replace(/\r\n/g, '\n'));
 row('Visuals: numbers, chart and why lines check out', visualsFaults.length === 0, visualsFaults.join('; ') || (visualsSections.length ? 'checked' : 'no section'));
