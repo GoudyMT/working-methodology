@@ -1754,6 +1754,16 @@ test('a program piped into a reader after a cd keeps the folder, and a writer ta
 	for (const c of ['cd .claude && ls | xargs -n1 cp /dev/null', 'cd src && node x.mjs 2>&1 | tee ../.claude/guard.cjs', 'cd src && node x.mjs > ../.claude/guard.cjs | tail', 'cd src && node x.mjs | tail; echo x > ../.claude/guard.cjs', 'cd .claude && node x.mjs | tail; echo x > guard.cjs', 'cd $D && node x.mjs | tail; echo x > guard.cjs', 'cd src && node x.mjs 2>../.claude/guard.cjs | tail; ls', 'cd src && node x.mjs | sh; ls']) assert.equal(bash(c), 'deny', c);
 });
 
+// K154 (build 23a, the owner's pick 2026-11-21: narrow it): a quoted wildcard inside node -e code ('*', /\*\*/) was
+// read as a file name that could be .claude, so a print was held. Code that can reach no file (no require, import,
+// process, constructor, bracket access or a file, list or run call) cannot use a wildcard, so its wildcards are text;
+// a plain name in it, and any wildcard in code that can reach files, is still read.
+// why: catches harmless inline node code with a quoted wildcard held as a write to a protected file
+test('a wildcard in inline node code that reaches no file is text, and code that lists or writes files is still held', () => {
+	for (const c of [`node -e "console.log(/\\*\\*/.test('a**b'))"`, `node -e "console.log('*/*')"`, `node -e "console.log('*')"`, `node -p "'a*b'.split('*').length"`, `cd src && node -e "console.log('*/*')"`]) assert.equal(bash(c), 'allow', c);
+	for (const c of [`node -e "require('fs').globSync('*/*').forEach((f) => require('fs').writeFileSync(f, ''))"`, `node -e "for (const f of require('fs').readdirSync('.')) require('fs').rmSync(f + '/*')"`, `node -e "import('fs').then((m) => m.writeFileSync('*/guard.cjs', ''))"`, `node -e "process.mainModule.require('fs').writeFileSync('.claude/*', '')"`, `node -e "[]['con'+'structor']('x')('*')"`, `node -e "console.log('.claude/guard.cjs')" > .claude/guard.cjs`, `node -e "x('.claude/guard.cjs')"`, `node -e "console.log('*')" > .claude/guard.cjs`, `node -e "console.log('*')"; echo x > .claude/guard.cjs`]) assert.equal(bash(c), 'deny', c);
+});
+
 // K241 (build 23a): bash leaves a brace group with no comma as text ({x}), so a group holding one ({{x},de}) still
 // expands. The reader skipped any group with a brace inside, so tee .clau{{x},de}/guard.cjs (which bash reads as
 // .clau{x}/guard.cjs and .claude/guard.cjs) wrote a guard file past every guard (reproduced on a throwaway copy).

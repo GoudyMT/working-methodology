@@ -921,6 +921,8 @@ function shellWritesFrom(command, tool, start, names) {
 	// replaced, a lone redirect), so after a command that can make a link nothing more runs in the same command: it is
 	// held, and runs as a command of its own, where the link is on disk and followed.
 	let linkMade = false;
+	// K154: inline node code read as text (its wildcards no file name), kept out of the last whole-text reading too.
+	const inertCode = [];
 	const hit = (x) => {
 		const where = Array.isArray(cwd) ? `A${cwdKey(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
@@ -1066,8 +1068,14 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
-		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && tails(w).some((t) => names(t, cwd)));
-		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && (hit(x) || inside(x)));
+		// K154 (build 23a, the owner's pick: narrow it): inline node code that can reach no file (no require, import,
+		// process, a constructor, bracket access or a call that writes, lists, opens or runs) cannot use a wildcard, so a
+		// wildcard piece in it is text; a plain name in it is still read, and the strict reading holds for any other code.
+		const code = (x) => tool === 'Bash' && program === 'node' && x.quoted && /^(-e|-p|-pe|--eval|--print)$/.test(all[segment.indexOf(x) - 1] || '')
+			&& !/require|import|process|module|global|constructor|prototype|eval|Function|Reflect|Deno|Bun|\bfs\b|spawn|exec|fork|glob|write|append|unlink|\brm|rename|copy|cp\b|mkdir|link|open|truncate|chmod|chown|utimes|readdir|watch|\[|\\u|\\x|`/.test(x.value);
+		if (segment.some(code)) inertCode.push(...segment.filter(code).map((x) => x.value));
+		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && !(code(x) && /[*?[\]]/.test(w)) && tails(w).some((t) => names(t, cwd)));
+		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && ((!code(x) && hit(x)) || inside(x)));
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
@@ -1126,7 +1134,10 @@ function shellWritesFrom(command, tool, start, names) {
 	// backtick or backslash of its own is read as the shell reads it; a word holding one is read the strict way, so a
 	// dot made by quoting ('.'*) is still matched.
 	const quoteSign = tool === 'PowerShell' ? /["'`]/ : /["'`\\]/;
-	return [raw, text].some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
+	// The shell drops a backslash inside double quotes before a sign it keeps (\*), so each sign may follow one.
+	const spelled = (c) => new RegExp([...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join(''), 'g');
+	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), ' '), t);
+	return [raw, text].map(textOnly).some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
 		const quoted = quoteSign.test(word);
 		return word.split(/["'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
 	}));
