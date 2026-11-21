@@ -155,7 +155,7 @@ function secondLook(lower, first, again, firstTimes) {
   const arms = { cand: [], base: [] };
   for (const [id, run] of Object.entries(again.map || {})) {
     const arm = run.split('-')[0];
-    if (!arms[arm]) throw new Error(`a second look is candidate and release runs only, named cand-<n> and base-<n>; got ${run}`);
+    if (!arms[arm]) throw new Error(`a second look is candidate and release runs only, named cand-... and base-... (cand-<x>-<n>, base-<x>-<n>); got ${run}`);
     const per = again.sets.map((x) => x[id]);
     for (const q of lower) if (per.some((x) => !x || x[q] === undefined)) throw new Error(`${id}: the second look has no score for question ${q} from each scorer; ask every lower question again (recall.mjs --only ${lower.join(',')})`);
     // The build 22 sweep: each run asked the lower questions alone (its sealed Only: line), not every question again.
@@ -279,7 +279,7 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
       console.log(`\nNo gate line yet. One look cannot tell a break from one unlucky answer (the release scores lower than itself this way), so ask ${r.lower.length > 1 ? 'these questions' : 'this question'} again alone, today, 5 new sessions on each side:`);
       console.log(`  node scripts/recall.mjs <label> [kit folder] --only ${list}     (5 labels named cand-<x>-<n> on the candidate, 5 named base-<x>-<n> on the release)`);
       console.log('Blind those ten runs, have two new blind scorers mark them, and score both looks together:');
-      console.log(`  node scripts/recall-score.mjs score <the four arguments above> --again <scorer A output> <scorer B output> <sealed-map.json>`);
+      console.log(`  node scripts/recall-score.mjs score <scorer A output> <scorer B output> <sealed-map.json> <label> --again <scorer A output> <scorer B output> <sealed-map.json>`);
       console.log('A question is worse only when it sums lower again.');
       process.exitCode = 1;
     } else {
