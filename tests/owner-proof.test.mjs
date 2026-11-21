@@ -311,6 +311,8 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 		['Bash', { command: 'claude -p hi --disallowed-tools Bash' }],
 		// The seventh: a glob that could expand to a name, and an approve.mjs line with anything else in it.
 		['Bash', { command: 'claude m?p add x -- sh' }],
+		['Bash', { command: 'claude --verbose m?p add x -- sh' }],
+		['Bash', { command: 'node approve.mjs c.json --outcome\n--agents x' }],
 		['Bash', { command: 'node approve.mjs c.json --outcome --agents auto > out.txt' }],
 	];
 	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
