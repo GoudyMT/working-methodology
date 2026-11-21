@@ -84,8 +84,10 @@ const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json,
 // file names; each takes the same yes. Read with quotes, backslashes, backticks and carets taken out, and with no
 // program name needed, so a name the command builds (c=claude; $c mcp add) is held too. Only the subcommands that
 // read pass (list, get); any other word after mcp, a variable ($S) included, is held (the commit security review). The
-// same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents.
-const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|--(mcp-config|plugin-dir|settings|agents)\b/i;
+// same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents, read
+// after a claude word in the same command (approve.mjs --agents is the sweep's own outcome step). Limit: a flag on a
+// claude named through a variable is not read.
+const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|\bclaude[\w.-]*\s[^;&|\n]*--(mcp-config|plugin-dir|settings|agents)\b/i;
 // The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
 // skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
 const LOADED = ['agents', 'skills', 'commands', 'plugins'];
