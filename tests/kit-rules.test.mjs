@@ -1379,4 +1379,7 @@ test('the where-work-runs rule, the cloud refusals and the worker brief name one
   assert.ok(brief && fs.existsSync(path.resolve('project', brief)), 'the rule names the brief template that ships');
   const job = /\*\*Job:\*\* <one of: ([^>]+)>/.exec(read(path.resolve('project', brief)))?.[1] || '';
   assert.deepEqual(list(job), jobs, 'the brief offers the same jobs');
+  // The runner refuses a job off the list, from one constant (rule enforced by script, not prose).
+  const runner = /export const JOBS = \[([^\]]+)\]/.exec(read(path.resolve('user/kit-tools/worker.mjs')))?.[1] || '';
+  assert.deepEqual(list(runner.replace(/'/g, '')), jobs, 'worker.mjs starts only the same jobs');
 });

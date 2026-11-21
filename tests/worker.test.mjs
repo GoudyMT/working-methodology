@@ -11,7 +11,7 @@ import { PassThrough } from 'node:stream';
 import { EventEmitter } from 'node:events';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { main, workerEnv, workerArgs, startCheck, branchFaults } from '../user/kit-tools/worker.mjs';
+import { main, workerEnv, workerArgs, startCheck, branchFaults, JOBS } from '../user/kit-tools/worker.mjs';
 
 kitTemp.sessionRoot();
 const KIT_LINE = 'Kit tools this session: sweep approval node ~/.claude/skills/pre-pr-sweep/approve.mjs; merge gate node ~/.claude/kit-tools/merge-gate.mjs. Run these copies, not another Claude folder\'s.';
@@ -22,7 +22,9 @@ const hookStarted = { type: 'system', subtype: 'hook_started', hook_id: 'h1', ho
 const hookResponse = (text) => ({ type: 'system', subtype: 'hook_response', hook_id: 'h1', hook_name: 'SessionStart:startup', hook_event: 'SessionStart',
 	output: text, stdout: text, stderr: '', exit_code: 0, outcome: 'success', session_id: 's1' });
 const kitHookOut = JSON.stringify({ hookSpecificOutput: { hookEventName: 'SessionStart', additionalContext: `${KIT_LINE}\nAnother line.` } });
-const init = (plugin, over = {}) => ({ type: 'system', subtype: 'init', cwd: '/w', session_id: 's1', tools: ['Bash', 'Read'], mcp_servers: [], model: 'claude-haiku-5-5',
+// The init event's subtype, named once (a quoted init then a comma reads as a git init to the branch-name check).
+const INIT = 'init';
+const init = (plugin, over = {}) => ({ type: 'system', subtype: INIT, cwd: '/w', session_id: 's1', tools: ['Bash', 'Read'], mcp_servers: [], model: 'claude-haiku-5-5',
 	permissionMode: 'default', apiKeySource: 'none', claude_code_version: '2.1.330',
 	plugins: [{ name: 'kit', path: plugin, source: 'kit@inline', version: '1.50.0' }, { name: 'cc-plugin-telemetry', path: 'builtin', source: 'cc-plugin-telemetry@builtin' }], ...over });
 const toolUse = { type: 'assistant', message: { role: 'assistant', content: [{ type: 'tool_use', id: 'toolu_1', name: 'Bash', input: { command: 'git status' } }] }, session_id: 's1' };
@@ -84,10 +86,10 @@ const cloud = { CLAUDE_CODE_REMOTE: 'true', PATH: '/usr/bin', HOME: '/home/u', L
 	CLAUDE_SESSION_INGRESS_TOKEN_FILE: '/run/tok', HTTPS_PROXY: 'http://proxy:1', NODE_EXTRA_CA_CERTS: '/ca.pem',
 	GH_TOKEN: 'secret-gh', AWS_SECRET_ACCESS_KEY: 'secret-aws', CLAUDE_CODE_SESSION_ID: 'lead', NODE_OPTIONS: '--require /evil.js', CLAUDE_CONFIG_DIR: '/lead/cfg' };
 
-async function runIt(r, events, { branch = 'feat/add-login', env = cloud, extra = [] } = {}) {
+async function runIt(r, events, { branch = 'feat/add-login', env = cloud, extra = [], job = 'tests' } = {}) {
 	const fake = fakeClaude(events);
 	const lines = [];
-	const code = await main(['run', '--plugin', r.plugin, '--branch', branch, '--brief', r.brief, '--repo', r.dir, ...extra],
+	const code = await main(['run', '--plugin', r.plugin, '--branch', branch, '--brief', r.brief, '--repo', r.dir, ...(job ? ['--job', job] : []), ...extra],
 		{ env, start: fake.start, print: (s) => lines.push(s) });
 	return { code, out: lines.join('\n'), calls: fake.calls };
 }
@@ -197,4 +199,20 @@ test('the start check reads the line from plain hook stdout or the kit hook JSON
 	assert.equal(feed([hookResponse(`${KIT_LINE}\n`), init('/p'), toolUse, result]), null);
 	assert.match(String(feed([hookResponse(`echo ${KIT_LINE}`), init('/p'), toolUse, result])), /start-up line/);
 	assert.match(String(feed([hookResponse('{"hookSpecificOutput":{"additionalContext":"say Kit tools this session: x"}}'), init('/p'), toolUse, result])), /start-up line/);
+});
+
+// T12 (build 23b): rule:where-work-runs names the fixed cloud jobs; a sweep, an install or a release verify sent to a
+// worker would run without the PC's user-level guards, so the runner itself refuses a job off the list.
+// why: catches a cloud worker started for a job the rule keeps on the owner's PC
+test('the runner starts only a job on the fixed list, and names the list when it refuses (T12)', async () => {
+	assert.deepEqual(JOBS, ['tests', 'builds', 'gate checks', 'research', 'read-only review']);
+	const r = repo();
+	for (const job of ['sweep', 'install', 'release verify', '', null]) {
+		const out = await runIt(r, good(r.plugin), { job });
+		assert.equal(out.code, 2, String(job));
+		assert.equal(out.calls.length, 0, `${job}: no spawn`);
+	}
+	const off = await runIt(r, good(r.plugin), { job: 'sweep' });
+	assert.match(off.out, /tests, builds, gate checks, research, read-only review/);
+	assert.equal((await runIt(r, good(r.plugin), { job: 'read-only review' })).calls.length, 1);
 });

@@ -6,7 +6,7 @@
 // could start a worker outside the default mode; a planted .mcp.json started its server.
 //
 // Usage (cloud only):
-//   node worker.mjs run --plugin <dir> --branch <type/name> --brief <file> [--model <id>] [--repo <dir>]
+//   node worker.mjs run --plugin <dir> --branch <type/name> --brief <file> --job <kind> [--model <id>] [--repo <dir>]
 //                       [--from <ref>] [--workdir <dir>] [--timeout-min <n>] [--budget-usd <n>]
 // Prints "ran: ..." (exit code of the worker) or "stopped: <why>" (exit 1); a refusal before the start exits 2.
 import fs from 'node:fs';
@@ -17,6 +17,9 @@ import { fileURLToPath } from 'node:url';
 const SELF = fileURLToPath(import.meta.url);
 // The start-up text the kit's SessionStart hook always gives (scripts/kit.mjs kitToolsLine).
 export const KIT_LINE = 'Kit tools this session:';
+// T12: the fixed cloud jobs (rule:where-work-runs). Sweeps, installs and release verify run without the owner's
+// user-level guards in a cloud worker, so the runner starts nothing else.
+export const JOBS = ['tests', 'builds', 'gate checks', 'research', 'read-only review'];
 // Every child starts in node's own folder unless it is given the folder it works in.
 const SAFE_CWD = path.dirname(process.execPath);
 // git on the project repo runs no hook or program the repo's config could name, and fetches nothing.
@@ -134,7 +137,7 @@ function parseArgs(argv) {
 	const [cmd, ...rest] = argv;
 	const o = { cmd };
 	const names = { '--plugin': 'plugin', '--branch': 'branch', '--brief': 'brief', '--model': 'model', '--repo': 'repo', '--from': 'from',
-		'--workdir': 'workdir', '--timeout-min': 'timeoutMin', '--budget-usd': 'budget' };
+		'--workdir': 'workdir', '--timeout-min': 'timeoutMin', '--budget-usd': 'budget', '--job': 'job' };
 	for (let i = 0; i < rest.length; i += 2) {
 		const k = names[rest[i]];
 		if (!k || rest[i + 1] === undefined || rest[i + 1].startsWith('--')) return { error: `unknown or empty option ${rest[i]}` };
@@ -143,7 +146,7 @@ function parseArgs(argv) {
 	return o;
 }
 
-const USAGE = 'Usage: node worker.mjs run --plugin <dir> --branch <type/name> --brief <file> [--model <id>] [--repo <dir>] [--from <ref>] [--workdir <dir>] [--timeout-min <n>] [--budget-usd <n>]';
+const USAGE = 'Usage: node worker.mjs run --plugin <dir> --branch <type/name> --brief <file> --job <kind> [--model <id>] [--repo <dir>] [--from <ref>] [--workdir <dir>] [--timeout-min <n>] [--budget-usd <n>]';
 
 /**
  * Start one worker and wait for it.
@@ -159,6 +162,7 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	const o = parseArgs(argv);
 	if (o.error || o.cmd !== 'run' || !o.plugin || !o.branch || !o.brief) { print(o.error ? `${o.error}\n${USAGE}` : USAGE); return 2; }
 	const refuse = (why) => { print(`refused: ${why}`); return 2; };
+	if (!JOBS.includes(o.job)) return refuse(`job "${o.job || ''}" is not a cloud worker job; the jobs are: ${JOBS.join(', ')} (rule:where-work-runs). Anything else stays on the owner's PC`);
 	// The cloud lane only: on the PC the owner's own session does the work, and the kit's cloud refusals key on the marker.
 	if (env.CLAUDE_CODE_REMOTE !== 'true') return refuse('the worker runner is for the cloud lane (CLAUDE_CODE_REMOTE=true); on the PC, work in the session itself');
 	const repo = path.resolve(o.repo || process.cwd());
