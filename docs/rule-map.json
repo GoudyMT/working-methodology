@@ -640,7 +640,6 @@
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
    "tests": [
-    "tests/approve-plugin.test.mjs",
     "tests/guard-dispatch.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",

@@ -63,10 +63,6 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - The plugin launcher denies another config folder's sweep approval script.
 - The plugin launcher hands an owner's-yes hold to the grant check only for a main-session call.
 - The kit source records its own commit and push hooks as executable, so git runs them on Linux and macOS clones.
-- The sweep approval runs in the cloud only inside a plugin whose manifest verifies and lists the running approval script; the owner's yes is unchanged.
-- A cloud session with no plugin is still refused the sweep approval.
-- A plugin whose files differ from its manifest is refused the sweep approval.
-- A verified plugin running another copy of the approval script is refused.
 
 ## 1.49.0 - 2026-11-21
 
