@@ -313,6 +313,8 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 		['Bash', { command: 'claude m?p add x -- sh' }],
 		['Bash', { command: '(claude m?p add x -- sh)' }],
 		['Bash', { command: '{ claude m?p add x -- sh; }' }],
+		['Bash', { command: 'if true; then cl?ude mcp add x -- sh; fi' }],
+		['Bash', { command: 'env X=1 cl?ude mcp add x -- sh' }],
 		['Bash', { command: 'claude --verbose m?p add x -- sh' }],
 		['Bash', { command: 'node approve.mjs c.json --outcome\n--agents x' }],
 		['Bash', { command: 'node approve.mjs c.json --outcome --agents auto > out.txt' }],

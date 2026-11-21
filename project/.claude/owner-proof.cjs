@@ -94,11 +94,11 @@ const CLAUDE_WORD = /(^|[^\w./\\-])(claude|mcp|plugins?)(?![\w.-])/i;
 // The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
 // skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
 const LOADED = ['agents', 'skills', 'commands', 'plugins'];
-// A glob that could expand to claude, mcp or plugin (cl*de, m?p, plugi[n]), in a program word or the word after one
-// of those names, is unsure too (the commit security review).
+// A glob word with a letter that could expand to claude, mcp or plugin (cl*de, m?p, plugi[n]) is unsure too,
+// wherever it sits: after a keyword, a wrapper or $( it may run as a command (the commit security reviews).
 const NAMES = ['claude', 'mcp', 'plugin', 'plugins'];
 const globMay = (w) => { let re; try { re = new RegExp('^' + w.split(/[\\/]/).pop().replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\[[^\]]*\]/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; } return NAMES.some((n) => re.test(n)); };
-const globNames = (t) => t.split(/[;&|\n]+/).some((seg) => { const raw = seg.trim().split(/\s+/); const w = raw.map((x) => x.replace(/^[({]+|[)}]+$/g, '')); const prog = (i) => i === 0 || /^[({]/.test(raw[i]) || /^[({]$/.test(raw[i - 1]); const named = w.some((x) => NAMES.includes(x.toLowerCase().split(/[\\/]/).pop().replace(/\.(exe|cmd)$/, ''))); return w.some((x, i) => /[?*[]/.test(x) && (prog(i) || named || globMay(w[i - 1])) && globMay(x)); });
+const globNames = (t) => t.split(/\s+/).map((x) => x.replace(/^[^\w./\\*?[]+|[^\w./\\*?\]]+$/g, '').split(/[\\/]/).pop()).some((x) => /[?*[]/.test(x) && /[a-z]/i.test(x) && globMay(x));
 const mcpCommand = (c) => {
 	let t = String(c || '');
 	const bare0 = t.replace(/["'`\\^]/g, '');
