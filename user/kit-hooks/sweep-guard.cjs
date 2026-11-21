@@ -155,7 +155,9 @@ function check(input) {
 		const dollarsLine = unit === 'dollars';
 		const ceiling = dollarsLine ? prompt.match(/Dollar ceiling: \$(\d+(?:\.\d+)?)/) : prompt.match(/Token ceiling: (\d+)/);
 		const want = Array.isArray(ceilings) ? (dollarsLine ? `$${Number(ceilings[n]).toFixed(2)}` : String(ceilings[n])) : '';
-		const same = ceiling && (dollarsLine ? Math.abs(Number(ceiling[1]) - Number(ceilings[n])) < 0.005 : Number(ceiling[1]) === ceilings[n]);
+		// The commit security review: exactly one ceiling line, in the decision's unit, so the hook reads the one checked here.
+		const ceilingLines = (prompt.match(/(Token|Dollar) ceiling:/g) || []).length;
+		const same = ceilingLines === 1 && ceiling && (dollarsLine ?Math.abs(Number(ceiling[1]) - Number(ceilings[n])) < 0.005 : Number(ceiling[1]) === ceilings[n]);
 		if (Array.isArray(ceilings) && !same) return deny(`A reviewer's brief carries its role's ceiling, as the line "${dollarsLine ? 'Dollar ceiling: $<x>' : 'Token ceiling: <n>'}", from the cleared contract (role ${n + 1}: ${want}): the start notice has it.`);
 		// The slot is for this role's review of this checkout: a brief carries its question, and runs where it was cleared.
 		const question = String((JSON.parse(raw).roles?.[n] || {}).question || '');

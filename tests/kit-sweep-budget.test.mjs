@@ -332,6 +332,10 @@ test('the sweep guard starts a reviewer only with its role\'s token ceiling from
   const borrowed = run(brief(` Token ceiling: ${other}.`));
   assert.equal(borrowed.permissionDecision, 'deny', 'another role\'s ceiling');
   assert.match(borrowed.permissionDecisionReason, /token ceiling/i);
+  // K182, the commit security review: a second ceiling line, in the other unit or the same one, is the one the hook
+  // might read instead, so a brief carries exactly one.
+  assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}. Dollar ceiling: $999.`)).permissionDecision, 'deny', 'a dollar line beside the token one');
+  assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}. Token ceiling: 99999999.`)).permissionDecision, 'deny', 'a second token line');
   assert.equal(run(brief(` Token ceiling: ${e.ceilings[0]}.`)).permissionDecision, 'allow');
 });
 
@@ -460,6 +464,10 @@ test('the call-cap hook meters a dollar ceiling in list-price dollars, re-reads 
   // A model the table does not know is priced as the dearest one (Opus 5.5), never as a cheap one.
   assert.equal(hook(1).permissionDecision, 'allow', 'one Sonnet call fits');
   assert.equal(hook(1, { model: 'claude-mystery-9' }).permissionDecision, 'deny', 'one call priced as Opus 5.5 does not');
+  // The commit security review: a brief with two ceiling lines is not read as either; the reviewer is stopped.
+  const two = hook(1, { ceiling: '0.20. Token ceiling: 99999999' });
+  assert.equal(two.permissionDecision, 'deny');
+  assert.match(two.permissionDecisionReason, /more than one ceiling line/);
 });
 
 // K182 (build 22): with a dollar baseline in the log, each role's ceiling is its own call cap x the p90 dollars a call of

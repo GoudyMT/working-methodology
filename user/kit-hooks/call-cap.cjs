@@ -176,6 +176,7 @@ function meter(input) {
 	let cap = null;
 	let ceiling = null;
 	let inDollars = false;
+	let twoCeilings = false;
 	// Only the brief, the first user message, sets them: a later one is a tool's answer and may hold any text (F37).
 	let brief = true;
 	const open = new Map();
@@ -194,6 +195,8 @@ function meter(input) {
 			// K182 (build 22): a brief from approve.mjs 1.48.0 on carries its ceiling in list-price dollars.
 			const d = text.match(/Dollar ceiling: \$(\d+(?:\.\d+)?)/);
 			if (d) { ceiling = Number(d[1]); inDollars = true; }
+			// The commit security review: two ceiling lines could be read either way, so neither is.
+			twoCeilings = (text.match(/(Token|Dollar) ceiling:/g) || []).length > 1;
 		}
 		if (m.role === 'assistant' && m.usage && m.id) {
 			calls.set(m.id, { ...m.usage, model: m.model });
@@ -215,6 +218,7 @@ function meter(input) {
 	// The token ceiling (M22 C): every call re-reads the context, so the next call costs about what the last one did.
 	// Allowed, this call is followed by one more and the report; refused, by the report alone. The reviewer is stopped
 	// while all three still fit, so its report lands under the ceiling.
+	if (twoCeilings) return deny('Your brief carries more than one ceiling line, so no ceiling can be read from it. Only your hand-back still works: hand in your report now, and tell the lead the brief was not the one approve.mjs wrote.');
 	if (ceiling === null) return;
 	// K182: in dollars, each call at its own model's list price (an unknown model at the dearest), and the report's room
 	// as 5,000 output tokens at the last call's model.
