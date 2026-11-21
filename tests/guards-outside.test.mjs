@@ -1788,6 +1788,32 @@ test('a capital class, a bracket set with a comma and a chain of cd .. name the 
 	for (const c of [`echo '{A,b}pp' && git status`, `ls "my "{A,b}pp; git status`]) assert.equal(call(c), 'runs', c);
 });
 
+// K242 (build 23a): a wildcard that matched more than 64 folders (du -sh node_modules/*) was held as "more than 64
+// folders to read its wildcards from", though no later wildcard reads from them. The cap now holds only while a
+// wildcard after it would read from those folders; a project among the matches is still named.
+// why: catches du -sh node_modules/* held when the folder holds over 64 packages
+test('one wildcard over many folders runs; a project among them, or a later wildcard read from them, still holds', () => {
+	const { home, proj } = setup({ projName: 'App' });
+	const call = (command, cwd) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: cwd, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const work = kitTemp.makeTemp('k242-');
+	for (let i = 0; i < 3000; i++) fs.mkdirSync(path.join(work, 'node_modules', `p${i}`, 'lib'), { recursive: true });
+	const t0 = Date.now();
+	for (const c of ['du -sh node_modules/*', 'du -sh node_modules/* | sort -h | tail -20', 'ls -d node_modules/*/lib']) assert.equal(call(c, work), 'runs', c);
+	assert.ok(Date.now() - t0 < 6000, `three calls over 3,000 folders took ${Date.now() - t0} ms`);
+	// The project among many folders the wildcard matches is still named, and a second wildcard read from the matches
+	// (as a cd into them may have moved the shell) still holds past the cap.
+	const parent = path.dirname(proj);
+	for (let i = 0; i < 200; i++) fs.mkdirSync(path.join(parent, `k242-d${i}`));
+	assert.equal(call('cp x */.claude/guard.cjs', parent), 'deny', 'a project among 200 folders');
+	// Held by the project's own guard, not by the count.
+	const why = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'cp x */.claude/guard.cjs' }, cwd: parent, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: parent, CLAUDE_CONFIG_DIR: home } });
+	assert.doesNotMatch(why.stdout, /folders to read its wildcards/);
+	assert.equal(call('cd node_modules/* && cp x */.claude/guard.cjs', work), 'deny', 'a later wildcard over the matches');
+});
+
 // The build 16 sweep: the wildcard was matched as folded text, so a class that needs the capital (M of MyApp) and a
 // later capital in the name (A) could not both match; and a dotted name beside many folders was looked up in each,
 // 28 s against the hook's 10.
