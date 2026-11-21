@@ -5,7 +5,7 @@
  "area": "Delegation",
  "title": "feat: cloud worker runner, plugin build and one-time owner grant",
  "headline": "Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm is graded on its own global instructions.",
- "alignment": "v1.50.0 is build 23b of the v2.0 plan: K177, K216, K219, T12 with E24, K176, K175, E36, K174, K179, K230, K232, K231 and the T2 cues, each test seen failing first. K178 ships only on the owner's yes.",
+ "alignment": "v1.50.0 is build 23b of the v2.0 plan: K177, K216, K219, T12 with E24, K176, K175, E36, K174, K179, K230, K232, K231 and the T2 cues, each test seen failing first. K178 is in, on the owner's yes.",
  "items": [
   {
    "id": "K177-RULER",
@@ -365,6 +365,41 @@
    "reach": "projects",
    "text": "The prompt hook cues the pop-up yes rules when a message asks for the owner's yes, and the wireframe rule when it decides a screen layout, each in the rule's own words.",
    "evidence": "rules/cues.json"
+  },
+  {
+   "id": "K178",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The sweep approval runs in the cloud only inside a plugin whose manifest verifies and lists the running approval script; the owner's yes is unchanged.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "where": "The sweep approval in a cloud worker",
+   "before": "Refused",
+   "after": "Runs in a verified plugin only",
+   "test": "tests/approve-plugin.test.mjs::K178 a verified plugin worker's own approve.mjs gets past the cloud check"
+  },
+  {
+   "id": "K178-NONE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A cloud session with no plugin is still refused the sweep approval.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "test": "tests/approve-plugin.test.mjs::K178 a cloud session with no plugin is still refused"
+  },
+  {
+   "id": "K178-DIFF",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A plugin whose files differ from its manifest is refused the sweep approval.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "test": "tests/approve-plugin.test.mjs::K178 a plugin whose files differ from its manifest is refused"
+  },
+  {
+   "id": "K178-COPY",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A verified plugin running another copy of the approval script is refused.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "test": "tests/approve-plugin.test.mjs::K178 a verified plugin running another copy of approve.mjs is refused"
   }
  ],
  "verification": [
@@ -394,7 +429,7 @@
  "limits": "The git pre-push hook reads its own yes record, not grants, so a granted push past the bound is still held there. A program, not a tool call, that writes a whole new grant file is not stopped: the grant hash catches slips, not an attacker. The global instructions do not reach a plugin session. On a machine whose own global instructions load beside the arm's, the score keeps its Not measured line.",
  "tests": {
   "before": 1092,
-  "after": 1134,
+  "after": 1138,
   "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
  },
  "sweep": {

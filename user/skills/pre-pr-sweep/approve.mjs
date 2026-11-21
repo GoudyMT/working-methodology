@@ -1431,6 +1431,19 @@ function summary() {
 	return 0;
 }
 
+// K178 (Max's D2 yes): in the cloud, a sweep may run only inside a verified plugin worker, whose launcher holds each
+// reviewer as the PC's hooks do: every file of the plugin's guard-manifest.json matches its sha256, and this script is
+// the plugin's own listed copy. The owner's yes stays on the card.
+function pluginWorker() {
+	try {
+		if (!process.env.CLAUDE_PLUGIN_ROOT) return false;
+		const root = fs.realpathSync.native(process.env.CLAUDE_PLUGIN_ROOT);
+		const files = JSON.parse(fs.readFileSync(path.join(root, 'guard-manifest.json'), 'utf8')).files || {};
+		const own = toPosix(path.relative(root, fs.realpathSync.native(SELF)));
+		const same = (rel, h) => !path.isAbsolute(rel) && !rel.split(/[\\/]/).includes('..') && crypto.createHash('sha256').update(fs.readFileSync(path.join(root, rel))).digest('hex') === h;
+		return Object.hasOwn(files, own) && Object.entries(files).every(([rel, h]) => same(rel, h));
+	} catch { return false; }
+}
 function main() {
 	if (!LOG) { console.log('ASK THE OWNER - not inside a git repository, so there is no approval log.'); return 1; }
 	if (has('--summary')) return summary();
@@ -1460,7 +1473,7 @@ function main() {
 	if (!contractFile) { console.log('Usage: node approve.mjs <contract.json> [--outcome ... | --escape "<note>"] [--base <ref>]'); return 2; }
 	// E24 C: a cloud thread loads no repo hooks, so neither the call-cap hook nor the sweep guard would hold its
 	// reviewers, and its log is not the PC's. Claude Code sets CLAUDE_CODE_REMOTE=true in a cloud VM.
-	if (process.env.CLAUDE_CODE_REMOTE === 'true') { console.log('Refused: sweeps run on the owner\'s PC, where the hooks hold each reviewer. A cloud thread runs the worker jobs only (tests, builds, gate checks, research, read-only review). Nothing logged.'); return 1; }
+	if (process.env.CLAUDE_CODE_REMOTE === 'true' && !pluginWorker()) { console.log('Refused: sweeps run on the owner\'s PC, where the hooks hold each reviewer. A cloud thread runs the worker jobs only (tests, builds, gate checks, research, read-only review). Nothing logged.'); return 1; }
 	if (has('--escape')) {
 		write({ kind: 'escape', contract: contractFile, note: opt('--escape') });
 		const reason = `a bug escaped a passed sweep: ${opt('--escape')}`;
