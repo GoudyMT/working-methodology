@@ -84,14 +84,21 @@ const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json,
 // file names; each takes the same yes. Read with quotes, backslashes, backticks and carets taken out, and with no
 // program name needed, so a name the command builds (c=claude; $c mcp add) is held too. Only the subcommands that
 // read pass (list, get); any other word after mcp, a variable ($S) included, is held (the commit security review). The
-// same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents, read
-// after a claude word in the same command (approve.mjs --agents is the sweep's own outcome step). Limit: a flag on a
-// claude named through a variable is not read.
-const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|\bclaude[\w.-]*\s[^;&|\n]*--(mcp-config|plugin-dir|settings|agents)\b/i;
+// same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents or
+// loosen permissions, in any command. It is read twice: as written, and with every expansion taken out (an empty $X
+// inside m${X}cp leaves mcp). The one exemption is approve.mjs --agents, the sweep's own outcome step, in a command with
+// no expansion.
+const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|--(mcp-config|plugin-dir|settings|setting-sources|agents|permission-mode|dangerously-skip-permissions|allowed-?tools)\b/i;
 // The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
 // skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
 const LOADED = ['agents', 'skills', 'commands', 'plugins'];
-const mcpCommand = (c) => MCP_ACT.test(String(c || '').replace(/["'`\\^]/g, ''));
+const mcpCommand = (c) => {
+	let t = String(c || '');
+	if (!/[$`]/.test(t)) t = t.replace(/\bapprove\.mjs\b[^;&|\n]*/g, (seg) => seg.replace(/--agents\b/g, ''));
+	const bare = t.replace(/["'`\\^]/g, '');
+	const empty = t.replace(/\$(\{[^}]*\}|\([^)]*\)|[A-Za-z_]\w*|'[^']*'|\d)/g, '').replace(/["'`\\^]/g, '');
+	return MCP_ACT.test(bare) || MCP_ACT.test(empty);
+};
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
 // script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).

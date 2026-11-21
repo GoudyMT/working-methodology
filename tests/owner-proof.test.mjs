@@ -293,6 +293,14 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 		['Bash', { command: 'claude --plugin-dir ./p' }],
 		['Bash', { command: 'claude -p hi --settings s.json' }],
 		['Bash', { command: 'claude --agents \'{"x":{}}\'' }],
+		// The fourth and fifth commit security reviews: a claude named through a variable, an empty expansion inside mcp,
+		// the setting sources and the permission flags, and approve.mjs with an expansion beside it.
+		['Bash', { command: 'c=claude; $c -p hi --settings s.json' }],
+		['Bash', { command: 'claude m${X}cp add x -- sh' }],
+		['Bash', { command: 'claude -p hi --setting-sources project' }],
+		['Bash', { command: 'claude -p hi --dangerously-skip-permissions' }],
+		['Bash', { command: 'claude -p hi --allowedTools Bash' }],
+		['Bash', { command: 'node approve.mjs c.json --outcome --agents $X' }],
 	];
 	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
 	for (const command of ['claude mcp list', 'claude mcp get x', 'claude plugin list', 'npm i eslint-plugin-x', 'node approve.mjs c.json --outcome --agents auto', 'cat .mcp.json', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
