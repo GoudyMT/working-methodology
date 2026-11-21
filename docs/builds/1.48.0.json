@@ -650,6 +650,7 @@
         "severity": "low",
         "text": "The rule cues read only a message's opening, so a long paste costs no time",
         "commit": "c7c344e",
+        "reason": "a row in the cue test file this build added",
         "test": "tests/rule-cues-quiet.test.mjs::a 200 KB prompt of repeated words returns fast with no cue"
       },
       {
@@ -664,6 +665,7 @@
         "severity": "medium",
         "text": "A recall run refuses a label whose run is saved, before any session",
         "commit": "6245935",
+        "reason": "a row in the saved-record test file this sweep added",
         "test": "tests/run-records-kept.test.mjs::a recall run refuses a label whose run is already saved, before any session"
       },
       {
@@ -671,6 +673,7 @@
         "severity": "medium",
         "text": "The blind step refuses an out folder that holds a sealed map",
         "commit": "6245935",
+        "reason": "a row in the saved-record test file this sweep added",
         "test": "tests/run-records-kept.test.mjs::the blind step refuses an out folder that already holds a sealed map or scorer files"
       },
       {
@@ -678,6 +681,7 @@
         "severity": "low",
         "text": "A closeout cue that cannot be recorded no longer drops the prompt reply",
         "commit": "6245935",
+        "reason": "a row in the saved-record test file this sweep added",
         "test": "tests/run-records-kept.test.mjs::the prompt hook keeps its rule cues when the closeout cue cannot be recorded"
       },
       {
@@ -693,6 +697,7 @@
         "severity": "medium",
         "text": "The outward-acts cue fires on a git push or PR, not on everyday \"push\"",
         "commit": "c7c344e",
+        "reason": "a row in the cue test file this build added",
         "test": "tests/rule-cues-quiet.test.mjs::a rule cue fires on its rule's topic and stays quiet on everyday words that share a word"
       },
       {
@@ -700,6 +705,7 @@
         "severity": "medium",
         "text": "The sweep cue fires on the review before a PR, and names the kit's template",
         "commit": "c7c344e",
+        "reason": "a row in the cue test file this build added",
         "test": "tests/rule-cues-quiet.test.mjs::the sweep cue names the kit's CLAUDE.md template, not the project's own file"
       },
       {
@@ -723,6 +729,7 @@
         "severity": "low",
         "text": "The closeout cue fires only on the newest release tag",
         "commit": "bb02c1b",
+        "reason": "a row in the cue test file this build added",
         "test": "tests/rule-cues-quiet.test.mjs::the closeout cue fires only when HEAD is the newest release tag"
       },
       {
@@ -730,6 +737,7 @@
         "severity": "medium",
         "text": "The start-up line gives the PowerShell full path for approve.mjs too",
         "commit": "5dbbf33",
+        "reason": "a row in the start-up line test this build item added",
         "test": "tests/kit-home-paths.test.mjs::session start names this session's kit tool commands, in the allow rules' spelling (K206)"
       },
       {
@@ -768,6 +776,7 @@
         "severity": "low",
         "text": "Two rule lines no longer name a fixed home path, and the build refusal catches both spellings",
         "commit": "6f7cdaa",
+        "reason": "a row in the cue test file this build added",
         "test": "tests/rule-cues-quiet.test.mjs::fixedHomePaths reports ~/.claude/... and ~/.claude) and passes the Claude folder by name"
       },
       {
@@ -775,6 +784,7 @@
         "severity": "low",
         "text": "The closeout test's cues-off arm tests the switch",
         "commit": "bb02c1b",
+        "reason": "a row in the closeout cue test this build item added",
         "test": "tests/kit-install.test.mjs::the prompt hook cues the closeout once per release, from a release tag at HEAD (K191)"
       },
       {
@@ -782,6 +792,7 @@
         "severity": "low",
         "text": "The \"push back\" quiet row tests its sentence",
         "commit": "c7c344e",
+        "reason": "a row in the rule cue test this build item added",
         "test": "tests/kit-install.test.mjs::the prompt hook cues a rule in its own words when a message names its topic (K192)"
       },
       {

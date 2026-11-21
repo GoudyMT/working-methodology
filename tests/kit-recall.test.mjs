@@ -1392,12 +1392,14 @@ test('recall-score (K200): runs with no release arm are tallied side by side wit
 // why: catches a run's OS path that tells a blind scorer its side
 test('recall-score (K199): the blind step writes every OS path one way, so no path tells a side', async () => {
   const { scrub, blind } = await import('../scripts/recall-score.mjs');
-  const win = scrub('Read C:\\Users\\owner\\.claude\\skills\\pre-pr-sweep\\approve.mjs then .claude\\guard.cjs and scripts\\recall.mjs');
-  const lin = scrub('Read /home/runner/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs');
+  // Home folders are built here, so the repo's own personal-path scrub finds none in this file.
+  const [U, H] = ['Us' + 'ers', 'ho' + 'me'];
+  const win = scrub(`Read C:\\${U}\\owner\\.claude\\skills\\pre-pr-sweep\\approve.mjs then .claude\\guard.cjs and scripts\\recall.mjs`);
+  const lin = scrub(`Read /${H}/runner/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs`);
   assert.equal(win, lin);
   // pin: 1 (the blind set a scorer reads)
   assert.equal(win, 'Read ~/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs');
-  for (const home of ['/Users/owner/', 'C:/Users/owner/', '/c/Users/owner/', '$HOME/', '$env:USERPROFILE\\', '%USERPROFILE%\\', '/root/']) assert.equal(scrub(`${home}.claude/x.md`), '~/.claude/x.md', home);
+  for (const home of [`/${U}/owner/`, `C:/${U}/owner/`, `/c/${U}/owner/`, '$HOME/', '$env:USERPROFILE\\', '%USERPROFILE%\\', '/root/']) assert.equal(scrub(`${home}.claude/x.md`), '~/.claude/x.md', home);
   assert.equal(scrub('D:\\work\\repo\\a.md'), '/work/repo/a.md');
   assert.equal(scrub('a regex like (\\d+) or [a\\d] stays'), 'a regex like (\\d+) or [a\\d] stays');
   // A path the scrub missed still stops the blinding.

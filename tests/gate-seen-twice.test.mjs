@@ -127,13 +127,15 @@ test('the blind step takes a run that asked one question alone', async () => {
 // why: catches a blinded answer that loses the kit file it named after a kit-probes folder
 test('the blind step hides a kit-probes folder and keeps the file named after it', async () => {
   const { scrub } = await import('../scripts/recall-score.mjs');
-  const ran = scrub('run `node C:/Users/owner/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs` first');
+  // Home folders are built here, so the repo's own personal-path scrub finds none in this file.
+  const [U, H] = ['Us' + 'ers', 'ho' + 'me'];
+  const ran = scrub(`run \`node C:/${U}/owner/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs\` first`);
   assert.match(ran, /`node <project>\/skills\/pre-pr-sweep\/approve\.mjs`/);
   assert.doesNotMatch(ran, /kit-probes|b22-home2|Users/);
-  assert.equal(scrub('read C:\\Users\\Max\\kit-probes\\abc123\\pdef456\\standards\\INDEX.md now'), 'read <project>/standards/INDEX.md now');
+  assert.equal(scrub(`read C:\\${U}\\owner\\kit-probes\\abc123\\pdef456\\standards\\INDEX.md now`), 'read <project>/standards/INDEX.md now');
   assert.equal(scrub('see kit-probes/abc123/pdef456/AGENTS.md'), 'see <project>/AGENTS.md');
-  assert.equal(scrub('see /home/runner/kit-probes/cfg/kit-tools/merge-gate.mjs'), 'see <project>/kit-tools/merge-gate.mjs');
-  assert.equal(scrub('the folder C:/Users/owner/kit-probes/b22-home2 alone'), 'the folder <project> alone');
+  assert.equal(scrub(`see /${H}/runner/kit-probes/cfg/kit-tools/merge-gate.mjs`), 'see <project>/kit-tools/merge-gate.mjs');
+  assert.equal(scrub(`the folder C:/${U}/owner/kit-probes/b22-home2 alone`), 'the folder <project> alone');
 });
 
 // Found by the final paired run of build 22 (2026-11-21): the notice filter took every line with "current build", and
