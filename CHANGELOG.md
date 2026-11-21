@@ -8,6 +8,7 @@ The recall gate is fixed at a floor of 14 with two blind scorers and no override
 - The prompt hook cues the closeout once when HEAD is the newest release tag, in the rule's own words.
 - When a message names a push or PR, a fan-out of reviewers, an idea for later or the review before a PR, the prompt hook puts that rule's own words in front of the session; KIT_RULE_CUES=off turns it off.
 - The kit ships Apache-2.0 LICENSE and NOTICE files.
+- A recall run can ask named questions alone, and its header says so.
 
 ### Changed
 - The recall gate is fixed: 5 runs a side measured the same day, two blind scorers averaged, a median of at least 14 on wording and behaviour, nothing worse than the release, and no marker that passes a miss.
@@ -15,6 +16,29 @@ The recall gate is fixed at a floor of 14 with two blind scorers and no override
 - Session start names this session's kit tool commands, rules name the tool instead of a fixed home path, skills are filled with the config folder at install, and the launcher holds a tool run from another one.
 - Sweep reviewers are metered in list-price dollars with a ceiling from their own call cap, and a large diff is split into file slices for the diff-reading roles, one reviewer each.
 - The mutation measure runs the guard proofs on each flip the tests missed, so a proof-only catch counts.
+- Score prints no gate line while a question is lower once, and prints both looks once it is asked again.
+- The blind step takes a run that asked one question alone.
+- A behaviour scenario lower on one look is run again alone, and is worse only when lower twice.
+- A same-day release score under its last recorded one is no fault while the floor is the top score.
+- An owner-accepted marker passes nothing: a miss is fixed, not accepted.
+- A typed-low gate line fails on the floor.
+- A PR that moves the ruler it is graded on fails, and no marker passes it.
+- An old-ruler gate line cannot be corrected under a marker.
+- The blind step removes every side marker, and score turns two scorers into the lines the gate reads.
+- Two scorers are averaged with no rounding up, against the floor of 14.
+- A gate is 5 candidate and 5 release runs, all measured the same day.
+- A question is lower when its marks over both scorers and all runs sum under the release.
+- Score prints the gate lines, and a miss exits 1 saying it is fixed, not merged.
+- Runs with no release arm are tallied side by side with no gate line.
+- The behaviour line needs 5 runs a side from the same day and names each scenario that did worse.
+- Build refuses a shipped instruction that names a file under a fixed home path.
+- Kit status names a changed guard start script.
+- Kit status names drift between _State.json and its views, and a render clears it.
+- A one-line change to a shipped script or a skill is fix work, not triage.
+- The call-cap hook meters a dollar ceiling in list-price dollars, re-reads at their own price.
+- A role's dollar ceiling comes from its own call cap.
+- The sweep outcome holds each role to its dollar ceiling and the sweep to a dollar bound.
+- The test sort writes its output file and prints its counts.
 
 ### Fixed
 - The blind step writes every home, temp and drive path one way, hides a throwaway kit-probes folder but keeps the file named after it, and keeps an answer line that only says "current build".
@@ -24,6 +48,16 @@ The recall gate is fixed at a floor of 14 with two blind scorers and no override
 - `kit-report.mjs send` keeps nothing when the session runs on another config folder than the project was installed for.
 - Three read-only command shapes the guard held as writes now pass; their write twins stay held.
 - The resume packet hashes _State.json, kit status names drift between the state file and its views, and a one-line change to a shipped script or skill counts as fix work.
+- The blind step hides a throwaway kit-probes folder and keeps the file named after it.
+- The blind step writes every home, temp and drive path one way.
+- A recall run refuses a config folder that is not a throwaway under kit-probes, before any session.
+- A behaviour run refuses a config folder that is not a throwaway under kit-probes, before any session.
+- The candidate arm's copied skills name its own config folder.
+- A short source change with no gate file still fits a small PR body.
+
+### Security
+- The launcher holds a kit tool run from another config folder and names this session's own.
+- A split role with a changed file no shell quoting carries is sent back, not approved.
 
 ## 1.47.0 - 2026-11-20
 

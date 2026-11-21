@@ -53,7 +53,7 @@ test('a branch with no merge base against the base fails the small-body check', 
 
 // why: catches a CI file whose name git prints C-quoted (non-ASCII) slipping past the gate-path check
 test('a one-line change to a CI workflow with a non-ASCII name fails the small-body check', () => {
-	const name = '.github/workflows/release-é.yml';
+	const name = `.github/workflows/release-${String.fromCharCode(0xe9)}.yml`;
 	const dir = repo({ [name]: 'a: 1\n' }, { [name]: 'a: 2\n' });
 	const r = lean(dir);
 	assert.equal(r.ok, false, r.detail);

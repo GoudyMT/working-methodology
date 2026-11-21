@@ -49,7 +49,7 @@ test('a kit tool run from another Claude folder is held however the command is s
 		// Quotes (finding 4).
 		'a space inside quotes': `node "${posix(spaced)}/kit-tools/merge-gate.mjs" arm 12`,
 		'a quote ending inside the path': `node "${P}"/kit-tools/merge-gate.mjs arm 12`,
-		'escaped spaces': `node ${posix(spaced).replace(/ /g, '\\ ')}/kit-tools/merge-gate.mjs arm 12`,
+		'escaped spaces': `node ${posix(spaced).split(' ').join('\\ ')}/kit-tools/merge-gate.mjs arm 12`,
 		// Another way to start node.
 		'an env assignment first': `NODE_OPTIONS= node ${P}/kit-tools/merge-gate.mjs arm 12`,
 		'a full node path': `"${posix(process.execPath)}" ${P}/kit-tools/merge-gate.mjs arm 12`,

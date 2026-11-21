@@ -127,19 +127,19 @@ test('the blind step takes a run that asked one question alone', async () => {
 // why: catches a blinded answer that loses the kit file it named after a kit-probes folder
 test('the blind step hides a kit-probes folder and keeps the file named after it', async () => {
   const { scrub } = await import('../scripts/recall-score.mjs');
-  const ran = scrub('run `node C:/Users/Max/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs` first');
+  const ran = scrub('run `node C:/Users/owner/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs` first');
   assert.match(ran, /`node <project>\/skills\/pre-pr-sweep\/approve\.mjs`/);
   assert.doesNotMatch(ran, /kit-probes|b22-home2|Users/);
   assert.equal(scrub('read C:\\Users\\Max\\kit-probes\\abc123\\pdef456\\standards\\INDEX.md now'), 'read <project>/standards/INDEX.md now');
   assert.equal(scrub('see kit-probes/abc123/pdef456/AGENTS.md'), 'see <project>/AGENTS.md');
   assert.equal(scrub('see /home/runner/kit-probes/cfg/kit-tools/merge-gate.mjs'), 'see <project>/kit-tools/merge-gate.mjs');
-  assert.equal(scrub('the folder C:/Users/Max/kit-probes/b22-home2 alone'), 'the folder <project> alone');
+  assert.equal(scrub('the folder C:/Users/owner/kit-probes/b22-home2 alone'), 'the folder <project> alone');
 });
 
 // Found by the final paired run of build 22 (2026-11-21): the notice filter took every line with "current build", and
 // in three candidate runs and two release runs that was Q9's own answer line (when parked ideas are sorted), so the
 // scorers marked complete answers wrong. A real notice line names an unreleased or kit build; those still go.
-// why: catches a blinded answer that loses an answer line for using the words "current build"
+// why: guards rule:instruments-and-evals
 test('the blind step keeps an answer line that only says current build', async () => {
   const { dropNotice } = await import('../scripts/recall-score.mjs');
   const answer = '> **What happens to it later:** when every check on the current build passes, and before the deep review sweep, we sort each idea three ways:';

@@ -99,7 +99,7 @@ const gitLine = (brief) => brief.split('\n').find((l) => l.startsWith('Repositor
 // diff command: a file left out is a file no reviewer of that role reads.
 // why: catches a changed file with a $ or a non-ASCII byte in its path that no split slice's git diff line names
 test('every changed file reaches exactly one slice of a split role, whatever its name holds', () => {
-	const CAFE = 'docs/café.md';
+	const CAFE = `docs/caf${String.fromCharCode(0xe9)}.md`;
 	const ID = 'src/$id.tsx';
 	const dir = sweepRepo({ [CAFE]: bigFile(300), [ID]: bigFile(300), 'src/b.ts': bigFile(300) });
 	const contract = featureContract();
@@ -139,7 +139,7 @@ test('a split role with a changed file whose name no shell quoting carries is se
 // line and run what follows it: such a name is refused like any other no quoting carries.
 // why: catches a slice file named with a Unicode quote that breaks out of the brief's quoted git line in PowerShell
 test('a changed file whose name holds a Unicode quote is sent back, not approved', () => {
-	for (const quote of ['’', '“', '‛']) {
+	for (const quote of [0x2019, 0x201c, 0x201b].map((c) => String.fromCharCode(c))) {
 		const odd = `src/it${quote}s.ts`;
 		const dir = sweepRepo({ 'src/a.ts': bigFile(300), [odd]: bigFile(300), 'src/b.ts': bigFile(300) });
 		const contract = featureContract();

@@ -169,6 +169,262 @@
       "where": "Repository",
       "before": "No licence",
       "after": "Apache-2.0"
+    },
+    {
+      "id": "K198-HOLD",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "Score prints no gate line while a question is lower once, and prints both looks once it is asked again.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/gate-seen-twice.test.mjs::score holds back the gate lines until a lower question is asked again, then prints both looks"
+    },
+    {
+      "id": "K198-ONLY",
+      "kind": "added",
+      "reach": "kit",
+      "text": "A recall run can ask named questions alone, and its header says so.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/gate-seen-twice.test.mjs::a recall run asks named questions alone with --only, and its header says so"
+    },
+    {
+      "id": "K198-ALONE",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The blind step takes a run that asked one question alone.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/gate-seen-twice.test.mjs::the blind step takes a run that asked one question alone"
+    },
+    {
+      "id": "K199-PROBE",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The blind step hides a throwaway kit-probes folder and keeps the file named after it.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/gate-seen-twice.test.mjs::the blind step hides a kit-probes folder and keeps the file named after it"
+    },
+    {
+      "id": "K198-BEHAVE2",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A behaviour scenario lower on one look is run again alone, and is worse only when lower twice.",
+      "evidence": "scripts/recall-behave.mjs",
+      "test": "tests/gate-seen-twice.test.mjs::a scenario lower on one look is run again alone, and is worse only when it is lower twice"
+    },
+    {
+      "id": "K198-BASE",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A same-day release score under its last recorded one is no fault while the floor is the top score.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/gate-seen-twice.test.mjs::a same-day release score under the last recorded one is no fault, while the floor is the top score"
+    },
+    {
+      "id": "K198-MARK",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "An owner-accepted marker passes nothing: a miss is fixed, not accepted.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/kit-recall.test.mjs::an owner-accepted marker passes nothing: a miss is fixed, not accepted (K198)"
+    },
+    {
+      "id": "K198-FLOOR",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A typed-low gate line fails on the floor.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/kit-recall.test.mjs::a typed-low gate line fails on the floor, not on the last recorded baseline"
+    },
+    {
+      "id": "K198-RULER",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A PR that moves the ruler it is graded on fails, and no marker passes it.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/kit-recall.test.mjs::a PR that moves the ruler it is graded on fails, and no marker passes it (K198)"
+    },
+    {
+      "id": "K198-OLD",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "An old-ruler gate line cannot be corrected under a marker.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/kit-recall.test.mjs::recall gate (S18-6, K198): an old-ruler line cannot be corrected under a marker, since no marker passes"
+    },
+    {
+      "id": "K198-BLIND",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The blind step removes every side marker, and score turns two scorers into the lines the gate reads.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score blinds runs without a side marker and scores two scorers into the lines the gate reads"
+    },
+    {
+      "id": "K198-AVG",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "Two scorers are averaged with no rounding up, against the floor of 14.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score (K198): two scorers are averaged with no rounding up, against the floor of 14"
+    },
+    {
+      "id": "K198-SAMEDAY",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A gate is 5 candidate and 5 release runs, all measured the same day.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score (K198): a gate needs 5 candidate and 5 release runs, all measured the same day"
+    },
+    {
+      "id": "K198-WORSE",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A question is lower when its marks over both scorers and all runs sum under the release.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score (K198): a question is worse when its marks over both scorers and all runs sum under the release"
+    },
+    {
+      "id": "K198-LINES",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "Score prints the gate lines, and a miss exits 1 saying it is fixed, not merged.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score (K198): score prints the four lines, and a miss exits 1 saying it is fixed, not merged"
+    },
+    {
+      "id": "K200",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "Runs with no release arm are tallied side by side with no gate line.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score (K200): runs with no release arm are tallied side by side with no gate line"
+    },
+    {
+      "id": "K199-PATHS",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The blind step writes every home, temp and drive path one way.",
+      "evidence": "scripts/recall-score.mjs",
+      "test": "tests/kit-recall.test.mjs::recall-score (K199): the blind step writes every OS path one way, so no path tells a side"
+    },
+    {
+      "id": "K198-HOME",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "A recall run refuses a config folder that is not a throwaway under kit-probes, before any session.",
+      "evidence": "scripts/recall.mjs",
+      "test": "tests/kit-recall.test.mjs::a recall run refuses a Claude folder that is not a throwaway under kit-probes, before any session"
+    },
+    {
+      "id": "K198-BHOME",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "A behaviour run refuses a config folder that is not a throwaway under kit-probes, before any session.",
+      "evidence": "scripts/recall-behave.mjs",
+      "test": "tests/recall-behave.test.mjs::a behaviour run refuses a Claude folder that is not a throwaway under kit-probes, before any session"
+    },
+    {
+      "id": "K198-BLINE",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The behaviour line needs 5 runs a side from the same day and names each scenario that did worse.",
+      "evidence": "scripts/recall-behave.mjs",
+      "test": "tests/recall-behave.test.mjs::the behaviour line (K198) needs 5 runs a side from the same day and names each scenario that did worse"
+    },
+    {
+      "id": "K206-FILL",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The candidate arm's copied skills name its own config folder.",
+      "evidence": "scripts/recall-behave.mjs",
+      "test": "tests/recall-behave.test.mjs::the candidate arm's copied skills name its own Claude folder, not the placeholder (K206)"
+    },
+    {
+      "id": "K206-BUILD",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "Build refuses a shipped instruction that names a file under a fixed home path.",
+      "evidence": "scripts/kit.mjs",
+      "test": "tests/kit-home-paths.test.mjs::no shipped instruction names a file under a fixed ~/.claude path, and build refuses one (K206)"
+    },
+    {
+      "id": "K206-HOLD",
+      "kind": "security",
+      "reach": "projects",
+      "text": "The launcher holds a kit tool run from another config folder and names this session's own.",
+      "evidence": "user/kit-tools/kit-launch.cjs",
+      "test": "tests/launcher-verify.test.mjs::the launcher holds a kit tool run from another Claude folder, and names this session's own (K206)"
+    },
+    {
+      "id": "R7.2-STATUS",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "Kit status names a changed guard start script.",
+      "evidence": "scripts/kit.mjs",
+      "test": "tests/guards-outside.test.mjs::status names a changed guard start script (R7.2)"
+    },
+    {
+      "id": "CM6-STATUS",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "Kit status names drift between _State.json and its views, and a render clears it.",
+      "evidence": "scripts/kit.mjs",
+      "test": "tests/guards-outside.test.mjs::status names drift between _State.json and its views, and a render clears it (CM6)"
+    },
+    {
+      "id": "CM6-TIER",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "A one-line change to a shipped script or a skill is fix work, not triage.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "test": "tests/kit-sweep.test.mjs::a one-line change to a shipped script or a skill is fix work, not triage (CM6)"
+    },
+    {
+      "id": "K182-PRICE",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The call-cap hook meters a dollar ceiling in list-price dollars, re-reads at their own price.",
+      "evidence": "user/kit-hooks/call-cap.cjs",
+      "test": "tests/kit-sweep-budget.test.mjs::the call-cap hook meters a dollar ceiling in list-price dollars, re-reads at their own price"
+    },
+    {
+      "id": "K182-CAP",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A role's dollar ceiling comes from its own call cap.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "test": "tests/kit-sweep-budget.test.mjs::a role's dollar ceiling comes from its own call cap, and a median-paced role reaches its cap first"
+    },
+    {
+      "id": "K182-BOUND",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The sweep outcome holds each role to its dollar ceiling and the sweep to a dollar bound.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "test": "tests/kit-sweep-budget.test.mjs::the outcome holds each role to its dollar ceiling and the sweep to a dollar bound"
+    },
+    {
+      "id": "K182-NAME",
+      "kind": "security",
+      "reach": "kit",
+      "text": "A split role with a changed file no shell quoting carries is sent back, not approved.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "test": "tests/sweep-meter-holds.test.mjs::a split role with a changed file whose name no shell quoting carries is sent back, not approved"
+    },
+    {
+      "id": "K184-PASS",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "A short source change with no gate file still fits a small PR body.",
+      "evidence": "project/.claude/version-bump-check.mjs",
+      "test": "tests/lean-fit-holds.test.mjs::a short source change with no gate file passes the small-body check"
+    },
+    {
+      "id": "K193-OUT",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The test sort writes its output file and prints its counts.",
+      "evidence": "scripts/test-value.mjs",
+      "test": "tests/test-value.test.mjs::the test sort writes --out and prints its counts"
     }
   ],
   "verification": [
