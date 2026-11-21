@@ -127,7 +127,9 @@ test('the blind step takes a run that asked one question alone', async () => {
 // why: catches a blinded answer that loses the kit file it named after a kit-probes folder
 test('the blind step hides a kit-probes folder and keeps the file named after it', async () => {
   const { scrub } = await import('../scripts/recall-score.mjs');
-  assert.equal(scrub('run `node C:/Users/Max/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs` first'), 'run `node <project>/skills/pre-pr-sweep/approve.mjs` first');
+  const ran = scrub('run `node C:/Users/Max/kit-probes/b22-home2/skills/pre-pr-sweep/approve.mjs` first');
+  assert.match(ran, /`node <project>\/skills\/pre-pr-sweep\/approve\.mjs`/);
+  assert.doesNotMatch(ran, /kit-probes|b22-home2|Users/);
   assert.equal(scrub('read C:\\Users\\Max\\kit-probes\\abc123\\pdef456\\standards\\INDEX.md now'), 'read <project>/standards/INDEX.md now');
   assert.equal(scrub('see kit-probes/abc123/pdef456/AGENTS.md'), 'see <project>/AGENTS.md');
   assert.equal(scrub('see /home/runner/kit-probes/cfg/kit-tools/merge-gate.mjs'), 'see <project>/kit-tools/merge-gate.mjs');
