@@ -223,6 +223,34 @@ test('a settings write that turns the hooks off is never by a tool, in any spell
 	assert.match(why('Edit', { file_path: edge, old_string: 'QQ', new_string: 'Hooks', replace_all: true }), /^Never by a tool/);
 });
 
+// K217 (build 23a, weekly item 4, planted hooks): the guard held agent writes to .claude/settings*.json but not to
+// .mcp.json, whose servers Claude Code starts with the session (with no trust question under claude -p). A write to it
+// now takes the owner's yes for the exact act, like a settings write; reading it stays free.
+// why: guards rule:security-standards (a planted .mcp.json server runs code at the next start)
+test('a tool write to .mcp.json takes the owner\'s yes, as a settings write does', () => {
+	const proj = kitTemp.makeTemp('mcp-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.mcp.json'), '{"mcpServers": {}}\n');
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const file = path.join(proj, '.mcp.json');
+	const held = [
+		['Write', { file_path: file, content: '{"mcpServers": {"x": {"command": "sh"}}}' }],
+		['Write', { file_path: '.mcp.json', content: '{}' }],
+		['Edit', { file_path: file, old_string: '{}', new_string: '{"x": {"command": "sh"}}' }],
+		['Bash', { command: 'echo {} > .mcp.json' }],
+		['Bash', { command: 'cp /tmp/m.json ./.mcp.json' }],
+		['Bash', { command: 'echo {} > .mcp*' }],
+		['Bash', { command: 'cd sub/.. && tee .mcp.json < x' }],
+		['PowerShell', { command: 'Set-Content .mcp.json "{}"' }],
+	];
+	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
+	for (const command of ['cat .mcp.json', 'grep -n mcpServers .mcp.json']) assert.equal(why('Bash', { command }), '', command);
+});
+
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
 // workbench's deny rules stopped the edit tools but not a shell write into the kit source or the release copy. A
 // project lists such folders in .claude/protected-folders.json; that list is the owner's to write, and a bad one fails closed.
