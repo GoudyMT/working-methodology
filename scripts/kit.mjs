@@ -602,6 +602,14 @@ function guardFaults(home, projectDir) {
   let user = null;
   try { user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* none */ }
   if (!launch.launcherWired(user, path.join(home, 'kit-tools', 'kit-launch.cjs'), homeNode(home))) faults.push('the guard launcher is not wired whole in the Claude config folder settings.json (run kit.mjs install user)');
+  // R7.2: the start script every call runs through, held to the hash install user recorded for it.
+  let want = null;
+  try { want = (JSON.parse(fs.readFileSync(path.join(home, STAMP_USER), 'utf8')).files || {})['kit-tools/kit-start.sh'] || null; } catch { /* no record: install user is reported elsewhere */ }
+  if (want) {
+    let now = null;
+    try { now = crypto.createHash('sha256').update(fs.readFileSync(path.join(home, 'kit-tools', 'kit-start.sh'), 'utf8')).digest('hex'); } catch { /* gone */ }
+    if (now !== want) faults.push(`kit-tools/kit-start.sh changed outside install${now ? '' : ' (missing)'} (run kit.mjs install user)`);
+  }
   return faults;
 }
 

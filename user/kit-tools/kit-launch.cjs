@@ -903,8 +903,15 @@ const shellDir = (p) => (WIN && /^[A-Za-z]:/.test(p) ? `/${p[0].toLowerCase()}${
  *     nodePath: the node install user ran with (kit-install.json keeps it)
  *     mode: '' for PreToolUse, 'config-change' for ConfigChange
  */
+// R7.2: what the line answers when the start script itself cannot run (gone, or no sh): a deny that names the repair.
+const START_FALLBACK = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: the kit guard start script could not run, so no guard could check this call. Run kit.mjs status in the kit folder, then repair with kit.mjs install user from the release copy.' } });
 function launchCommand(launcher, nodePath, mode = '') {
-	return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))}${mode ? ` ${mode}` : ''}`;
+	// ConfigChange runs the launcher directly: its block keeps the old settings, so a start failure there blocks safely.
+	if (mode) return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))} ${mode}`;
+	// R7.2 (the owner's pick, 2026-11-21): every tool call goes through kit-start.sh beside the launcher, which limits a
+	// slow start, retries once and names the cause; the printf answers if the script cannot run at all.
+	const start = posix(path.join(path.dirname(launcher), 'kit-start.sh'));
+	return `NODE_OPTIONS= sh ${shq(start)} ${shq(shellDir(nodePath))} ${shq(posix(launcher))} || printf '%s' ${shq(START_FALLBACK)}`;
 }
 
 /** The node install user recorded beside this launcher, or null. */

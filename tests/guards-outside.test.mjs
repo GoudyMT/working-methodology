@@ -937,7 +937,10 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 		'an if that never matches': (u) => { launch(u.hooks.PreToolUse).hooks[0].if = 'Bash(nothing *)'; },
 		'onFailure dropped': (u) => { delete launch(u.hooks.PreToolUse).hooks[0].onFailure; },
 		'ConfigChange narrowed to skills': (u) => { launch(u.hooks.ConfigChange).matcher = 'skills'; },
-		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/^NODE_OPTIONS= '[^']*'/, "NODE_OPTIONS= '/tmp/node'"); },
+		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/(kit-start\.sh' )'[^']*'/, "$1'/tmp/node'"); },
+		// R7.2: the line without the start script, or without its fallback, is not the line install wrote.
+		'the start script skipped': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/sh '[^']*kit-start\.sh' /, '').replace(/ \|\| printf .*$/, ''); },
+		'the fallback dropped': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/ \|\| printf .*$/, ''); },
 	};
 	for (const [name, change] of Object.entries(breakers)) {
 		const { home, proj, session: s } = setup();
@@ -1886,6 +1889,70 @@ test('a folder list gone or changed since install holds every call until the own
 	install({ kit: KIT, home: fresh.home, target: 'project', projectDir: fresh.proj });
 	const after = spawnSync(process.execPath, [path.join(fresh.home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: fresh.proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: fresh.proj, CLAUDE_CONFIG_DIR: fresh.home } });
 	assert.equal(after.stdout, '', 'recorded by a plain install');
+});
+
+// R7.2 (the owner's pick, 2026-11-21): a launcher that could not start (node missing) or started slowly left Claude
+// Code blocking every call with only "exit 127" or "timed out". kit-start.sh runs it with a 4 second limit, retries a
+// slow start or a crash once, lets only the launcher's own exit 0 through, and names the cause, counting misses so the
+// third tells the owner to stop retrying and repair.
+// why: catches a guard that cannot start blocking every call with no cause named, and a retry that lets a push through
+test('the guard start script retries once, names why a start failed, and lets only the launcher answer (R7.2)', () => {
+	const { home, proj, session: s } = setup();
+	const start = path.join(home, 'kit-tools', 'kit-start.sh');
+	assert.ok(fs.existsSync(start), 'install user puts the start script beside the launcher');
+	const count = path.join(home, 'kit-guard', 'start-fails');
+	// The installed line, healthy: a read passes, a protected write is still refused.
+	assert.equal(bash(s, 'git status').decision, 'allow');
+	assert.equal(bash(s, 'echo x > .claude/guard.cjs').decision, 'deny');
+	assert.equal(fs.readFileSync(count, 'utf8'), '0');
+	// Fake launchers: each turn appends to a log, so a test can tell the first try from the retry.
+	const fakes = kitTemp.makeTemp('fake-launch-');
+	const fake = (name, body) => { const f = path.join(fakes, `${name}.cjs`); fs.writeFileSync(f, `const fs=require('fs');const log=${JSON.stringify(path.join(fakes, name + '.log'))};const n=(fs.existsSync(log)?fs.readFileSync(log,'utf8').length:0);fs.appendFileSync(log,'x');${body}`); return f; };
+	const DENY = '{"hookSpecificOutput":{"hookEventName":"PreToolUse","permissionDecision":"deny","permissionDecisionReason":"push held"}}';
+	const run = (launcher, node = process.execPath) => {
+		const t = Date.now();
+		const r = spawnSync(BASH, ['-c', `sh '${posix(start)}' '${posix(node)}' '${posix(launcher)}'`], { input: '{"tool_name":"Bash"}', encoding: 'utf8', env: ENV, timeout: 30000 });
+		return { status: r.status, out: r.stdout, ms: Date.now() - t };
+	};
+	const said = (r) => { try { return JSON.parse(r.out).hookSpecificOutput; } catch { return {}; } };
+	// Slow once: the retry answers, and its answer is used.
+	const slow = run(fake('slow-once', "if(n===0){setTimeout(()=>{},6000);}else{process.stdout.write('{}');}"));
+	assert.equal(slow.status, 0);
+	assert.equal(slow.out, '{}');
+	// A crash once, then a deny: the push stays denied on the retry.
+	const crash = run(fake('crash-once', `if(n===0)process.exit(1);process.stdout.write(${JSON.stringify(DENY)});`));
+	assert.equal(said(crash).permissionDecisionReason, 'push held');
+	assert.equal(fs.readFileSync(count, 'utf8'), '0');
+	// Node gone: no retry, a named cause, and the count tells the third miss to stop.
+	const gone = path.join(fakes, 'no-node.exe');
+	const one = run(fake('ok', "process.stdout.write('{}');"), gone);
+	assert.equal(said(one).permissionDecision, 'deny');
+	assert.match(said(one).permissionDecisionReason, /node could not be started[\s\S]*Try once more \(1 of 3\)/);
+	assert.match(said(run(fake('ok2', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /\(2 of 3\)/);
+	assert.match(said(run(fake('ok3', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /Stop retrying[\s\S]*kit\.mjs status[\s\S]*install user/);
+	// Always slow: denied with the cause, inside Claude Code's 10 second hook limit.
+	const stuck = run(fake('stuck', 'setTimeout(()=>{},20000);'));
+	assert.match(said(stuck).permissionDecisionReason, /did not answer within 4 seconds/);
+	assert.ok(stuck.ms < 10000, `${stuck.ms} ms`);
+	// Node back: the next good start resets the count.
+	assert.equal(run(fake('back', "process.stdout.write('{}');")).out, '{}');
+	assert.equal(fs.readFileSync(count, 'utf8'), '0');
+	// The start script gone: the installed line still denies, naming the repair.
+	fs.rmSync(start);
+	const missing = bash(s, 'git status');
+	assert.equal(missing.decision, 'deny');
+	assert.match(missing.reason, /start script could not run[\s\S]*install user/);
+});
+
+// R7.2: status holds the start script to its install record, as it holds the launcher line.
+// why: catches a start script changed so it lets every call through, while status says current
+test('status names a changed guard start script (R7.2)', () => {
+	const { home, proj } = setup();
+	assert.doesNotMatch(status(home, proj).text, /kit-start\.sh/);
+	fs.writeFileSync(path.join(home, 'kit-tools', 'kit-start.sh'), '#!/bin/sh\nexit 0\n');
+	const r = status(home, proj);
+	assert.equal(r.current, false, r.text);
+	assert.match(r.text, /kit-start\.sh changed outside install/);
 });
 
 // CM6 (b), K170 (the S1 replay, reproduced on 1.47.0: status has no state line): the 1.34.0 plan and changelog said
