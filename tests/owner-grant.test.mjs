@@ -222,6 +222,13 @@ test('K176 a worker cannot write into the grants folder, nor run grant.mjs to gr
 	assert.equal(bash(`node ${path.join(home, 'kit-tools', 'grant.mjs').split(path.sep).join('/')} ${SESSION} Bash "${ACT}" cmsg_x`), 'deny', 'grant.mjs run by the worker');
 	assert.equal(bash('node ~/.claude/kit-tools/grant.mjs x'), 'deny', 'grant.mjs by ~');
 	assert.equal(bash('cd x && "node" ./grant.mjs x'), 'deny', 'grant.mjs from its folder');
+	// The build 23b sweep: each refusal is checked for its reason, and the spent marks and other write verbs are held too.
+	const reason = (command) => JSON.stringify(launch(call({ tool_input: { command } })) || {});
+	assert.match(reason(`node ${path.join(home, 'kit-tools', 'grant.mjs').split(path.sep).join('/')} x`), /grant.mjs records the owner/, 'grant.mjs reason');
+	for (const command of ['rm ~/.claude/kit-grants/*.spent', 'echo {} | tee ~/.claude/kit-grants/aa.json', 'cp /tmp/g.json ~/.claude/kit-grants/aa.json']) {
+		assert.equal(bash(command), 'deny', command);
+		assert.match(reason(command), /Never by a tool: the kit.s guards/, `${command}: held as a protected file`);
+	}
 	// The kit's own work names the file without running it.
 	const why = (command) => JSON.stringify(launch(call({ tool_input: { command } })) || {});
 	assert.doesNotMatch(why('git add user/kit-tools/grant.mjs'), /grant\.mjs records/, 'git add');
