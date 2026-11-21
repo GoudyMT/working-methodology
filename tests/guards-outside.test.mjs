@@ -1918,6 +1918,25 @@ test('a folder list gone or changed since install holds every call until the own
 });
 
 // R7.2 (the owner's pick, 2026-11-21): a launcher that could not start (node missing) or started slowly left Claude
+// The build 23a sweep (F5): the start script gave the launcher /usr/bin and /bin only, so on a Mac or Linux machine whose
+// git sits in /usr/local/bin or /opt/homebrew/bin (Homebrew, a source build) the guards could not ask git anything, the
+// K250 symptom off Windows. Those folders now follow the system ones; Git for Windows keeps its own /cmd first.
+// why: catches guards that cannot find git on a Mac or Linux machine
+test('the guard start script gives the launcher the system folders, then the Mac and Linux git folders', () => {
+	const fakes = kitTemp.makeTemp('start-path-');
+	const show = path.join(fakes, 'show.cjs');
+	fs.writeFileSync(show, "process.stdout.write(process.env.PATH);");
+	const start = path.resolve('user/kit-tools/kit-start.sh');
+	const r = spawnSync(BASH, ['-c', `sh '${posix(start)}' '${posix(process.execPath)}' '${posix(show)}'`], { input: '{}', encoding: 'utf8', env: ENV, timeout: 30000 });
+	assert.equal(r.status, 0, r.stderr);
+	if (process.platform === 'win32') {
+		// Git for Windows hands node the folders in Windows form; its own cmd folder comes first.
+		assert.match(r.stdout.split(';')[0], /[\\/]cmd$/i, r.stdout);
+		return;
+	}
+	assert.equal(r.stdout, '/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin');
+});
+
 // Code blocking every call with only "exit 127" or "timed out". kit-start.sh runs it with a 4 second limit, retries a
 // slow start or a crash once, lets only the launcher's own exit 0 through, and names the cause, counting misses so the
 // third tells the owner to stop retrying and repair.
