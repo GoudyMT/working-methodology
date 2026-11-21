@@ -31,12 +31,28 @@ test('a new improvement report starts from the kit template with its facts fille
   const a = reportRun(dir, ['audit', path.join(dir, '.kit', 'reports', files[0])]);
   assert.equal(a.status, 1);
   assert.match(a.stdout, /placeholder/i);
+  // K189 (the K160 slips): the same title twice is refused with exit 1, a blank title is refused, a start from a
+  // subfolder lands in the repo's own reports folder, and a repo with no .kit folder yet gets one.
+  assert.equal(reportRun(dir, ['new', 'Sweep approval asked before the script']).status, 1);
+  const blank = reportRun(dir, ['new', '   ']);
+  assert.equal(blank.status, 2, blank.stdout);
+  fs.mkdirSync(path.join(dir, 'sub'));
+  assert.equal(reportRun(path.join(dir, 'sub'), ['new', 'From a subfolder']).status, 0);
+  assert.equal(fs.readdirSync(path.join(dir, '.kit', 'reports')).length, 2);
+  assert.equal(fs.existsSync(path.join(dir, 'sub', '.kit')), false);
+  const bare = makeTemp('ir-bare-');
+  g(bare, 'init', '-q');
+  const b = reportRun(bare, ['new', 'No kit folder yet']);
+  assert.equal(b.status, 0, b.stdout + b.stderr);
+  assert.equal(fs.readdirSync(path.join(bare, '.kit', 'reports')).length, 1);
 });
 
 // why: guards rule:pr-body
 test('the report audit fails a missing field, an unproven cause, a lowered standard and an unclosed close', () => {
   const cases = [
     [(t) => t.replace(/^\| Severity \|.*\n/m, ''), /Severity/],
+    // K189: a field that is there but empty fails as a missing one does.
+    [(t) => t.replace('| Severity | high |', '| Severity |  |'), /Severity/],
     [(t) => t.replace('| Severity | high |', '| Severity | urgent |'), /Severity/],
     [(t) => t.replace('| Type | both |', '| Type | vibes |'), /Type/],
     [(t) => t.replace(/^\| 1 \| (.*?) \| .*? \| proven \|$/m, '| 1 | $1 |  | proven |'), /evidence/i],
