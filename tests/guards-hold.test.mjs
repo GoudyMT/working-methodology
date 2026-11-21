@@ -1741,7 +1741,17 @@ test('a bracket inside quotes after a cd keeps the folder, and a real group or a
 test('rg, find, echo, date and npm ls read as plain readers, and their writing or running forms are still refused', () => {
 	for (const c of ['cd src; echo a.js', 'cd src; rg foo a.js', 'cd src; find . -name x.js', 'cd tests && find dir -name *.md | head', 'cd src; node ./x.mjs; npm ls', 'cd src; date | head *.md', 'cd src; rg -n foo *.js | head']) assert.equal(bash(c), 'allow', c);
 	assert.equal(decide('PowerShell', { command: 'ls src/**/*.ts; npm ls' }), 'allow');
-	for (const c of ['cd src; find . -name x.js -delete', "cd src; find . -name x.js -exec sh -c 'x' \;", 'cd src; find . -name x.js -execdir rm {} +', 'cd src; find . -name x.js -fprint ../.claude/guard.cjs', 'cd src; rg --pre ./w.sh foo a.js', 'cd src; rg --pre=./w.sh foo a.js', 'cd src; echo x > a.js', 'cd $D; echo x > guard.cjs', 'cd src; echo x > ../.claude/guard.cjs', 'cd src; node ./x.mjs; npm install', 'cd src; node ./x.mjs; npm run build', 'cd src; node ./x.mjs; npm ls --global; npm exec x', 'cd src; date -s 2020-01-01 | head *.mjs', 'cd tests && find dir -name *.md -delete | head', 'cd tests && find dir -name *.md | xargs rm', 'export RIPGREP_CONFIG_PATH=./c; cd src; rg foo a.js', 'cd src; RIPGREP_CONFIG_PATH=./c rg foo a.js', 'cd src; npm_config_script_shell=./x npm ls; node ./x.mjs']) assert.equal(bash(c), 'deny', c);
+	for (const c of ['cd src; find . -name x.js -delete', "cd src; find . -name x.js -exec sh -c 'x' \;", 'cd src; find . -name x.js -execdir rm {} +', 'cd src; find . -name x.js -fprint ../.claude/guard.cjs', 'cd src; rg --pre ./w.sh foo a.js', 'cd src; rg --pre=./w.sh foo a.js', 'cd src; echo x > a.js', 'cd $D; echo x > guard.cjs', 'cd src; echo x > ../.claude/guard.cjs', 'cd src; node ./x.mjs; npm install', 'cd src; node ./x.mjs; npm run build', 'cd src; node ./x.mjs; npm ls --global; npm exec x', 'cd src; date -s 2020-01-01 | head *.mjs', 'cd .claude && find . -name x -delete | head', 'cd tests && find dir -name *.md | xargs rm', 'export RIPGREP_CONFIG_PATH=./c; cd src; rg foo a.js', 'cd src; RIPGREP_CONFIG_PATH=./c rg foo a.js', 'cd src; npm_config_script_shell=./x npm ls; node ./x.mjs']) assert.equal(bash(c), 'deny', c);
+});
+
+// K252 (build 23a, held live on 1.48.0): a pipe after a cd counted only when every stage read, so a program piped
+// into a reader (cd x && node kit.mjs install user 2>&1 | tail -40) lost the folder and every later word was held. A
+// stage that sends its output on runs in a shell of its own and cannot move the folder; only a stage that takes the
+// pipe must read, as a file list piped into a writer still names files no word shows.
+// why: catches a program piped into a reader after a cd held as a write to a protected file
+test('a program piped into a reader after a cd keeps the folder, and a writer taking the pipe is still refused', () => {
+	for (const c of ['cd src && node ./x.mjs status 2>&1 | tail -40; echo "EXIT=$?"', 'cd src && node x.mjs | head; ls a.js', 'cd src && npm test 2>&1 | grep fail; cat a.js']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['cd .claude && ls | xargs -n1 cp /dev/null', 'cd src && node x.mjs 2>&1 | tee ../.claude/guard.cjs', 'cd src && node x.mjs > ../.claude/guard.cjs | tail', 'cd src && node x.mjs | tail; echo x > ../.claude/guard.cjs', 'cd .claude && node x.mjs | tail; echo x > guard.cjs', 'cd $D && node x.mjs | tail; echo x > guard.cjs', 'cd src && node x.mjs 2>../.claude/guard.cjs | tail; ls', 'cd src && node x.mjs | sh; ls']) assert.equal(bash(c), 'deny', c);
 });
 
 // K241 (build 23a): bash leaves a brace group with no comma as text ({x}), so a group holding one ({{x},de}) still

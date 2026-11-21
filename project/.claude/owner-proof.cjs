@@ -1001,7 +1001,11 @@ function shellWritesFrom(command, tool, start, names) {
 	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
 	const firstPipe = segments.findIndex((g) => g.end === '|');
 	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
-	const pipesRead = segments.every((g, i) => !(g.end === '|' || (i > 0 && segments[i - 1].end === '|')) || stageReads(g));
+	// K252 (build 23a): a stage that only sends its output on (node x.mjs 2>&1 | tail) runs in a shell of its own, so it
+	// cannot move the folder; it counts with no redirect but one output pointed at another, and its own words are read
+	// below as any command's are. Every stage that takes the pipe must still read.
+	const sendsOn = (g) => g.every((x) => !x.redirect || /^\d$/.test(x.value));
+	const pipesRead = segments.every((g, i) => (i > 0 && segments[i - 1].end === '|' ? stageReads(g) : g.end !== '|' || sendsOn(g)));
 	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|') || (firstPipe >= 0 && !pipesRead);
 	// K228 (build 23a): a bracket inside quotes ("(a.js)", node -e '...(...)') is text, so only one outside quotes, as
 	// bracketed reads it (strict for anything that reading does not model), makes the cd unsure.
