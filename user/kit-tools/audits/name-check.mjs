@@ -57,7 +57,8 @@ const fold = (s) => String(s).normalize('NFKC').replace(/\p{Cf}/gu, '').replace(
 const TOOL_TAIL = /^(code|bot|ai|agent|assistant|cli|app)/i;
 function namesTool(text) {
 	const t = fold(text);
-	const low = t.toLowerCase();
+	// Lowercased letter by letter, keeping the length, so an index into one is an index into the other.
+	const low = Array.from(t, (c) => { const l = c.toLowerCase(); return l.length === c.length ? l : c; }).join('');
 	for (const tool of AI_TOOLS) {
 		for (let i = low.indexOf(tool); i >= 0; i = low.indexOf(tool, i + 1)) {
 			if (i > 0 && /[\p{L}\p{N}]/u.test(t[i - 1])) continue;
@@ -81,7 +82,7 @@ function ident() {
 	// The owner's own list of people who may commit though a name reads as a tool's (the build 23a sweep: a person named
 	// Claude). It sits in the repo's git config, which only the owner writes (the guards hold .git/config), each entry
 	// the exact "Name <email>".
-	const listed = gitRead ? String((gitRead(process.cwd(), ['config', '--get-all', 'kit.allowedIdent'], { encoding: 'utf8' }) || {}).stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
+	const listed = gitRead ? String((gitRead(process.cwd(), ['config', '--local', '--get-all', 'kit.allowedIdent'], { encoding: 'utf8' }) || {}).stdout || '').split(/\r?\n/).map((l) => l.trim()).filter(Boolean) : [];
 	for (const who of ['author', 'committer']) {
 		const KEY = who.toUpperCase();
 		let name = process.env[`GIT_${KEY}_NAME`] || '';
