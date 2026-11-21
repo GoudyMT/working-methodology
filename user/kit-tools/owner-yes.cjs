@@ -60,6 +60,11 @@ function tailLines(file, cap = TAIL_BYTES) {
 	return buf.toString('utf8').split('\n').slice(1);
 }
 
+// R7.1 (build 23a): the record shape a person's answer must carry to count, in one place, so the readers here and the
+// use check agree (it once read only whether .decision existed, K224). Claude Code does not document this field: if
+// it changes, no yes is read (fail closed) and yesCanary names why.
+const YES_RECORD = (e) => { const d = e && e.permissionDecision; return Boolean(d && d.decision === 'accept' && /^user/.test(String(d.source || ''))); };
+
 // The code spans of a question: the acts it quotes, each read whole.
 const spans = (question) => [...String(question).matchAll(/`([^`]+)`/g)].map((m) => squash(m[1]));
 
@@ -80,9 +85,8 @@ function yeses(lines, { all = false } = {}) {
 			// A pop-up Claude filled in itself is no person's answer.
 			if (b.type === 'tool_use' && b.name === 'AskUserQuestion' && e.type === 'assistant' && b.input && b.input.answers === undefined && Array.isArray(b.input.questions)) asked.set(b.id, { questions: b.input.questions, line: n });
 			if (b.type !== 'tool_result' || e.type !== 'user' || !asked.has(b.tool_use_id)) continue;
-			const d = e.permissionDecision || {};
 			const r = e.toolUseResult || {};
-			if (d.decision !== 'accept' || !/^user/.test(String(d.source || '')) || !r.answers) continue;
+			if (!YES_RECORD(e) || !r.answers) continue;
 			const at = Date.parse(e.timestamp);
 			if (!Number.isFinite(at)) continue;
 			const qs = asked.get(b.tool_use_id).questions;
@@ -170,6 +174,35 @@ function spend(popUp, call) {
 	}
 }
 
+// The R7.1 canary: when no yes was read for an act, whether a person's Yes to it is in the transcript all the same, on a
+// record that fails YES_RECORD. That means Claude Code changed the record, not that the owner said nothing: the named
+// warning, or ''. It never grants; a No, a pop-up Claude filled in itself and a subagent's answer stay quiet.
+function yesCanary(input, acts = [actText(input)]) {
+	const want = acts.map((a) => squash(a)).filter(Boolean);
+	if (!want.length || !input || !ownTranscript(input)) return '';
+	let lines;
+	try { lines = tailLines(String(input.transcript_path)); } catch { return ''; }
+	const asked = new Map();
+	let found = '';
+	for (const raw of lines) {
+		let e;
+		try { e = JSON.parse(raw); } catch { continue; }
+		if (!e || e.isSidechain) continue;
+		for (const b of (e.message && Array.isArray(e.message.content) ? e.message.content : [])) {
+			if (!b) continue;
+			if (b.type === 'tool_use' && b.name === 'AskUserQuestion' && e.type === 'assistant' && b.input && b.input.answers === undefined && Array.isArray(b.input.questions)) asked.set(b.id, b.input.questions);
+			if (b.type !== 'tool_result' || e.type !== 'user' || !asked.has(b.tool_use_id)) continue;
+			const r = e.toolUseResult || {};
+			if (!r.answers || typeof r.answers !== 'object') continue;
+			const said = asked.get(b.tool_use_id).some((q) => q && spans(q.question).some((a) => want.includes(a)) && YES_LABEL.test(String(r.answers[q.question] ?? '')));
+			if (!said) continue;
+			// The newest answer to the act decides: a later good record clears an older changed one.
+			found = YES_RECORD(e) ? '' : `Canary (R7.1): a Yes to this act is in the transcript, but its record's permissionDecision is ${JSON.stringify(e.permissionDecision ?? null).slice(0, 80)}, not {decision: "accept", source: "user..."}. Claude Code may have changed the record; the guards cannot read the owner's yes until the kit follows. Report this to the kit; asking again will not help.`;
+		}
+	}
+	return found;
+}
+
 // What Claude is told when an act is held: how to get the owner's yes, or, in a subagent, to hand it back.
 // With an act, the refusal names that one act to quote and run, so the session never has two to choose from (the
 // 1.26.0 sweep, C7); `lead` opens the instruction ("To run it", or a condition such as "Only for a new repo's first push").
@@ -188,7 +221,9 @@ function howToAsk(input, act = '', lead = 'To run it') {
 // order a session acts on.
 function askText(what, input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return `Hand back: a subagent cannot get the owner's yes. Leave this out (${what}) and name it in your report, so the lead asks.`;
-	return `Owner's yes needed: ${what}.` + howToAsk(input, act, lead);
+	let canary = '';
+	try { canary = yesCanary(input, [actText(input), act]); } catch { /* the refusal stands without it */ }
+	return `Owner's yes needed: ${what}.` + howToAsk(input, act, lead) + (canary ? ` ${canary}` : '');
 }
 const heldText = (what) => `Held: ${what}.`;
 const yesText = (what) => `Owner's yes given in the pop-up for this exact command: ${what}.`;
@@ -343,4 +378,4 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 
 if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
+module.exports = { YES_RECORD, yesCanary, home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };

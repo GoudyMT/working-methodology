@@ -156,6 +156,27 @@ test('the guards part reports whether the newest pop-up answer carries the field
 	assert.match(used.detail, /permissionDecision/);
 });
 
+// K224 (build 23a): the use check asked only whether permissionDecision.decision exists, while the guards need decision
+// "accept" and a source starting "user". A phone answer written as source "mobile", or a value "accepted", read OK here
+// while every owner yes failed. The check now reads the record with the guards' own predicate (R7.1, YES_RECORD).
+// why: guards rule:outward-acts (the use check must fail when the guards cannot read the owner's yes)
+test('the use check reads the pop-up record with the same yes-record test the guards use', () => {
+	const dir = project();
+	const home = homes.get(dir);
+	const slug = path.resolve(dir).replace(/[^A-Za-z0-9]/g, '-');
+	const t = path.join(home, 'projects', slug, '11111111-2222-3333-4444-555555555555.jsonl');
+	fs.mkdirSync(path.dirname(t), { recursive: true });
+	const answer = (pd) => JSON.stringify({ type: 'user', timestamp: new Date().toISOString(), permissionDecision: pd, toolUseResult: { answers: { q: 'Yes' } }, message: { content: [{ type: 'tool_result', tool_use_id: 'x' }] } });
+	fs.writeFileSync(t, answer({ decision: 'accept', source: 'user_temporary' }) + '\n');
+	assert.equal(part(check(dir).out, 'guards').used.ok, true, 'today\'s record shape');
+	for (const pd of [{ decision: 'accept', source: 'mobile' }, { decision: 'accepted', source: 'user' }, { decision: 'reject', source: 'user' }]) {
+		fs.writeFileSync(t, answer(pd) + '\n');
+		const used = part(check(dir).out, 'guards').used;
+		assert.equal(used.ok, false, `${JSON.stringify(pd)} read as a record the guards can use`);
+		assert.match(used.detail, /permissionDecision/);
+	}
+});
+
 // T9 (1.42.0, D-2): AGENTS.md is measured as the project has it, filled in and as written on disk, never the kit's
 // template: the template stayed under its cap while a filled copy on the owner's PC was over it (28,354 B).
 // K111 (1.42.0): sessions ran past 400K tokens; the installed project settings compact at 400K, and the use check names
