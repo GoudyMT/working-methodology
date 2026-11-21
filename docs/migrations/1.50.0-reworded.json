@@ -3,6 +3,11 @@
     {
       "before": "11. Size Budgets: Trim Before You Ask",
       "after": "11. Size Budgets: Trim Before You Ask -> rule:size-budgets in `.claude/rules/code.md`"
+    },
+    {
+      "before": "- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` in their own terminal: the pre-push hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.",
+      "after": "- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` and types the ref's name when the pre-push hook asks (in a session: the owner's fresh pop-up yes to that push and remote): the hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.",
+      "why": "the build 23a sweep: the owner's push from a terminal with no session was refused; the hook asks the owner to type the ref there, or reads a fresh pop-up yes to that push and remote (reworded in 23a, held back for this build's score gate)"
     }
   ]
 }
