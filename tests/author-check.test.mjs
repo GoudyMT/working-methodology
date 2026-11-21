@@ -63,7 +63,7 @@ test('the commit-msg hook refuses a commit by an AI author or committer, and pas
 	assert.equal(count(dir), people.length);
 });
 
-// why: catches an installed project whose commits skip the kit's commit-msg hook
+// why: guards rule:commit-message-format (an installed project whose commits skip the kit's commit-msg hook)
 test('install wires the hooks path, so a commit by an AI author is refused in an installed project', () => {
 	const root = kitTemp.makeTemp('author-install-');
 	const home = path.join(root, '.claude');
