@@ -17,7 +17,7 @@ const cfg = kitTemp.makeTemp('cfg-');
 // The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
 fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
 for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
-const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs', 'safe-spawn.cjs'];
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs', 'safe-spawn.cjs'].filter((f) => fs.existsSync(path.resolve('project/.claude', f))); // the helper is missing only on a base from before build 23
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
 	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
@@ -1321,7 +1321,7 @@ test('PR text and repo names are checked where they are written, and a failing o
 	spawnSync('git', ['-C', repo, 'remote', 'add', 'origin', 'https://github.com/o/r.git']);
 	spawnSync('git', ['-C', repo, 'checkout', '-q', '-b', 'feat/x']);
 	fs.mkdirSync(path.join(repo, '.claude'));
-	for (const f of AUDIT_FILES.filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(repo, '.claude', f));
+	for (const f of AUDIT_FILES) fs.copyFileSync(path.resolve('project/.claude', f), path.join(repo, '.claude', f));
 	const run = (command, tool_name = 'Bash') => {
 		const r = spawnSync(process.execPath, [path.resolve('project/.claude/guard-outward.cjs')], { input: JSON.stringify({ tool_name, tool_input: { command }, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_PROJECT_DIR: repo, CLAUDE_CONFIG_DIR: cfg } });
 		const h = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : null;
