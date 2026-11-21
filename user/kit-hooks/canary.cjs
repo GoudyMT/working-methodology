@@ -35,6 +35,9 @@ function findPhrase(cwd) {
 	try {
 		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
 		const head = git(cwd, 'rev-parse', 'HEAD');
+		// The build 23a commit security review: the phrase approve.mjs recorded is used, not the copy read again, so a
+		// copy rewritten after the approval cannot swap it.
+		if (rec && typeof rec.phrase === 'string' && words(rec.phrase).trim() && head.status === 0 && rec.head === head.stdout.trim()) return { phrase: rec.phrase, commonDir };
 		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
 			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
 			if (m && words(m[1]).trim()) return { phrase: m[1], commonDir };

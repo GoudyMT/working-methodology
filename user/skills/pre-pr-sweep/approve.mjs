@@ -744,10 +744,16 @@ const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
 // read from the main checkout, as in a worktree (the build 11 sweep). A file the branch adds has no base copy and gives
 // no block. A file the index names outside the repo is not read.
 function rulesBlock(facts, hash) {
-	const top = path.dirname(path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git'));
+	const commonDir = path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git');
+	const top = path.dirname(commonDir);
 	const mb = facts && facts.base ? baseGit('merge-base', facts.base, 'HEAD').stdout.trim() : '';
 	const tracked = (f) => baseGit('ls-files', '--error-unmatch', '--', `:(top)${f}`).status === 0 || Boolean(mb && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0);
+	// The build 23a commit security review: where the base holds any of the rule files, only base copies count, so an
+	// untracked index or rules file in the checkout cannot name the block either.
+	const atBase = (f) => Boolean(mb) && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0;
+	const baseRules = ['standards/INDEX.md', 'standards/agent-teams.md', 'rules/agent-teams.md'].some(atBase);
 	const readRule = (f) => {
+		if (baseRules && !atBase(f)) return null;
 		if (tracked(f)) {
 			if (!mb) return null;
 			const r = baseGit('show', `${mb}:${f}`);
@@ -764,8 +770,9 @@ function rulesBlock(facts, hash) {
 		const got = readRule(f);
 		if (!got) continue;
 		let where = toPosix(path.join(top, f));
+		// The base copy sits in the git folder, which no tool writes, so it cannot be rewritten before a reviewer reads it.
 		if (got.base && hash) {
-			const dir = path.join(os.tmpdir(), `kit-sweep-${hash.slice(0, 8)}`);
+			const dir = path.join(commonDir, `kit-sweep-${hash.slice(0, 8)}`);
 			fs.mkdirSync(dir, { recursive: true });
 			const copy = path.join(dir, `rules-base-${path.basename(f)}`);
 			fs.writeFileSync(copy, got.text);
@@ -786,7 +793,7 @@ function recordRules(block) {
 	if (common.status !== 0) return;
 	const f = path.join(common.stdout.trim(), 'kit-sweep-rules.json');
 	try {
-		if (block && block.phrase) fs.writeFileSync(f, JSON.stringify({ head: git('rev-parse', 'HEAD').stdout.trim(), file: block.file }) + '\n');
+		if (block && block.phrase) fs.writeFileSync(f, JSON.stringify({ head: git('rev-parse', 'HEAD').stdout.trim(), file: block.file, phrase: block.phrase }) + '\n');
 		else fs.rmSync(f, { force: true });
 	} catch { /* the canary then reads the main checkout, as before */ }
 }
