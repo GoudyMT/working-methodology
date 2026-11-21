@@ -87,6 +87,7 @@ test('the call-cap hook names a missing ceiling of either kind when it lets a ca
 	fs.writeFileSync(path.join(repo, 't', 'subagents', 'agent-r8.jsonl'), `${JSON.stringify({ message: { role: 'user', content: 'Sweep: abc role 1\nCall cap: 15' } })}\n`);
 	const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', cwd: repo, transcript_path: path.join(repo, 't.jsonl'), agent_id: 'r8', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
 	assert.equal(r.stdout, '');
+	// pin: 1 (approve.mjs --outcome reads this log's cause text)
 	assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"cause":"no ceiling \(Dollar or Token\) line in the brief"/);
 });
 
