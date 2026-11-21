@@ -2,7 +2,8 @@
   "lines": [
     {
       "before": "11. Size Budgets: Trim Before You Ask",
-      "after": "11. Size Budgets: Trim Before You Ask -> rule:size-budgets in `.claude/rules/code.md`"
+      "after": "11. Size Budgets: Trim Before You Ask -> rule:size-budgets in `.claude/rules/code.md`",
+      "why": "K230: the start text names the size-budget rule by its id and file, so a session finds it without a search"
     },
     {
       "before": "- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` in their own terminal: the pre-push hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.",
@@ -10,9 +11,14 @@
       "why": "the build 23a sweep: the owner's push from a terminal with no session was refused; the hook asks the owner to type the ref there, or reads a fresh pop-up yes to that push and remote (reworded in 23a, held back for this build's score gate)"
     },
     {
-      "before": "A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. Kit installs, sweeps and release verification stay on the owner's PC. A worker runs only through the kit's worker runner (`worker.mjs`), on the owner's own feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.",
-      "after": "A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. A cloud build thread may push its own feature branch. Kit installs, sweeps, the PR, its body and release verification stay on the owner's PC. A worker runs only through `worker.mjs`, on the owner's feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.",
-      "why": "the cloud build study (the owner's route, 2026-11-21): a cloud push keeps the owner's identity, but a PR opened or edited from the cloud gains a tool footer, so a cloud build pushes its branch only"
+      "before": "- **Never use unicode arrows** in code, comments, docstrings, or markdown: no `->`, `<-`, `<->`",
+      "after": "- **Never use unicode arrows** in code, comments, docstrings, or markdown: no U+2192, U+2190, U+2194",
+      "why": "K219: the line named the arrows by the ASCII forms it meant to ban, so it banned nothing; it now names their code points"
+    },
+    {
+      "before": "- Stay current - prefer 2025-2026 approaches over outdated patterns when relevant",
+      "after": "- Stay current - prefer approaches current as of today's date over outdated patterns when relevant",
+      "why": "K219: a fixed year range goes stale; the line ties it to the date in context"
     }
   ]
 }

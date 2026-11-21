@@ -1651,7 +1651,7 @@ test('recall gate (K231): a PR that changes only user/CLAUDE.md needs a gate lin
 
 // K231 (S7): the score tool says when the user layer was not measured, from each run's own header, so the entry's note
 // is never typed: only a gate whose every candidate and release run carried only its own CLAUDE.md drops it.
-// why: catches a scores entry that called the user layer measured when an arm ran on another global file
+// why: catches a Not measured line left out when an arm ran on another global file (the score prints it; no gate reads it)
 test('recall-score (K231): the user layer is called measured only when every candidate and release run carried its own', async () => {
   const { blind } = await import('../scripts/recall-score.mjs');
   const dir = makeTemp('rk231-');

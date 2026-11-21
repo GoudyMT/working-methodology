@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Delegation",
  "title": "feat: cloud worker runner, plugin build and one-time owner grant",
- "headline": "Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm is graded on its own global instructions.",
+ "headline": "Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm carries its own global instructions into its probe.",
  "alignment": "v1.50.0 is build 23b of the v2.0 plan: K177, K216, K219, T12 with E24, K176, K175, E36, K174, K179, K230, K232, K231 and the T2 cues, K265 to K270, K266 and K275, each test seen failing first. K178 was held out after the sweep, on the owner's pick: no check inside a cloud session can anchor the sweep approval, so it stays refused there.",
  "items": [
   {
@@ -355,7 +355,7 @@
    "id": "K231-SCORE",
    "kind": "changed",
    "reach": "kit",
-   "text": "The score says the user layer was measured only when every candidate and release run carried its own; otherwise it prints a Not measured line naming the arm and why.",
+   "text": "The score prints a Not measured line naming the arm and why unless every candidate and release run carried only its own global instructions; on a PC whose own global instructions file also loads, it always prints it.",
    "evidence": "scripts/recall-score.mjs",
    "test": "tests/kit-recall.test.mjs::recall-score (K231): the user layer is called measured only when every candidate and release run carried its own"
   },

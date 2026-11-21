@@ -2,7 +2,7 @@
 
 ## 1.50.0 - 2026-11-21
 
-Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm is graded on its own global instructions.
+Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm carries its own global instructions into its probe.
 
 ### Added
 - A where-work-runs rule and a worker brief template name the five jobs that may run in the cloud; the rule, the brief, the sweep approval refusal and the runner hold one list.
@@ -22,7 +22,7 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - Each score gate arm carries its own installed global instructions into its probe, checked against its install record and its own kit source; one edited by hand is refused before any session.
 - A behaviour run refuses a throwaway config folder whose global instructions were edited by hand, before any session.
 - A change to `user/CLAUDE.md` alone now needs a score gate line.
-- The score says the user layer was measured only when every candidate and release run carried its own; otherwise it prints a Not measured line naming the arm and why.
+- The score prints a Not measured line naming the arm and why unless every candidate and release run carried only its own global instructions; on a PC whose own global instructions file also loads, it always prints it.
 - The owner-push rule line names the ref the owner types when the pre-push hook asks, and the fresh pop-up yes to that push and remote in a session.
 - The where-work-runs rule lets a cloud build thread push its own feature branch; kit installs, sweeps, the PR, its body and release verification stay on the owner's PC.
 
