@@ -1,5 +1,35 @@
 # Changelog
 
+## 1.49.0 - 2026-11-21
+
+Every program the installed kit starts by name now starts from node's own folder, so a git.exe or gh.exe left in a project never runs; owner pushes to main need the owner's pop-up yes; reviewers read the rules from the merge base; and several guard holds that cost clicks now let plain reads through.
+
+### Added
+- One safe-spawn helper starts every installed kit launch (git, gh, ps) from node's own folder, with a time limit and the current-folder lookup off; a spawn check in CI fails on any bare-name launch that does not use it, with no list of exceptions.
+- The closeout lists each owner answer no decision row quotes, and fails until each is recorded or marked not a decision.
+- The commit-msg hook refuses a commit whose author or committer is named after a code tool.
+
+### Changed
+- A self-found list row can go done only with a recorded repro (a verify file and a throwaway, ci or real-use measure); `list` shows it as SUSPECT until then.
+- The plan shadow counts agreement only when its verdict named the risk the owner refused over, and it runs where plans are locked; an optional ci-fix cap halts a loop after that many red CI rounds and resets on green.
+- The brainstorm sheet refuses a second "What I thought:" line and names an empty sealed or sent line; step 1 carries the learn-first line; SOURCES.md records the product-brainstorming copy checked.
+
+### Fixed
+- A quoted pattern beside a folder glob, a quoted ${VAR} in a read, a quoted bracket after cd, and plain rg, find, echo, date and npm ls reads are no longer held as guard writes or deletes.
+- One wildcard over many folders (du -sh node_modules/*) is no longer held for the folder count.
+- On Windows the guard start script left the launcher no git, so a project with git's worktree config on had every tool call held; the launcher now gets Git for Windows' own folder, never the session's PATH.
+- The word-check test plants a word in a nested folder.
+- The link test skips where Windows gives no symlink rights, instead of failing.
+
+### Security
+- gh in kit-report, git in report-scrub and visuals, and every other installed launch start from node's own folder (planted program lookup on Windows).
+- `state.mjs decide --from` reads and deletes only a file inside the project.
+- A push marked as the owner's (KIT_OWNER_PUSH) needs the owner's pop-up yes for each ref; a script that clears the agent markers can no longer push main.
+- One yes-record test is shared by the owner-yes reader and the use check, with a canary that refuses when the pop-up record changes shape.
+- Agent writes to .mcp.json need the owner's yes; the settings check names an API base URL and an apiKeyHelper.
+- The sweep's reviewers and its canary read the rules block from the merge base, so a branch cannot change the rules its own reviewers check.
+- Nested and side-by-side brace groups are expanded as bash expands them, so a guarded file named through them is still held.
+
 ## 1.48.0 - 2026-11-21
 
 The recall gate is fixed at a floor of 14 with two blind scorers and no override, and a lower question counts as worse only when seen twice; the prompt hook puts a rule's own words in front of a session on its topic and cues the closeout after a release; and a session runs its own config folder's kit tools.
