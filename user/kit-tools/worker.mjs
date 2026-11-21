@@ -35,8 +35,7 @@ const realRun = (cmd, args, opts = {}) => {
 	const r = spawnSync(cmd, args, { encoding: 'utf8', cwd: SAFE_CWD, timeout: 30000, windowsHide: true, ...opts });
 	return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' };
 };
-// POSIX: the worker leads its own process group, so a stop reaches every program it started (the build 23b sweep).
-const realStart = (cmd, args, opts) => spawn(cmd, args, { ...opts, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true, detached: process.platform !== 'win32' });
+const realStart = (cmd, args, opts) => spawn(cmd, args, { ...opts, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
 // The claude on the path, found from node's own folder (which, or where on Windows), never the worktree's.
 // The install record of the kit this runner came from (the Claude folder above kit-tools), or null outside one.
 const realOwnKit = () => { try { return JSON.parse(fs.readFileSync(path.join(path.dirname(SELF), '..', 'kit-install.json'), 'utf8')); } catch { return null; } };
@@ -263,7 +262,8 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	fs.writeFileSync(path.join(config, '.claude.json'), `${JSON.stringify({ projects: { [tree]: { hasTrustDialogAccepted: true } } })}\n`);
 
 	const timeout = Math.round(timeoutMin * 60000);
-	const child = start(claude, workerArgs({ plugin, model: o.model, budget: o.budget }), { cwd: tree, env: workerEnv(env, config), timeout });
+	// POSIX: the worker leads its own process group, so a stop reaches every program it started (the build 23b sweep).
+	const child = start(claude, workerArgs({ plugin, model: o.model, budget: o.budget }), { cwd: tree, env: workerEnv(env, config), timeout, detached: process.platform !== 'win32' });
 	const out = fs.createWriteStream(log);
 	const check = startCheck({ plugin });
 	let stopWhy = null;
