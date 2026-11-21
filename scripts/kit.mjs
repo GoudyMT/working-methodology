@@ -341,28 +341,44 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
 // 1.49.0 step 6: a limit added to the kit (ciFix) reached fresh installs only. A limit missing from the bounds file is
 // added at the kit's value; nothing the owner set changes, and a file that does not read as one flat limits object is
-// left alone. Returns whether the file changed (or would, on a dry run); the old copy goes to `keep` first.
-function addMissingLimits(dest, want, dryRun, keep) {
+// left alone. The build 23b sweep: each limit is offered once (the stamp keeps the names), so one the owner took out
+// stays out; the edit lands in the top-level limits object, checked after; the file is replaced whole (a temp file
+// renamed into place). Returns { changed, offered }: whether the file changed (or would, on a dry run), and every
+// limit name the kit has now offered. The old copy goes to `keep` first.
+function addMissingLimits(dest, want, dryRun, keep, offeredBefore = []) {
+  const none = { changed: false, offered: offeredBefore };
   let mine, kits;
-  if (fs.lstatSync(dest).isSymbolicLink()) return false;
-  try { mine = JSON.parse(fs.readFileSync(dest, 'utf8')); kits = JSON.parse(want); } catch { return false; }
+  if (fs.lstatSync(dest).isSymbolicLink()) return none;
+  try { mine = JSON.parse(fs.readFileSync(dest, 'utf8')); kits = JSON.parse(want); } catch { return none; }
   const have = mine && mine.limits, add = kits && kits.limits;
-  if (!have || typeof have !== 'object' || Array.isArray(have) || !add || typeof add !== 'object') return false;
-  const missing = Object.entries(add).filter(([k, v]) => !Object.hasOwn(have, k) && Number.isFinite(v));
-  if (!missing.length) return false;
+  if (!have || typeof have !== 'object' || Array.isArray(have) || !add || typeof add !== 'object') return none;
+  const offered = [...new Set([...offeredBefore, ...Object.keys(have), ...Object.keys(add)])].sort();
+  const missing = Object.entries(add).filter(([k, v]) => !Object.hasOwn(have, k) && !offeredBefore.includes(k) && Number.isFinite(v));
+  if (!missing.length) return { changed: false, offered };
   const text = fs.readFileSync(dest, 'utf8');
-  const m = /("limits"\s*:\s*\{)([^{}]*?)(\s*\})/.exec(text);
-  if (!m) return false;
-  const body = m[2].replace(/\s+$/, '');
-  const extra = missing.map(([k, v]) => `${JSON.stringify(k)}: ${v}`).join(', ');
-  const next = text.slice(0, m.index) + m[1] + body + (body.trim() ? ', ' : ' ') + extra + m[3] + text.slice(m.index + m[0].length);
-  try { JSON.parse(next); } catch { return false; }
+  // The top-level "limits": the last match whose result parses with the keys added there (an earlier nested object of
+  // the same name is skipped, never edited).
+  let next = null;
+  for (const m of text.matchAll(/("limits"\s*:\s*\{)([^{}]*?)(\s*\})/g)) {
+    const body = m[2].replace(/\s+$/, '');
+    const extra = missing.map(([k, v]) => `${JSON.stringify(k)}: ${v}`).join(', ');
+    const tryText = text.slice(0, m.index) + m[1] + body + (body.trim() ? ', ' : ' ') + extra + m[3] + text.slice(m.index + m[0].length);
+    let got;
+    try { got = JSON.parse(tryText); } catch { continue; }
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const { limits: gotLimits, ...gotRest } = got;
+    const { limits: _l, ...mineRest } = mine;
+    if (same(gotRest, mineRest) && Object.entries(have).every(([k, v]) => same(gotLimits[k], v)) && missing.every(([k, v]) => gotLimits[k] === v)) { next = tryText; break; }
+  }
+  if (next === null) return { changed: false, offered: offeredBefore };
   if (!dryRun) {
     fs.mkdirSync(path.dirname(keep), { recursive: true });
     fs.copyFileSync(dest, keep);
-    fs.writeFileSync(dest, next);
+    const tmp = `${dest}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, next, { flag: 'wx' });
+    fs.renameSync(tmp, dest);
   }
-  return true;
+  return { changed: true, offered };
 }
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
 // K120 (1.42.0): in the Claude folder the kit's tools and hooks (the guard launcher among them) are its guard files: a
@@ -740,6 +756,7 @@ export function install(ctx) {
     return { merged: true };
   };
   const hostOwned = new Set(stamp.hostOwned || []);
+  let limitsOffered = Array.isArray(stamp.limitsOffered) ? stamp.limitsOffered : [];
   const owed = {};
   let kept = false;
   for (const entry of entries) {
@@ -758,7 +775,11 @@ export function install(ctx) {
     }
     if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) {
       files[entry.key] = stamp.files[entry.key] || wantHash;
-      if (entry.key === '.claude/bounds.json' && addMissingLimits(entry.dest, want, ctx.dryRun, path.join(backupDir, entry.key))) { updated.push(entry.key); kept = true; }
+      if (entry.key === '.claude/bounds.json') {
+        const r = addMissingLimits(entry.dest, want, ctx.dryRun, path.join(backupDir, entry.key), Array.isArray(stamp.limitsOffered) ? stamp.limitsOffered : []);
+        limitsOffered = r.offered;
+        if (r.changed) { updated.push(entry.key); kept = true; }
+      }
       continue;
     }
     const cur = sha(compared(entry.key, fs.readFileSync(entry.dest, 'utf8')));
@@ -927,6 +948,7 @@ export function install(ctx) {
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
     if (Object.keys(owed).length) out.owed = owed;
+    if (limitsOffered.length) out.limitsOffered = limitsOffered;
     // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
     if (ctx.target === 'user') out.node = toPosix(process.execPath);
     // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.

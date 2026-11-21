@@ -654,6 +654,21 @@ test('install adds a limit the owner\'s bounds file lacks and keeps every value 
   const again = install({ kit, home, target: 'project', projectDir: proj });
   assert.equal(read(file), now);
   assert.ok(!again.updated.includes('.claude/bounds.json'), JSON.stringify(again));
+  // The build 23b sweep: a limit the owner took out stays out; a limit is offered once.
+  fs.writeFileSync(file, template('"fixRound": 2'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(JSON.parse(read(file)).limits, { fixRound: 2 }, 'a removed limit came back');
+  // The build 23b sweep: the limits object is the top-level one, even when an earlier object holds a "limits" key.
+  const other = makeKit();
+  fs.mkdirSync(path.join(other.kit, 'project', '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(other.kit, 'project', '.claude', 'bounds.json'), '{\n  "limits": { "fixRound": 3, "ciFix": 5 }\n}\n');
+  fs.mkdirSync(path.join(other.proj, '.claude'), { recursive: true });
+  const nested = '{\n  "notes": { "limits": { "x": 1 } },\n  "limits": { "fixRound": 2 }\n}\n';
+  fs.writeFileSync(path.join(other.proj, '.claude', 'bounds.json'), nested);
+  install({ kit: other.kit, home: other.home, target: 'project', projectDir: other.proj });
+  const got = JSON.parse(read(path.join(other.proj, '.claude', 'bounds.json')));
+  assert.deepEqual(got.notes, { limits: { x: 1 } }, 'the nested object was edited');
+  assert.deepEqual(got.limits, { fixRound: 2, ciFix: 5 });
 });
 
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
