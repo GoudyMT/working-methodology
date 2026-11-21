@@ -1,5 +1,7 @@
 #!/bin/sh
-# One line, "type: subject", no AI or tool trailer (rule:commit-message-format), from any tool.
+# One line, "type: subject", no AI or tool trailer (rule:commit-message-format), from any tool; and the commit's author
+# and committer are not an AI tool (the owner's rule, 2026-11-21: no AI reference anywhere in a commit).
 check="$(dirname "$0")/../.claude/name-check.mjs"
 [ -f "$check" ] || exit 0
+node "$check" ident || exit 1
 exec node "$check" message "$1"

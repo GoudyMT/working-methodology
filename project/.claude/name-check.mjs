@@ -8,7 +8,9 @@
 //   node .claude/name-check.mjs branch <name>    <type>/<plain-kebab-description>, no tool prefix or internal code
 //   node .claude/name-check.mjs title <text>     a PR title: the squash commit's subject on main, same rule
 //   node .claude/name-check.mjs repo <name>      a repo name: plain words in kebab case, no internal code
+//   node .claude/name-check.mjs ident            the commit git is making: its author and committer are not an AI tool
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 
 const TYPES = ['feat', 'fix', 'refactor', 'test', 'docs', 'chore', 'security', 'perf'];
 // T13 (the owner, 2026-11-10): one change per line; a longer subject packs a list that belongs in the PR body.
@@ -42,6 +44,35 @@ function message(text) {
 	return faults;
 }
 
+// An AI tool named as a whole word (Claude, claude-code, GitHub Copilot, 123+Copilot@users.noreply.github.com), or an
+// email at an AI maker's domain. A person whose name only holds the letters (Claudia, Claudette, Copilotto) passes.
+const AI_NAME = /(?<![\p{L}\p{N}])(claude|copilot|chatgpt|openai|anthropic)(?![\p{L}\p{N}])/iu;
+const AI_DOMAIN = /@([a-z0-9-]+\.)*(anthropic|openai)\.com$/i;
+
+/**
+ * The owner's rule (2026-11-21): no AI reference anywhere in a commit, its author and committer included; the message
+ * check above covers only the text. Reads who git will record: git var, which honours --author, the GIT_AUTHOR_* and
+ * GIT_COMMITTER_* variables and the config, run through the safe-spawn helper (a git.exe in the project never runs).
+ * Without the helper beside this file, or where git var cannot answer, the variables git hands the hook are read.
+ */
+function ident() {
+	const faults = [];
+	let gitRead = null;
+	try { gitRead = createRequire(import.meta.url)('./safe-spawn.cjs').gitRead; } catch { /* the variables alone */ }
+	for (const who of ['author', 'committer']) {
+		const KEY = who.toUpperCase();
+		let name = process.env[`GIT_${KEY}_NAME`] || '';
+		let email = process.env[`GIT_${KEY}_EMAIL`] || '';
+		const r = gitRead ? gitRead(process.cwd(), ['var', `GIT_${KEY}_IDENT`], { encoding: 'utf8' }) : null;
+		const m = r && r.status === 0 ? /^(.*) <([^>]*)>/.exec(String(r.stdout)) : null;
+		if (m) [, name, email] = m;
+		if (AI_NAME.test(name) || AI_NAME.test(email.split('@')[0]) || AI_DOMAIN.test(email)) {
+			faults.push(`the ${who} "${name} <${email}>" names an AI tool: commit as the person who owns the work (git config user.name and user.email)`);
+		}
+	}
+	return faults;
+}
+
 function branch(name) {
 	if (['main', 'master'].includes(name) || name.startsWith('dependabot/')) return [];
 	const m = name.match(/^([a-z]+)\/(.+)$/);
@@ -61,9 +92,9 @@ function repo(name) {
 }
 
 const [mode, arg] = process.argv.slice(2);
-const faults = mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? message(arg || '') : mode === 'repo' ? repo(arg || '') : null;
+const faults = mode === 'ident' ? ident() : mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? message(arg || '') : mode === 'repo' ? repo(arg || '') : null;
 if (!faults) {
-	console.error('Usage: node .claude/name-check.mjs message <file> | branch <name> | title <text> | repo <name>');
+	console.error('Usage: node .claude/name-check.mjs message <file> | branch <name> | title <text> | repo <name> | ident');
 	process.exitCode = 2;
 } else if (faults.length) {
 	for (const f of faults) console.error(`name-check: ${f}`);
