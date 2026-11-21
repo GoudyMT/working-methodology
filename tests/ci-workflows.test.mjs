@@ -75,3 +75,22 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 		}
 	}
 });
+
+// S1 (the build 23b sweep): a cloud build thread pushes its feature branch with no pre-push hook, and the PR's scans
+// come only once a PR is open, so a pushed secret was public until then. Every push to a branch other than main runs
+// main's copies of the secret scan and the name check, before any of the branch's own code.
+// why: guards rule:where-work-runs (a cloud push that skips the PC's push checks)
+test('every feature-branch push runs main\'s secret scan and name check (S1)', () => {
+	const flow = read('.github/workflows/branch-push.yml');
+	assert.match(flow, /^on:\n  push:\n    branches-ignore: \[main\]$/m);
+	assert.match(flow, /^permissions:\n  contents: read$/m);
+	const unpack = step(flow, "Main's scripts");
+	assert.match(unpack, /git archive origin\/main project\/\.claude/);
+	for (const name of ['Secret scan', 'Branch and commit names']) {
+		const s = step(flow, name);
+		assert.ok(flow.indexOf(`- name: ${name}`) > flow.indexOf("- name: Main's scripts"), `${name} runs after the unpack`);
+		for (const line of s.split('\n').filter((l) => /\bnode\b/.test(l))) assert.match(line, /node "\$RUNNER_TEMP\/main\/project\/\.claude\//, line);
+	}
+	assert.match(step(flow, 'Secret scan'), /secret-shapes\.mjs" origin\/main/);
+	assert.match(step(flow, 'Branch and commit names'), /name-check\.mjs" branch "\$GITHUB_REF_NAME"/);
+});

@@ -1443,7 +1443,11 @@ test('the where-work-runs rule lets a cloud build push its own branch and keeps 
   const rule = text.slice(start, text.indexOf('\n#', start));
   assert.match(rule, /cloud build thread may push its own feature branch/);
   const pc = /([^.]*) stay on the owner's PC/.exec(rule)?.[1] || '';
-  for (const act of ['Kit installs', 'the PR', 'its body', 'release verification']) assert.ok(pc.includes(act), act);
+  for (const act of ['Installs', 'sweeps', 'the PR', 'release verification']) assert.ok(pc.includes(act), act);
+  // S1 (the build 23b sweep): a cloud push runs no pre-push hook, so the line names the secret scan to run first, and
+  // the scan it names ships in every project.
+  const scan = /push its own feature branch once `node (\.claude\/[^`]+)` passes/.exec(rule)?.[1];
+  assert.ok(scan && fs.existsSync(path.resolve('project', scan)), 'the cloud push names the secret scan that ships');
 });
 
 // T12 + E24 C (build 23b): a cloud thread loads no repo hooks, so it takes only the fixed worker jobs. The rule, the
@@ -1459,7 +1463,7 @@ test('the where-work-runs rule, the cloud refusals and the worker brief name one
   assert.deepEqual(jobs, ['tests', 'builds', 'gate checks', 'research', 'read-only review']);
   const refusal = /worker jobs only \(([^)]+)\)/.exec(read(path.resolve('user/skills/pre-pr-sweep/approve.mjs')))?.[1] || '';
   assert.deepEqual(list(refusal), jobs, 'approve.mjs refuses a sweep in the cloud with the same list');
-  for (const pc of ['Kit installs', 'sweeps', 'release verification', "owner's PC"]) assert.ok(rule.includes(pc), pc);
+  for (const pc of ['Installs', 'sweeps', 'release verification', "owner's PC"]) assert.ok(rule.includes(pc), pc);
   for (const token of ['`worker.mjs`', 'feature branch']) assert.ok(rule.includes(token), token);
   const brief = /`(_Templates\/[^`]+\.md)`/.exec(rule)?.[1];
   assert.ok(brief && fs.existsSync(path.resolve('project', brief)), 'the rule names the brief template that ships');

@@ -19,6 +19,11 @@
       "before": "- Stay current - prefer 2025-2026 approaches over outdated patterns when relevant",
       "after": "- Stay current - prefer approaches current as of today's date over outdated patterns when relevant",
       "why": "K219: a fixed year range goes stale; the line ties it to the date in context"
+    },
+    {
+      "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line \"Kit tools this session\"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.",
+      "after": "Before any swarm (a sweep, a red-team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line \"Kit tools this session\"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.",
+      "why": "S1 (build 23b sweep): room for the cloud push line to name the secret scan; the swarm kinds are named plainly, the rules they point to unchanged"
     }
   ]
 }
