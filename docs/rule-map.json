@@ -169,6 +169,7 @@
     "tests/guards-outside.test.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
+    "tests/kit-plugin.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
     "tests/kit-rules.test.mjs",
