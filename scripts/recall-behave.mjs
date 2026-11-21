@@ -289,6 +289,8 @@ export function behaviourLine({ label, cand, base, control, candAgain = null, ba
 	if (!c.length || !b.length || !k.length) throw new Error('a line needs candidate, baseline and control runs');
 	if (b.some((r) => !r.released) || k.some((r) => !r.noKit)) throw new Error('a baseline run is on a released kit, and the control on none');
 	if (c.length !== RUNS || b.length !== RUNS) throw new Error(`a gate is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${c.length} and ${b.length}`);
+	// The build 22 sweep: a --just run asked some scenarios alone, so it is a second look, never a first.
+	if ([...c, ...b, ...k].some((r) => r.just)) throw new Error('a first look runs the whole suite: a --just run is a second look only');
 	const timeOf = (runs) => runs.map((r) => Date.parse(r.when ?? ''));
 	const sameDay = (times) => { if (times.some(Number.isNaN) || Math.max(...times) - Math.min(...times) > DAY_MS) throw new Error('the release arm must be measured the same day as the candidate: every candidate and release run needs its time, within a day of the others'); };
 	sameDay(timeOf([...c, ...b]));
@@ -304,6 +306,9 @@ export function behaviourLine({ label, cand, base, control, candAgain = null, ba
 	if ([...c2, ...b2].some((r) => r.suite !== [...suites][0])) throw new Error('a second look runs on the first look\'s suite version');
 	if (b2.some((r) => !r.released) || c2.some((r) => r.released || r.noKit)) throw new Error('a second look\'s release runs are on a released kit, and its candidate runs on the candidate');
 	for (const id of lower) if ([...c2, ...b2].some((r) => !r.rows.some((x) => x.id === id))) throw new Error(`a second look runs every lower scenario again; a run has no ${id} (recall-behave.mjs --just ${lower.join(',')})`);
+	// New sessions of the lower scenarios alone: each run saved as a --just run of exactly those.
+	const want = [...lower].sort().join(',');
+	if ([...c2, ...b2].some((r) => !Array.isArray(r.just) || [...r.just].sort().join(',') !== want)) throw new Error(`a second look is new runs of the lower scenarios alone: run each side with recall-behave.mjs <label> [kit folder] --just ${lower.join(',')}`);
 	sameDay(timeOf([...c, ...b, ...c2, ...b2]));
 	const asked = lower.map((id) => `${id} (${passes(c, id)} of ${RUNS} against ${passes(b, id)}, then ${passes(c2, id)} of ${RUNS} against ${passes(b2, id)})`);
 	const worse = lower.filter((id) => passes(c2, id) < passes(b2, id));

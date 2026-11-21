@@ -72,6 +72,10 @@ export const FLOOR = 14;
 const SCORERS_LINE = /^scorers: (\d+)$/;
 const WORSE_LINE = /^worse: (.+)$/;
 const BEHAVE_WORSE_LINE = /^behaviour worse: (.+)$/;
+// Seen twice: a line the score tools print when a question or scenario was lower on the first look.
+const ONCE_LINE = /^(?:behaviour )?lower once: (.+)$/;
+const ASKED_LINE = /^(behaviour )?asked again: (.+)$/;
+const ASKED_ITEM = /^(\S+) \((\d+) of \d+ against (\d+), then (\d+) of \d+ against (\d+)\)$/;
 const OWNER_MARK = /\sowner-accepted\s*$/;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
@@ -352,6 +356,14 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
     !worse ? 'add the "worse:" line recall-score.mjs score prints' : worse[1].trim() !== 'none' && `questions ${worse[1].trim()} do worse than the same-day release`,
     behave && Number(behave[2]) < floor && `behaviour median ${behave[2]} is under the floor of ${floor}`,
     behave && (!behaveWorse ? 'add the "behaviour worse:" line recall-behave.mjs line prints' : behaveWorse[1].trim() !== 'none' && `scenarios ${behaveWorse[1].trim()} do worse than the same-day release`),
+    // The build 22 sweep: the worse line is typed beside the lines it sums, so those lines are read too.
+    ...added.map((l) => l.trim().match(ONCE_LINE)).filter(Boolean).map((o) => `${o[1].trim()} summed lower on one look and has not been asked again: ask it again alone, then record both looks`),
+    ...added.map((l) => l.trim().match(ASKED_LINE)).filter(Boolean).flatMap((a) => a[2].split('; ').map((item) => {
+      const m = item.trim().match(ASKED_ITEM);
+      if (!m) return `cannot read the ${a[1] ? 'behaviour ' : ''}asked again line: ${item}`;
+      return Number(m[4]) < Number(m[5]) && `${m[1]} was lower on both looks (${item.trim()}), so it is worse`;
+    })),
+    behave && behaviour.count != null && behaviour.count !== floor && `the behaviour suite has ${behaviour.count} scenarios and the floor is ${floor}: the floor is the top score, so move it with the suite`,
   ].filter(Boolean);
   const faults = [
     ...fixed,
@@ -421,7 +433,7 @@ function gate([base, head]) {
     const s = JSON.parse(suiteText);
     const b = baseSuite ? JSON.parse(baseSuite) : {};
     const bar = Math.max(Number.isInteger(s.pass) ? s.pass : 0, Number.isInteger(b.pass) ? b.pass : 0);
-    return { suite: s.version, bar: bar || Infinity, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
+    return { suite: s.version, bar: bar || Infinity, count: (s.scenarios || []).length || null, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
   })() : undefined;
   const r = checkGate({
     floor: FLOOR,

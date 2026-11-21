@@ -76,9 +76,10 @@ test('a question lower on one look is asked again alone, and is worse only when 
 test('score holds back the gate lines until a lower question is asked again, then prints both looks', async () => {
   const { checkGate } = await recallTools();
   const dir = makeTemp('twice-');
-  const write = (name, { map, sets }, when) => {
+  const write = (name, { map, sets }, when, only) => {
     sets.forEach((s, k) => fs.writeFileSync(path.join(dir, `${name}-${k}.txt`), Object.entries(s).flatMap(([id, q]) => Object.entries(q).map(([n, v]) => `${id} Q${n}: ${v}`)).join('\n')));
-    fs.writeFileSync(path.join(dir, `${name}-map.json`), JSON.stringify({ map, when: at(map, when) }));
+    const hashes = Object.fromEntries(Object.keys(map).map((id) => [`${name}-${id}.md`, `${name}-${id}`]));
+    fs.writeFileSync(path.join(dir, `${name}-map.json`), JSON.stringify({ map, when: at(map, when), hashes, ...(only ? { only: Object.fromEntries(Object.keys(map).map((id) => [id, only])) } : {}) }));
     return [path.join(dir, `${name}-0.txt`), path.join(dir, `${name}-1.txt`), path.join(dir, `${name}-map.json`)];
   };
   const first = write('first', scoreSets(fiveEach(lowerOn(6))));
@@ -89,7 +90,7 @@ test('score holds back the gate lines until a lower question is asked again, the
   assert.doesNotMatch(pending.stdout, /^(gate|worse|scorers):/m, 'no gate line before the second look');
   assert.match(pending.stdout, /--only 6/);
   assert.match(pending.stdout, /--again/);
-  const again = (name, cand) => write(name, scoreSets(fiveEach(cand, undefined, false), [6]), '2026-11-20T15:00:00.000Z');
+  const again = (name, cand) => write(name, scoreSets(fiveEach(cand, undefined, false), [6]), '2026-11-20T15:00:00.000Z', [6]);
   const cleared = cli('--again', ...again('clear', Array(5).fill(clean)));
   assert.equal(cleared.status, 0, cleared.stdout + cleared.stderr);
   // pin: 1 (the gate reads these lines)
@@ -210,4 +211,99 @@ test('a same-day release score under the last recorded one is no fault, while th
   assert.equal(low.ok, false);
   assert.match(low.detail, /under the floor of 14/);
   assert.doesNotMatch(low.detail, /last recorded baseline/);
+});
+
+// The build 22 sweep (role 3): the gate read only "worse:", so a record whose score lines said a question was lower on
+// one look, or lower on both looks, still passed with "worse: none" typed beside it.
+// why: guards rule:ci-gate
+test('the gate refuses a record that shows a question lower once, or lower twice under "worse: none"', async () => {
+  const { checkGate, FLOOR } = await recallTools();
+  const facts = (extra, behave = []) => checkGate({ changed: ['rules/core.md'], added: ['scorers: 2', ...extra, 'worse: none', 'control: 0', 'gate: b22 median 14 baseline 14 brief v2 keys v12', ...behave], brief: 2, keys: 12, bar: 13, floor: FLOOR, behaviour: behave.length ? { suite: 2, bar: 12, count: FLOOR } : undefined });
+  assert.equal(facts([]).ok, true, facts([]).detail);
+  const once = facts(['lower once: 6']);
+  assert.equal(once.ok, false, 'seen twice: a question lower on one look has not been asked again');
+  assert.match(once.detail, /6.*asked again/);
+  const twice = facts(['asked again: 6 (8 of 10 against 10, then 9 of 10 against 10)']);
+  assert.equal(twice.ok, false, 'lower on both looks is worse, whatever the worse line says');
+  assert.match(twice.detail, /6/);
+  assert.equal(facts(['asked again: 6 (8 of 10 against 10, then 10 of 10 against 10)']).ok, true);
+  const head = 'behaviour: b22 median 14 baseline 14 suite v2 control 0';
+  assert.equal(facts([], [head, 'behaviour worse: none']).ok, true);
+  const bOnce = facts([], [head, 'behaviour lower once: 2-b', 'behaviour worse: none']);
+  assert.equal(bOnce.ok, false);
+  assert.match(bOnce.detail, /2-b/);
+  const bTwice = facts([], [head, 'behaviour asked again: 2-b (4 of 5 against 5, then 3 of 5 against 5)', 'behaviour worse: none']);
+  assert.equal(bTwice.ok, false);
+  assert.match(bTwice.detail, /2-b/);
+});
+
+// The build 22 sweep (role 3): the floor of 14 stands for the top score on both lines; a suite of more scenarios would
+// let a behaviour median under its top pass, with no check left against the last recorded baseline.
+// why: guards rule:ci-gate
+test('the behaviour floor is the suite top score, so a grown suite fails the gate until the floor moves', async () => {
+  const { checkGate, FLOOR } = await recallTools();
+  const suite = JSON.parse(read(path.resolve('docs/evals/behaviour-scenarios.json')));
+  assert.equal(suite.scenarios.length, FLOOR, 'the floor is the top behaviour score');
+  const added = ['scorers: 2', 'worse: none', 'control: 0', 'gate: b22 median 14 baseline 14 brief v2 keys v12', 'behaviour: b22 median 14 baseline 14 suite v2 control 0', 'behaviour worse: none'];
+  const grown = checkGate({ changed: ['rules/core.md'], added, brief: 2, keys: 12, bar: 13, floor: FLOOR, behaviour: { suite: 2, bar: 12, count: FLOOR + 2 } });
+  assert.equal(grown.ok, false);
+  assert.match(grown.detail, /16 scenarios/);
+});
+
+// The build 22 sweep (role 3): a second look is new sessions asking the lower questions alone. Re-scoring the first
+// look's runs, or runs that asked every question, passed as one.
+// why: guards rule:ci-gate
+test('a second look refuses the first look runs and runs that did not ask the lower questions alone', async () => {
+  const { blind, score } = await import('../scripts/recall-score.mjs');
+  const dir = makeTemp('twice-new-');
+  const run = (name, qs, hour) => {
+    const f = path.join(dir, `${name}.md`);
+    const only = qs.length < ALL.length ? `Only: ${qs.join(', ')}\n` : '';
+    fs.writeFileSync(f, `# Recall run: ${name}\n\nWhen: 2026-11-20T1${hour}:00:00.000Z\n${only}\n${qs.map((q) => `## ${q}. Question ${q}?\n\nKey: k\n\nAnswer:\n\n> answer ${q} from run ${name}\n\nScore: _\n`).join('\n')}`);
+    return f;
+  };
+  const arms = (prefix, qs, hour) => ['cand', 'base'].flatMap((a) => [1, 2, 3, 4, 5].map((i) => run(`${a}-${prefix}${i}`, qs, hour)));
+  const firstRuns = [...arms('', ALL, 1), run('control-1', ALL, 1)];
+  const look = (runs, out, miss = () => false) => {
+    const { map } = blind(path.join(dir, out), runs, () => 0);
+    const asked = (r) => [...read(runs.find((f) => path.basename(f, '.md') === r)).matchAll(/^## (\d+)\./gm)].map((m) => Number(m[1]));
+    const files = [0, 1].map((k) => {
+      const f = path.join(dir, `${out}-${k}.txt`);
+      fs.writeFileSync(f, Object.entries(map).flatMap(([id, r]) => asked(r).map((q) => `${id} Q${q}: ${r === 'control-1' || miss(r, q) ? 0 : 1}`)).join('\n'));
+      return f;
+    });
+    return { files, mapFile: path.join(dir, out, 'sealed-map.json') };
+  };
+  const first = look(firstRuns, 'first', (r, q) => r === 'cand-1' && q === 6);
+  const fresh = look(arms('x-', [6], 3), 'fresh');
+  assert.doesNotThrow(() => score(first.files, first.mapFile, 'k', undefined, fresh), 'seen twice: new runs of the lower question alone are a second look');
+  const reused = look(firstRuns.filter((f) => !/control/.test(f)), 'reused');
+  assert.throws(() => score(first.files, first.mapFile, 'k', undefined, reused), /new sessions/);
+  const wide = look(arms('w-', ALL, 4), 'wide');
+  assert.throws(() => score(first.files, first.mapFile, 'k', undefined, wide), /--only 6/);
+});
+
+// The build 22 sweep (role 3): behaviourLine took any five runs as a second look, and --just runs as a first look.
+// why: guards rule:ci-gate
+test('a behaviour second look is --just runs of the lower scenarios, and a --just run is no first look', async () => {
+  const { behaviourLine } = await import('../scripts/recall-behave.mjs');
+  const dir = makeTemp('twice-just-');
+  let seq = 0;
+  const save = (side, fails = [], { ids = ['1-a', '2-b', '3-c'], when = '2026-11-20T10:00:00.000Z', just = null } = {}) => {
+    const d = path.join(dir, `r${++seq}`);
+    fs.mkdirSync(d);
+    const rows = ids.map((id) => ({ id, passed: !fails.includes(id) }));
+    fs.writeFileSync(path.join(d, 'result.json'), JSON.stringify({ suite: 2, released: side === 'base', noKit: side === 'control', total: rows.filter((r) => r.passed).length, rows, when, ...(just ? { just } : {}) }));
+    return d;
+  };
+  const five = (side, fails = [], opts) => Array.from({ length: 5 }, (_, i) => save(side, i === 0 ? fails : [], opts));
+  const control = [save('control', ['1-a', '2-b', '3-c'])];
+  const [cand, base] = [five('cand', ['2-b']), five('base')];
+  const later = { when: '2026-11-20T15:00:00.000Z' };
+  const line = (candAgain, baseAgain) => () => behaviourLine({ label: 'x', cand, base, control, candAgain, baseAgain });
+  assert.doesNotThrow(line(five('cand', [], { ...later, just: ['2-b'] }), five('base', [], { ...later, just: ['2-b'] })), 'seen twice: --just runs of the lower scenario are a second look');
+  assert.throws(line(five('cand', [], later), five('base', [], later)), /--just 2-b/);
+  assert.throws(line(five('cand', [], { ...later, just: ['2-b', '3-c'] }), five('base', [], { ...later, just: ['2-b', '3-c'] })), /--just 2-b/);
+  const justFirst = five('cand', [], { just: ['2-b'] });
+  assert.throws(() => behaviourLine({ label: 'x', cand: justFirst, base, control }), /first look/);
 });

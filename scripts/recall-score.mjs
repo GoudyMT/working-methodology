@@ -90,6 +90,7 @@ export function blind(out, runs, random = crypto.randomInt) {
   const map = {};
   const when = {};
   const hashes = {};
+  const only = {};
   const removedAll = [];
   order.forEach((run, i) => {
     const id = `R${String(i + 1).padStart(2, '0')}`;
@@ -103,11 +104,14 @@ export function blind(out, runs, random = crypto.randomInt) {
     // K198: the run's own header time, sealed with the map, for the same-day check at scoring.
     const at = raw.match(/^When: (\S+)$/m);
     if (at) when[id] = at[1];
+    // A run that asked named questions alone (recall.mjs --only), sealed for the second-look check at scoring.
+    const asked = raw.match(/^Only: (.+)$/m);
+    if (asked) only[id] = asked[1].split(/,\s*/).map(Number);
     hashes[path.basename(run)] = crypto.createHash('sha256').update(raw).digest('hex');
     fs.writeFileSync(path.join(out, 'scorer', `${id}.md`), `# ${id}\n\n${text}`);
   });
   fs.writeFileSync(path.join(out, 'removed-lines.txt'), removedAll.join('\n') + '\n');
-  fs.writeFileSync(path.join(out, 'sealed-map.json'), JSON.stringify({ map, when, hashes }, null, 1));
+  fs.writeFileSync(path.join(out, 'sealed-map.json'), JSON.stringify({ map, when, hashes, only }, null, 1));
   return { map };
 }
 
@@ -151,6 +155,8 @@ function secondLook(lower, first, again, firstTimes) {
     if (!arms[arm]) throw new Error(`a second look is candidate and release runs only, named cand-<n> and base-<n>; got ${run}`);
     const per = again.sets.map((x) => x[id]);
     for (const q of lower) if (per.some((x) => !x || x[q] === undefined)) throw new Error(`${id}: the second look has no score for question ${q} from each scorer; ask every lower question again (recall.mjs --only ${lower.join(',')})`);
+    // The build 22 sweep: each run asked the lower questions alone (its sealed Only: line), not every question again.
+    if (again.only && (again.only[id] || []).join(',') !== lower.join(',')) throw new Error(`${run}: a second look asks the lower questions alone; run it with recall.mjs <label> [kit folder] --only ${lower.join(',')}`);
     arms[arm].push({ id, s: Object.fromEntries(lower.map((q) => [q, per.reduce((n, x) => n + x[q], 0)])) });
   }
   if (arms.cand.length !== RUNS || arms.base.length !== RUNS) throw new Error(`a second look is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${arms.cand.length} and ${arms.base.length}`);
@@ -226,7 +232,12 @@ export function score(files, mapFile, label, kit = KIT, again = null) {
   const second = again && (() => {
     if (!Array.isArray(again.files) || again.files.length !== SCORERS) throw new Error(`a second look needs two blind scorers' files; got ${Array.isArray(again.files) ? again.files.length : 0}`);
     const map2 = JSON.parse(fs.readFileSync(again.mapFile, 'utf8'));
-    return { sets: again.files.map((f) => readScores(fs.readFileSync(f, 'utf8'))), map: map2.map, when: map2.when };
+    // The build 22 sweep: a second look is new sessions, so no run of the first look may be scored again as one.
+    if (!map2.hashes || !sealed.hashes) throw new Error('a sealed map has no run hashes: blind both looks with this tool');
+    const seen = new Set(Object.values(sealed.hashes));
+    const reused = Object.entries(map2.hashes).filter(([, h]) => seen.has(h)).map(([f]) => f);
+    if (reused.length) throw new Error(`a second look is new sessions; ${reused.join(', ')} ${reused.length > 1 ? 'were' : 'was'} scored in the first look`);
+    return { sets: again.files.map((f) => readScores(fs.readFileSync(f, 'utf8'))), map: map2.map, when: map2.when, only: map2.only || {} };
   })();
   const r = summarize(files.map((f) => readScores(fs.readFileSync(f, 'utf8'))), sealed.map, questionCount(keysText, keys), { when: sealed.when, again: second || undefined });
   if (!r.gate) return { ...r, line: null, lines: [] };
