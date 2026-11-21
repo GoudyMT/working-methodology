@@ -991,6 +991,21 @@ test('the PR title check holds a title to the commit subject rule', () => {
   for (const ok of ['fix: the Haiku price line and its 100K warning', 'feat: guards read UTF-8 and v1.33.0', 'fix: the SHA256 check reads UTF8 on ARM64', 'feat: sync to S3 from EC2']) assert.equal(nameRun(['title', ok]).status, 0, ok);
 });
 
+// The cloud build study (1.49.0): a code typed in lowercase or with a dot is still a code, in a subject, a title and a
+// branch; the known words stay words in any case.
+// why: guards rule:commit-message-format
+test('the name check reads a lowercase or dotted list code as a code and keeps known words', () => {
+  for (const bad of ['fix: k212-k214 guard reads', 'fix: close r7.1 in the hook', 'feat: the e12 merge steps', 'fix: R7.1 push yes']) {
+    const r = nameRun(['title', bad]);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /internal code/, bad);
+  }
+  for (const ok of ['fix: v8 and x86 builds read sha256 and utf8', 'feat: guards read v1.33.0 and node 20.1', 'fix: mp3 and es6 files', 'chore: move to 1.50.0'])
+    assert.equal(nameRun(['title', ok]).status, 0, ok);
+  for (const bad of ['fix/guard-k212', 'feat/close-r7-1-hold', 'fix/the-e12-steps']) assert.equal(nameRun(['branch', bad]).status, 1, bad);
+  for (const ok of ['feat/cloud-worker-and-plugin-build', 'fix/v8-and-x86-builds', 'feat/sha256-check']) assert.equal(nameRun(['branch', ok]).status, 0, ok);
+});
+
 // why: guards rule:branching (a repo name is public for good, like a branch name)
 test('the repo name check passes plain kebab words and refuses an internal code', () => {
   // A name with a number in it is still a name (web3, vue3); a code is one or two letters and a number, on its own.
