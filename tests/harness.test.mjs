@@ -396,6 +396,11 @@ test('a changed run adds the always files once, runs everything above half, and 
 	assert.equal(r.status, 0, r.stdout + r.stderr);
 	assert.match(r.stdout, /^tests\/x\.test\.mjs::g$/m);
 	assert.ok(!fs.existsSync(log), '--pick ran a test');
+	// K170 (the S1 replay of 1.40.0): --pick alone is the same pick; it printed nothing and ran the whole suite.
+	r = run(repo, ['--pick', file, sec]);
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /^tests\/x\.test\.mjs::g$/m);
+	assert.ok(!fs.existsSync(log), '--pick alone ran a test');
 	// 4 of 6 tests reached: over half, so every test runs, and the run says why.
 	sub('src/b.cjs', "'b'", "'bb'");
 	sub('notes.md', '# Notes', '# Notes, changed');
@@ -542,8 +547,7 @@ test('off CI a full or --changed run is refused without the owner\'s yes; CI, --
 	const file = path.join(dir, 'tests', 'x.test.mjs');
 	fs.writeFileSync(file, `import { test } from 'node:test';\ntest('a', () => {});\n`);
 	const refused = /test-run: refused: a full or --changed run is CI's job/;
-	// The build 20 sweep: --pick without --changed runs the whole suite, so it is refused too.
-	for (const args of [[], ['--changed'], ['--pick']]) {
+	for (const args of [[], ['--changed']]) {
 		const r = run(dir, args, { CI: '' });
 		assert.equal(r.status, 2, `${args.join(' ')}: ${r.stdout}${r.stderr}`);
 		assert.match(r.stderr, refused);
@@ -551,7 +555,7 @@ test('off CI a full or --changed run is refused without the owner\'s yes; CI, --
 	const yes = run(dir, ['--owner-yes'], { CI: '' });
 	assert.equal(yes.status, 0, yes.stdout + yes.stderr);
 	assert.match(yes.stdout, /on the owner's yes/);
-	for (const [args, env] of [[[], { CI: 'true' }], [['--map'], { CI: '' }], [[file], { CI: '' }], [['--changed', '--pick'], { CI: '' }]]) {
+	for (const [args, env] of [[[], { CI: 'true' }], [['--map'], { CI: '' }], [[file], { CI: '' }], [['--changed', '--pick'], { CI: '' }], [['--pick'], { CI: '' }]]) {
 		const r = run(dir, args, env);
 		assert.doesNotMatch(r.stderr, refused, `${args.join(' ')} CI=${env.CI}`);
 		if (!args.length || args[0] === file) assert.equal(r.status, 0, `${args.join(' ')} CI=${env.CI}: ${r.stdout}${r.stderr}`);
