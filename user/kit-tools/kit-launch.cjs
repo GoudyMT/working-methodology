@@ -1163,4 +1163,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { configChangeAnswer, otherHomeTool, gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { START_FALLBACK, configChangeAnswer, otherHomeTool, gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };

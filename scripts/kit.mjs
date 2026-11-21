@@ -2276,6 +2276,120 @@ export function build({ kit }) {
   return out;
 }
 
+// K174: the plugin build. The plugin root is the Claude-folder stand-in, laid out as install user lays one out, so the
+// kit's tools find each other (approve.mjs loads ../../kit-hooks and ../../kit-tools) and the start-up line names real
+// paths; the kit's own copy (no .git, no tests) sits at kit/. Same input, same bytes: lists are sorted and nothing
+// records a time or a machine path.
+const PLUGIN_REPO = 'https://github.com/GoudyMT/kit-plugin.git';
+// The files a hook runs or loads, by extension: hashed into guard-manifest.json, which the launcher checks every call.
+const MANIFEST_FILE = /\.(cjs|mjs|js|json|sh|ps1)$/;
+/** The hooks: block of a role file, moved out (Claude Code ignores a plugin agent's own hooks), and the text without it. */
+export function roleHooksOf(text) {
+  const m = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  const own = { PreToolUse: [], Stop: [] };
+  if (!m) return { text, hooks: own };
+  const keep = [];
+  let inHooks = false, event = null, matcher = '';
+  for (const line of m[1].split('\n')) {
+    if (/^hooks:\s*$/.test(line)) { inHooks = true; continue; }
+    if (inHooks && /^\S/.test(line)) inHooks = false;
+    if (!inHooks) { keep.push(line); continue; }
+    let x;
+    if ((x = /^  (\w+):\s*$/.exec(line))) { event = x[1]; matcher = ''; continue; }
+    if ((x = /matcher:\s*"([^"]*)"/.exec(line))) { matcher = x[1]; continue; }
+    if ((x = /kit-hooks\/([\w.-]+\.cjs)/.exec(line)) && own[event]) own[event].push(event === 'PreToolUse' ? [matcher, x[1]] : x[1]);
+  }
+  return { text: `---\n${keep.join('\n')}\n---\n${text.slice(m[0].length)}`, hooks: own };
+}
+const pluginHook = (mode, extra = {}) => ({ type: 'command', command: `NODE_OPTIONS= node "\${CLAUDE_PLUGIN_ROOT}/launch.cjs" ${mode}`, timeout: 10, ...extra });
+/** The plugin's hooks.json: K205's start wrapper for every tool call, and onFailure "block" where a failure would let a change through (K216). */
+export function pluginHooks() {
+  const start = `NODE_OPTIONS= sh "\${CLAUDE_PLUGIN_ROOT}/kit-tools/kit-start.sh" "$(command -v node)" "\${CLAUDE_PLUGIN_ROOT}/launch.cjs" || printf '%s' ${launch.shq(launch.START_FALLBACK)}`;
+  return { description: 'Methodology kit guards: one launcher for every event (built by kit.mjs build plugin).', hooks: {
+    SessionStart: [{ hooks: [pluginHook('session-start', { timeout: 30 })] }],
+    UserPromptSubmit: [{ hooks: [pluginHook('prompt')] }],
+    PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: start, timeout: 10, onFailure: 'block' }] }],
+    SubagentStop: [{ hooks: [pluginHook('subagent-stop')] }],
+    ConfigChange: [{ hooks: [pluginHook('config-change', { onFailure: 'block' })] }],
+  } };
+}
+/** K179: the marketplace file that pins the plugin to its tag and the plugin repo's commit (a git-subdir source). */
+export function marketplaceJson({ version, tag, sha: commit }) {
+  if (!/^v\d+\.\d+\.\d+$/.test(String(tag)) || !/^[0-9a-f]{40}$/.test(String(commit))) throw new Error('build plugin: the marketplace needs a release tag (vX.Y.Z) and the plugin repo commit (40 hex characters, --sha)');
+  return { name: 'methodology-kit', owner: { name: 'GoudyMT' }, plugins: [{ name: 'kit', description: `Methodology kit ${version}`, version,
+    source: { source: 'git-subdir', url: PLUGIN_REPO, path: 'plugins/kit', ref: tag, sha: commit } }] };
+}
+// The kit's tracked files (the release's own list), or a walk where the folder has no git.
+function kitFiles(kit) {
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, '-c', 'core.quotepath=false', 'ls-files', '-z'], { encoding: 'utf8', cwd: SAFE_CWD, timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+  const list = r.status === 0 ? r.stdout.split('\0').filter(Boolean) : walk(kit, new Set(['.git', 'node_modules', 'reports'])).map((f) => toPosix(path.relative(kit, f)));
+  return list.filter((f) => !/^(tests|\.git)\//.test(f) && fs.existsSync(path.join(kit, f)) && fs.statSync(path.join(kit, f)).isFile()).sort();
+}
+/**
+ * Write the plugin for the kit folder into out (emptied first; only an empty folder or an earlier plugin build).
+ *
+ * Args:
+ *     kit: the kit folder (the checked-out release)
+ *     out: the plugin folder to write
+ *     release: { tag, commit } the build records in kit-build.json (K179), or null for an unreleased build
+ *
+ * Returns:
+ *     { files: count, manifest: count }
+ */
+export function buildPlugin({ kit, out, release = null }) {
+  const k = path.resolve(kit), o = path.resolve(out);
+  const inside = (a, b) => { const r = path.relative(b, a); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+  if (inside(o, k) || inside(k, o)) throw new Error('build plugin: --out must be outside the kit folder, and must not hold it');
+  if (fs.existsSync(o) && fs.readdirSync(o).length && !fs.existsSync(path.join(o, '.claude-plugin', 'plugin.json'))) throw new Error(`build plugin: ${toPosix(o)} is not empty and holds no earlier plugin build`);
+  const config = JSON.parse(fs.readFileSync(path.join(k, 'kit.config.json'), 'utf8'));
+  const version = fs.readFileSync(path.join(k, 'VERSION'), 'utf8').trim();
+  const files = new Map();
+  const list = kitFiles(k);
+  for (const f of list) files.set(`kit/${f}`, fs.readFileSync(path.join(k, f)));
+  // The user layer at the root, as install user writes it: instruction text rendered, code as it is (a code file
+  // keeps its {{CLAUDE_HOME}} and reads the Claude folder from KIT_CLAUDE_HOME, which the launcher sets).
+  const roles = {};
+  for (const f of list.filter((x) => /^user\/(skills|agents|kit-hooks|kit-tools)\//.test(x))) {
+    const rel = f.slice('user/'.length);
+    let bytes = fs.readFileSync(path.join(k, f));
+    if (rel.endsWith('.md')) {
+      let text = render(bytes.toString('utf8'), { ownerName: config.ownerName, ownerProfile: '', claudeHome: '${CLAUDE_PLUGIN_ROOT}' });
+      const role = /^agents\/([\w-]+)\.md$/.exec(rel);
+      if (role) {
+        if (config.roles && config.roles[role[1]]) text = roleLines(text, config.roles[role[1]]);
+        const moved = roleHooksOf(text);
+        text = moved.text;
+        roles[role[1]] = moved.hooks;
+      }
+      bytes = Buffer.from(text);
+    }
+    files.set(rel, bytes);
+  }
+  const json = (v) => Buffer.from(`${JSON.stringify(v, null, 2)}\n`);
+  const sorted = (obj) => Object.fromEntries(Object.keys(obj).sort().map((key) => [key, obj[key]]));
+  files.set('roles.json', json(sorted(roles)));
+  files.set('launch.cjs', fs.readFileSync(path.join(k, 'user', 'kit-tools', 'plugin-launch.cjs')));
+  // K176 builds the grant; its file rides along, in the manifest, when the release has one.
+  if (list.includes('user/kit-tools/owner-grant.cjs')) files.set('owner-grant.cjs', fs.readFileSync(path.join(k, 'user', 'kit-tools', 'owner-grant.cjs')));
+  files.set('hooks/hooks.json', json(pluginHooks()));
+  files.set('.claude-plugin/plugin.json', json({ name: 'kit', version, description: `Methodology kit ${version} as a Claude Code plugin (built by kit.mjs build plugin; never edited by hand)` }));
+  files.set('kit-build.json', json({ name: 'kit', version, tag: release ? release.tag : null, commit: release ? release.commit : null }));
+  // The stamp the kit's guard reads the user-layer hooks against; no kitDir, so the start-up hook finds kit/ (K175).
+  const stampFiles = {};
+  for (const [rel, b] of [...files].filter(([rel]) => /^kit-(hooks|tools)\//.test(rel)).sort(([a], [b]) => (a < b ? -1 : 1))) stampFiles[rel] = sha(b);
+  files.set('kit-install.json', json({ version, release: Boolean(release), via: 'plugin', files: stampFiles }));
+  const manifest = {};
+  for (const rel of [...files.keys()].sort()) if (MANIFEST_FILE.test(rel) && !/^kit\/docs\//.test(rel)) manifest[rel] = sha(files.get(rel));
+  files.set('guard-manifest.json', json({ files: manifest }));
+  fs.rmSync(o, { recursive: true, force: true });
+  for (const rel of [...files.keys()].sort()) {
+    const dest = path.join(o, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, files.get(rel));
+  }
+  return { files: files.size, manifest: Object.keys(manifest).length };
+}
+
 // Words that say nothing about which rule is meant.
 const FIND_STOP = new Set(['a', 'an', 'the', 'is', 'it', 'its', 'i', 'my', 'me', 'we', 'our', 'to', 'of', 'in', 'on',
   'for', 'and', 'or', 'do', 'does', 'what', 'how', 'when', 'where', 'should', 'can', 'could', 'be', 'from', 'with',
@@ -2626,6 +2740,32 @@ function main(argv) {
     const hits = findRules({ kit, query: argv.slice(1).join(' ') });
     for (const h of hits) console.log(`rule:${h.id}  ${h.title}  (${h.module})`);
     if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
+  } else if (cmd === 'build' && target === 'plugin') {
+    // K174, K179: node scripts/kit.mjs build plugin --out <dir> [--marketplace <file> --sha <plugin repo commit>] [--unreleased]
+    const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+    const out = flag('--out');
+    if (!out) { console.error('build plugin: --out <dir> is needed'); process.exit(2); }
+    const rel = releaseState(kit);
+    const unreleased = argv.includes('--unreleased');
+    if (rel.problems.length && !unreleased) {
+      console.error(`build plugin refused: the kit folder is not a clean release, and a plugin is pinned to one:\n  ${rel.problems.join('\n  ')}\nCheck out the release tag, or pass --unreleased for a trial build.`);
+      process.exit(1);
+    }
+    const version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+    const head = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '-q', '--verify', 'HEAD^{commit}'], { encoding: 'utf8', cwd: SAFE_CWD }).stdout.trim();
+    const release = rel.problems.length ? null : { tag: `v${version}`, commit: head };
+    try {
+      const market = flag('--marketplace') ? marketplaceJson({ version, tag: release && release.tag, sha: flag('--sha') }) : null;
+      const r = buildPlugin({ kit, out, release });
+      if (market) {
+        fs.mkdirSync(path.dirname(path.resolve(flag('--marketplace'))), { recursive: true });
+        fs.writeFileSync(path.resolve(flag('--marketplace')), `${JSON.stringify(market, null, 2)}\n`);
+      }
+      console.log(`build plugin: wrote ${r.files} file(s) to ${toPosix(path.resolve(out))} (${r.manifest} in the guard manifest)${release ? `, pinned to ${release.tag} at ${release.commit.slice(0, 12)}` : ', unreleased'}${market ? `; marketplace ${toPosix(path.resolve(flag('--marketplace')))}` : ''}`);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
   } else if (cmd === 'build') {
     const tree = checkRoot(kit);
     const fixed = fixedHomePaths({ kit: tree });
