@@ -28,6 +28,9 @@ export const BOX_LINE = /^(\s*)- \[([ xX/!~])\] (.+)$/;
 export const ORIGINS = ['real-use', 'owner', 'outside', 'self'];
 export const CAUGHT = ['sweep', 'ci', 'recall', 'plan-check', 'review', 'guard', 'owner', 'real-use', 'self'];
 export const MEASURED = ['throwaway', 'real-use', 'ci', 'agent-report', 'estimate', 'quote'];
+// K209: the labels that count as a reproduction. A self-found row without one and a verify file is SUSPECT.
+export const PROVEN = ['throwaway', 'ci', 'real-use'];
+export const suspect = (r) => r.origin === 'self' && !(r.verify && PROVEN.includes(r.measured));
 export const SEVERITIES = ['critical', 'high', 'medium', 'low', 'to set'];
 // A row with no severity yet ranks after high, ahead of medium: an unrated row may be the worst one.
 const SEVERITY_ORDER = ['critical', 'high', 'to set', 'medium', 'low'];
@@ -308,14 +311,14 @@ export function table(rows, { all = false } = {}) {
 	const w = Math.max(2, ...rows.map((r) => r.id.length)) + 2;
 	const pad = (s, n) => String(s).padEnd(n);
 	const out = [`${pad('ID', w)}${pad('TAG', 9)}${pad('STEP', 9)}${pad('SEV', 9)}${pad('FROM', 9)}TITLE`];
-	for (const r of rows) out.push(`${pad(r.id, w)}${pad(r.tag, 9)}${pad(place(r.at), 9)}${pad(sevText(r.severity), 9)}${pad(r.origin || '-', 9)}${shortOf(r)}`);
+	for (const r of rows) out.push(`${pad(r.id, w)}${pad(r.tag, 9)}${pad(place(r.at), 9)}${pad(sevText(r.severity), 9)}${pad(r.origin || '-', 9)}${suspect(r) ? 'SUSPECT ' : ''}${shortOf(r)}`);
 	out.push(`${rows.length} ${all ? 'row(s)' : 'open'}. Whole row: state.mjs item <id> | full titles: list --full | every row: list --all`);
 	return out;
 }
 /** The agent view of one row: the fields to sort and pick by, and where the rest is. */
 export const agent = (r) => ({ id: r.id, tag: r.tag, at: r.at ?? null, sev: r.severity, origin: r.origin ?? null, short: shortOf(r), more: `item ${r.id}` });
 
-export const line = (r) => plain(`${r.id} [${r.tag.toUpperCase()}${r.at ? ` ${r.at}` : ''}] ${r.severity}${r.origin ? `, ${r.origin}` : ''}: ${r.title}`);
+export const line = (r) => plain(`${r.id} [${r.tag.toUpperCase()}${r.at ? ` ${r.at}` : ''}] ${r.severity}${r.origin ? `, ${r.origin}` : ''}${suspect(r) ? ' SUSPECT' : ''}: ${r.title}`);
 
 /** J4 and T11 at a glance: who caught the closed rows, how many escaped a gate, and found-to-shipped by origin. */
 export function caught(rows) {

@@ -706,7 +706,8 @@ function main(argv) {
 /**
  * TC1 (build 20): done needs proof, on every path that writes a row (item set and item add; the review of this fix).
  * The row names its verify result, a file in the project, which holds the release check's RELEASE COMPLETE line for
- * the release the row ships in; a tag set alone is refused. Closed (shown not real) needs none.
+ * the release the row ships in; a tag set alone is refused. Closed (shown not real) needs none, except on a self-found
+ * row (K209): it is done or closed only with a verify file that is not empty and measured throwaway, ci or real-use.
  *
  * Args:
  *     row: the row as it would be written
@@ -721,14 +722,21 @@ function doneProof(row, was, named) {
 	// The build 20 sweep: a link or a junction on the way leads outside the project, so the file is read only through
 	// inside(), as an import is.
 	if ((named || (row.tag === 'done' && row.verify)) && !inside(String(row.verify))) return `${id}: the verify result must be a plain file in this project`;
-	if (row.tag !== 'done' || (was && was.tag === 'done')) return null;
-	if (!row.verify) return `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
-	// The release the row ships in: a version anywhere in its at (1.46.0, v1.46.0, "build 20 (1.46.0)"). A row with no
-	// version (a project that ships no releases) needs only its verify file.
-	const m = String(row.at || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
-	if (!m) return null;
+	// K209 (build 23a): a row the kit found on itself is suspect until it is reproduced, so closing it (shown not real,
+	// or fixed) needs its proof too, and its measured label must name a real measurement, not an estimate or a report.
+	const self = row.origin === 'self';
+	const closing = self && row.tag === 'closed' && !(was && was.tag === 'closed');
+	if (!closing && (row.tag !== 'done' || (was && was.tag === 'done'))) return null;
+	if (!row.verify) return closing ? `${id}: a self-found row closes only with its proof: item set ${id} verify <file showing it is not real, or fixed>` : `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
+	if (self && !list.PROVEN.includes(row.measured)) return `${id}: a self-found row needs measured ${list.PROVEN.join(', ')} before it is ${row.tag} (now ${clean(String(row.measured ?? 'none'))}): item set ${id} measured <label>`;
 	let text = '';
 	try { text = fs.readFileSync(inside(String(row.verify)), 'utf8'); } catch { return `${id}: its verify result ${clean(row.verify)} cannot be read`; }
+	if (!text.trim()) return `${id}: its verify result ${clean(row.verify)} is empty`;
+	if (closing) return null;
+	// The release the row ships in: a version anywhere in its at (1.46.0, v1.46.0, "build 20 (1.46.0)"). A row with no
+	// version (a project that ships no releases) needs only its verify file, not empty.
+	const m = String(row.at || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
+	if (!m) return null;
 	const line = new RegExp(`RELEASE COMPLETE: every step of v?${m[1].replace(/\./g, '\\.')} `);
 	if (!line.test(text)) return `${id}: its verify result ${clean(row.verify)} has no "RELEASE COMPLETE: every step of v${m[1]}" line: run the release check and keep its output there`;
 	// The release check also logs each complete run in the git folder, which no tool writes: a typed line is not one.
