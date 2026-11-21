@@ -30,6 +30,14 @@
    "test": "tests/safe-spawn.test.mjs::the helper starts every program from node's own folder, hidden, with a time limit, and git on the folder it names"
   },
   {
+   "id": "K212-COPIES",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The three installed copies of the safe-spawn helper are kept the same bytes.",
+   "evidence": "project/.claude/safe-spawn.cjs",
+   "test": "tests/safe-spawn.test.mjs::the three installed copies of the safe-spawn helper are the same bytes"
+  },
+  {
    "id": "K212-REPORT",
    "kind": "security",
    "reach": "projects",
@@ -63,6 +71,38 @@
    "before": "45, unchecked",
    "after": "0, checked in CI",
    "test": "tests/spawn-check.test.mjs::the kit's own installed files hold no bare-name launch outside node's own folder"
+  },
+  {
+   "id": "K212-SCAN",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check names each bare-name launch with no safe folder, in every form a kit file writes one.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the check names each bare-name launch with no safe folder, in every form a kit file writes one"
+  },
+  {
+   "id": "K212-PASS",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check passes a launch from node's own folder, a full path, the helper, and text that only names a call.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the check passes a launch from node's own folder, a full path, the helper, and text that only names a call"
+  },
+  {
+   "id": "K212-MASK",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check reads code only, blanking comments and the inside of literals and keeping every line.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the mask keeps every offset and line, and blanks only comments and the inside of literals"
+  },
+  {
+   "id": "K212-CLI",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check scans project/ and user/, names each file and line, and fails until none is left.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the command scans project/ and user/ of a kit root, names each file and line, and fails until none is left"
   },
   {
    "id": "K215",
@@ -201,6 +241,14 @@
    "before": "Done on a claim",
    "after": "Need a recorded repro",
    "test": "tests/list.test.mjs::a self-found row is done or closed only with a repro file and a measured label, and list shows it SUSPECT until then"
+  },
+  {
+   "id": "K210-STEP",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "The plan step needs its self-approval line first, and the streak counts only plans refused over a risk the verdict named.",
+   "evidence": "project/.claude/loop.mjs",
+   "test": "tests/loop.test.mjs::the plan step needs its self-approval line first, and the streak counts only plans refused over a risk the verdict named"
   },
   {
    "id": "K210",
