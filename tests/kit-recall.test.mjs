@@ -931,8 +931,9 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.deepEqual(forgot, [asks[0].opts.cwd], 'its guard record is forgotten');
   assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
   assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
-  assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' } }), /KIT_CLAUDE_HOME/);
-  assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }) }), /no/);
+  // A saved label is never written over (the build 22 sweep), so the failing runs below take new labels.
+  assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' }, label: 'recall-cand-10' }), /KIT_CLAUDE_HOME/);
+  assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }), label: 'recall-cand-11' }), /no/);
   assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'a failed run cleans up too');
 });
 

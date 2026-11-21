@@ -203,7 +203,8 @@ export function copyUserLayer(kitDir, dir, home) {
 		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
 			const p = path.join(d, e.name);
 			if (e.isDirectory()) fill(p);
-			else if (e.name.endsWith('.md')) { const t = fs.readFileSync(p, 'utf8'); if (t.includes('{{CLAUDE_HOME}}')) fs.writeFileSync(p, t.replaceAll('{{CLAUDE_HOME}}', own)); }
+			// A real file only: a link copied from the kit points outside the probe, and is never written through.
+			else if (e.isFile() && e.name.endsWith('.md')) { const t = fs.readFileSync(p, 'utf8'); if (t.includes('{{CLAUDE_HOME}}')) fs.writeFileSync(p, t.replaceAll('{{CLAUDE_HOME}}', own)); }
 		}
 	};
 	for (const part of ['skills', 'agents']) if (fs.existsSync(path.join(dir, '.claude', part))) fill(path.join(dir, '.claude', part));
@@ -255,7 +256,9 @@ export function reusable(out, marker, ids) {
  * reuses nothing clears the label's old records before it writes its marker, so a crash never leaves another run's
  * records under this run's marker for a resume to take.
  */
-export function startRun(out, marker, ids, { only = null, resume = false, name = '' } = {}) {
+export function startRun(out, marker, ids, { only = null, resume = false, name = '', just = null } = {}) {
+	// The build 22 sweep: a second look under a label that holds runs would delete them; it takes a new label.
+	if (just && ['run.json', 'result.json'].some((f) => fs.existsSync(path.join(out, f)))) throw new Error(`--just: ${name} already holds saved runs; a second look takes a new label (cand-<x>-<n>, base-<x>-<n>)`);
 	const saved = reusable(out, marker, ids);
 	if (only) {
 		const missing = ids.filter((id) => !only.has(id) && !saved.includes(id));
@@ -363,7 +366,7 @@ async function main(argv) {
 	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
 	const head = run('git', ['rev-parse', 'HEAD'], { cwd: kit }).stdout.trim();
 	const marker = { head, suite: suite.version, released, noKit: !!noKit };
-	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name });
+	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name, just });
 	if (resume) console.log(`--resume: ${reuse.size} scenario(s) saved on ${head.slice(0, 7)} are graded from their records`);
 	for (const s of suite.scenarios) {
 		if ((only && !only.has(s.id)) || reuse.has(s.id)) {

@@ -84,6 +84,9 @@ export function blindRun(text, removed = []) {
 
 export function blind(out, runs, random = crypto.randomInt) {
   if (!out || !runs.length) throw new Error('usage: blind <out folder> <run.md> ...');
+  // The build 22 sweep: a second blind step into the same folder would replace the sealed map a look is scored by.
+  const scorer = path.join(out, 'scorer');
+  if (fs.existsSync(path.join(out, 'sealed-map.json')) || (fs.existsSync(scorer) && fs.readdirSync(scorer).length)) throw new Error(`${out} already holds a blind step: blind each look into a new folder`);
   fs.mkdirSync(path.join(out, 'scorer'), { recursive: true });
   const order = [...runs];
   for (let i = order.length - 1; i > 0; i--) { const j = random(i + 1); [order[i], order[j]] = [order[j], order[i]]; }

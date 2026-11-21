@@ -503,6 +503,8 @@ export function askAll({ qs, projectDir, run }) {
  *     the path of the saved run
  */
 export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools, only = null }) {
+  // The build 22 sweep: a saved run is paid for; a rerun or a second look takes a new label.
+  if (fs.existsSync(path.join(outDir, `${label}.md`))) throw new Error(`${label} is already saved in ${outDir}: give this run a new label (a second look: cand-<x>-<n>, base-<x>-<n>)`);
   checkUserLayer(home, osHome);
   checkHome(env);
   checkSessionHome(home, run);
