@@ -110,7 +110,7 @@ test('an owner step is done only on the owner\'s Yes to its loop act in the reco
 });
 
 // why: guards rule:loop-driver (a limit needs an instrument)
-// planted: {"file":"project/.claude/bounds.json","was":"\"visual\": 3 }","to":"\"visual\": 3, \"ciFix\": 2 }"}
+// planted: {"file":"project/.claude/bounds.json","was":"\"visual\": 3, \"ciFix\": 5 }","to":"\"visual\": 3 }"}
 test('the counted stops halt at the bounds file\'s limits, per unit, and a halt holds every step until the owner resumes', () => {
 	const r = repo();
 	loop(r, ['start', 'K1']);
@@ -138,10 +138,13 @@ test('the counted stops halt at the bounds file\'s limits, per unit, and a halt 
 	assert.equal(loop(r, ['count', 'visual']).status, 0, 'the check reset the visual count');
 	assert.equal(loop(r, ['count', 'visual']).status, 3, 'three visual increments since the check');
 	assert.equal(resume(r).status, 0);
-	// K210: the shipped bounds set no ciFix until the owner picks one (H7, open at 1.49.0), so ci-fix never halts there.
-	// The build 23a sweep (T2): the cap was read back from the file under test, so any value passed; it is pinned.
-	assert.equal(JSON.parse(fs.readFileSync(path.resolve('project/.claude/bounds.json'), 'utf8')).limits.ciFix, undefined, 'the owner has set no ciFix');
-	for (let i = 1; i <= 5; i++) assert.equal(loop(r, ['count', 'ci-fix']).status, 0, `ci-fix round ${i} with no cap`);
+	// K210: the shipped bounds cap CI-fix rounds at the owner's 5 (H7, 2026-11-21: past 5, something is not aligned), so
+	// the fifth round in a red streak halts the run. The build 23a sweep (T2): the cap was read back from the file under
+	// test, so any value passed; it is pinned.
+	assert.equal(JSON.parse(fs.readFileSync(path.resolve('project/.claude/bounds.json'), 'utf8')).limits.ciFix, 5, "the owner's cap");
+	for (let i = 1; i <= 4; i++) assert.equal(loop(r, ['count', 'ci-fix']).status, 0, `ci-fix round ${i}`);
+	assert.equal(loop(r, ['count', 'ci-fix']).status, 3, 'the fifth round halts');
+	assert.equal(resume(r).status, 0);
 	assert.equal(loop(r, ['count', 'nap']).status, 2, 'an unknown counter');
 });
 

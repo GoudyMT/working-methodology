@@ -461,7 +461,7 @@
   },
   {
    "decision": "A wildcard in inline node code is text only where the code can reach no file",
-   "why": "The owner's pick (2026-11-21); code that lists, writes or runs is read strictly."
+   "why": "The owner's pick (2026-11-21)."
   },
   {
    "decision": "An owner push marker needs a pop-up yes per ref",
@@ -472,7 +472,7 @@
    "why": "New holds and checks reach every project."
   },
   {
-   "decision": "The K229 test reads `find -delete` from the `.claude` folder",
+   "decision": "The K229 test reads `find -delete` from `.claude`",
    "why": "Its first case held only by its pipe."
   },
   {
@@ -485,11 +485,15 @@
   },
   {
    "decision": "R1 ships as hardening",
-   "why": "125 probes gave the same decision before and after."
+   "why": "125 probes found no difference."
   },
   {
    "decision": "The owner push rule line is reworded in build 23b",
    "why": "The owner's pick (2026-11-21): a rewording needs a paid recall run, and the hook's refusal already names the typed ref."
+  },
+  {
+   "decision": "CI-fix rounds halt the loop at 5",
+   "why": "The owner's pick (2026-11-21): past 5, something is not aligned."
   }
  ],
  "upgrading": "Run install user, then install project: the guard start script, the launcher, the commit-msg and pre-push hooks, owner-proof, owner-yes, the safe-spawn helper copies, name-check, state.mjs, loop.mjs and the closeout and brainstorm skills change. The owner's own push now asks for the ref's name at their terminal (or a pop-up yes in a session); a person whose name matches a code tool commits once listed with `git config --add kit.allowedIdent \"<name> <email>\"`.",

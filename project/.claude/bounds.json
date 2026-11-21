@@ -15,6 +15,6 @@
     { "step": "verify", "who": "alone" },
     { "step": "closeout", "who": "alone" }
   ],
-  "limits": { "fixRound": 3, "canaryMiss": 2, "visual": 3 },
+  "limits": { "fixRound": 3, "canaryMiss": 2, "visual": 3, "ciFix": 5 },
   "shadow": { "step": "design", "streak": 10 }
 }
