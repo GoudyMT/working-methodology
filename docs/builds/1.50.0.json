@@ -496,9 +496,9 @@
    "low": 27
   },
   "accepted": [
-   "critical K1: a session could build a folder that passed as the verified plugin; K178 is held out of this release on the owner's pick, so none of it ships",
-   "high K2: a session can unset the one variable the cloud check reads; predates this build; owner-accepted limit, to fix with K178",
-   "high BG5: the plugin write check misses a path opening with an unresolved expansion; the manifest check holds the next call; owner-accepted limit"
+   "critical K1: a self-built folder passed as the verified plugin; K178 held out on the owner's pick",
+   "high K2: a session can unset the cloud check's one variable; predates this build; to fix with K178",
+   "high BG5: the plugin write check misses a path opening with an unresolved expansion; the manifest check holds the next call"
   ],
   "deferred": [
    "low N8: no kit text when the pinned node is gone (list item)",
