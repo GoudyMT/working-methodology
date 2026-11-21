@@ -98,7 +98,7 @@ const LOADED = ['agents', 'skills', 'commands', 'plugins'];
 // of those names, is unsure too (the commit security review).
 const NAMES = ['claude', 'mcp', 'plugin', 'plugins'];
 const globMay = (w) => { let re; try { re = new RegExp('^' + w.split(/[\\/]/).pop().replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\[[^\]]*\]/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; } return NAMES.some((n) => re.test(n)); };
-const globNames = (t) => t.split(/[;&|\n]+/).some((seg) => { const w = seg.trim().split(/\s+/); const named = w.some((x) => NAMES.includes(x.toLowerCase().split(/[\\/]/).pop().replace(/\.(exe|cmd)$/, ''))); return w.some((x, i) => /[?*[]/.test(x) && (i === 0 || named || globMay(w[i - 1])) && globMay(x)); });
+const globNames = (t) => t.split(/[;&|\n]+/).some((seg) => { const raw = seg.trim().split(/\s+/); const w = raw.map((x) => x.replace(/^[({]+|[)}]+$/g, '')); const prog = (i) => i === 0 || /^[({]/.test(raw[i]) || /^[({]$/.test(raw[i - 1]); const named = w.some((x) => NAMES.includes(x.toLowerCase().split(/[\\/]/).pop().replace(/\.(exe|cmd)$/, ''))); return w.some((x, i) => /[?*[]/.test(x) && (prog(i) || named || globMay(w[i - 1])) && globMay(x)); });
 const mcpCommand = (c) => {
 	let t = String(c || '');
 	const bare0 = t.replace(/["'`\\^]/g, '');
