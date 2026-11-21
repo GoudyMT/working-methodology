@@ -1932,7 +1932,11 @@ export function promptCheckReport({ kit, projectDir }) {
  * Returns:
  *     the cue, or '' when there is none or it was already given
  */
-export function closeoutCue({ projectDir, prompt = '', session = '' }) {
+// The rule's own words (rules/tracking-and-handoff.md, rule:compact-ritual), quoted so the cue never says less than
+// the rule (the 2026-11-21 paired run: a paraphrase, "once the check has passed, start", was echoed back as the rule).
+export const CLOSEOUT_RULE = 'it also starts on its own once the thread\'s PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open';
+export function closeoutCue({ projectDir, prompt = '', session = '', env = process.env }) {
+  if (env.KIT_RULE_CUES === 'off') return '';
   // The project's own config could name a program for git to run; NO_PROGRAMS turns those off, as everywhere here.
   const git = (...a) => spawnSync('git', ['-C', projectDir, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD, timeout: 3000 });
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
@@ -1946,7 +1950,7 @@ export function closeoutCue({ projectDir, prompt = '', session = '' }) {
   if (given.includes(key)) return '';
   fs.appendFileSync(file, `${key}\n`);
   const why = tag ? `HEAD is the release ${tag}` : 'the owner says the PR merged and its release is out';
-  return `Closeout cue: ${why}. Once its Post-Merge Check has passed and this thread has no other work open, start the closeout skill now (rule:compact-ritual).`;
+  return `Closeout cue: ${why}. rule:compact-ritual: the Closeout "${CLOSEOUT_RULE}". When those hold, start the closeout skill now.`;
 }
 
 /**
@@ -1959,7 +1963,9 @@ export function closeoutCue({ projectDir, prompt = '', session = '' }) {
  * Returns:
  *     one line per matching rule, or ''
  */
-export function ruleCues({ kit, prompt = '' }) {
+export function ruleCues({ kit, prompt = '', env = process.env }) {
+  // The paired run's cues-off recall arm (the owner, 2026-11-21) sets KIT_RULE_CUES=off; cues are help, never a guard.
+  if (env.KIT_RULE_CUES === 'off') return '';
   let data;
   try { data = JSON.parse(fs.readFileSync(path.join(kit, 'rules', 'cues.json'), 'utf8')); } catch { return ''; }
   return (data.cues || [])

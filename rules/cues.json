@@ -1,14 +1,14 @@
 {
-  "about": "K192 (the owner's pick, 2026-11-20): rule cues. When a message names one of these topics, the prompt hook puts the rule's own words in front of the session, quoted word for word from the source file named, so a cue never says more or less than its rule. A test holds each quote to its source. Recall then partly measures the cue, so behaviour scenarios 4, 7 and 9 check the same rules by acts.",
+  "about": "K192 (the owner's pick, 2026-11-20): rule cues. When a message names one of these topics, the prompt hook puts the rule's own words in front of the session, quoted word for word from the source file named, so a cue never says more or less than its rule. A test holds each quote to its source. Recall then partly measures the cue, so behaviour scenarios 4, 7, 9, 10 and 13 check the same rules by acts, and the paired run records a recall arm with the cues off (KIT_RULE_CUES=off) beside the gate's.",
   "cues": [
     {
       "rule": "outward-acts",
       "home": "AGENTS.md",
       "source": "rules/_parts/agents-head.md",
-      "when": "\\b(push(es|ed|ing)?|pull requests?|PRs?)\\b",
+      "when": "\\bpush(es|ed|ing)?\\b|\\bopen(s|ing)? (the |its |a |my )?(PR|pull request)\\b",
       "quotes": [
-        "A push of a feature branch and opening its PR need no yes: do them, then tell the owner.",
-        "any push outside the push bound (its four limits: never main, a tag, a force or a delete) need the owner's yes in the choice pop-up"
+        "(its four limits: never main, a tag, a force or a delete)",
+        "A push of a feature branch and opening its PR need no yes: do them, then tell the owner."
       ]
     },
     {
@@ -29,6 +29,17 @@
       "quotes": [
         "**Capture:** one line under `## Parking Lot` at the top of the active plan",
         "`build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep"
+      ]
+    },
+    {
+      "rule": "pre-pr-deep-sweep",
+      "home": "CLAUDE.md",
+      "source": "project/CLAUDE.md",
+      "when": "\\b(sweep|review)\\b[^.?!]*\\b(PRs?|pull requests?)\\b|\\b(PRs?|pull requests?)\\b[^.?!]*\\b(sweep|review)\\b",
+      "quotes": [
+        "No feature / sub-project PR opens for review or merges to `main` without a deep multi-agent sweep",
+        "an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded and summarized in the PR.",
+        "Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or \"it looks fine\"."
       ]
     }
   ]

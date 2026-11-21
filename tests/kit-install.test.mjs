@@ -1214,6 +1214,8 @@ test('the hook script speaks at a message only when there is news', async () => 
 test('the prompt hook cues the closeout once per release, from a release tag at HEAD or the owner saying so (K191)', async () => {
   const kitTools = await import('../scripts/kit.mjs');
   assert.equal(typeof kitTools.closeoutCue, 'function', 'K191: the closeout cue');
+  // It quotes the rule word for word, never a paraphrase a session echoes back as the rule.
+  assert.ok(read(path.resolve('rules/tracking-and-handoff.md')).includes(kitTools.CLOSEOUT_RULE), 'the cue quotes rule:compact-ritual');
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
@@ -1235,6 +1237,8 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
   assert.match(tagged, /v1\.1\.0/);
   assert.match(tagged, /start the closeout skill now/);
   assert.equal(run('anything else?').stdout, '');
+  assert.match(tagged, /starts on its own once the thread's PR is merged/);
+  assert.equal(kitTools.closeoutCue({ projectDir: proj, prompt: 'My PR merged and its release is out.', session: 'off-arm', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
   git('tag', 'not-a-release');
   git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'chore: y');
   git('tag', 'nightly');
@@ -1252,7 +1256,7 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   for (const c of data.cues) {
     const src = read(path.resolve(c.source));
     for (const q of c.quotes) assert.ok(src.includes(q), `${c.rule}: not word for word in ${c.source}: ${q}`);
-    assert.match(index, new RegExp(`^\\| ${c.rule} \\| [^|]+ \\| \`${c.home.replace(/[.]/g, '\\.')}\` \\|`, 'm'), `${c.rule} lives in ${c.home}`);
+    assert.match(index, new RegExp(`^\\| ${c.rule} \\| `, 'm'), `${c.rule} is a rule id`);
   }
   const cue = (prompt) => kitTools.ruleCues({ kit: path.resolve('.'), prompt });
   // The three recall questions, and the words real work uses.
@@ -1260,6 +1264,10 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   assert.match(cue('I want to run five review agents at once. What do I do first?'), /^rule:swarm-contract \(standards\/agent-teams\.md\): .*approve\.mjs.*ASK: show the table/m);
   assert.match(cue('While building I noticed an unrelated idea for later. Where does it go?'), /^rule:parking-lot \(standards\/reviews-and-findings\.md\): .*Parking Lot.*all gates green/m);
   assert.match(cue('fan out three subagents over src/'), /rule:swarm-contract/);
+  // The paired run of 2026-11-21: Q10's sweep, and a merged PR that names no push or PR opening.
+  assert.match(cue('The feature is done and green. What review is required before its PR?'), /^rule:pre-pr-deep-sweep \(CLAUDE\.md\): .*agents actually running/m);
+  assert.equal(cue('My PR merged and its release is out. What happens next?'), '', 'a merged PR is no push');
+  assert.equal(kitTools.ruleCues({ kit: path.resolve('.'), prompt: 'Push the branch.', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
   for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?'.replace('push back', 'argue')]) assert.equal(cue(quiet), '', quiet);
   // Through the hook, beside the kit check.
   const { kit, home, proj } = caseKit();
