@@ -1167,8 +1167,8 @@ test('the sheet parser refuses what it cannot read, and says why', async () => {
 // why: guards rule:collaborative-design-locks
 test('K207 F1: a "What I thought:" line inside an answer is refused, naming the question, not filed in the wrong box', async () => {
   const { parseSheet } = await sheetTools();
-  assert.throws(() => parseSheet(answerQ3('My plan.\nWhat I thought: is this a label?\nmore')), /Q3 has two "What I thought:" lines; the first one is inside the answer/);
-  assert.throws(() => parseSheet(answerQ3('My plan.\nWhat I thought:\nmore')), /Q3 has two "What I thought:" lines/);
+  assert.throws(() => parseSheet(answerQ3('My plan.\nWhat I thought: is this a label?\nmore')), /Q3 has more than one "What I thought:" line, so the sheet cannot tell where the answer ends/);
+  assert.throws(() => parseSheet(answerQ3('My plan.\nWhat I thought:\nmore')), /Q3 has more than one "What I thought:" line/);
   // A line that only mentions the label, not at its start, stays the owner's words.
   assert.equal(parseSheet(answerQ3('My plan. What I thought: later')).questions[2].answer, 'My plan. What I thought: later');
 });

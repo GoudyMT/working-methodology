@@ -37,7 +37,7 @@ function parseQuestion(n, text, topic, body) {
   const thoughtAt = body.findIndex((l, i) => i > answerAt && isThought(l));
   if (thoughtAt < 0) fail(`Q${n} has no "What I thought:" line after "Your answer:"`);
   // K207 F1: a second label line cannot be told from the real one, so the owner's words would land in the wrong box.
-  if (body.some((l, i) => i > thoughtAt && isThought(l))) fail(`Q${n} has two "What I thought:" lines; the first one is inside the answer. Change the words of the first one (it starts a line with the label), or move them under the last "What I thought:"`);
+  if (body.some((l, i) => i > thoughtAt && isThought(l))) fail(`Q${n} has more than one "What I thought:" line, so the sheet cannot tell where the answer ends. Keep the one that starts your thought, and change the words of each other one (a line that starts with the label), or move them under the one you keep`);
   let inOptions = false;
   for (const raw of body.slice(0, answerAt)) {
     const line = clean(raw);
