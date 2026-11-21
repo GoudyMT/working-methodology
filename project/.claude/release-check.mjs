@@ -182,8 +182,10 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 	const st = state(where);
 	step('state check', !st ? `no state check ran: ${where} has no .claude/state.mjs` : st.status !== 0 ? `the state check fails: ${st.stdout || st.stderr}` : null);
 
+	let copyOnTag = false;
 	if (copy) {
 		const head = g(copy, 'rev-parse', '--verify', '-q', 'HEAD').stdout.trim();
+		copyOnTag = Boolean(atTag && head === atTag.sha && !g(copy, 'status', '--porcelain').stdout.trim());
 		step(`release copy on ${tag}`, !atTag ? `no tag ${tag} on GitHub to compare` : head !== atTag.sha ? `the release copy is not on ${tag} (HEAD ${head.slice(0, 12) || 'unreadable'})` : null);
 	}
 	if (installed) {
@@ -202,7 +204,9 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 					: rec.commit !== atTag.sha ? `the plugin build records commit ${one(rec.commit).slice(0, 12)}, not ${tag}'s ${atTag.sha.slice(0, 12)}: rebuild it from the release copy` : null);
 		// The build 23b sweep: the record is two fields; the files are held to a build of the release copy, manifest for
 		// manifest (the manifest hashes every file a hook loads).
-		if (copy) {
+		// The commit security review: the copy's own build script runs only when the copy is the tag, with nothing changed.
+		if (copy && !copyOnTag) step('plugin files match a build of the release copy', 'the release copy is not the clean tag, so it was not built');
+		else if (copy) {
 			const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kit-rc-plugin-')), 'kit');
 			let why = null;
 			try {
