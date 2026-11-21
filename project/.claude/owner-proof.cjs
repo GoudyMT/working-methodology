@@ -78,13 +78,14 @@ const DASH_UNSURE = 'Never by a tool: part of this command is more than the guar
 // definition, a substitution) may change what it runs, so it is held; on 1.46.1 this named the guard files instead.
 const BESIDE_REASON = 'Never by a tool: this names a protected file beside another command the guard cannot read as plain (a program it does not know, a definition, a substitution), which may change what the read runs. Run the read as a command of its own.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install; the report channel\'s kit-report.json and kit-scrub-words.json are the owner\'s, and kit-reports/ is written by kit-report.mjs. Read them, or ask the owner to reinstall the kit or change their own file.';
-const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json, .claude.json or an agent file, or a claude mcp add or --mcp-config, which wire the guards, the loop and the MCP servers a session starts';
+const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json, .claude.json or an agent, skill, command or plugin file, or a claude mcp or plugin change or a session flag that loads them, which wire the guards, the loop and the code a session starts';
 // S1 (the build 23a sweep): claude mcp add (add-json, add-from-claude-desktop, remove) has Claude Code write the MCP
 // servers a session starts into .claude.json or .mcp.json itself, and --mcp-config starts a session with the servers a
 // file names; each takes the same yes. Read with quotes, backslashes, backticks and carets taken out, and with no
 // program name needed, so a name the command builds (c=claude; $c mcp add) is held too. Only the subcommands that
-// read pass (list, get); any other word after mcp, a variable ($S) included, is held (the commit security review).
-const MCP_ACT = /(^|[^\w.-])mcp\s+(?!(list|get)(?![\w-]))\S|--mcp-config\b/i;
+// read pass (list, get); any other word after mcp, a variable ($S) included, is held (the commit security review). The
+// same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents.
+const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|--(mcp-config|plugin-dir|settings|agents)\b/i;
 // The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
 // skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
 const LOADED = ['agents', 'skills', 'commands', 'plugins'];
