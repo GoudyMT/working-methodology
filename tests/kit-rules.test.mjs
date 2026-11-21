@@ -632,6 +632,30 @@ test('install seeds the loop bounds file once and never changes the owner\'s', (
   assert.equal(read(file), template('owner'));
 });
 
+// 1.49.0 step 6: the ci-fix cap (ciFix 5) reached fresh installs only, so every project installed before ran with it
+// off. A limit the owner's file lacks is added at the kit's value; every value the owner set stays as it is.
+// why: guards rule:loop-driver
+test('install adds a limit the owner\'s bounds file lacks and keeps every value the owner set', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(kit, 'project', '.claude'), { recursive: true });
+  const template = (limits) => `{\n  "steps": [\n    { "step": "merge", "who": "owner" }\n  ],\n  "limits": { ${limits} }\n}\n`;
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('"fixRound": 3'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  const file = path.join(proj, '.claude', 'bounds.json');
+  // The owner tightens a limit; the next kit adds a new one and loosens the old one's default.
+  fs.writeFileSync(file, template('"fixRound": 2'));
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('"fixRound": 9, "ciFix": 5'));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(JSON.parse(read(file)).limits, { fixRound: 2, ciFix: 5 }, read(file));
+  assert.deepEqual(JSON.parse(read(file)).steps, [{ step: 'merge', who: 'owner' }]);
+  assert.ok(r.updated.includes('.claude/bounds.json'), JSON.stringify(r));
+  // Run again, nothing is missing: the file is left exactly as it is.
+  const now = read(file);
+  const again = install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(file), now);
+  assert.ok(!again.updated.includes('.claude/bounds.json'), JSON.stringify(again));
+});
+
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
 // session start said only that an update was there.
 // why: catches a real gap (N5): session start never said a newer user layer can break an older project

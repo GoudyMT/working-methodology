@@ -339,6 +339,31 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // is never merged into it (the 1.36.0 template _State.json clashed in every project), updated, or folded back.
 // T7 (build 12): the loop's bounds file too, the owner's from the first install, so no kit change loosens it.
 export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
+// 1.49.0 step 6: a limit added to the kit (ciFix) reached fresh installs only. A limit the owner's bounds file lacks is
+// added at the kit's value; nothing the owner set changes, and a file that does not read as one flat limits object is
+// left alone. Returns whether the file changed (or would, on a dry run); the old copy goes to `keep` first.
+function addMissingLimits(dest, want, dryRun, keep) {
+  let mine, kits;
+  if (fs.lstatSync(dest).isSymbolicLink()) return false;
+  try { mine = JSON.parse(fs.readFileSync(dest, 'utf8')); kits = JSON.parse(want); } catch { return false; }
+  const have = mine && mine.limits, add = kits && kits.limits;
+  if (!have || typeof have !== 'object' || Array.isArray(have) || !add || typeof add !== 'object') return false;
+  const missing = Object.entries(add).filter(([k, v]) => !Object.hasOwn(have, k) && Number.isFinite(v));
+  if (!missing.length) return false;
+  const text = fs.readFileSync(dest, 'utf8');
+  const m = /("limits"\s*:\s*\{)([^{}]*?)(\s*\})/.exec(text);
+  if (!m) return false;
+  const body = m[2].replace(/\s+$/, '');
+  const extra = missing.map(([k, v]) => `${JSON.stringify(k)}: ${v}`).join(', ');
+  const next = text.slice(0, m.index) + m[1] + body + (body.trim() ? ', ' : ' ') + extra + m[3] + text.slice(m.index + m[0].length);
+  try { JSON.parse(next); } catch { return false; }
+  if (!dryRun) {
+    fs.mkdirSync(path.dirname(keep), { recursive: true });
+    fs.copyFileSync(dest, keep);
+    fs.writeFileSync(dest, next);
+  }
+  return true;
+}
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
 // K120 (1.42.0): in the Claude folder the kit's tools and hooks (the guard launcher among them) are its guard files: a
 // changed one is put back, never kept or merged.
@@ -731,7 +756,11 @@ export function install(ctx) {
       write(); created.push(entry.key); files[entry.key] = wantHash;
       continue;
     }
-    if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) { files[entry.key] = stamp.files[entry.key] || wantHash; continue; }
+    if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) {
+      files[entry.key] = stamp.files[entry.key] || wantHash;
+      if (entry.key === '.claude/bounds.json' && addMissingLimits(entry.dest, want, ctx.dryRun, path.join(backupDir, entry.key))) { updated.push(entry.key); kept = true; }
+      continue;
+    }
     const cur = sha(compared(entry.key, fs.readFileSync(entry.dest, 'utf8')));
     const base = stamp.files[entry.key];
     if (cur === wantHash) {
