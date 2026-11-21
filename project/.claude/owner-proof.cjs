@@ -1094,11 +1094,15 @@ function shellWritesFrom(command, tool, start, names) {
 	if (named) return false;
 	const raw = source;
 	// Read from the folder the shell starts in, as the words above are: a bare kit-owner.json there is placed.
-	return [raw, text].some((t) => {
-		// In PowerShell a backslash is the path separator, not a quote (K32).
-		const quoted = (tool === 'PowerShell' ? /["'`]/ : /["'`\\]/).test(t);
-		return t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
-	});
+	// K226 (build 23a): a quote anywhere once made every word here read as quoted, so a plain folder glob beside a quoted
+	// pattern (grep -rn 'foo' src/**/*.ts) could match .claude. Quoting is now read per shell word: a word with no quote,
+	// backtick or backslash of its own is read as the shell reads it; a word holding one is read the strict way, so a
+	// dot made by quoting ('.'*) is still matched.
+	const quoteSign = tool === 'PowerShell' ? /["'`]/ : /["'`\\]/;
+	return [raw, text].some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
+		const quoted = quoteSign.test(word);
+		return word.split(/["'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
+	}));
 }
 
 // Turning every hook off is a gate bypass, never a settings change a yes may approve (K21). JSON reads \u escapes as

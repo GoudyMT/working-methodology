@@ -1716,3 +1716,11 @@ test('a quoted ${VAR} path in a read runs, and a program or delete through ${VAR
 	for (const c of ['${G} -rf x', '"${G}" -rf x', "bash -c '${G} -rf x'", '${G:-rm} -rf x', '${G} --recursive --force x', 'rm -rf "${TMPDIR}/x"', 'rm -rf "${HOME}"', 'eval "${G} -rf x"', '$G -rf x']) assert.notEqual(bash(c), 'allow', c);
 });
 
+// K226 (S6): a quoted word anywhere made the guard read every wildcard as able to match a dot name, so
+// src/**/*.ts could be .claude and a plain grep was refused.
+// why: catches a quoted grep pattern beside a folder glob refused as a guard write
+test('a quoted pattern beside a folder glob reads, and a quoted or dotted name of a guard file is still refused', () => {
+	for (const c of ["grep -rn 'foo' src/**/*.ts", "grep 'foo' src/*/a.ts", 'cd "src" && ls src/**/*.ts', "grep -n 'a b' src/*.ts src/*/*.ts"]) assert.equal(bash(c), 'allow', c);
+	for (const c of ["echo x > '.claude/guard.cjs'", "cp x '.claude/'*.cjs", "echo x > src/'.'*/guard.cjs", "sed -i s/a/b/ \".claude\"/*.cjs", "cp 'x' .claude/*", "echo 'y' > .c*/guard.cjs", "bash -O dotglob -c 'echo x > src/../*/guard.cjs'", "shopt -s dotglob; echo 'x' > */guard.cjs", "cd '.claude' && echo x > guard.cjs"]) assert.equal(bash(c), 'deny', c);
+});
+
