@@ -25,10 +25,16 @@ const KEEP_GIT_ENV = /^GIT_(AUTHOR_(NAME|EMAIL|DATE)|COMMITTER_(NAME|EMAIL|DATE)
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 // The build 23a sweep: a diff program the repo's config names (diff.external) never runs either. An empty
 // diff.external makes git diff fail, so a diff takes --no-ext-diff, after any -c or -C options before it.
+// The tree's attributes come from the empty tree (gitEnv); a user attributes file is emptied here, and diff, log and
+// show take --no-textconv, so the repo's info/attributes names no textconv either (a security review of this build).
+// Limit: a clean filter named in info/attributes still runs on status, and its program comes only from git config,
+// which no tool writes.
 function gitArgs(args) {
 	let i = 0;
 	while (i < args.length && String(args[i]).startsWith('-')) i += args[i] === '-c' || args[i] === '-C' ? 2 : 1;
-	return args[i] === 'diff' ? [...args.slice(0, i + 1), '--no-ext-diff', ...args.slice(i + 1)] : args;
+	const sub = args[i];
+	const extra = sub === 'diff' ? ['--no-ext-diff', '--no-textconv'] : sub === 'log' || sub === 'show' ? ['--no-textconv'] : [];
+	return ['-c', 'core.attributesFile=', ...args.slice(0, i + 1), ...extra, ...args.slice(i + 1)];
 }
 function gitEnv(env = process.env) {
 	const out = {};

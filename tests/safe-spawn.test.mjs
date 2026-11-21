@@ -156,9 +156,13 @@ test('a git read through the helper runs no program the repo or the environment 
 	g('init', '-q', '-b', 'main');
 	fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
 	fs.writeFileSync(path.join(dir, '.gitattributes'), 'a.txt diff=planted filter=planted\n');
+	// The repo's own info/attributes names a second textconv (a security review of this build).
+	fs.mkdirSync(path.join(dir, '.git', 'info'), { recursive: true });
+	fs.writeFileSync(path.join(dir, '.git', 'info', 'attributes'), 'a.txt diff=infoconv\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
 	g('config', 'diff.planted.textconv', `sh '${sh('textconv')}'`);
+	g('config', 'diff.infoconv.textconv', `sh '${sh('infoconv')}'`);
 	g('config', 'filter.planted.clean', `sh '${sh('clean')}'`);
 	g('config', 'core.hooksPath', '.hooks');
 	g('config', 'diff.external', `sh '${sh('config-diff')}'`);
