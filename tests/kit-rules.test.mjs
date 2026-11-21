@@ -1342,3 +1342,20 @@ test('the sheet page ships no private data, calls no third party, and writes the
   assert.match(page, /collection\('answers'\)\.doc\(qid\)\.set/);
   for (const field of ['grounding', 'sectionTitle', 'recWhy', 'submitted']) assert.ok(page.includes(field), field);
 });
+
+// K219 (build 23b): the no-raw-non-ASCII rule flattened the arrow glyphs, so the global CLAUDE.md banned the very
+// spellings it then required; and "prefer 2025-2026 approaches" went stale with nothing to refresh it.
+// why: catches instruction text that contradicts itself or pins a year range that goes stale (K219)
+test('the arrow rule bans none of the spellings it requires, and no instruction pins a year range (K219)', () => {
+  const lines = read(path.resolve('user/CLAUDE.md')).split('\n');
+  const ban = lines.find((l) => /Never use unicode arrows/i.test(l));
+  const want = lines.find((l) => /Always use ASCII arrows/i.test(l));
+  assert.ok(ban && want, 'the arrow rule is still there');
+  const required = [...want.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  assert.ok(required.length > 0);
+  assert.deepEqual(required.filter((s) => ban.includes(s)), [], 'the ban names a spelling the next line requires');
+  const instructions = [path.resolve('user/CLAUDE.md'), ...ruleFiles()];
+  const pinned = instructions.flatMap((f) => read(f).split('\n').map((l, i) => [l, i + 1])
+    .filter(([l]) => /\b(19|20)\d\d\s*(-|to)\s*(19|20)\d\d\b/.test(l)).map(([, i]) => `${path.basename(f)}:${i}`));
+  assert.deepEqual(pinned, [], 'say "current" or tie it to the date in context, not a year range');
+});

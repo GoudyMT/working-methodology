@@ -86,7 +86,7 @@ These standards apply to every project and conversation. They override defaults 
 - Internal helper functions: brief one-liner is fine
 
 ### Character Rules
-- **Never use unicode arrows** in code, comments, docstrings, or markdown: no `->`, `<-`, `<->`
+- **Never use unicode arrows** in code, comments, docstrings, or markdown: no U+2192, U+2190, U+2194
 - Always use ASCII arrows: `->`, `<-`, `<->`
 - This applies to all files: .py, .ipynb, .md, everywhere
 
@@ -108,7 +108,7 @@ These standards apply to every project and conversation. They override defaults 
 - Follow established patterns in the field, not shortcuts
 - When multiple approaches exist, recommend the one with the strongest evidence base
 - If a "best practice" conflicts with practical reality (time, compute, data size), say so and recommend the pragmatic choice with explanation
-- Stay current - prefer 2025-2026 approaches over outdated patterns when relevant
+- Stay current - prefer approaches current as of today's date over outdated patterns when relevant
 
 ### Scope Discipline
 - Don't add features, refactor code, or make "improvements" beyond what was asked
