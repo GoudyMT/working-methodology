@@ -8,7 +8,7 @@
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line "Kit tools this session"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
+Before any swarm (a sweep, a red-team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line "Kit tools this session"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -42,7 +42,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 
 ### Where Work Runs {#where-work-runs}
 
-A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. A cloud build thread may push its own feature branch. Kit installs, sweeps, the PR, its body and release verification stay on the owner's PC. A worker runs only through `worker.mjs`, on the owner's feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
+A cloud worker does only fixed jobs: tests, builds, gate checks, research, read-only review. A cloud build thread may push its own feature branch once `node .claude/secret-shapes.mjs` passes. Installs, sweeps, the PR and release verification stay on the owner's PC. A worker runs only through `worker.mjs`, on the owner's branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
 
 ### Agent Role Table {#agent-role-table}
 

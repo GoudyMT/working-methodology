@@ -2060,7 +2060,7 @@ export function closeoutCue({ projectDir, prompt = '', session = '', env = proce
   const releases = (...a) => (git(...a).stdout || '').split('\n').map((t) => t.trim()).filter((t) => /^v?\d+\.\d+\.\d+$/.test(t));
   const num = (t) => t.replace(/^v/, '');
   const here = releases('tag', '--points-at', 'HEAD');
-  // Only the repo's own release tag (the paired rerun of 2026-11-21, Max's pick): a cue on the owner's words sent
+  // Only the repo's own release tag (the paired rerun of 2026-11-21, the owner's pick): a cue on the owner's words sent
   // sessions to check the rule's conditions where nothing could show them, and they stopped instead of starting.
   if (!here.length) return '';
   // And only the newest one: a checkout of an old release to look at it is no release that just went out.

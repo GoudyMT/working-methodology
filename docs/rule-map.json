@@ -31,6 +31,7 @@
     "user/kit-tools/worker.mjs"
    ],
    "tests": [
+    "tests/ci-workflows.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/worker.test.mjs"
    ],
