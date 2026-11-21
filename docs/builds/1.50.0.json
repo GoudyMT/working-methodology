@@ -367,6 +367,37 @@
    "evidence": "rules/cues.json"
   },
   {
+   "id": "K269",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The name check reads a list code typed in lowercase (k212) or with a dot (R7.1) as a code, in a commit subject, a PR title and a branch; versions and known words (v8, x86, sha256, utf8) still pass.",
+   "evidence": "project/.claude/name-check.mjs",
+   "test": "tests/kit-hooks.test.mjs::the name check reads a lowercase or dotted list code as a code and keeps known words"
+  },
+  {
+   "id": "K268",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "Install adds a limit the kit added (such as the ci-fix cap) to an existing project's bounds file at the kit's value, keeping every value the owner set and a copy of the old file.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/kit-rules.test.mjs::install adds a limit the owner's bounds file lacks and keeps every value the owner set"
+  },
+  {
+   "id": "K265",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The guard reads PowerShell pipe readers after a kit script as plain (% Line on text, a bracketed pipe's count, Tee-Object to a file); a member taken from a file object, a script block or a guard write stays held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::PowerShell pipe readers after a kit script keep the plain reading, and a method or a guard write is still held"
+  },
+  {
+   "id": "K267",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "The owner-push rule line names the ref the owner types when the pre-push hook asks, and the fresh pop-up yes to that push and remote in a session.",
+   "evidence": "rules/core.md"
+  },
+  {
    "id": "K178",
    "kind": "security",
    "reach": "projects",

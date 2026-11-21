@@ -23,6 +23,7 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - A behaviour run refuses a throwaway config folder whose global instructions were edited by hand, before any session.
 - A change to `user/CLAUDE.md` alone now needs a score gate line.
 - The score says the user layer was measured only when every candidate and release run carried its own; otherwise it prints a Not measured line naming the arm and why.
+- The owner-push rule line names the ref the owner types when the pre-push hook asks, and the fresh pop-up yes to that push and remote in a session.
 
 ### Fixed
 - Recall and behaviour sessions start with `--strict-mcp-config`, so an MCP server listed in the probe project no longer joins a scored session.
@@ -30,6 +31,9 @@ Cloud workers run only five fixed jobs through a runner that stops them at a wro
 - The start check reads the kit start-up line from plain hook output or the hook JSON, and only at the start of a line.
 - Under a plugin the start-up hook finds the kit at the plugin root, and its texts name `/kit:methodology-kit`.
 - Priority index item 11 names the size-budget rule by its id and the file that holds it.
+- The name check reads a list code typed in lowercase (k212) or with a dot (R7.1) as a code, in a commit subject, a PR title and a branch; versions and known words (v8, x86, sha256, utf8) still pass.
+- Install adds a limit the kit added (such as the ci-fix cap) to an existing project's bounds file at the kit's value, keeping every value the owner set and a copy of the old file.
+- The guard reads PowerShell pipe readers after a kit script as plain (% Line on text, a bracketed pipe's count, Tee-Object to a file); a member taken from a file object, a script block or a guard write stays held.
 
 ### Security
 - The settings-change guard blocks when it cannot run: its hook entry says `onFailure: block`, the wiring check asks for it, and a check that throws holds the change and names the cause.
