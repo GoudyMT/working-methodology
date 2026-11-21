@@ -94,6 +94,8 @@ export function blind(out, runs, random = crypto.randomInt) {
   const when = {};
   const hashes = {};
   const only = {};
+  // K231: each run's "User layer:" header, sealed with the map, so the score says whether the user layer was measured.
+  const userLayer = {};
   const removedAll = [];
   order.forEach((run, i) => {
     const id = `R${String(i + 1).padStart(2, '0')}`;
@@ -110,11 +112,12 @@ export function blind(out, runs, random = crypto.randomInt) {
     // A run that asked named questions alone (recall.mjs --only), sealed for the second-look check at scoring.
     const asked = raw.match(/^Only: (.+)$/m);
     if (asked) only[id] = asked[1].split(/,\s*/).map(Number);
+    userLayer[id] = (raw.match(/^User layer: (.*)$/m) || [])[1] ?? '';
     hashes[path.basename(run)] = crypto.createHash('sha256').update(raw).digest('hex');
     fs.writeFileSync(path.join(out, 'scorer', `${id}.md`), `# ${id}\n\n${text}`);
   });
   fs.writeFileSync(path.join(out, 'removed-lines.txt'), removedAll.join('\n') + '\n');
-  fs.writeFileSync(path.join(out, 'sealed-map.json'), JSON.stringify({ map, when, hashes, only }, null, 1));
+  fs.writeFileSync(path.join(out, 'sealed-map.json'), JSON.stringify({ map, when, hashes, only, userLayer }, null, 1));
   return { map };
 }
 
@@ -253,7 +256,16 @@ export function score(files, mapFile, label, kit = KIT, again = null) {
   // Lower on one look, under the floor: named, though the floor already decides.
   const onceLine = !r.asked.length && r.lower.length ? [`lower once: ${r.lower.join(', ')}`] : [];
   const lines = [`scorers: ${SCORERS}`, ...askedLine, ...onceLine, `worse: ${r.worse.join(', ') || 'none'}`, controlLine, line];
-  return { ...r, line, lines, controlLine };
+  // K231 (S7): the user layer counts as measured only when every candidate and release run carried only its own CLAUDE.md.
+  // Named by arm and reason, never by run, as the rest of the score is.
+  const notOwn = {};
+  for (const [id, run] of Object.entries(sealed.map)) {
+    const arm = run.split('-')[0];
+    const l = sealed.userLayer?.[id] || 'no User layer line';
+    if ((arm === 'cand' || arm === 'base') && !/^own \(/.test(l)) (notOwn[arm] ||= new Set()).add(l);
+  }
+  const userLayerNote = Object.keys(notOwn).length ? `Not measured: the user layer (${['cand', 'base'].filter((a) => notOwn[a]).map((a) => `${a}: ${[...notOwn[a]].join(', ')}`).join('; ')})` : null;
+  return { ...r, line, lines, controlLine, userLayerNote };
 }
 
 const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -285,6 +297,7 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
     } else {
       console.log(`Questions summing lower over both scorers than on the release: ${r.lower.join(', ') || 'none'}${r.asked.length ? `; lower again when asked alone: ${r.worse.join(', ') || 'none'}` : ''}.`);
       console.log(`\n${r.lines.join('\n')}`);
+      if (r.userLayerNote) console.log(`\n${r.userLayerNote}`);
       if (!r.pass) {
         const why = [r.candMedian < FLOOR && `the candidate's median of ${r.candMedian} is under the floor of ${FLOOR}`, r.worse.length && `questions ${r.worse.join(', ')} do worse than the release on two looks`].filter(Boolean);
         console.log(`\nThis build does not pass: ${why.join('; ')}. There is no override (K198): fix the cause, then run a new candidate.`);
