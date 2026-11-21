@@ -1533,8 +1533,12 @@ export function kitToolsLine(dir) {
   return `Kit tools this session: sweep approval ${tool('skills/pre-pr-sweep/approve.mjs')}; merge gate ${tool('kit-tools/merge-gate.mjs')}${ps}. Run these copies, not another Claude folder's.`;
 }
 
+// K175: under the plugin the kit's skill is named with the plugin's prefix; a session told /methodology-kit finds none.
+export const skillCommand = (env = process.env) => (env.CLAUDE_PLUGIN_ROOT ? '/kit:methodology-kit' : '/methodology-kit');
+
 export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
+  const skill = skillCommand(env);
   lines.push(kitToolsLine(env.CLAUDE_PLUGIN_ROOT || home));
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
@@ -1567,17 +1571,17 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
     if (closed && source === 'resume' && !since.includes(sid)) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
   }
   const ahead = remote(kit);
-  if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
+  if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run ${skill} update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
   if (stamp.version) writeNotice(projectDir, kitVersion);
   if (!stamp.version) {
-    lines.push(`This project has no kit install record. Run /methodology-kit existing to adopt kit ${kitVersion}.`);
+    lines.push(`This project has no kit install record. Run ${skill} existing to adopt kit ${kitVersion}.`);
   } else if (semverAbove(kitVersion, stamp.version)) {
     const log = fs.readFileSync(path.join(kit, 'CHANGELOG.md'), 'utf8');
     const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
-    lines.push(`Kit ${kitVersion} has ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update.`);
+    lines.push(`Kit ${kitVersion} has ${newer} newer change(s) than this project (${stamp.version}). Run ${skill} update.`);
   }
   // Said every session, so an install made on purpose with --unreleased is never forgotten; ~/.claude carries the
   // rules of every project, so it is named too.
@@ -1585,9 +1589,9 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
   const userStamp = readStamp(path.join(home, STAMP_USER));
   // N5 (1.36.0; seen in a 1.16 project under a 1.18 user layer, whose approve.mjs needed a hook that project lacked, while
   // session start said only that an update was there): the skew is named for what it breaks.
-  if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run /methodology-kit update before either.`);
+  if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run ${skill} update before either.`);
   if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
-  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.${keptText(stamp, '/methodology-kit update')}`);
+  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run ${skill} update.${keptText(stamp, `${skill} update`)}`);
   if (stamp.version) {
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
@@ -1927,7 +1931,7 @@ function remoteKitAhead(kit) {
  * Returns:
  *     the message, or '' when there is nothing new to say
  */
-export function promptCheckReport({ kit, projectDir }) {
+export function promptCheckReport({ kit, projectDir, env = process.env }) {
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   if (!stamp.version) return '';
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
@@ -1938,7 +1942,7 @@ export function promptCheckReport({ kit, projectDir }) {
   writeNotice(projectDir, kitVersion);
   const log = fs.readFileSync(path.join(kit, 'CHANGELOG.md'), 'utf8');
   const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
-  return `Kit ${kitVersion} was released while this session ran: ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update at the next stopping point.`;
+  return `Kit ${kitVersion} was released while this session ran: ${newer} newer change(s) than this project (${stamp.version}). Run ${skillCommand(env)} update at the next stopping point.`;
 }
 
 /**
@@ -2010,7 +2014,7 @@ export function ruleCues({ kit, prompt = '', env = process.env }) {
  * What is waiting for the kit before a compact: fold-back in report mode for this project and
  * ~/.claude. It never changes a file outside the kit's reports/ folder; the owner sorts each item.
  */
-export function preCompactReport({ kit, home, projectDir }) {
+export function preCompactReport({ kit, home, projectDir, env = process.env }) {
   const waiting = [];
   for (const target of ['project', 'user']) {
     if (target === 'user' && !fs.existsSync(path.join(home, STAMP_USER))) continue;
@@ -2018,7 +2022,7 @@ export function preCompactReport({ kit, home, projectDir }) {
     waiting.push(...r.foldBack, ...r.conflict, ...r.added);
   }
   const lines = [waiting.length
-    ? `${waiting.length} rule change(s) waiting for the kit: ${waiting.join(', ')}. Sort them in the closeout's rule sort (project-only or portable), then /methodology-kit fold-back for the portable ones.`
+    ? `${waiting.length} rule change(s) waiting for the kit: ${waiting.join(', ')}. Sort them in the closeout's rule sort (project-only or portable), then ${skillCommand(env)} fold-back for the portable ones.`
     : 'No rule changes waiting for the kit.'];
   const vault = vaultBackup({ projectDir });
   if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');

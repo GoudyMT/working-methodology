@@ -58,9 +58,11 @@ function main() {
 	// A pull moves the kit folder off its release tag, and install then refuses it, so the step names the tag.
 	const pull = kitDir ? `git -C "${kitDir}" fetch --tags, then check out the newest release tag (git -C "${kitDir}" tag --sort=-v:refname lists it first)`
 		: 'in your kit folder, git fetch --tags, then check out the newest release tag';
+	// K175: under the plugin the skill carries the plugin's prefix.
+	const skill = process.env.CLAUDE_PLUGIN_ROOT ? '/kit:methodology-kit' : '/methodology-kit';
 	process.stdout.write(JSON.stringify({
 		decision: 'block',
-		reason: `Full stop: this folder (${where}) has no methodology kit. To install the latest: (1) in a terminal, ${pull}; (2) send /methodology-kit existing here (or /methodology-kit new for a fresh project), and Claude installs it. To work here without the kit, create .kit/no-kit in this folder.`,
+		reason: `Full stop: this folder (${where}) has no methodology kit. To install the latest: (1) in a terminal, ${pull}; (2) send ${skill} existing here (or ${skill} new for a fresh project), and Claude installs it. To work here without the kit, create .kit/no-kit in this folder.`,
 	}));
 }
 

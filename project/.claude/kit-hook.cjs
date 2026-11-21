@@ -6,8 +6,8 @@
 //                  ran (another project folded a rule back); silent otherwise, and silent on any failure, since
 //                  session start already reported those.
 //   pre-compact:   runs fold-back in report mode and shows the owner how many rule changes wait for the kit.
-// It finds the kit through ~/.claude/kit-install.json ("kitDir"). Any failure is a warning: a hook that
-// errors must never stop a session or a compact.
+// It finds the kit through ~/.claude/kit-install.json ("kitDir"), or under a plugin at <plugin root>/kit (K175). Any
+// failure is a warning: a hook that errors must never stop a session or a compact.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -68,6 +68,8 @@ async function main() {
 	const stampPath = path.join(HOME, 'kit-install.json');
 	let kit = null;
 	try { kit = JSON.parse(fs.readFileSync(stampPath, 'utf8')).kitDir || null; } catch { /* no stamp, or not JSON: the full stop below */ }
+	// K175: a plugin has no install step, so no stamp names the kit; it ships its own copy at <plugin root>/kit.
+	if (!kit && process.env.CLAUDE_PLUGIN_ROOT) kit = path.join(process.env.CLAUDE_PLUGIN_ROOT, 'kit');
 	if (!kit || !fs.existsSync(path.join(kit, 'scripts', 'kit.mjs'))) {
 		// A missing kit is a full stop (the owner, 2026-10-31): every prompt is refused with the fix, except a prompt
 		// that installs it.
