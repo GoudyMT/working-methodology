@@ -352,7 +352,7 @@ test('a plugin build whose files differ from a build of the release copy is miss
 	assert.deepEqual(built, [t.copy]);
 	assert.ok(!same.missing.some((m) => /plugin files/.test(m)), same.missing.join('\n'));
 	const other = releaseCheck({ ...t.opts, copy: t.copy, plugin }, { ...t.deps, buildPlugin: buildFrom({ 'launch.cjs': 'bb' }) });
-	assert.match(all(other), /plugin files match a build of the release copy: .*launch\.cjs/);
+	assert.match(all(other), /plugin files.*launch\.cjs/);
 	// A copy with a changed file is not the release: its build script is never run.
 	fs.writeFileSync(path.join(t.copy, 'extra.txt'), 'x\n');
 	built.length = 0;

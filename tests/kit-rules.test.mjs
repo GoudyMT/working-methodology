@@ -1435,12 +1435,13 @@ test('the arrow rule bans none of the spellings it requires, and no instruction 
 
 // The cloud build study (the owner's route, 2026-11-21): a push from the cloud kept the owner's identity, but a PR
 // opened or edited there gained a tool footer, so a cloud build pushes its branch only and the PC does the rest.
-// why: guards rule:where-work-runs
+// why: guards the owner's cloud lane decision (K270): a cloud thread pushes its branch, the PC does the rest
 test('the where-work-runs rule lets a cloud build push its own branch and keeps the PR on the owner\'s PC', () => {
   const text = read(path.resolve('rules/agent-teams.md'));
   const start = text.indexOf('{#where-work-runs}');
   assert.ok(start > 0, 'rule:where-work-runs is in the agent-teams module');
   const rule = text.slice(start, text.indexOf('\n#', start));
+  // pin: 4 (the owner's words for the cloud lane, K270)
   assert.match(rule, /cloud build thread may push its own feature branch/);
   const pc = /([^.]*) stay on the owner's PC/.exec(rule)?.[1] || '';
   for (const act of ['Installs', 'sweeps', 'the PR', 'release verification']) assert.ok(pc.includes(act), act);

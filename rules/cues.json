@@ -17,7 +17,7 @@
       "source": "rules/agent-teams.md",
       "when": "\\b(swarm|fan-?out|sub-?agents?|review agents|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (?!user )(\\w+ )?agents)\\b",
       "quotes": [
-        "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract.",
+        "Before any swarm (a sweep, a red-team, any fanout) write this table as a contract.",
         "STOP: no agent runs until the contract is approved",
         "run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons)."
       ]

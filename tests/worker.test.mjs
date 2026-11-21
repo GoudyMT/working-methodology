@@ -136,7 +136,7 @@ test('main, master, the default branch, a tag and a badly named branch are refus
 	assert.deepEqual(branchFaults({ repo: r.dir, branch: 'fix/new-thing' }), []);
 });
 
-// why: guards rule:where-work-runs (a worker started on the PC or on a refused branch, before any check)
+// why: guards the owner's fixed cloud jobs decision (a worker started on the PC or on a refused branch, before any check)
 test('the runner refuses outside the cloud and on a refused branch, before any spawn', async () => {
 	const r = repo();
 	const pc = await runIt(r, good(r.plugin), { env: { ...cloud, CLAUDE_CODE_REMOTE: undefined } });
@@ -176,7 +176,7 @@ test('a good stream runs to the end in its own worktree with the scrubbed env, a
 	assert.equal(again.calls.length, 0);
 });
 
-// why: guards rule:where-work-runs (a worker left running with no kit, the wrong mode or no kit plugin; narrowing F1)
+// why: guards the owner's fixed cloud jobs decision (a worker left running with no kit, the wrong mode or no kit plugin; narrowing F1)
 test('the start check stops a stream without the start-up line, with another mode, or without the kit plugin', async () => {
 	const cases = (p) => [
 		['no start-up line', [hookStarted, hookResponse(''), init(p), toolUse, result], /start-up line/],
@@ -287,7 +287,7 @@ test('the start check takes the line only from a start hook, and stops on a seco
 	}
 });
 
-// why: guards rule:where-work-runs (a worker that never ends, or whose tools outlive the stop)
+// why: guards the owner's fixed cloud jobs decision (a worker that never ends, or whose tools outlive the stop)
 test('a worker past its time is stopped, and the stop ends the programs it started', async () => {
 	const r = repo();
 	// A worker that started well and then never ends.

@@ -622,7 +622,8 @@
     "severity": "medium",
     "text": "The stale-folder refusal is tested",
     "commit": "d8e7052",
-    "test": "tests/worker.test.mjs::the runner refuses an unchecked plugin, settings that override the worker, and a dash value, before any spawn"
+    "test": "tests/worker.test.mjs::the runner refuses an unchecked plugin, settings that override the worker, and a dash value, before any spawn",
+    "reason": "the worker runner is new in this build; one test holds every refusal before a spawn"
    },
    {
     "id": "V4",
@@ -652,14 +653,16 @@
     "severity": "low",
     "text": "The timeout stop is exercised",
     "commit": "d8e7052",
-    "test": "tests/worker.test.mjs::a worker past its time is stopped, and the stop ends the programs it started"
+    "test": "tests/worker.test.mjs::a worker past its time is stopped, and the stop ends the programs it started",
+    "reason": "the worker runner is new in this build; the timeout stop needs a run of its own"
    },
    {
     "id": "D2",
     "severity": "low",
     "text": "Install adds a missing limit only to the top-level limits object, and checks the file after",
     "commit": "7048f13",
-    "test": "tests/kit-rules.test.mjs::install adds a limit the owner's bounds file lacks and keeps every value the owner set"
+    "test": "tests/kit-rules.test.mjs::install adds a limit the owner's bounds file lacks and keeps every value the owner set",
+    "reason": "install limits are new in this build; one test holds the offer, the top-level check and the owner's values"
    },
    {
     "id": "D3",
@@ -673,7 +676,8 @@
     "severity": "low",
     "text": "Each missing limit is offered once, so one the owner removed stays removed",
     "commit": "7048f13",
-    "test": "tests/kit-rules.test.mjs::install adds a limit the owner's bounds file lacks and keeps every value the owner set"
+    "test": "tests/kit-rules.test.mjs::install adds a limit the owner's bounds file lacks and keeps every value the owner set",
+    "reason": "the same new install-limits test"
    },
    {
     "id": "BG3",
@@ -696,7 +700,8 @@
     "severity": "medium",
     "text": "The plugin build empties only its own earlier build",
     "commit": "64d545e",
-    "test": "tests/kit-plugin.test.mjs::the plugin manifest covers role and skill front matter and refuses an added hook file; build keeps a foreign folder"
+    "test": "tests/kit-plugin.test.mjs::the plugin manifest covers role and skill front matter and refuses an added hook file; build keeps a foreign folder",
+    "reason": "the manifest test is new in this build; one test holds every manifest and build case the sweep found"
    },
    {
     "id": "K6",
@@ -719,42 +724,48 @@
     "severity": "medium",
     "text": "The real-measure run builds the start-up text without asking GitHub or writing the project",
     "commit": "ccd2f5f",
-    "test": "tests/kit-rules.test.mjs::measure --real builds the start-up text without asking GitHub or writing the project's notice"
+    "test": "tests/kit-rules.test.mjs::measure --real builds the start-up text without asking GitHub or writing the project's notice",
+    "reason": "the read-only start text is new in this build and needs its own run"
    },
    {
     "id": "P1",
     "severity": "medium",
     "text": "Under a plugin the kit in use is the plugin's",
     "commit": "98947d0",
-    "test": "tests/kit-plugin.test.mjs::under a plugin the hook uses the plugin's kit over a user record, and its texts name the plugin"
+    "test": "tests/kit-plugin.test.mjs::under a plugin the hook uses the plugin's kit over a user record, and its texts name the plugin",
+    "reason": "one new test holds every start-up text under a plugin"
    },
    {
     "id": "N3",
     "severity": "medium",
     "text": "A newer release under a plugin says to update the plugin",
     "commit": "98947d0",
-    "test": "tests/kit-plugin.test.mjs::under a plugin the hook uses the plugin's kit over a user record, and its texts name the plugin"
+    "test": "tests/kit-plugin.test.mjs::under a plugin the hook uses the plugin's kit over a user record, and its texts name the plugin",
+    "reason": "one new test holds every start-up text under a plugin"
    },
    {
     "id": "P4",
     "severity": "low",
     "text": "The plugin's missing-kit stop names the plugin and its repair",
     "commit": "98947d0",
-    "test": "tests/kit-plugin.test.mjs::under a plugin the hook uses the plugin's kit over a user record, and its texts name the plugin"
+    "test": "tests/kit-plugin.test.mjs::under a plugin the hook uses the plugin's kit over a user record, and its texts name the plugin",
+    "reason": "one new test holds every start-up text under a plugin"
    },
    {
     "id": "N5",
     "severity": "low",
     "text": "A quoted or family model name in a role file is read as written",
     "commit": "98947d0",
-    "test": "tests/kit-plugin.test.mjs::the roles line reads a quoted or family model as written, and names a repair on the owner's side"
+    "test": "tests/kit-plugin.test.mjs::the roles line reads a quoted or family model as written, and names a repair on the owner's side",
+    "reason": "one new test holds the roles line cases"
    },
    {
     "id": "N7",
     "severity": "low",
     "text": "The roles repair names the role file on the owner's side",
     "commit": "98947d0",
-    "test": "tests/kit-plugin.test.mjs::the roles line reads a quoted or family model as written, and names a repair on the owner's side"
+    "test": "tests/kit-plugin.test.mjs::the roles line reads a quoted or family model as written, and names a repair on the owner's side",
+    "reason": "one new test holds the roles line cases"
    },
    {
     "id": "S2",
@@ -789,14 +800,16 @@
     "severity": "medium",
     "text": "The name check passes common lowercase tech words and reads list codes in every shape",
     "commit": "ba849a0",
-    "test": "tests/kit-hooks.test.mjs::the name check passes common lowercase tech words and still reads list codes in every shape"
+    "test": "tests/kit-hooks.test.mjs::the name check passes common lowercase tech words and still reads list codes in every shape",
+    "reason": "the older lowercase-code test keeps its cases; the tech-word list is a case set of its own"
    },
    {
     "id": "V7",
     "severity": "low",
     "text": "The hand-edited grant test moves the time, the act and the tool",
     "commit": "69f2f14",
-    "test": "tests/owner-grant.test.mjs::K176 a hand-edited grant is refused"
+    "test": "tests/owner-grant.test.mjs::K176 a hand-edited grant is refused",
+    "reason": "the grant tests are new in this build"
    },
    {
     "id": "V3",
@@ -825,14 +838,16 @@
     "severity": "low",
     "text": "The where-work-runs test checks that the scan it names ships",
     "commit": "02cd990",
-    "test": "tests/kit-rules.test.mjs::the where-work-runs rule lets a cloud build push its own branch and keeps the PR on the owner's PC"
+    "test": "tests/kit-rules.test.mjs::the where-work-runs rule lets a cloud build push its own branch and keeps the PR on the owner's PC",
+    "reason": "the where-work-runs test is new in this build"
    },
    {
     "id": "V8",
     "severity": "low",
     "text": "The grant tool's refusals are checked for their reason, and the one-hour window is pinned",
     "commit": "5aea488",
-    "test": "tests/owner-grant.test.mjs::K176 grant.mjs refuses a bad session id, a card id that is no name, an empty act, and a session granting itself"
+    "test": "tests/owner-grant.test.mjs::K176 grant.mjs refuses a bad session id, a card id that is no name, an empty act, and a session granting itself",
+    "reason": "the grant tests are new in this build"
    }
   ]
  }

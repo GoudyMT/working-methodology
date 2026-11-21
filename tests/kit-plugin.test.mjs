@@ -374,8 +374,7 @@ test('the plugin launcher hands an owner\'s hold to owner-grant.cjs only for a m
 // not load its owner-yes helper, so no grant ever lifted a hold in a plugin session. A real build, a real grant.
 // why: guards rule:outward-acts: the owner's card yes that never reaches the plugin worker it was given for
 test('in a built plugin a real grant lifts the owner\'s hold it names once, then the hold is back', () => {
-  const root = fs.mkdtempSync(path.join(makeTemp('plugin-grant-'), 'kit-'));
-  fs.rmSync(root, { recursive: true });
+  const root = path.join(makeTemp('plugin-grant-'), 'kit-plugin');
   buildPlugin({ kit: path.resolve('.'), out: root, release: RELEASE });
   const repo = gitRepo();
   const SID = '11111111-2222-3333-4444-555555555555';

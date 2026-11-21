@@ -207,7 +207,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 		// The commit security review: the copy's own build script runs only when the copy is the tag, with nothing changed.
 		if (copy && !copyOnTag) step('plugin files match a build of the release copy', 'the release copy is not the clean tag, so it was not built');
 		else if (copy) {
-			const out = path.join(fs.mkdtempSync(path.join(os.tmpdir(), 'kit-rc-plugin-')), 'kit');
+			const out = path.join(kitTemp.makeTemp('kit-rc-plugin-'), 'kit');
 			let why = null;
 			try {
 				const r = buildPlugin(copy, out);
@@ -218,7 +218,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 					const diff = [...new Set([...Object.keys(want), ...Object.keys(got)])].filter((k) => want[k] !== got[k]).sort();
 					if (diff.length) why = `${diff.length} file(s) differ (${diff.slice(0, 5).join(', ')}): rebuild the plugin from the release copy`;
 				}
-			} catch (e) { why = `the manifests could not be read (${one(e.message)})`; } finally { fs.rmSync(path.dirname(out), { recursive: true, force: true }); }
+			} catch (e) { why = `the manifests could not be read (${one(e.message)})`; } finally { kitTemp.removeTemp(path.dirname(out)); }
 			step('plugin files match a build of the release copy', why);
 		}
 	}

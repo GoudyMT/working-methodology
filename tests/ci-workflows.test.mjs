@@ -79,7 +79,7 @@ test('every step that judges a PR runs the base commit\'s copy of its script, be
 // S1 (the build 23b sweep): a cloud build thread pushes its feature branch with no pre-push hook, and the PR's scans
 // come only once a PR is open, so a pushed secret was public until then. Every push to a branch other than main runs
 // main's copies of the secret scan and the name check, before any of the branch's own code.
-// why: guards rule:where-work-runs (a cloud push that skips the PC's push checks)
+// why: guards rule:security-standards (a cloud push that skips the PC's secret scan and name check)
 test('every feature-branch push runs main\'s secret scan and name check (S1)', () => {
 	assert.ok(fs.existsSync(path.resolve('.github/workflows/branch-push.yml')), 'a workflow runs on each branch push');
 	const flow = read('.github/workflows/branch-push.yml');
@@ -97,6 +97,7 @@ test('every feature-branch push runs main\'s secret scan and name check (S1)', (
 	assert.match(step(flow, 'Secret scan'), /secret-shapes\.mjs" --push\b/);
 	assert.match(step(flow, 'Secret scan'), /git rev-parse origin\/main/);
 	// The branch carries this file, so a change to it shows: it is held to main's copy once main has one.
-	assert.match(step(flow, 'Same check as main'), /git diff --quiet origin\/main HEAD -- \.github\/workflows\/branch-push\.yml/);
+	assert.match(step(flow, 'Same check as main'), /git diff --quiet origin\/main HEAD -- \.github\/workflows\/branch-push\.yml/); // pin: 1 (GitHub runs this line)
+	// pin: 1 (GitHub runs this line)
 	assert.match(step(flow, 'Branch and commit names'), /name-check\.mjs" branch "\$GITHUB_REF_NAME"/);
 });
