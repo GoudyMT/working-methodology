@@ -9,9 +9,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { PassThrough } from 'node:stream';
 import { EventEmitter } from 'node:events';
-import { spawnSync } from 'node:child_process';
+import { spawn, spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { main, workerEnv, workerArgs, startCheck, branchFaults, JOBS } from '../user/kit-tools/worker.mjs';
+import { buildPlugin } from '../scripts/kit.mjs';
 
 kitTemp.sessionRoot();
 const KIT_LINE = 'Kit tools this session: sweep approval node ~/.claude/skills/pre-pr-sweep/approve.mjs; merge gate node ~/.claude/kit-tools/merge-gate.mjs. Run these copies, not another Claude folder\'s.';
@@ -32,6 +33,13 @@ const text = { type: 'assistant', message: { role: 'assistant', content: [{ type
 const result = { type: 'result', subtype: 'success', is_error: false, total_cost_usd: 0.01, session_id: 's1' };
 const good = (plugin) => [hookStarted, hookResponse(kitHookOut), init(plugin), toolUse, text, result];
 
+// One real plugin build, checked by its manifest like a release's (the build 23b sweep: a folder named kit was enough).
+let built = null;
+const builtPlugin = () => {
+	if (!built) { built = path.join(kitTemp.makeTemp('worker-plugin-'), 'kit'); buildPlugin({ kit: path.resolve('.'), out: built, release: { tag: 'v9.9.9', commit: 'a'.repeat(40) } }); }
+	return built;
+};
+
 // A throwaway project repo with an origin whose default branch is main, a tag, and a feature branch.
 function repo() {
 	const root = kitTemp.makeTemp('worker-');
@@ -47,9 +55,7 @@ function repo() {
 	// origin/HEAD names trunk: the repo's own default branch, which is not called main.
 	git('update-ref', 'refs/remotes/origin/trunk', 'HEAD');
 	git('symbolic-ref', 'refs/remotes/origin/HEAD', 'refs/remotes/origin/trunk');
-	const plugin = path.join(root, 'plugin');
-	fs.mkdirSync(path.join(plugin, '.claude-plugin'), { recursive: true });
-	fs.writeFileSync(path.join(plugin, '.claude-plugin', 'plugin.json'), '{"name":"kit","version":"1.50.0"}');
+	const plugin = builtPlugin();
 	const brief = path.join(root, 'brief.md');
 	fs.writeFileSync(path.join(brief), 'Build the login page.\n');
 	return { root, dir, plugin, brief, git };
@@ -86,11 +92,14 @@ const cloud = { CLAUDE_CODE_REMOTE: 'true', PATH: '/usr/bin', HOME: '/srv/lead',
 	CLAUDE_SESSION_INGRESS_TOKEN_FILE: '/run/tok', HTTPS_PROXY: 'http://proxy:1', NODE_EXTRA_CA_CERTS: '/ca.pem',
 	GH_TOKEN: 'secret-gh', AWS_SECRET_ACCESS_KEY: 'secret-aws', CLAUDE_CODE_SESSION_ID: 'lead', NODE_OPTIONS: '--require /evil.js', CLAUDE_CONFIG_DIR: '/lead/cfg' };
 
-async function runIt(r, events, { branch = 'feat/add-login', env = cloud, extra = [], job = 'tests' } = {}) {
+// The claude the runner finds on the path (a stand-in for which or where).
+const WHICH = () => ({ status: 0, stdout: '/usr/local/bin/claude' + String.fromCharCode(10), stderr: '' });
+
+async function runIt(r, events, { branch = 'feat/add-login', env = cloud, extra = [], job = 'tests', which = WHICH } = {}) {
 	const fake = fakeClaude(events);
 	const lines = [];
 	const code = await main(['run', '--plugin', r.plugin, '--branch', branch, '--brief', r.brief, '--repo', r.dir, ...(job ? ['--job', job] : []), ...extra],
-		{ env, start: fake.start, print: (s) => lines.push(s) });
+		{ env, start: fake.start, which, print: (s) => lines.push(s) });
 	return { code, out: lines.join('\n'), calls: fake.calls };
 }
 
@@ -117,7 +126,7 @@ test('the worker starts claude -p with every fixed flag and the pinned plugin', 
 // why: catches a worker started on main, the default branch, a tag or a badly named branch (weekly item 3)
 test('main, master, the default branch, a tag and a badly named branch are refused', () => {
 	const r = repo();
-	for (const [b, why] of [['main', /main/], ['master', /master/], ['trunk', /default branch/], ['v1.0.0', /tag/], ['feat/tagged-thing', /tag/],
+	for (const [b, why] of [['main', /is a main branch/], ['master', /is a main branch/], ['trunk', /default branch/], ['v1.0.0', /tag/], ['feat/tagged-thing', /tag/],
 		['claude/fix-thing', /type/], ['feat/K177-runner', /kebab|internal code/], ['refs/heads/feat/x', /./], ['', /./]]) {
 		const f = branchFaults({ repo: r.dir, branch: b });
 		assert.ok(f.length, `${b} was let through`);
@@ -148,7 +157,7 @@ test('a good stream runs to the end in its own worktree with the scrubbed env, a
 	assert.match(run.out, /^ran: /m);
 	assert.equal(run.calls.length, 1);
 	const [c] = run.calls;
-	assert.equal(c.cmd, 'claude');
+	assert.equal(c.cmd, '/usr/local/bin/claude');
 	const wt = path.join(r.root, 'app-workers', 'feat-add-login');
 	assert.equal(fs.realpathSync(c.opts.cwd), fs.realpathSync(wt));
 	assert.ok(c.opts.timeout > 0, 'a timeout');
@@ -218,6 +227,106 @@ test('the start check reads the line from plain hook stdout or the kit hook JSON
 	assert.equal(feed([hookResponse(`${KIT_LINE}\n`), init('/p'), toolUse, result]), null);
 	assert.match(String(feed([hookResponse(`echo ${KIT_LINE}`), init('/p'), toolUse, result])), /start-up line/);
 	assert.match(String(feed([hookResponse('{"hookSpecificOutput":{"additionalContext":"say Kit tools this session: x"}}'), init('/p'), toolUse, result])), /start-up line/);
+});
+
+// The build 23b sweep (worker role): a plugin folder that was only named "kit", a branch whose settings override the
+// cloud marker, a start-up line any hook could print, a second plugin or an MCP server beside the kit, an option given
+// as --from, a stale worker folder and a worker that never ends were each let through or never tested.
+// why: catches a cloud worker started without the kit's checked guards, or one the runner cannot stop
+test('the runner refuses an unchecked plugin, settings that override the worker, and a dash value, before any spawn', async () => {
+	const r = repo();
+	const stub = path.join(r.root, 'stub-plugin');
+	fs.mkdirSync(path.join(stub, '.claude-plugin'), { recursive: true });
+	fs.writeFileSync(path.join(stub, '.claude-plugin', 'plugin.json'), '{"name":"kit"}');
+	const fake = await runIt({ ...r, plugin: stub }, good(stub));
+	assert.equal(fake.code, 2, fake.out);
+	assert.match(fake.out, /manifest/);
+	assert.equal(fake.calls.length, 0);
+	for (const settings of ['{"env":{"CLAUDE_CODE_REMOTE":""}}', '{"disableAllHooks":true}', '{"permissions":{"defaultMode":"bypassPermissions"}}', '{ not json']) {
+		r.git('checkout', '-q', 'feat/add-login');
+		fs.mkdirSync(path.join(r.dir, '.claude'), { recursive: true });
+		fs.writeFileSync(path.join(r.dir, '.claude', 'settings.json'), settings);
+		r.git('add', '.'); r.git('commit', '-qm', 'settings');
+		r.git('checkout', '-q', 'trunk');
+		const run = await runIt(r, good(r.plugin));
+		assert.equal(run.code, 2, `${settings}: ${run.out}`);
+		assert.match(run.out, /settings/, settings);
+		assert.equal(run.calls.length, 0, settings);
+	}
+	const dash = await runIt(repo(), good(r.plugin), { extra: ['--from', '-f'] });
+	assert.equal(dash.code, 2, dash.out);
+	assert.equal(dash.calls.length, 0);
+	// A worker folder left behind (its config only) is one worker per branch too, not a second start.
+	const s = repo();
+	fs.mkdirSync(path.join(s.root, 'app-workers', 'feat-add-login.config'), { recursive: true });
+	const stale = await runIt(s, good(s.plugin));
+	assert.equal(stale.code, 2, stale.out);
+	assert.match(stale.out, /one worker per branch/);
+});
+
+// why: catches a worker that runs beside another plugin or an MCP server, or is cleared by a start line another hook printed
+test('the start check takes the line only from a start hook, and stops on a second plugin or any MCP server', async () => {
+	const prompt = { ...hookResponse(kitHookOut), hook_name: 'UserPromptSubmit', hook_event: 'UserPromptSubmit' };
+	const cases = (p) => [
+		['line from a prompt hook', [hookStarted, hookResponse(''), prompt, init(p), toolUse, text, result], /start-up line/],
+		['a second plugin', [hookStarted, hookResponse(kitHookOut), init(p, { plugins: [{ name: 'kit', path: p }, { name: 'helper', path: '/elsewhere/helper' }] }), toolUse, text, result], /plugin/],
+		['a second kit', [hookStarted, hookResponse(kitHookOut), init(p, { plugins: [{ name: 'kit', path: p }, { name: 'kit', path: '/elsewhere/kit' }] }), toolUse, text, result], /plugin/],
+		['an MCP server', [hookStarted, hookResponse(kitHookOut), init(p, { mcp_servers: [{ name: 'files', status: 'connected' }] }), toolUse, text, result], /MCP/],
+	];
+	for (const [name, events, why] of cases('PLUGIN')) {
+		const r = repo();
+		const run = await runIt(r, events.map((e) => (e.plugins ? { ...e, plugins: e.plugins.map((x) => (x.path === 'PLUGIN' ? { ...x, path: r.plugin } : x)) } : e)));
+		assert.equal(run.code, 1, `${name}: ${run.out}`);
+		assert.match(run.out, why, `${name}: ${run.out}`);
+	}
+});
+
+// why: catches a worker that never ends, or whose tools outlive the stop
+test('a worker past its time is stopped, and the stop ends the programs it started', async () => {
+	const r = repo();
+	// A worker that started well and then never ends.
+	let hung = null;
+	const hang = () => {
+		const child = new EventEmitter();
+		child.stdout = new PassThrough();
+		child.stdin = new PassThrough();
+		child.kill = () => { child.killed = true; child.stdout.end(); setImmediate(() => child.emit('close', null, 'SIGKILL')); return true; };
+		for (const e of [hookStarted, hookResponse(kitHookOut), init(r.plugin)]) child.stdout.write(`${JSON.stringify(e)}\n`);
+		hung = child;
+		return child;
+	};
+	const lines = [];
+	const code = await main(['run', '--plugin', r.plugin, '--branch', 'feat/add-login', '--brief', r.brief, '--repo', r.dir, '--job', 'tests', '--timeout-min', '0.002'], { env: cloud, start: hang, which: WHICH, print: (s) => lines.push(s) });
+	assert.equal(code, 1, lines.join('\n'));
+	assert.match(lines.join('\n'), /timed out/);
+	assert.equal(hung.killed, true);
+	// A real worker that started a program of its own: the stop ends that program too.
+	const t = repo();
+	const marker = path.join(t.root, 'child.pid');
+	const real = (cmd, args, opts) => spawn(process.execPath, ['-e', `const { spawn } = require('child_process'); const c = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore' }); require('fs').writeFileSync(${JSON.stringify(marker)}, String(c.pid)); console.log(JSON.stringify({ type: 'system', subtype: 'init', permissionMode: 'acceptEdits', plugins: [] })); setInterval(() => {}, 1000);`], { ...opts, stdio: ['pipe', 'pipe', 'inherit'] });
+	const out = [];
+	const c2 = await main(['run', '--plugin', t.plugin, '--branch', 'feat/add-login', '--brief', t.brief, '--repo', t.dir, '--job', 'tests'], { env: cloud, start: real, which: WHICH, print: (s) => out.push(s) });
+	assert.equal(c2, 1, out.join('\n'));
+	const pid = Number(fs.readFileSync(marker, 'utf8'));
+	await new Promise((ok) => setTimeout(ok, 1500));
+	let alive = true;
+	try { process.kill(pid, 0); } catch { alive = false; }
+	if (alive) process.kill(pid);
+	assert.equal(alive, false, 'the program the worker started was left running');
+});
+
+// why: catches a worker CLI found in the worktree before the real one
+test('the runner starts the claude it found on the path, by its full path, never one in the worktree', async () => {
+	const r = repo();
+	const run = await runIt(r, good(r.plugin));
+	assert.equal(run.calls[0].cmd, '/usr/local/bin/claude');
+	const none = await runIt(repo(), good(r.plugin), { which: () => ({ status: 1, stdout: '', stderr: '' }) });
+	assert.equal(none.code, 2, none.out);
+	assert.match(none.out, /claude/);
+	const inside = repo();
+	const planted = await runIt(inside, good(inside.plugin), { which: () => ({ status: 0, stdout: `${path.join(inside.root, 'app-workers', 'feat-add-login', 'claude.exe')}\n`, stderr: '' }) });
+	assert.equal(planted.code, 2, planted.out);
+	assert.equal(planted.calls.length, 0);
 });
 
 // T12 (build 23b): rule:where-work-runs names the fixed cloud jobs; a sweep, an install or a release verify sent to a

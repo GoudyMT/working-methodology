@@ -13,6 +13,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 
 const SELF = fileURLToPath(import.meta.url);
 // The start-up text the kit's SessionStart hook always gives (scripts/kit.mjs kitToolsLine).
@@ -34,7 +35,33 @@ const realRun = (cmd, args, opts = {}) => {
 	const r = spawnSync(cmd, args, { encoding: 'utf8', cwd: SAFE_CWD, timeout: 30000, windowsHide: true, ...opts });
 	return { status: r.status ?? 1, stdout: r.stdout || '', stderr: r.stderr || '' };
 };
-const realStart = (cmd, args, opts) => spawn(cmd, args, { ...opts, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true });
+// POSIX: the worker leads its own process group, so a stop reaches every program it started (the build 23b sweep).
+const realStart = (cmd, args, opts) => spawn(cmd, args, { ...opts, stdio: ['pipe', 'pipe', 'inherit'], windowsHide: true, detached: process.platform !== 'win32' });
+// The claude on the path, found from node's own folder (which, or where on Windows), never the worktree's.
+const realWhich = () => realRun(process.platform === 'win32' ? 'where' : 'which', ['claude']);
+
+/** Stop the worker and every program it started: its process group, or taskkill /T on Windows. */
+function stopTree(child) {
+	try {
+		if (child.pid && process.platform === 'win32') spawnSync('taskkill', ['/T', '/F', '/PID', String(child.pid)], { cwd: SAFE_CWD, windowsHide: true, timeout: 10000 });
+		else if (child.pid) process.kill(-child.pid, 'SIGKILL');
+	} catch { /* gone, or no group: the kill below */ }
+	try { child.kill('SIGKILL'); } catch { /* already gone */ }
+}
+
+// Settings a branch may not carry into a worker: they would undo what the runner pins (the cloud marker, the Claude
+// folder, the mode) or turn the kit's hooks off (the build 23b sweep: a committed env block cleared the marker).
+const PINNED_ENV = /^(CLAUDE_CODE_REMOTE|CLAUDE_CONFIG_DIR|CLAUDE_PLUGIN_ROOT|CLAUDE_PLUGIN_DATA|NODE_OPTIONS|KIT_\w+)$/i;
+function settingsFaults(text, file) {
+	let j;
+	try { j = JSON.parse(text); } catch { return [`${file} is not JSON, so the runner cannot check what it sets`]; }
+	const out = [];
+	if (j && j.env && typeof j.env === 'object') for (const k of Object.keys(j.env)) if (PINNED_ENV.test(k)) out.push(`${file} sets ${k}, which the runner pins`);
+	if (j && j.disableAllHooks) out.push(`${file} turns hooks off`);
+	const mode = j && ((j.permissions && j.permissions.defaultMode) || j.defaultMode);
+	if (mode && mode !== 'default') out.push(`${file} starts in ${mode}, not default`);
+	return out;
+}
 
 /** The worker's env: only the allow-listed variables, its own config folder, and CLAUDE_CODE_REMOTE=true always. */
 export function workerEnv(env, configDir) {
@@ -113,13 +140,19 @@ export function startCheck({ plugin }) {
 	return {
 		feed(e) {
 			if (!e || typeof e !== 'object' || checked) return null;
-			if (e.type === 'system' && e.subtype === 'hook_response' && lineIn(hookText(e))) sawLine = true;
+			// Only a start hook's answer counts (the build 23b sweep: a prompt hook could print the line).
+			if (e.type === 'system' && e.subtype === 'hook_response' && /^SessionStart\b/.test(String(e.hook_event || e.hook_name || '')) && lineIn(hookText(e))) sawLine = true;
 			if (e.type === 'system' && e.subtype === 'init' && !sawInit) {
 				sawInit = true;
 				if (e.permissionMode !== 'default') return `the permission mode is ${e.permissionMode ?? 'not named'}, not default`;
-				const kit = (Array.isArray(e.plugins) ? e.plugins : []).filter((p) => p && p.name === 'kit');
+				const plugins = Array.isArray(e.plugins) ? e.plugins.filter(Boolean) : [];
+				const kit = plugins.filter((p) => p.name === 'kit');
 				if (!kit.length) return 'the plugin "kit" is not in the init event\'s plugins list';
-				if (!kit.some((p) => typeof p.path === 'string' && real(p.path) === want)) return `the "kit" plugin loaded is not the pinned one (${kit.map((p) => p.path).join(', ')})`;
+				if (!kit.every((p) => typeof p.path === 'string' && real(p.path) === want)) return `the "kit" plugin loaded is not the pinned one (${kit.map((p) => p.path).join(', ')})`;
+				// The build 23b sweep: nothing loads beside the kit but Claude Code's own built-in plugins, and no MCP server.
+				const others = plugins.filter((p) => p.name !== 'kit' && p.path !== 'builtin');
+				if (others.length) return `another plugin loaded beside the kit (${others.map((p) => p.name).join(', ')})`;
+				if (Array.isArray(e.mcp_servers) && e.mcp_servers.length) return `an MCP server started (${e.mcp_servers.map((m) => m && m.name).join(', ')}), though the worker allows none`;
 			}
 			const tool = e.type === 'assistant' && Array.isArray(e.message?.content) && e.message.content.some((c) => c && c.type === 'tool_use');
 			if (tool) { checked = true; return before(); }
@@ -140,7 +173,8 @@ function parseArgs(argv) {
 		'--workdir': 'workdir', '--timeout-min': 'timeoutMin', '--budget-usd': 'budget', '--job': 'job' };
 	for (let i = 0; i < rest.length; i += 2) {
 		const k = names[rest[i]];
-		if (!k || rest[i + 1] === undefined || rest[i + 1].startsWith('--')) return { error: `unknown or empty option ${rest[i]}` };
+		// A value that starts with a dash would reach git as an option (the build 23b sweep: --from -f).
+		if (!k || rest[i + 1] === undefined || rest[i + 1].startsWith('-')) return { error: `unknown or empty option ${rest[i]}, or a value that starts with a dash` };
 		o[k] = rest[i + 1];
 	}
 	return o;
@@ -158,7 +192,7 @@ const USAGE = 'Usage: node worker.mjs run --plugin <dir> --branch <type/name> --
  * Returns:
  *     a promise of the exit code: the worker's own when it ran, 1 when stopped, 2 when refused before the start
  */
-export async function main(argv, { env = process.env, run = realRun, start = realStart, print = console.log } = {}) {
+export async function main(argv, { env = process.env, run = realRun, start = realStart, which = realWhich, print = console.log } = {}) {
 	const o = parseArgs(argv);
 	if (o.error || o.cmd !== 'run' || !o.plugin || !o.branch || !o.brief) { print(o.error ? `${o.error}\n${USAGE}` : USAGE); return 2; }
 	const refuse = (why) => { print(`refused: ${why}`); return 2; };
@@ -170,6 +204,11 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	let manifest = null;
 	try { manifest = JSON.parse(fs.readFileSync(path.join(plugin, '.claude-plugin', 'plugin.json'), 'utf8')); } catch { /* named below */ }
 	if (!manifest || manifest.name !== 'kit') return refuse(`${plugin} is not the kit plugin (no .claude-plugin/plugin.json named "kit")`);
+	// The build 23b sweep: a folder named kit was enough. The plugin's files must match its guard manifest, as its own
+	// launcher checks on every call, and it sits outside the repo the worker works in.
+	let checked = null;
+	try { checked = createRequire(import.meta.url)('./plugin-launch.cjs').checkManifest(plugin); } catch { /* below */ }
+	if (!checked || checked.changed.length) return refuse(`${plugin} does not match its guard manifest (${checked ? checked.changed.slice(0, 3).join(', ') : 'no manifest check'}): build the plugin from a release with kit.mjs build plugin`);
 	let brief;
 	try { brief = fs.readFileSync(path.resolve(o.brief), 'utf8'); } catch { return refuse(`the brief ${o.brief} cannot be read`); }
 	if (!brief.trim()) return refuse('the brief is empty');
@@ -178,6 +217,15 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	if (git(run, repo, 'rev-parse', '--git-dir').status !== 0) return refuse(`${repo} is not a git repo`);
 	const faults = branchFaults({ repo, branch: o.branch, run });
 	if (faults.length) return refuse(faults.join('; '));
+	const topDir = git(run, repo, 'rev-parse', '--show-toplevel').stdout.trim() || repo;
+	const inTree = (p, d) => { const r = path.relative(path.resolve(d), path.resolve(p)); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+	if (inTree(plugin, topDir)) return refuse(`the plugin ${plugin} is inside the repo the worker works in`);
+	// The claude the worker runs, by its full path, found before any folder is the worker's (Windows looks in the
+	// current folder first).
+	const found = which();
+	const claude = found && found.status === 0 ? String(found.stdout).split(/\r?\n/).map((l) => l.trim()).find(Boolean) : '';
+	if (!claude || !path.isAbsolute(claude)) return refuse('claude is not on the path, so the runner has no CLI to start');
+	if (inTree(claude, path.dirname(topDir))) return refuse(`the claude on the path (${claude}) sits beside the repo, not where the CLI is installed`);
 
 	// One folder per worker, beside the repo: the worktree, its own throwaway config, and the stream it wrote.
 	const top = git(run, repo, 'rev-parse', '--show-toplevel').stdout.trim() || repo;
@@ -186,20 +234,28 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	const tree = path.join(workdir, slug);
 	const config = path.join(workdir, `${slug}.config`);
 	const log = path.join(workdir, `${slug}.jsonl`);
-	if (fs.existsSync(tree) || fs.existsSync(config)) return refuse(`${tree} already exists: one worker per branch, at a time`);
+	if (fs.existsSync(tree) || fs.existsSync(config)) return refuse(`${fs.existsSync(tree) ? tree : config} already exists: one worker per branch, at a time`);
 	fs.mkdirSync(workdir, { recursive: true });
 	const local = git(run, repo, 'show-ref', '--verify', '--quiet', `refs/heads/${o.branch}`).status === 0;
 	const remote = !local && git(run, repo, 'show-ref', '--verify', '--quiet', `refs/remotes/origin/${o.branch}`).status === 0;
+	const ref = local ? o.branch : remote ? `origin/${o.branch}` : o.from || 'HEAD';
+	// The settings the worker will load from the branch, read before it is checked out.
+	const bad = [];
+	for (const f of ['.claude/settings.json', '.claude/settings.local.json']) {
+		const shown = git(run, repo, 'show', `${ref}:${f}`);
+		if (shown.status === 0) bad.push(...settingsFaults(shown.stdout, f));
+	}
+	if (bad.length) return refuse(`the branch's settings would change the worker: ${bad.join('; ')}`);
 	const add = local ? ['worktree', 'add', tree, o.branch]
-		: remote ? ['worktree', 'add', '--track', '-b', o.branch, tree, `origin/${o.branch}`]
-			: ['worktree', 'add', '-b', o.branch, tree, o.from || 'HEAD'];
+		: remote ? ['worktree', 'add', '--track', '-b', o.branch, '--', tree, `origin/${o.branch}`]
+			: ['worktree', 'add', '-b', o.branch, '--', tree, o.from || 'HEAD'];
 	const made = git(run, repo, ...add);
 	if (made.status !== 0) return refuse(`git worktree add failed: ${made.stderr.trim().split('\n')[0]}`);
 	fs.mkdirSync(config, { recursive: true });
 	fs.writeFileSync(path.join(config, '.claude.json'), `${JSON.stringify({ projects: { [tree]: { hasTrustDialogAccepted: true } } })}\n`);
 
 	const timeout = Math.round(timeoutMin * 60000);
-	const child = start('claude', workerArgs({ plugin, model: o.model, budget: o.budget }), { cwd: tree, env: workerEnv(env, config), timeout });
+	const child = start(claude, workerArgs({ plugin, model: o.model, budget: o.budget }), { cwd: tree, env: workerEnv(env, config), timeout });
 	const out = fs.createWriteStream(log);
 	const check = startCheck({ plugin });
 	let stopWhy = null;
@@ -207,7 +263,7 @@ export async function main(argv, { env = process.env, run = realRun, start = rea
 	// worker answered and its result event says it succeeded.
 	let answered = false;
 	let outcome = null;
-	const stop = (why) => { if (stopWhy) return; stopWhy = why; try { child.kill('SIGKILL'); } catch { /* already gone */ } };
+	const stop = (why) => { if (stopWhy) return; stopWhy = why; stopTree(child); };
 	const timer = setTimeout(() => stop(`timed out after ${timeoutMin} min`), timeout);
 	let buf = '';
 	child.stdout.on('data', (d) => {
