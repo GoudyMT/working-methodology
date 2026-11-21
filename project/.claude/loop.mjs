@@ -20,6 +20,8 @@
 //        without it. --risk names what could make the owner refuse or change the plan (up to 3); a plan counts toward
 //        the streak only when the owner refused it over a risk it named (K210). With no run open, --item names the plan
 //        and done <plan step> locks it alone, where plans are locked outside a run
+//   node .claude/loop.mjs drop                                 with no run open, ends a plan whose lock will not come
+//        (the item was dropped or planned again) on the owner's Yes to `loop drop <code>`, unscored
 //   node .claude/loop.mjs chain <handoff.md> [--open]          GO or STOP for opening the next thread (S13); --open
 //                                                              records the opening against limits.threadsPerDay
 //   node .claude/loop.mjs mode arm | prompt --text "<message>" | off --why "<why>"
@@ -111,6 +113,7 @@ function read() {
 		// K210: a plan locked with no run open (its verdict, then its lock); it counts in the same streak.
 		else if (e.kind === 'shadow' && e.solo) s.plan = { item: e.item, would: e.would, time: e.time, session: e.session, scored: e.scored === true, risks: e.risks || [] };
 		else if (e.kind === 'done' && e.solo) { s.plan = null; tally(e); }
+		else if (e.kind === 'drop' && e.solo) s.plan = null;
 		else if (!s.run) return;
 		else if (e.kind === 'done') {
 			s.done.push(e.step); s.opened = e.time; s.shadow = null;
@@ -170,6 +173,7 @@ const stepAct = (s, b, step) => (step.step !== b.shadow.step ? `loop ${step.step
 const nextStep = (s, b) => b.steps.find((x) => !s.done.includes(x.step)) || null;
 // K210: the act a plan locked with no run open is answered on, made from its verdict as stepAct is.
 const soloAct = (s, b) => `loop ${b.shadow.step} ${hash6(`solo:${s.plan.item}:${s.plan.time}:${s.plan.would}`)}`;
+const dropAct = (s) => `loop drop ${hash6(`drop:${s.plan.item}:${s.plan.time}`)}`;
 // The words of a risk or an answer that can match: lower case, four letters or more.
 const sig = (t) => [...new Set(String(t || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4))];
 // A named risk matches what the owner said when at least two of its words, and at least half, are in their answer.
@@ -391,9 +395,19 @@ function main(argv) {
 		const v = verdict(rest, opt);
 		const item = String(opt('--item') || '').trim().slice(0, 80);
 		if (v.usage || !item) { out(v.usage || 'usage: with no run open, the plan names its item: node .claude/loop.mjs shadow --item <id> --would yes|no --why "<why>" [--risk "<risk>"]...'); return 2; }
-		if (s.plan) { out(`loop: refused: plan ${s.plan.item} already carries a verdict and waits for its lock; the record keeps the first verdict. Nothing written.`); return 1; }
+		if (s.plan) { out(`loop: refused: plan ${s.plan.item} already carries a verdict and waits for its lock; the record keeps the first verdict (a plan whose lock will not come ends with node .claude/loop.mjs drop, on the owner's Yes). Nothing written.`); return 1; }
 		write({ kind: 'shadow', solo: true, item, step: b.shadow.step, would: v.would, why: v.why, risks: v.risks, session: session(), scored: true });
 		out(`loop: recorded: plan ${item} would${v.would === 'yes' ? '' : ' not'} approve itself. Ask the owner now, as always: self-approval stays off. node .claude/loop.mjs next prints the act to quote.`);
+		return 0;
+	}
+	// D7 (the build 23a sweep): a plan whose lock will not come held every later verdict; the owner's Yes ends it.
+	if (!s.run && cmd === 'drop') {
+		if (!s.plan) { out('loop: refused: no plan waits for its lock. Nothing written.'); return 1; }
+		const act = dropAct(s);
+		const yes = ownerYes(s, act, s.plan.time);
+		if (!yes.tap) { out(`loop: refused: dropping plan ${s.plan.item} is the owner's: ask in the pop-up, the question quoting \`${act}\`, then run drop again (${yes.why}). Nothing written.`); return 1; }
+		write({ kind: 'drop', solo: true, item: s.plan.item, tap: yes.tap });
+		out(`loop: plan ${s.plan.item} dropped on the owner's Yes, unscored. A new plan may record its verdict.`);
 		return 0;
 	}
 	if (!s.run && cmd === 'done' && rest[0] === b.shadow.step && s.plan) {

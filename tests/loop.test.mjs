@@ -110,6 +110,7 @@ test('an owner step is done only on the owner\'s Yes to its loop act in the reco
 });
 
 // why: guards rule:loop-driver (a limit needs an instrument)
+// planted: {"file":"project/.claude/bounds.json","was":"\"visual\": 3 }","to":"\"visual\": 3, \"ciFix\": 2 }"}
 test('the counted stops halt at the bounds file\'s limits, per unit, and a halt holds every step until the owner resumes', () => {
 	const r = repo();
 	loop(r, ['start', 'K1']);
@@ -137,13 +138,10 @@ test('the counted stops halt at the bounds file\'s limits, per unit, and a halt 
 	assert.equal(loop(r, ['count', 'visual']).status, 0, 'the check reset the visual count');
 	assert.equal(loop(r, ['count', 'visual']).status, 3, 'three visual increments since the check');
 	assert.equal(resume(r).status, 0);
-	// K210: ci-fix halts at the shipped bounds' ciFix when the owner set one (H7), and never when it is unset.
-	const ciCap = JSON.parse(fs.readFileSync(path.resolve('project/.claude/bounds.json'), 'utf8')).limits.ciFix;
-	for (let i = 1; i <= 5; i++) {
-		const st = loop(r, ['count', 'ci-fix']).status;
-		assert.equal(st, ciCap && i >= ciCap ? 3 : 0, `ci-fix round ${i} with the shipped cap ${ciCap}`);
-		if (st === 3) { assert.equal(resume(r).status, 0); break; }
-	}
+	// K210: the shipped bounds set no ciFix until the owner picks one (H7, open at 1.49.0), so ci-fix never halts there.
+	// The build 23a sweep (T2): the cap was read back from the file under test, so any value passed; it is pinned.
+	assert.equal(JSON.parse(fs.readFileSync(path.resolve('project/.claude/bounds.json'), 'utf8')).limits.ciFix, undefined, 'the owner has set no ciFix');
+	for (let i = 1; i <= 5; i++) assert.equal(loop(r, ['count', 'ci-fix']).status, 0, `ci-fix round ${i} with no cap`);
 	assert.equal(loop(r, ['count', 'nap']).status, 2, 'an unknown counter');
 });
 
@@ -524,6 +522,28 @@ test('K210: an always-yes verdict never reaches the shadow bar; a named risk the
 	assert.equal(loop(r, ['shadow', '--would', 'no', '--why', 'x', '--risk', 'aaaa bbbb', '--risk', 'cccc dddd', '--risk', 'eeee ffff', '--risk', 'gggg hhhh']).status, 2, 'at most three named risks');
 });
 
+// The build 23a sweep (T6): the risk matcher was shown only at its ends (every word, no word). A refusal matches a
+// named risk when at least two of its words, and at least half, are in the answer.
+// why: guards the owner's S3 shadow mode: the streak measures judgement, not agreement with a Yes
+// planted: {"file":"project/.claude/loop.mjs","was":"return hit >= 2 && hit * 2 >= w.length;","to":"return hit >= 1 && hit * 2 >= w.length;"}
+// planted: {"file":"project/.claude/loop.mjs","was":"return hit >= 2 && hit * 2 >= w.length;","to":"return hit >= 2;"}
+test('a refusal matches a named risk only when two of its words, and half of them, are in the answer', () => {
+	const r = repo();
+	const outcome = (risk, answer) => {
+		settle();
+		assert.equal(loop(r, ['shadow', '--item', 'K9', '--would', 'no', '--why', 'x', '--risk', risk]).status, 0);
+		const act = `loop design ${code(loop(r, ['next']).stdout, 'design')}`;
+		ownerTaps(r, act, { answer: `No: ${answer}` });
+		ownerTaps(r, act);
+		assert.equal(loop(r, ['done', 'design', '--evidence', 'plan']).status, 0);
+		return log(r).filter((e) => e.kind === 'done' && e.step === 'design').at(-1).shadow.outcome;
+	};
+	assert.equal(outcome('migration drops user rows', 'the migration drops rows'), 'agree', 'three of four words');
+	assert.equal(outcome('migration drops user rows', 'drops rows'), 'agree', 'two of four, half');
+	assert.equal(outcome('migration drops user rows on rollback', 'drops rows'), 'disagree', 'two of five, under half');
+	assert.equal(outcome('flaky network', 'the network is slow'), 'disagree', 'one word of two');
+});
+
 // K210: plans are locked outside a loop run too (the shadow had run 0 times), so the plan step's verdict and lock work
 // with no run open: the verdict names its item, next prints the act made from it, and done design scores it.
 // why: guards the owner's S3 shadow mode: the verdict is recorded where plans are locked
@@ -545,6 +565,24 @@ test('K210: a plan locked with no loop run open records its verdict and is score
 	assert.match(loop(r, ['show']).stdout, /shadow: 1 of 10/);
 	assert.equal(loop(r, ['done', 'design', '--evidence', 'again']).status, 1, 'the plan is locked once');
 	assert.equal(loop(r, ['start', 'K9']).status, 0, 'a run starts after a plan locked alone');
+});
+
+// D7 (the build 23a sweep): a plan verdict recorded with no run open waited for a lock that might never come (the
+// item dropped, or planned again), and every later verdict was refused for good.
+// why: catches a dropped plan blocking every later plan verdict for good
+test('a plan whose lock will not come is dropped on the owner\'s Yes, unscored, and a new verdict records', () => {
+	const r = repo();
+	assert.equal(loop(r, ['drop']).status, 1, 'no plan, nothing to drop');
+	assert.equal(loop(r, ['shadow', '--item', 'K9', '--would', 'yes', '--why', 'x']).status, 0);
+	const refused = loop(r, ['drop']);
+	assert.equal(refused.status, 1, 'the drop is the owner\'s');
+	const act = `loop drop ${code(refused.stdout, 'drop')}`;
+	assert.match(act, /^loop drop [0-9a-f]{6}$/);
+	ownerTaps(r, act);
+	assert.equal(loop(r, ['drop']).status, 0);
+	assert.equal(log(r).filter((e) => e.kind === 'drop').length, 1);
+	assert.match(loop(r, ['show']).stdout, /shadow: 0 of 10/, 'a dropped plan is not scored');
+	assert.equal(loop(r, ['shadow', '--item', 'K10', '--would', 'no', '--why', 'y']).status, 0, 'a new plan records its verdict');
 });
 
 // K210 (weekly item 14): CI-fix rounds were counted but never halted. The cap is the owner's to set in the bounds file
