@@ -110,6 +110,7 @@ test('both installed copies of visuals run git from node\'s own folder, never a 
 
 // why: guards rule:outward-acts (a hook or an audit loads only its own folder, so the helper ships three times and must never drift)
 test('the three installed copies of the safe-spawn helper are the same bytes', () => {
+	for (const f of COPIES) assert.ok(fs.existsSync(path.resolve(f)), `${f} is not in the kit`);
 	const [first, ...rest] = COPIES.map((f) => fs.readFileSync(path.resolve(f)));
 	for (const [i, b] of rest.entries()) assert.ok(first.equals(b), `${COPIES[i + 1]} differs from ${COPIES[0]}`);
 });
