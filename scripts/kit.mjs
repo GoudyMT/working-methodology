@@ -1953,14 +1953,15 @@ export function closeoutCue({ projectDir, prompt = '', session = '', env = proce
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
   if (common.status !== 0) return '';
   const tag = (git('tag', '--points-at', 'HEAD').stdout || '').split('\n').map((t) => t.trim()).find((t) => /^v?\d+\.\d+\.\d+$/.test(t)) || null;
-  const said = /\bmerged\b/i.test(prompt) && /\brelease(d|s)?\b/i.test(prompt);
-  if (!tag && !said) return '';
-  const key = tag ? `tag ${tag}` : `session ${session || 'none'}`;
+  // Only the repo's own release tag (the paired rerun of 2026-11-21, Max's pick): a cue on the owner's words sent
+  // sessions to check the rule's conditions where nothing could show them, and they stopped instead of starting.
+  if (!tag) return '';
+  const key = `tag ${tag}`;
   const file = path.join(common.stdout.trim(), 'kit-closeout-cue');
   const given = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
   if (given.includes(key)) return '';
   fs.appendFileSync(file, `${key}\n`);
-  const why = tag ? `HEAD is the release ${tag}` : 'the owner says the PR merged and its release is out';
+  const why = `HEAD is the release ${tag}`;
   return `Closeout cue: ${why}. rule:compact-ritual: the Closeout "${CLOSEOUT_RULE}". When those hold, start the closeout skill now.`;
 }
 

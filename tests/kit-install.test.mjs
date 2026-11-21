@@ -1208,10 +1208,10 @@ test('the hook script speaks at a message only when there is news', async () => 
 });
 
 // K191 (behaviour scenario 13 passed about 13 of 24 runs): after the merge and the release, starting the closeout was
-// left to the session noticing. The prompt hook now cues it from the repo's state (a release tag at HEAD) or the
-// owner's own words, once per release, so the step no longer rests on a coin flip.
+// left to the session noticing. The prompt hook now cues it from the repo's state (a release tag at HEAD), once per
+// release, so the step no longer rests on a coin flip.
 // why: catches a merged and released PR whose closeout the session never starts
-test('the prompt hook cues the closeout once per release, from a release tag at HEAD or the owner saying so (K191)', async () => {
+test('the prompt hook cues the closeout once per release, from a release tag at HEAD (K191)', async () => {
   const kitTools = await import('../scripts/kit.mjs');
   assert.equal(typeof kitTools.closeoutCue, 'function', 'K191: the closeout cue');
   // It quotes the rule word for word, never a paraphrase a session echoes back as the rule.
@@ -1227,10 +1227,10 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
   const cue = (r) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '');
   // No tag and no such words: silent.
   assert.equal(run('fix the greeting').stdout, '');
-  // The owner's words alone cue it, once per session.
-  assert.match(cue(run('My PR merged and its release is out.')), /start the closeout skill now/);
-  assert.doesNotMatch(cue(run('My PR merged and its release is out.')), /closeout/);
-  assert.equal(run('The PR merged.', '99999999-2222-3333-4444-555555555555').stdout, '', 'merged with no release named is not the cue');
+  // The owner's words alone are no cue (the paired rerun of 2026-11-21, Max's pick): sessions handed the rule's
+  // conditions on those words checked them in a folder that could not show them, and said they were stopping; recall
+  // Q13 fell to 3 of 5 against the release's 5 of 5. The repo's own release tag is the cue.
+  assert.equal(run('My PR merged and its release is out.').stdout, '');
   // A release tag at HEAD cues it on any message, once for that tag.
   git('tag', 'v1.1.0');
   const tagged = cue(run('what next?'));
