@@ -99,8 +99,9 @@ test('a read that only mentions node passes, and so does the own folder through 
 	assert.equal(verdict(call(`node ${posix(toOther)}/kit-tools/merge-gate.mjs arm 12`)), 'deny', 'a link to another folder is held');
 });
 
+// The /c/ drive spelling is Git Bash on Windows; Linux reads /c/ as a real path, so the Windows job runs this one.
 // why: catches the Git Bash /c/ spelling of a Windows path getting past the check as C:\c\Users\...
-test('on Windows the /c/ spelling of another Claude folder is held', { skip: process.platform !== 'win32' && 'the /c/ drive spelling is Git Bash on Windows; Linux reads /c/ as a real path' }, () => {
+test('on Windows the /c/ spelling of another Claude folder is held', { windows: true }, () => {
 	const { L, call, plain } = world();
 	assert.equal(typeof L.otherHomeTool, 'function');
 	const gitBash = `/${plain[0].toLowerCase()}${posix(plain).slice(2)}`;
