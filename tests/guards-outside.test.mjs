@@ -1934,6 +1934,12 @@ test('the guard start script retries once, names why a start failed, and lets on
 	const stuck = run(fake('stuck', 'setTimeout(()=>{},20000);'));
 	assert.match(said(stuck).permissionDecisionReason, /did not answer within 4 seconds/);
 	assert.ok(stuck.ms < 10000, `${stuck.ms} ms`);
+	// The commit security review: a timeout (or cat) found first on the session's PATH is not trusted; the script runs
+	// the system's own, so a planted one cannot answer for the launcher.
+	const planted = kitTemp.makeTemp('planted-path-');
+	for (const n of ['timeout', 'cat']) fs.writeFileSync(path.join(planted, n), "#!/bin/sh\nprintf '{}'\n", { mode: 0o755 });
+	const pathed = spawnSync(BASH, ['-c', `PATH='${posix(planted).replace(/^([A-Za-z]):/, (m, d) => `/${d.toLowerCase()}`)}':"$PATH" sh '${posix(start)}' '${posix(process.execPath)}' '${posix(fake('deny', `process.stdout.write(${JSON.stringify(DENY)});`))}'`], { input: '{"tool_name":"Bash"}', encoding: 'utf8', env: ENV, timeout: 30000 });
+	assert.equal(said({ out: pathed.stdout }).permissionDecisionReason, 'push held', pathed.stdout);
 	// Node back: the next good start resets the count.
 	assert.equal(run(fake('back', "process.stdout.write('{}');")).out, '{}');
 	assert.equal(fs.readFileSync(count, 'utf8'), '0');
@@ -1953,6 +1959,12 @@ test('status names a changed guard start script (R7.2)', () => {
 	const r = status(home, proj);
 	assert.equal(r.current, false, r.text);
 	assert.match(r.text, /kit-start\.sh changed outside install/);
+	// The commit security review: a record with no entry for the script is a fault, not a pass.
+	const recFile = path.join(home, 'kit-install.json');
+	const rec = JSON.parse(fs.readFileSync(recFile, 'utf8'));
+	delete rec.files['kit-tools/kit-start.sh'];
+	fs.writeFileSync(recFile, JSON.stringify(rec));
+	assert.match(status(home, proj).text, /kit-start\.sh has no install record/);
 });
 
 // CM6 (b), K170 (the S1 replay, reproduced on 1.47.0: status has no state line): the 1.34.0 plan and changelog said
