@@ -497,7 +497,8 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT, ask = null }) {
+// record: the answer's permissionDecision field as Claude Code writes it (null leaves it out); field: its name (R7.1).
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT, ask = null, record = { decision: 'accept', source }, field = 'permissionDecision', sidechain = false }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = ask || `May I run \`${act}\`?`;
 	// Each pop-up its own id, as Claude Code gives it: a spent tap is kept by that id.
@@ -509,7 +510,7 @@ function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_tem
 		...(tried ? [{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_tried', name: tried.tool, input: tried.input }] } }] : []),
 		// An act sent in the same message as the pop-up is written before the answer, as Claude Code writes it.
 		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: askId, name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
-		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: askId, content: 'answered' }] } },
+		{ type: 'user', isSidechain: sidechain, timestamp: at, ...(record === null ? {} : { [field]: record }), toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: askId, content: 'answered' }] } },
 		...then.map((command, k) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_run${k}`, name: 'Bash', input: { command } }] } })),
 	];
 	fs.mkdirSync(path.dirname(file), { recursive: true });
@@ -863,6 +864,52 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 		assert.equal(ownerYes(call), null, 'a yes dated after now');
 	} finally {
 		if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
+	}
+});
+
+// R7.1 (build 23a): every owner's yes rests on one field of the pop-up record that Claude Code does not document
+// (permissionDecision: decision "accept", source "user..."). If that shape changes (a phone answer, a renamed field, a
+// new value), the reader still refuses, but the refusal read as if the owner had not answered and asking again could
+// never help. The refusal now names the changed record (the canary); it never grants, and stays quiet on a No, on a
+// pop-up Claude answered itself and on a subagent's answer. Cases R1 to R9 from proof-sweep narrowing/R7.1.
+// why: guards rule:outward-acts (a changed pop-up record must name itself, never fail as a silent no)
+test('a Yes whose pop-up record changed shape is still refused, and the refusal names the changed record', () => {
+	const act = 'git push origin main';
+	const reason = () => {
+		const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: act }, cwd: proj, transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: `toolu_r71_${Math.random().toString(36).slice(2)}` }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		const h = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
+		return { decision: h.permissionDecision || 'allow', text: String(h.permissionDecisionReason || '') };
+	};
+	const CANARY = /Canary \(R7\.1\)/;
+	popUp({ act });
+	let r = reason();
+	assert.equal(r.decision, 'allow', 'R1 today\'s record shape is a yes');
+	assert.doesNotMatch(r.text, CANARY);
+	const changed = [
+		['R2 field missing', { record: null }],
+		['R3 field renamed', { field: 'permission_decision' }],
+		['R4 value accepted', { record: { decision: 'accepted', source: 'user' } }],
+		['R5 source mobile', { record: { decision: 'accept', source: 'mobile' } }],
+		['R9 decision reject', { record: { decision: 'reject', source: 'user' } }],
+	];
+	for (const [name, shape] of changed) {
+		popUp({ act, ...shape });
+		r = reason();
+		assert.equal(r.decision, 'deny', `${name}: a changed record granted a yes`);
+		assert.match(r.text, CANARY, `${name}: the refusal does not name the changed record`);
+		assert.match(r.text, /asking again will not help/, name);
+	}
+	const quiet = [
+		['R6 answer No', { record: null, answer: 'No' }],
+		['R7 Claude filled the pop-up', { record: null, filled: true }],
+		['R8 subagent answer', { record: null, sidechain: true }],
+	];
+	for (const [name, shape] of quiet) {
+		popUp({ act, ...shape });
+		r = reason();
+		assert.equal(r.decision, 'deny', name);
+		assert.doesNotMatch(r.text, CANARY, `${name}: the canary spoke for an answer that is no person's Yes`);
 	}
 });
 
