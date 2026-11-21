@@ -51,7 +51,8 @@ Every program the installed kit starts by name now starts from node's own folder
 - The decide command refuses a from file reached through a junction.
 - One yes-record test is shared by the owner-yes reader and the use check; when the pop-up record changes shape, the refusal names why (the canary), on a push too.
 - The use check reads the pop-up record with the guards' own yes-record test.
-- Tool writes to `.mcp.json`, `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.
+- Tool writes to .mcp.json need the owner's yes, as a settings write does.
+- Writes to `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.
 - The settings check names an API base URL and an apiKeyHelper.
 - The launcher names a settings file that reroutes the model, trusts another certificate, exports telemetry, names a git program or runs a command as a fault.
 - The commit-msg hook refuses a commit whose author or committer names a code tool or its maker's domain, however it is spelled, names each repair, and passes a person the owner lists in `kit.allowedIdent`.

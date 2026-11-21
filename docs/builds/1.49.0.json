@@ -183,7 +183,18 @@
    "id": "K217",
    "kind": "security",
    "reach": "projects",
-   "text": "Tool writes to `.mcp.json`, `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.",
+   "text": "Tool writes to .mcp.json need the owner's yes, as a settings write does.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "where": "Tool writes to .mcp.json",
+   "before": "Not held",
+   "after": "Need the owner's yes",
+   "test": "tests/owner-proof.test.mjs::a tool write to .mcp.json takes the owner's yes, as a settings write does"
+  },
+  {
+   "id": "K217-MCP",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Writes to `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.",
    "evidence": "project/.claude/owner-proof.cjs",
    "where": "MCP servers and plugins",
    "before": "Not held",
@@ -557,7 +568,8 @@
     "severity": "medium",
     "text": "`decide --from` refuses the decisions file, its lock and every tracking file",
     "commit": "0d85e49",
-    "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock"
+    "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock",
+    "reason": "the older decide tests read paths outside the project; these cases need their own project, file and lock"
    },
    {
     "id": "T2",
@@ -579,7 +591,8 @@
     "severity": "medium",
     "text": "The closeout lists a decision asked with a code span; only an exact Yes or No to one act is skipped",
     "commit": "3956d0e",
-    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
    },
    {
     "id": "G3",
@@ -626,14 +639,16 @@
     "severity": "medium",
     "text": "The closeout repair line says a short answer records with `--unchecked`, one row per answer",
     "commit": "3956d0e",
-    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
    },
    {
     "id": "N2",
     "severity": "medium",
     "text": "One decision row quotes one answer, so a short row no longer stands for every same answer",
     "commit": "3956d0e",
-    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
    },
    {
     "id": "S2",
@@ -720,35 +735,40 @@
     "severity": "low",
     "text": "decide refuses the same decision twice and takes over a lock left by a stopped run",
     "commit": "0d85e49",
-    "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock"
+    "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock",
+    "reason": "the older decide tests read paths outside the project; these cases need their own project, file and lock"
    },
    {
     "id": "D5",
     "severity": "low",
     "text": "A row holding a longer answer quotes one answer only",
     "commit": "3956d0e",
-    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
    },
    {
     "id": "D7",
     "severity": "low",
     "text": "loop drop ends a plan whose lock will not come, on the owner's Yes",
     "commit": "65fd55d",
-    "test": "tests/loop.test.mjs::a plan whose lock will not come is dropped on the owner's Yes, unscored, and a new verdict records"
+    "test": "tests/loop.test.mjs::a plan whose lock will not come is dropped on the owner's Yes, unscored, and a new verdict records",
+    "reason": "the drop command is new, and no older test runs it"
    },
    {
     "id": "T4",
     "severity": "low",
     "text": "The closeout pass line count is checked exactly",
     "commit": "3956d0e",
-    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
    },
    {
     "id": "T6",
     "severity": "low",
     "text": "The risk matcher is tested between its two ends",
     "commit": "65fd55d",
-    "test": "tests/loop.test.mjs::a refusal matches a named risk only when two of its words, and half of them, are in the answer"
+    "test": "tests/loop.test.mjs::a refusal matches a named risk only when two of its words, and half of them, are in the answer",
+    "reason": "the older shadow test runs whole loop runs; these cases need plans with no run open"
    },
    {
     "id": "T7",
@@ -763,7 +783,8 @@
     "severity": "low",
     "text": "The brainstorm sheet's repeated-thought refusal names the repair plainly",
     "commit": "ed6db34",
-    "test": "tests/kit-rules.test.mjs::K207 F1: a \"What I thought:\" line inside an answer is refused, naming the question, not filed in the wrong box"
+    "test": "tests/kit-rules.test.mjs::K207 F1: a \"What I thought:\" line inside an answer is refused, naming the question, not filed in the wrong box",
+    "reason": "the K207 test is itself new in this build and holds the refusal text"
    },
    {
     "id": "V3",
@@ -799,7 +820,8 @@
     "severity": "low",
     "text": "The answer scan reads the project from a subfolder and names .kit as a file",
     "commit": "3956d0e",
-    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
    },
    {
     "id": "S3",
