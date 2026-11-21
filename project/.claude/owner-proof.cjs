@@ -292,7 +292,8 @@ function guardShape(p) {
 		// E1 (build 21): the report channel's grant (kit-report.json names the one intake repo and is its kill switch) and
 		// the owner's own scrub word list are the owner's to write, as the guard records are; so are the reports kit-report.mjs
 		// keeps (the commit security review: a report rewritten after the owner read it, or marked held again).
-		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks') || fits(r[0], 'kit-report.json') || fits(r[0], 'kit-scrub-words.json') || fits(r[0], 'kit-reports'));
+		// K176: kit-grants/ holds the lead's one-time grants of the owner's card yes; a worker writing one would be its own yes.
+		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks') || fits(r[0], 'kit-report.json') || fits(r[0], 'kit-scrub-words.json') || fits(r[0], 'kit-reports') || fits(r[0], 'kit-grants'));
 		if (h.length && p[i] === h[h.length - 1] && trusted(p.slice(i + 1))) return true;
 		// The Claude folder under a name of its own (CLAUDE_CONFIG_DIR), named as the place written to.
 		if (h.length && !fits(h[h.length - 1], '.claude') && i === p.length - 1 && p.length >= h.length && h.every((x, k) => p[p.length - h.length + k] === x)) return true;
@@ -301,7 +302,7 @@ function guardShape(p) {
 		if (rest.length === 0) return true;
 		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
 		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
-		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json') || (rest.length === 1 && (fits(rest[0], 'kit-report.json') || fits(rest[0], 'kit-scrub-words.json'))) || fits(rest[0], 'kit-reports')) return true;
+		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json') || (rest.length === 1 && (fits(rest[0], 'kit-report.json') || fits(rest[0], 'kit-scrub-words.json'))) || fits(rest[0], 'kit-reports') || fits(rest[0], 'kit-grants')) return true;
 		const last = rest[rest.length - 1];
 		// A wildcard may name any guard the shell finds there (owner-pro* is owner-proof.cjs): it fails closed (S23-1, the
 		// mutation check showed only guard.cjs was matched).

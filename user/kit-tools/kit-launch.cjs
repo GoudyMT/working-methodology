@@ -20,6 +20,8 @@ const path = require('path');
 const crypto = require('crypto');
 const Module = require('module');
 const { spawnSync } = require('child_process');
+// K176: the owner's yes from a cloud card, as a one-time grant. Without its file no grant lifts anything.
+const grant = (() => { try { return require('./owner-grant.cjs'); } catch { return { lift: (a) => a, runsGrantTool: () => null }; } })();
 
 const HOME = path.dirname(__dirname);
 const RECORDS = path.join(HOME, 'kit-guard');
@@ -954,7 +956,7 @@ function preToolUse(input) {
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
 	// a call started there. The strictest answer wins: a refusal, then an ask, then the rest (as guard.cjs merges).
 	const mine = findProject(input);
-	const answers = [here, otherHomeTool(input)];
+	const answers = [here, otherHomeTool(input), grant.runsGrantTool(input)];
 	const named = namedProjects(input);
 	// One the reader cannot read for sure is held with its reason, never fanned out over every project (1.33.1).
 	if (named.unreadable && recordedProjects().some((d) => !(mine && !mine.ambiguous && same(mine.dir, d)))) {
@@ -981,7 +983,9 @@ function preToolUse(input) {
 		answers.push(projectCheck({ ...fanned, cwd: dir }, true));
 	}
 	const rank = (o) => { const d = o && o.hookSpecificOutput && o.hookSpecificOutput.permissionDecision; return d === 'deny' ? 3 : d === 'ask' ? 2 : o ? 1 : 0; };
-	return answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);
+	const best = answers.reduce((best, o) => (rank(o) > rank(best) ? o : best), null);
+	// K176: a grant lifts a refusal only when it is the one refusal (the others are not merged into it).
+	return answers.filter((o) => rank(o) === 3).length === 1 ? grant.lift(best, input, HOME) : best;
 }
 
 function projectCheck(input, only = false) {
