@@ -4,11 +4,11 @@
     {
       "rule": "outward-acts",
       "home": "AGENTS.md",
-      "source": "rules/_parts/agents-head.md",
+      "source": "rules/core.md",
       "when": "\\bpush(es|ed|ing)?\\b|\\bopen(s|ing)? (the |its |a |my )?(PR|pull request)\\b",
       "quotes": [
-        "(its four limits: never main, a tag, a force or a delete)",
-        "A push of a feature branch and opening its PR need no yes: do them, then tell the owner."
+        "It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete.",
+        "is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner."
       ]
     },
     {
@@ -18,7 +18,8 @@
       "when": "\\b(swarm|fan-?out|sub-?agents?|review agents?|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (\\w+ )?agents)\\b",
       "quotes": [
         "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract.",
-        "STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs` (PowerShell: full path; or your Claude config folder), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons)."
+        "STOP: no agent runs until the contract is approved",
+        "run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons)."
       ]
     },
     {

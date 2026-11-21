@@ -1256,12 +1256,15 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   for (const c of data.cues) {
     const src = read(path.resolve(c.source));
     for (const q of c.quotes) assert.ok(src.includes(q), `${c.rule}: not word for word in ${c.source}: ${q}`);
+    // Paired run 2 (2026-11-21): a cue naming ~/.claude sent sessions in a throwaway Claude folder to the owner's real
+    // one (behaviour scenario 7), so no cue quotes a fixed Claude folder path.
+    for (const q of c.quotes) assert.doesNotMatch(q, /~\/\.claude|%USERPROFILE%|\$HOME\/\.claude/, `${c.rule}: a cue names a fixed Claude folder: ${q}`);
     assert.match(index, new RegExp(`^\\| ${c.rule} \\| `, 'm'), `${c.rule} is a rule id`);
   }
   const cue = (prompt) => kitTools.ruleCues({ kit: path.resolve('.'), prompt });
   // The three recall questions, and the words real work uses.
-  assert.match(cue('My branch is ready. Can I push it and open the PR?'), /^rule:outward-acts \(AGENTS\.md\): .*never main, a tag, a force or a delete/m);
-  assert.match(cue('I want to run five review agents at once. What do I do first?'), /^rule:swarm-contract \(standards\/agent-teams\.md\): .*approve\.mjs.*ASK: show the table/m);
+  assert.match(cue('My branch is ready. Can I push it and open the PR?'), /^rule:outward-acts \(AGENTS\.md\): .*names both acts and all four limits: never main, never a tag, never a force, never a delete/m);
+  assert.match(cue('I want to run five review agents at once. What do I do first?'), /^rule:swarm-contract \(standards\/agent-teams\.md\): .*STOP: no agent runs until the contract is approved.*ASK: show the table/m);
   assert.match(cue('While building I noticed an unrelated idea for later. Where does it go?'), /^rule:parking-lot \(standards\/reviews-and-findings\.md\): .*Parking Lot.*all gates green/m);
   assert.match(cue('fan out three subagents over src/'), /rule:swarm-contract/);
   // The paired run of 2026-11-21: Q10's sweep, and a merged PR that names no push or PR opening.
