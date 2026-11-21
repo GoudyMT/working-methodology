@@ -31,7 +31,6 @@
     "user/kit-tools/worker.mjs"
    ],
    "tests": [
-    "tests/ci-workflows.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/worker.test.mjs"
    ],
@@ -702,6 +701,7 @@
    "guards": [],
    "scripts": [],
    "tests": [
+    "tests/ci-workflows.test.mjs",
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
     "tests/kit-install.test.mjs",
