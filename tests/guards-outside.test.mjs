@@ -1984,6 +1984,27 @@ test('the guard start script retries once, names why a start failed, and lets on
 	assert.match(missing.reason, /kit\.mjs status[\s\S]*install user/);
 });
 
+// K250 (1.49.0): the start script trimmed PATH for the launcher too, so on Windows (Git for Windows keeps no git in
+// /usr/bin or /bin) every git the guards ask was missing: a worktree-config project had every call held. The launcher
+// now gets the system folders plus Git for Windows' own /cmd; never the session's PATH, where a planted git could answer.
+// why: catches a launcher that cannot find git through the start script, and one that takes git from the session PATH
+test('the guard start script lets the launcher find git, never a git planted on the session PATH (K250)', () => {
+	const { home } = setup();
+	const start = path.join(home, 'kit-tools', 'kit-start.sh');
+	const bin = kitTemp.makeTemp('session-path-');
+	// A planted git (both shapes, so either OS would pick it), timeout and cat on the session's PATH.
+	for (const n of ['git', 'git.cmd', 'timeout', 'cat']) fs.writeFileSync(path.join(bin, n), "#!/bin/sh"+String.fromCharCode(10)+"printf planted"+String.fromCharCode(10), { mode: 0o755 });
+	// Windows runs only an .exe by a bare name: node itself, copied as git.exe, answers with its own version.
+	if (process.platform === 'win32') fs.copyFileSync(process.execPath, path.join(bin, 'git.exe'));
+	const fake = path.join(bin, 'launch.cjs');
+	fs.writeFileSync(fake, "const r=require('child_process').spawnSync('git',['--version'],{encoding:'utf8'});let i='';process.stdin.on('data',(d)=>i+=d).on('end',()=>process.stdout.write(JSON.stringify({git:r.stdout||String(r.error&&r.error.code),input:i})));");
+	const shPath = posix(bin).replace(/^([A-Za-z]):/, (m, d) => `/${d.toLowerCase()}`);
+	const r = spawnSync(BASH, ['-c', `PATH='${shPath}':"$PATH" sh '${posix(start)}' '${posix(process.execPath)}' '${posix(fake)}'`], { input: '{"tool_name":"Bash"}', encoding: 'utf8', env: ENV, timeout: 30000 });
+	const out = JSON.parse(r.stdout);
+	assert.match(out.git, /^git version/, 'the launcher finds the real git');
+	assert.equal(out.input, '{"tool_name":"Bash"}', 'the input reached the launcher through the system cat, not the planted one');
+});
+
 // R7.2: status holds the start script to its install record, as it holds the launcher line.
 // why: catches a start script changed so it lets every call through, while status says current
 test('status names a changed guard start script (R7.2)', () => {

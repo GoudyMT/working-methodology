@@ -8,17 +8,22 @@
 #   NODE_OPTIONS= /bin/sh '<home>/kit-tools/kit-start.sh' '<node>' '<launcher>' || printf '%s' '<deny>'
 # The commit security review: the tools this script runs (timeout, cat, mkdir, dirname) come from the system's own
 # folders, never from the session's PATH, so a planted one cannot answer for the launcher. node is an absolute path.
+# K250 (1.49.0): Git for Windows keeps no git in /usr/bin or /bin, so the guards could not ask git anything and a
+# worktree-config project had every call held. The launcher gets the system folders plus Git for Windows' own /cmd
+# (part of the install this shell runs from), never the session's PATH, so a planted git cannot answer either.
 PATH=/usr/bin:/bin
 export PATH
+run_path="$PATH"
+if [ -x /cmd/git.exe ]; then run_path="/cmd:$PATH"; fi
 node="$1"
 launcher="$2"
 count="$(dirname "$0")/../kit-guard/start-fails"
 input="$(cat)"
 # macOS ships no timeout: there the launcher runs unlimited, and Claude Code's own 10 second hook limit still holds.
 if command -v timeout >/dev/null 2>&1; then
-	try() { printf '%s' "$input" | NODE_OPTIONS= timeout 4 "$node" "$launcher"; }
+	try() { printf '%s' "$input" | PATH="$run_path" NODE_OPTIONS= timeout 4 "$node" "$launcher"; }
 else
-	try() { printf '%s' "$input" | NODE_OPTIONS= "$node" "$launcher"; }
+	try() { printf '%s' "$input" | PATH="$run_path" NODE_OPTIONS= "$node" "$launcher"; }
 fi
 out="$(try)"; rc=$?
 case "$rc" in
