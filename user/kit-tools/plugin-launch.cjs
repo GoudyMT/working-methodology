@@ -86,7 +86,8 @@ function writesPlugin(input, root = ROOT) {
 // a brace list) is read as a wildcard that may name anything.
 const GLOB = /[*?[{$%`]/;
 const globPart = (g) => {
-	if (/[$%`]/.test(g)) return /^/;
+	// A brace sequence ({a..z}) or nested braces are read as matching anything, as a variable is.
+	if (/[$%`]/.test(g) || /\{[^{}]*\.\.[^{}]*\}|\{[^{}]*\{/.test(g)) return /^/;
 	const alts = /\{([^{}]*,[^{}]*)\}/.exec(g);
 	if (alts) return { test: (s) => alts[1].split(',').some((a) => globPart(g.replace(alts[0], a)).test(s)) };
 	return new RegExp(`^${g.replace(/[.+^${}()|\\]/g, '\\$&').replace(/\*/g, '.*').replace(/\?/g, '.')}$`, WIN ? 'i' : '');
@@ -104,6 +105,9 @@ function reachesBy(command, cwd, roots) {
 		if (!/[/\\]/.test(w) && !/^\.\.?$/.test(w)) continue;
 		const parts = w.replace(/\\/g, '/').split('/');
 		const cut = parts.findIndex((x) => GLOB.test(x));
+		// A word that opens with an expansion may stand for any folder: it reaches the plugin when the rest of it names
+		// the plugin folder's own name (the commit security review: $X/kit-plugin/launch.cjs).
+		if (cut === 0 && /[$%`]/.test(parts[0]) && roots.some((r) => parts.slice(1).some((x) => fold(x) === fold(path.basename(r))))) return true;
 		if (cut < 0) { if (roots.some((r) => within(path.resolve(base, parts.join('/')), r))) return true; continue; }
 		const fixed = path.resolve(base, parts.slice(0, cut).join('/') || '.');
 		if (roots.some((r) => { const rel = posix(path.relative(fixed, r)); return within(r, fixed) && (rel === '' || globPart(parts[cut]).test(rel.split('/')[0])); })) return true;

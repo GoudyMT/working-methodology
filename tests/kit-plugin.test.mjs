@@ -223,7 +223,7 @@ test('the plugin launcher holds a run of the grant tool and every spelling of th
   // The commit security review: a home folder or variable spelled for the shell to expand reaches it too.
   const home = fwd(os.homedir());
   if (fwd(root).startsWith(`${home}/`)) for (const c of [`echo x > ~/${fwd(root).slice(home.length + 1)}/launch.cjs`, `echo x > $HOME/${fwd(root).slice(home.length + 1)}/launch.cjs`]) assert.equal(decision(run(c).out), 'deny', c);
-  for (const c of [`echo x > "${parent}/{${base},other}/launch.cjs"`, `echo x > "${parent}/$X/launch.cjs"`]) assert.equal(decision(run(c).out), 'deny', c);
+  for (const c of [`echo x > "${parent}/{${base},other}/launch.cjs"`, `echo x > "${parent}/$X/launch.cjs"`, `echo x > "${parent}/{a..z}*/launch.cjs"`, `echo x > $P/${base}/launch.cjs`]) assert.equal(decision(run(c).out), 'deny', c);
   for (const c of [`echo x > "${parent}/./${base}/launch.cjs"`, `echo x > "${parent}//${base}/launch.cjs"`, `echo x > "${fwd(root)}/../${base}/launch.cjs"`, `cd "${parent}" && echo x > ${base.slice(0, 4)}*/launch.cjs`]) {
     const r = run(c);
     assert.equal(decision(r.out), 'deny', c);
