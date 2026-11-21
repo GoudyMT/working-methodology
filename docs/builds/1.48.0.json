@@ -1,0 +1,565 @@
+{
+  "version": "1.48.0",
+  "date": "2026-11-21",
+  "level": "minor",
+  "area": "Quality",
+  "title": "feat: fixed score gate, rule cues and own-folder kit tools",
+  "headline": "The recall gate is fixed at a floor of 14 with two blind scorers and no override, and a lower question counts as worse only when seen twice; the prompt hook puts a rule's own words in front of a session on its topic and cues the closeout after a release; and a session runs its own config folder's kit tools.",
+  "alignment": "v1.48.0 is build 22 of the v2.0 plan: K198 (with K199, K200 and seen twice), K191, K192, K195, K197, K184, K196, CM6, K193, K182, K171, K206 and R7.2, each reproduced on the released 1.47.0 or proven by a run first.",
+  "items": [
+    {
+      "id": "K198",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The recall gate is fixed: 5 runs a side measured the same day, two blind scorers averaged, a median of at least 14 on wording and behaviour, nothing worse than the release, and no marker that passes a miss.",
+      "evidence": "scripts/recall.mjs",
+      "where": "A PR that changes rule text",
+      "before": "One scorer, a pass bar of 13, and an owner-accepted marker",
+      "after": "Two scorers, a floor of 14, no override",
+      "test": "tests/kit-recall.test.mjs::recall gate (K198): the floor of 14, two scorers and no worse question or scenario, with no override"
+    },
+    {
+      "id": "K198-TWICE",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A question or scenario that scores lower than the same-day release is asked again alone, 5 new sessions a side with two new scorers, and counts as worse only when it is lower again.",
+      "evidence": "scripts/recall-score.mjs",
+      "where": "Scoring a gate run",
+      "before": "One unlucky run made a question worse",
+      "after": "Worse only when seen twice",
+      "test": "tests/gate-seen-twice.test.mjs::a question lower on one look is asked again alone, and is worse only when it is lower twice"
+    },
+    {
+      "id": "K199",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The blind step writes every home, temp and drive path one way, hides a throwaway kit-probes folder but keeps the file named after it, and keeps an answer line that only says \"current build\".",
+      "evidence": "scripts/recall-score.mjs",
+      "where": "Blinding runs for the scorers",
+      "before": "A path told the scorer the side, and two filters deleted answer lines",
+      "after": "Paths read the same on both sides; answer lines stay",
+      "test": "tests/gate-seen-twice.test.mjs::the blind step keeps an answer line that only says current build"
+    },
+    {
+      "id": "K195",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The release arm of a behaviour run gets the skills and roles its install record lists, as the candidate gets its own.",
+      "evidence": "scripts/recall-behave.mjs",
+      "where": "Behaviour runs",
+      "before": "The release arm ran with no kit skills",
+      "after": "Both arms load their own kit skills",
+      "test": "tests/recall-behave.test.mjs::the release arm (K195) gets its installed kit skills and agents in the probe, as the candidate gets its own"
+    },
+    {
+      "id": "K191",
+      "kind": "added",
+      "reach": "projects",
+      "text": "The prompt hook cues the closeout once when HEAD is the newest release tag, in the rule's own words.",
+      "evidence": "scripts/kit.mjs",
+      "where": "After a merge and release",
+      "before": "The closeout started about 13 times in 24",
+      "after": "Cued once per release",
+      "test": "tests/rule-cues-quiet.test.mjs::the closeout cue fires only when HEAD is the newest release tag"
+    },
+    {
+      "id": "K192",
+      "kind": "added",
+      "reach": "projects",
+      "text": "When a message names a push or PR, a fan-out of reviewers, an idea for later or the review before a PR, the prompt hook puts that rule's own words in front of the session; KIT_RULE_CUES=off turns it off.",
+      "evidence": "rules/cues.json",
+      "where": "Any message on those topics",
+      "before": "The session recalled the rule or did not",
+      "after": "The rule's words arrive with the message",
+      "test": "tests/rule-cues-quiet.test.mjs::a rule cue fires on its rule's topic and stays quiet on everyday words that share a word"
+    },
+    {
+      "id": "K206",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "Session start names this session's kit tool commands, rules name the tool instead of a fixed home path, skills are filled with the config folder at install, and the launcher holds a tool run from another one.",
+      "evidence": "scripts/kit.mjs",
+      "where": "Any session on a config folder other than the default",
+      "before": "Rules sent the session to the default config folder",
+      "after": "The session runs its own folder's tools",
+      "test": "tests/kit-home-paths.test.mjs::session start names this session's kit tool commands, in the allow rules' spelling (K206)"
+    },
+    {
+      "id": "R7.2",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "Every tool call starts the guard launcher through kit-start.sh: a 4 second limit, one retry for a slow start or a crash, the cause named, and after three misses the owner is asked to repair.",
+      "evidence": "user/kit-tools/kit-start.sh",
+      "where": "A guard that cannot start",
+      "before": "Each call blocked with only \"exit 127\" or \"timed out\"",
+      "after": "One retry and a named cause",
+      "test": "tests/guards-outside.test.mjs::the guard start script retries once, names why a start failed, and lets only the launcher answer (R7.2)"
+    },
+    {
+      "id": "K182",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "Sweep reviewers are metered in list-price dollars with a ceiling from their own call cap, and a large diff is split into file slices for the diff-reading roles, one reviewer each.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "where": "Running a sweep",
+      "before": "Token ceilings stopped 16 roles in one day",
+      "after": "Dollar ceilings and file slices",
+      "test": "tests/kit-sweep-budget.test.mjs::a large diff is split into file slices for the diff-reading roles, one reviewer each"
+    },
+    {
+      "id": "K184",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "A small PR body is refused when the diff is more than a small change, and the check fails closed when git cannot read the diff.",
+      "evidence": "project/.claude/version-bump-check.mjs",
+      "where": "Writing a PR body",
+      "before": "The body's own shape picked its tier",
+      "after": "The diff picks it",
+      "test": "tests/kit-hooks.test.mjs::a small PR body is refused when the diff is more than a small change (K184)"
+    },
+    {
+      "id": "K197",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "`kit-report.mjs send` keeps nothing when the session runs on another config folder than the project was installed for.",
+      "evidence": "project/.claude/kit-report.mjs",
+      "where": "A throwaway run that reports a fault",
+      "before": "Two reports landed in the real inbox",
+      "after": "Refused",
+      "test": "tests/kit-report.test.mjs::send keeps nothing when the session runs on another Claude folder than the project was installed for (K197)"
+    },
+    {
+      "id": "K196",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "Three read-only command shapes the guard held as writes now pass; their write twins stay held.",
+      "evidence": "project/.claude/owner-proof.cjs",
+      "where": "Read-only commands",
+      "before": "Held as writes",
+      "after": "Pass",
+      "test": "tests/guards-hold.test.mjs::three read-only shapes pass, and their write twins stay held (K187, K196)"
+    },
+    {
+      "id": "CM6",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "The resume packet hashes _State.json, kit status names drift between the state file and its views, and a one-line change to a shipped script or skill counts as fix work.",
+      "evidence": "project/.claude/resume-packet.mjs",
+      "where": "Session start and sweep tiers",
+      "before": "Drift and small script fixes went unseen",
+      "after": "Named",
+      "test": "tests/resume-packet.test.mjs::the packet hashes _State.json when there is one, and the check names it when it changed (CM6)"
+    },
+    {
+      "id": "K193",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The mutation measure runs the guard proofs on each flip the tests missed, so a proof-only catch counts.",
+      "evidence": "scripts/test-value.mjs",
+      "where": "The kit's CI",
+      "before": "A guard proof catch was not counted",
+      "after": "Counted"
+    },
+    {
+      "id": "K171",
+      "kind": "added",
+      "reach": "projects",
+      "text": "The kit ships Apache-2.0 LICENSE and NOTICE files.",
+      "evidence": "LICENSE",
+      "where": "The repository",
+      "before": "No licence file",
+      "after": "Apache-2.0"
+    }
+  ],
+  "verification": [
+    "Recall, two blind scorers: 14, 14, 14, 14, 13.5 against the released 1.47.0's 12, 12, 12, 13, 13 the same day, control 0; question 2 was lower once and 10 of 10 against 10 of 10 when asked again alone.",
+    "Behaviour (suite v2): 13, 14, 14, 14, 14 against the released 1.47.0's 14, 14, 13, 13, 14 the same day, control 5, no scenario worse.",
+    "The slice trial (K182): two reviewers on file slices found 40 of 64 planted bugs, one reviewer on the whole change 32 of 64, at 1.7 times the cost (one blind scorer)."
+  ],
+  "decisions": [
+    {
+      "decision": "A lower question or scenario is worse only when seen twice",
+      "why": "On one look the release scored worse than itself; the owner picked a second look alone, 5 new sessions a side, two new scorers (2026-11-21)."
+    },
+    {
+      "decision": "The same-day release is not held against its last recorded score",
+      "why": "At a floor of 14 of 14 a low baseline cannot help a candidate pass; the floor is held to the top score by a test (the owner, 2026-11-21)."
+    },
+    {
+      "decision": "The guard start limit stays at 4 seconds",
+      "why": "The owner picked it; the slowest guard path measured 410 to 439 ms on the owner's PC."
+    },
+    {
+      "decision": "A minor release",
+      "why": "New hooks, a new start-up line and a stricter gate reach every project."
+    }
+  ],
+  "upgrading": "Run install user, then install project: the settings line now runs /bin/sh and the guard start script, so a home installed before reads as not wired until install user runs. Rule cues can be turned off with KIT_RULE_CUES=off.",
+  "limits": "The other-folder hold reads a command as written: a folder or script built at run time, a wildcard, Start-Process or a script that spawns node is not read. Rule cues read a message's first 2,000 characters.",
+  "tests": {
+    "before": 964,
+    "after": 1036,
+    "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+  },
+  "sweep": {
+    "tier": "Feature (security-sensitive)",
+    "commit": "31e1b1b",
+    "dimensions": [
+      {
+        "name": "Privacy",
+        "result": "Not touched beyond the blind step; no path prints a prompt's own words"
+      },
+      {
+        "name": "Supply chain",
+        "result": "Not touched: no dependency added"
+      },
+      {
+        "name": "Legal",
+        "result": "Apache-2.0 LICENSE and NOTICE added; no content source changed"
+      },
+      {
+        "name": "Code security",
+        "result": "Other-folder hold, guard start, gate, meter and small-body check fixed"
+      },
+      {
+        "name": "Gaps, scaling, test value",
+        "result": "Saved records kept, cues narrowed, refusal texts fixed"
+      },
+      {
+        "name": "Alignment",
+        "result": "YES"
+      }
+    ],
+    "findings": {
+      "critical": 0,
+      "high": 7,
+      "medium": 17,
+      "low": 18
+    },
+    "fixes": [
+      {
+        "id": "R1-1",
+        "severity": "high",
+        "security": true,
+        "text": "The Git Bash /c/ spelling of another config folder is held on Windows",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::on Windows the /c/ spelling of another Claude folder is held"
+      },
+      {
+        "id": "R1-2",
+        "severity": "high",
+        "security": true,
+        "text": "An option between node and the path no longer skips the other-folder check",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::a kit tool run from another Claude folder is held however the command is spelled"
+      },
+      {
+        "id": "R1-3",
+        "severity": "high",
+        "security": true,
+        "text": "A cd into the other folder, then a relative path, is held",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::a kit tool run from another Claude folder is held however the command is spelled"
+      },
+      {
+        "id": "R1-4",
+        "severity": "medium",
+        "security": true,
+        "text": "A path with a space in quotes, or a quote ending inside it, is held",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::a kit tool run from another Claude folder is held however the command is spelled"
+      },
+      {
+        "id": "R1-5",
+        "severity": "medium",
+        "security": true,
+        "text": "The home spelled $USERPROFILE or ${env:USERPROFILE} is expanded like ~",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::the user home spelled with USERPROFILE is expanded like ~ and $HOME"
+      },
+      {
+        "id": "R1-6",
+        "severity": "medium",
+        "security": true,
+        "text": "A read or search that mentions node passes",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::a read that only mentions node passes, and so does the own folder through a link"
+      },
+      {
+        "id": "R1-7",
+        "severity": "low",
+        "security": true,
+        "text": "The own folder through a link or short name is not another folder",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::a read that only mentions node passes, and so does the own folder through a link"
+      },
+      {
+        "id": "R2-1",
+        "severity": "medium",
+        "security": true,
+        "text": "Every changed file reaches one slice, whatever its name holds",
+        "commit": "c57c6a6",
+        "test": "tests/sweep-meter-holds.test.mjs::every changed file reaches exactly one slice of a split role, whatever its name holds"
+      },
+      {
+        "id": "R2-2",
+        "severity": "medium",
+        "security": true,
+        "text": "A ceiling quoted in a role's question no longer stops the role",
+        "commit": "ebad568",
+        "test": "tests/sweep-meter-holds.test.mjs::the sweep guard starts a brief whose question quotes a ceiling, and still refuses two real ceiling lines"
+      },
+      {
+        "id": "R2-3",
+        "severity": "low",
+        "security": true,
+        "text": "An unknown model is priced at the dearest of each usage kind",
+        "commit": "81d628f",
+        "test": "tests/sweep-meter-holds.test.mjs::an unknown model id is priced at least as dear as every known model, in every usage kind"
+      },
+      {
+        "id": "R2-4",
+        "severity": "low",
+        "security": true,
+        "text": "The owner's yes refuses a split that moved since the ask",
+        "commit": "c57c6a6",
+        "test": "tests/sweep-meter-holds.test.mjs::the owner's yes refuses when the diff splits differently than it did at the ask"
+      },
+      {
+        "id": "R3-1",
+        "severity": "high",
+        "security": true,
+        "text": "The gate reads the lower-once and asked-again lines, not only the worse line",
+        "commit": "3f52e1a",
+        "test": "tests/gate-seen-twice.test.mjs::the gate refuses a record that shows a question lower once, or lower twice under \"worse: none\""
+      },
+      {
+        "id": "R3-2",
+        "severity": "high",
+        "security": true,
+        "text": "A behaviour first look refuses runs of named scenarios, and a second look must be runs of the lower scenarios alone",
+        "commit": "3f52e1a",
+        "test": "tests/gate-seen-twice.test.mjs::a behaviour second look is --just runs of the lower scenarios, and a --just run is no first look"
+      },
+      {
+        "id": "R3-3",
+        "severity": "medium",
+        "security": true,
+        "text": "A wording second look refuses the first look's own runs and runs that asked every question",
+        "commit": "3f52e1a",
+        "test": "tests/gate-seen-twice.test.mjs::a second look refuses the first look runs and runs that did not ask the lower questions alone"
+      },
+      {
+        "id": "R3-4",
+        "severity": "medium",
+        "security": true,
+        "text": "The behaviour floor is tied to the suite's top score",
+        "commit": "3f52e1a",
+        "test": "tests/gate-seen-twice.test.mjs::the behaviour floor is the suite top score, so a grown suite fails the gate until the floor moves"
+      },
+      {
+        "id": "R4-1",
+        "severity": "medium",
+        "security": true,
+        "text": "The small-body check fails closed when git cannot diff the branch",
+        "commit": "4b1991e",
+        "test": "tests/lean-fit-holds.test.mjs::a branch with no merge base against the base fails the small-body check"
+      },
+      {
+        "id": "R4-2",
+        "severity": "medium",
+        "security": true,
+        "text": "The small-body check reads a gate file git prints quoted",
+        "commit": "4b1991e",
+        "test": "tests/lean-fit-holds.test.mjs::a one-line change to a CI workflow with a non-ASCII name fails the small-body check"
+      },
+      {
+        "id": "R4-3",
+        "severity": "low",
+        "security": true,
+        "text": "A changed binary file fails the small-body check",
+        "commit": "4b1991e",
+        "test": "tests/lean-fit-holds.test.mjs::a changed binary file that is not docs fails the small-body check"
+      },
+      {
+        "id": "R4-4",
+        "severity": "low",
+        "security": true,
+        "text": "Only root test folders, test-named files and docs are exempt from the line count",
+        "commit": "4b1991e",
+        "test": "tests/lean-fit-holds.test.mjs::only root test folders, test-named files and docs are exempt from the line count"
+      },
+      {
+        "id": "R4-6",
+        "severity": "low",
+        "text": "The rule cues read only a message's opening, so a long paste costs no time",
+        "commit": "c7c344e",
+        "test": "tests/rule-cues-quiet.test.mjs::a 200 KB prompt of repeated words returns fast with no cue"
+      },
+      {
+        "id": "R5-1",
+        "severity": "high",
+        "text": "A second-look behaviour run refuses a label that holds saved runs",
+        "commit": "6245935",
+        "test": "tests/run-records-kept.test.mjs::a --just run refuses a label that already holds saved runs"
+      },
+      {
+        "id": "R5-2",
+        "severity": "medium",
+        "text": "A recall run refuses a label whose run is saved, before any session",
+        "commit": "6245935",
+        "test": "tests/run-records-kept.test.mjs::a recall run refuses a label whose run is already saved, before any session"
+      },
+      {
+        "id": "R5-3",
+        "severity": "medium",
+        "text": "The blind step refuses an out folder that holds a sealed map",
+        "commit": "6245935",
+        "test": "tests/run-records-kept.test.mjs::the blind step refuses an out folder that already holds a sealed map or scorer files"
+      },
+      {
+        "id": "R5-4",
+        "severity": "low",
+        "text": "A closeout cue that cannot be recorded no longer drops the prompt reply",
+        "commit": "6245935",
+        "test": "tests/run-records-kept.test.mjs::the prompt hook keeps its rule cues when the closeout cue cannot be recorded"
+      },
+      {
+        "id": "R5-5",
+        "severity": "low",
+        "security": true,
+        "text": "Filling a probe's user layer never writes through a link",
+        "commit": "6245935",
+        "test": "tests/run-records-kept.test.mjs::filling a probe user layer never writes through a link to a file outside it"
+      },
+      {
+        "id": "R6-1",
+        "severity": "medium",
+        "text": "The outward-acts cue fires on a git push or PR, not on everyday \"push\"",
+        "commit": "c7c344e",
+        "test": "tests/rule-cues-quiet.test.mjs::a rule cue fires on its rule's topic and stays quiet on everyday words that share a word"
+      },
+      {
+        "id": "R6-2",
+        "severity": "medium",
+        "text": "The sweep cue fires on the review before a PR, and names the kit's template",
+        "commit": "c7c344e",
+        "test": "tests/rule-cues-quiet.test.mjs::the sweep cue names the kit's CLAUDE.md template, not the project's own file"
+      },
+      {
+        "id": "R6-3",
+        "severity": "medium",
+        "security": true,
+        "text": "PowerShell gets the full path of each kit tool at session start and in the hold",
+        "commit": "5dbbf33",
+        "test": "tests/launcher-other-home.test.mjs::the hold says reading is fine and names this session's copy, with a full path for PowerShell"
+      },
+      {
+        "id": "R6-5",
+        "severity": "low",
+        "security": true,
+        "text": "The hold says reading another folder's tool is fine",
+        "commit": "b5e298c",
+        "test": "tests/launcher-other-home.test.mjs::the hold says reading is fine and names this session's copy, with a full path for PowerShell"
+      },
+      {
+        "id": "R6-7",
+        "severity": "low",
+        "text": "The closeout cue fires only on the newest release tag",
+        "commit": "bb02c1b",
+        "test": "tests/rule-cues-quiet.test.mjs::the closeout cue fires only when HEAD is the newest release tag"
+      },
+      {
+        "id": "R7-1",
+        "severity": "medium",
+        "text": "The start-up line gives the PowerShell full path for approve.mjs too",
+        "commit": "5dbbf33",
+        "test": "tests/kit-home-paths.test.mjs::session start names this session's kit tool commands, in the allow rules' spelling (K206)"
+      },
+      {
+        "id": "R7-2",
+        "severity": "medium",
+        "security": true,
+        "text": "A held guard start sends the session to the owner, not to a blocked command",
+        "commit": "10bd932",
+        "test": "tests/guards-outside.test.mjs::the guard start script retries once, names why a start failed, and lets only the launcher answer (R7.2)"
+      },
+      {
+        "id": "R7-3",
+        "severity": "low",
+        "security": true,
+        "text": "The call-cap hook counts only ceiling lines",
+        "commit": "ebad568",
+        "test": "tests/sweep-meter-holds.test.mjs::the call-cap hook meters a brief whose question quotes a ceiling, and refuses two real ceiling lines"
+      },
+      {
+        "id": "R7-4",
+        "severity": "low",
+        "security": true,
+        "text": "The fail-open log names a missing ceiling of either kind",
+        "commit": "ebad568",
+        "test": "tests/sweep-meter-holds.test.mjs::the call-cap hook names a missing ceiling of either kind when it lets a call through"
+      },
+      {
+        "id": "R7-5",
+        "severity": "low",
+        "text": "The second-look help names the labels and arguments it takes",
+        "commit": "40cbffa",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "R7-6",
+        "severity": "low",
+        "text": "Two rule lines no longer name a fixed home path, and the build refusal catches both spellings",
+        "commit": "6f7cdaa",
+        "test": "tests/rule-cues-quiet.test.mjs::fixedHomePaths reports ~/.claude/... and ~/.claude) and passes the Claude folder by name"
+      },
+      {
+        "id": "R8-1",
+        "severity": "low",
+        "text": "The closeout test's cues-off arm tests the switch",
+        "commit": "bb02c1b",
+        "test": "tests/kit-install.test.mjs::the prompt hook cues the closeout once per release, from a release tag at HEAD (K191)"
+      },
+      {
+        "id": "R8-2",
+        "severity": "low",
+        "text": "The \"push back\" quiet row tests its sentence",
+        "commit": "c7c344e",
+        "test": "tests/kit-install.test.mjs::the prompt hook cues a rule in its own words when a message names its topic (K192)"
+      },
+      {
+        "id": "L-1",
+        "severity": "low",
+        "security": true,
+        "text": "The settings line runs /bin/sh, not a sh on the PATH",
+        "commit": "ff75adf",
+        "test": "tests/launcher-verify.test.mjs::the settings line runs /bin/sh, and a bare sh line is not the wired one"
+      },
+      {
+        "id": "L-2",
+        "severity": "low",
+        "security": true,
+        "text": "kit-start.sh is on the test-owing guarded list",
+        "commit": "95e8c4b",
+        "test": "tests/launcher-other-home.test.mjs::the guard start script is a guarded file, so a fix to it owes a test"
+      },
+      {
+        "id": "S1",
+        "severity": "high",
+        "security": true,
+        "text": "A slice file name with a Unicode quote is sent back, not put in a brief",
+        "commit": "e204f8c",
+        "test": "tests/sweep-meter-holds.test.mjs::a changed file whose name holds a Unicode quote is sent back, not approved"
+      },
+      {
+        "id": "S2",
+        "severity": "medium",
+        "security": true,
+        "text": "The owner's yes refuses slices whose files differ from the ask",
+        "commit": "e204f8c",
+        "test": "tests/sweep-meter-holds.test.mjs::the owner's yes refuses when the slice files differ though the reviewer count and role map match"
+      }
+    ]
+  }
+}
