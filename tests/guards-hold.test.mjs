@@ -1671,7 +1671,7 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
