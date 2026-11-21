@@ -1724,3 +1724,11 @@ test('a quoted pattern beside a folder glob reads, and a quoted or dotted name o
 	for (const c of ["echo x > '.claude/guard.cjs'", "cp x '.claude/'*.cjs", "echo x > src/'.'*/guard.cjs", "sed -i s/a/b/ \".claude\"/*.cjs", "cp 'x' .claude/*", "echo 'y' > .c*/guard.cjs", "bash -O dotglob -c 'echo x > src/../*/guard.cjs'", "shopt -s dotglob; echo 'x' > */guard.cjs", "cd '.claude' && echo x > guard.cjs"]) assert.equal(bash(c), 'deny', c);
 });
 
+// K228 (S4): a bracket inside quotes ("(a.js)", node -e '...(...)') counted as a group, so a cd before it was not
+// followed and a .js word was read as a guard file.
+// why: catches a quoted bracket after a cd refused as a guard write
+test('a bracket inside quotes after a cd keeps the folder, and a real group or a cd into the guards is still refused', () => {
+	for (const c of ['cd /tmp && echo "(a.js)"', `cd src && node -e 'console.log(require("fs").readFileSync("a.js","utf8"))'`]) assert.equal(bash(c), 'allow', c);
+	for (const c of ['cd src && (cd ../.claude; echo x > guard.cjs)', 'cd src && { cd ../.claude; echo x > guard.cjs; }', 'cd .claude && echo "(x)" > guard.cjs', `cd .claude && node -e 'require("fs").writeFileSync("guard.cjs","x")'`, 'cd src && echo "$(cd ../.claude; echo x > guard.cjs)"', 'cd src && (cd ..; echo "(x)") && echo x > ../.claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+});
+
