@@ -54,7 +54,6 @@ test('each test lands in one group: guards, unique, machine, repeat, text, windo
 // K189 (the K160 slips): the command line reads --out wherever it sits, writes the sort there, and prints the flips,
 // the caught count and each group's count.
 // why: guards rule:test-value
-// planted: {"file":"scripts/test-value.mjs","was":"const out = outAt >= 0 ? argv[outAt + 1] : null;","to":"const out = outAt < 0 ? argv[outAt + 1] : null;"}
 // planted: {"file":"scripts/test-value.mjs","was":"const files = outAt < 0 ? argv : argv.filter((a, i) => i !== outAt && i !== outAt + 1);","to":"const files = outAt < 0 ? argv : argv.filter((a, i) => i === outAt && i !== outAt + 1);"}
 // planted: {"file":"scripts/test-value.mjs","was":"const flips = runs.flatMap((r) => r.flips || []);","to":"const flips = runs.flatMap((r) => r.flips && []);"}
 // planted: {"file":"scripts/test-value.mjs","was":"const caught = flips.filter((f) => (f.caughtBy || []).length || f.caught).length;","to":"const caught = flips.filter((f) => (f.caughtBy && []).length || f.caught).length;"}
