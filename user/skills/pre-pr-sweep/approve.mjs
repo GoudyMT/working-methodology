@@ -580,10 +580,15 @@ function triage(title, reasons, numbers) {
 // one: the control-vs-split trial and the outcome log set it.
 const WHOLE_DIFF = ['security', 'blast-radius', 'privacy', 'supply-chain', 'data-loss', 'triage'];
 const SLICE_LINES = 600;
-// A path as a brief's git line names it, in the one quoting both bash and PowerShell read the same: double quotes when
-// nothing in the path is special inside them, else single quotes when it holds no single quote; null when neither
-// holds (or a line break, a tab or a leading colon, which git reads as pathspec magic, is in it).
-const shellName = (f) => (/[\x00-\x1f\x7f]|^:/.test(f) ? null : !/["`$\\!]/.test(f) ? `"${f}"` : !f.includes("'") ? `'${f}'` : null);
+// A path as a brief's git line names it. An allow-list of characters, so a symbol neither bash nor PowerShell was
+// checked for is never let through (PowerShell reads the Unicode quotes U+2018 to U+201F as quote marks, which a
+// deny-list of ASCII quotes would miss): printable ASCII and Unicode letters and digits only, with no leading colon
+// (git reads it as pathspec magic). Double quotes when nothing in the path is special inside them, else single quotes
+// when it holds no single quote; null otherwise, which decide() sends back.
+const NAMEABLE = /^(?!:)[\x20-\x7e\p{L}\p{N}]+$/u;
+const shellName = (f) => (!NAMEABLE.test(f) ? null : !/["`$\\!]/.test(f) ? `"${f}"` : !f.includes("'") ? `'${f}'` : null);
+// What a split decided, as one hash: each run role's slice files in order, for the owner's yes to match against the ask.
+const sliceHash = (runRoles) => sha(JSON.stringify(runRoles.map((r) => r.sliceFiles || [])));
 function splitRoles(roles, facts) {
 	// -z: git prints a path with a non-ASCII byte C-quoted, so the name the numstat gives would match no changed file.
 	const files = facts ? git('diff', '--numstat', '-z', '--text', '--no-renames', `${facts.base}...HEAD`).stdout.split('\0').filter(Boolean).map((r) => { const [a, d, ...p] = r.split('\t'); return [a, d, p.join('\t')]; })
@@ -655,7 +660,7 @@ function decide() {
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
 	const split = splitRoles(c.roles || [], facts);
 	// A slice's brief names its files in a git line; a file it cannot name would be in no reviewer's slice.
-	if (split.unnameable.length) fix.push(`changed file ${split.unnameable.slice(0, 3).map((f) => JSON.stringify(f)).join(', ')} cannot be named safely in a reviewer's brief (its name holds a quote beside another shell character, a line break or a leading colon): rename it, then run approve.mjs again`);
+	if (split.unnameable.length) fix.push(`changed file ${split.unnameable.slice(0, 3).map((f) => JSON.stringify(f)).join(', ')} cannot be named safely in a reviewer's brief (its name holds a Unicode quote or symbol, a control character, a leading colon, or a single quote beside another shell character): rename it, then run approve.mjs again`);
 	const runRoles = split.roles;
 	const runBudgets = split.roleOf ? split.roleOf.map((i) => budgets[i]) : budgets;
 	const runTotal = runBudgets.reduce((t, b) => t + (Number(b) || 0), 0);
@@ -665,7 +670,7 @@ function decide() {
 	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, runBudgets, runRoles);
 	// K182: the reviewer count and the dollars, said before the owner's yes and in the start notice.
 	const spendLine = ceilingUnit === 'dollars' ? `${runRoles.length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -949,6 +954,8 @@ function ownerYes() {
 	const facts = diffFacts();
 	const now = splitRoles(JSON.parse(raw).roles || [], facts);
 	if (JSON.stringify(now.roleOf || null) !== JSON.stringify(last.roleOf || null) || now.roles.length !== last.agents) { console.log(`Refused: the diff now splits differently (${now.roles.length} reviewers) than at the ask (${last.agents}): the base or the changed files moved since the script asked. Run approve.mjs again, then ask the owner. Nothing logged.`); return 1; }
+	// The same count and role map can hold other files, and a file no brief can name is in no slice.
+	if (now.unnameable.length || (last.sliceHash !== undefined && sliceHash(now.roles) !== last.sliceHash)) { console.log(`Refused: the slices hold different slice files than at the ask${now.unnameable.length ? ' (a changed file cannot be named safely in a brief)' : ''}: the base or the changed files moved since the script asked. Run approve.mjs again, then ask the owner. Nothing logged.`); return 1; }
 	const { open, reported, stuck } = openSweep(s.log);
 	// A yes on an older ask must not open a new set of starts over a sweep whose spend is still unread.
 	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }

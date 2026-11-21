@@ -134,24 +134,42 @@ test('a split role with a changed file whose name no shell quoting carries is se
 	assert.equal(approvalLog(dir).pop().decision, 'fix');
 });
 
+// PowerShell reads U+2018 to U+201F as quote marks, so a file named with one could end the quoted path in a brief's git
+// line and run what follows it: such a name is refused like any other no quoting carries.
+// why: catches a slice file named with a Unicode quote that breaks out of the brief's quoted git line in PowerShell
+test('a changed file whose name holds a Unicode quote is sent back, not approved', () => {
+	for (const quote of ['’', '“', '‛']) {
+		const odd = `src/it${quote}s.ts`;
+		const dir = sweepRepo({ 'src/a.ts': bigFile(300), [odd]: bigFile(300), 'src/b.ts': bigFile(300) });
+		const contract = featureContract();
+		contract.roles[3].context = ['src/a.ts', odd, 'src/b.ts'];
+		const r = approveRun(contract, dir);
+		assert.equal(r.status, FIX_EXIT, `U+${quote.codePointAt(0).toString(16)}: ${r.stdout}`);
+		assert.match(r.stdout, /cannot be named safely in a reviewer's brief/);
+	}
+});
+
+// An ask over the named files, each 300 lines: the first in one commit and the rest in the next, so main can move up
+// to the first and drop it from the diff. The fix role reads them all and is split into slices.
+function askSplit(names, agents) {
+	const dir = sweepRepo({ [names[0]]: bigFile(300) });
+	for (const n of names.slice(1)) fs.writeFileSync(path.join(dir, n), bigFile(300));
+	commitAll(dir, 'more', true);
+	const contract = askContract();
+	contract.roles[0].context = names;
+	const r = approveRun(contract, dir);
+	assert.equal(r.status, 1, r.stdout);
+	assert.equal(approvalLog(dir).pop().agents, agents);
+	const cfg = kitTemp.makeTemp('cfg-');
+	ownerTaps(cfg, dir, `sweep yes ${r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1]}`);
+	return { r, dir, cfg };
+}
+
 // The owner's yes re-reads the diff to write the briefs. If the base moved since the ask, the split is not the one the
 // owner was asked about, and a brief past the logged ceilings would carry "Dollar ceiling: $NaN".
 // why: catches an owner's yes that writes briefs from a different split than the ask logged
 test('the owner\'s yes refuses when the diff splits differently than it did at the ask', () => {
-	const ask = () => {
-		const dir = sweepRepo({ 'src/a.ts': bigFile(300) });
-		fs.writeFileSync(path.join(dir, 'src/b.ts'), bigFile(300));
-		fs.writeFileSync(path.join(dir, 'src/c.ts'), bigFile(300));
-		commitAll(dir, 'more', true);
-		const contract = askContract();
-		contract.roles[0].context = ['src/a.ts', 'src/b.ts', 'src/c.ts'];
-		const r = approveRun(contract, dir);
-		assert.equal(r.status, 1, r.stdout);
-		assert.equal(approvalLog(dir).pop().agents, 4, 'the fix role is split in two');
-		const cfg = kitTemp.makeTemp('cfg-');
-		ownerTaps(cfg, dir, `sweep yes ${r.stdout.match(/`sweep yes ([0-9a-f]{6})`/)[1]}`);
-		return { r, dir, cfg };
-	};
+	const ask = () => askSplit(['src/a.ts', 'src/b.ts', 'src/c.ts'], 4);
 	const same = ask();
 	const ok = approveIn(same.dir, [same.r.f, '--owner-yes'], tapEnv(same.cfg));
 	assert.equal(ok.status, 0, ok.stdout);
@@ -162,5 +180,20 @@ test('the owner\'s yes refuses when the diff splits differently than it did at t
 	const refused = approveIn(moved.dir, [moved.r.f, '--owner-yes'], tapEnv(moved.cfg));
 	assert.notEqual(refused.status, 0, refused.stdout);
 	assert.match(refused.stdout, /splits differently[\s\S]*run approve\.mjs again/i);
+	assert.equal(approvalLog(moved.dir).some((e) => e.kind === 'owner-yes'), false, 'nothing is logged');
+});
+
+// The same reviewer count and role map can hide other slices: a file dropped from one and another in its place. The
+// ask's slice files are logged, and the owner's yes needs the same ones.
+// why: catches an owner's yes that starts reviewers on slices whose files are not the ones the owner was asked about
+test('the owner\'s yes refuses when the slice files differ though the reviewer count and role map match', () => {
+	const moved = askSplit(['src/a.ts', 'src/b.ts', 'src/c.ts', 'src/d.ts'], 4);
+	const decision = approvalLog(moved.dir).pop();
+	// Main moves up to the first feature commit: b, c and d are left, split as [b, c] and [d] - still two slices.
+	assert.equal(g(moved.dir, 'branch', '-f', 'main', 'HEAD~1').status, 0);
+	const refused = approveIn(moved.dir, [moved.r.f, '--owner-yes'], tapEnv(moved.cfg));
+	assert.deepEqual(decision.roleOf, [0, 0, 1, 2], 'the role map is the same');
+	assert.notEqual(refused.status, 0, refused.stdout);
+	assert.match(refused.stdout, /different slice files[\s\S]*run approve\.mjs again/i);
 	assert.equal(approvalLog(moved.dir).some((e) => e.kind === 'owner-yes'), false, 'nothing is logged');
 });
