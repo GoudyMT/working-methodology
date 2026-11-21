@@ -1069,10 +1069,11 @@ function shellWritesFrom(command, tool, start, names) {
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
 		// K154 (build 23a, the owner's pick: narrow it): inline node code that can reach no file (no require, import,
-		// process, a constructor, bracket access or a call that writes, lists, opens or runs) cannot use a wildcard, so a
+		// process, a constructor, bracket access, a $ the shell may expand, or a call that writes, lists, opens or runs)
+		// cannot use a wildcard, so a
 		// wildcard piece in it is text; a plain name in it is still read, and the strict reading holds for any other code.
 		const code = (x) => tool === 'Bash' && program === 'node' && x.quoted && /^(-e|-p|-pe|--eval|--print)$/.test(all[segment.indexOf(x) - 1] || '')
-			&& !/require|import|process|module|global|constructor|prototype|eval|Function|Reflect|Deno|Bun|\bfs\b|spawn|exec|fork|glob|write|append|unlink|\brm|rename|copy|cp\b|mkdir|link|open|truncate|chmod|chown|utimes|readdir|watch|\[|\\u|\\x|`/.test(x.value);
+			&& !/require|import|process|module|global|constructor|prototype|eval|Function|Reflect|Deno|Bun|\bfs\b|spawn|exec|fork|glob|write|append|unlink|\brm|rename|copy|cp\b|mkdir|link|open|truncate|chmod|chown|utimes|readdir|watch|\[|\\u|\\x|`|\$/.test(x.value);
 		if (segment.some(code)) inertCode.push(...segment.filter(code).map((x) => x.value));
 		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && !(code(x) && /[*?[\]]/.test(w)) && tails(w).some((t) => names(t, cwd)));
 		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && ((!code(x) && hit(x)) || inside(x)));
