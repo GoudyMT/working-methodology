@@ -98,12 +98,14 @@ jobs:
           name: map
           path: tests
       # Exit 1 only says some flip survived, which is what this measures; exit 2 (could not run) fails the job.
+      # K193: the guards' own proofs run on each flip the tests miss, so a guard flip only a proof catches counts as
+      # caught; each proof is run once on the clean copy first.
       - name: Flip every covered condition, this slice
         shell: bash
         run: |
           set +e
           if [ "$MEASURE_SCOPE" = all ]; then scope=(); else scope=(--base "$MEASURE_BASE"); fi
-          node scripts/mutation-check.mjs "${scope[@]}" --slice ${{ matrix.slice }}/8 --json "flips-${{ matrix.slice }}.json" --timeout 60000 > "flips-${{ matrix.slice }}.log"
+          node scripts/mutation-check.mjs "${scope[@]}" --slice ${{ matrix.slice }}/8 --json "flips-${{ matrix.slice }}.json" --timeout 60000 --also "node project/.claude/guard-outward-check.cjs" --also "node project/.claude/guard-delete-check.cjs" > "flips-${{ matrix.slice }}.log"
           code=$?
           tail -n 1 "flips-${{ matrix.slice }}.log"
           [ "$code" -le 1 ]
