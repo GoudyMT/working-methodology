@@ -10,11 +10,16 @@
 //   node .claude/loop.mjs next | show                          the one next step | the run, its counts and loop mode
 //   node .claude/loop.mjs done <step> --evidence "<proof>"     an owner's step needs the owner's Yes to the
 //                                                              `loop <step> <code>` act next prints, after it opened
-//   node .claude/loop.mjs count fix-round|canary-miss --unit <id> | visual | visual-check | ci-fix
+//   node .claude/loop.mjs count fix-round|canary-miss --unit <id> | visual | visual-check | ci-fix | ci-green
 //        visual-check is the owner looking: it needs their Yes to `loop visual-check <code>` (show prints it)
+//        ci-fix is one push meant to fix a red CI run; it halts at limits.ciFix when the owner set one, and ci-green
+//        (or the ci step done) ends the red streak (K210)
 //   node .claude/loop.mjs halt "<why>" | resume                a stop; only the owner's Yes to `loop resume <code>` clears it
-//   node .claude/loop.mjs shadow --would yes|no --why "<why>"   the plan's self-approval line (S3), once, before the owner
-//                                                              is asked to lock it; the plan step is not done without it
+//   node .claude/loop.mjs shadow --would yes|no --why "<why>" [--risk "<risk>"]... [--item <id>]
+//        the plan's self-approval line (S3), once, before the owner is asked to lock it; the plan step is not done
+//        without it. --risk names what could make the owner refuse or change the plan (up to 3); a plan counts toward
+//        the streak only when the owner refused it over a risk it named (K210). With no run open, --item names the plan
+//        and done <plan step> locks it alone, where plans are locked outside a run
 //   node .claude/loop.mjs chain <handoff.md> [--open]          GO or STOP for opening the next thread (S13); --open
 //                                                              records the opening against limits.threadsPerDay
 //   node .claude/loop.mjs mode arm | prompt --text "<message>" | off --why "<why>"
@@ -43,7 +48,7 @@ import { fileURLToPath } from 'node:url';
 
 const yesReader = createRequire(import.meta.url)('./owner-yes.cjs');
 const PHRASE = 'begin loop workflow';
-const COUNTERS = { 'fix-round': 'fixRound', 'canary-miss': 'canaryMiss', visual: 'visual', 'visual-check': null, 'ci-fix': null };
+const COUNTERS = { 'fix-round': 'fixRound', 'canary-miss': 'canaryMiss', visual: 'visual', 'visual-check': null, 'ci-fix': 'ciFix', 'ci-green': null };
 const PER_UNIT = new Set(['fix-round', 'canary-miss']);
 const WHO = ['alone', 'owner', 'guard'];
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
@@ -75,7 +80,7 @@ function bounds() {
 	if (!steps.length || steps.some((s) => !s || !/^[a-z][a-z-]*$/.test(String(s.step)) || !WHO.includes(s.who))) return { why: `.claude/bounds.json needs steps, each { "step": "<name>", "who": "${WHO.join('" | "')}" }` };
 	const limits = (b && b.limits) || {};
 	for (const k of ['fixRound', 'canaryMiss', 'visual']) if (!Number.isInteger(limits[k]) || limits[k] < 1) return { why: `.claude/bounds.json needs limits.${k}, a whole number of at least 1` };
-	if (limits.threadsPerDay !== undefined && (!Number.isInteger(limits.threadsPerDay) || limits.threadsPerDay < 1)) return { why: '.claude/bounds.json: limits.threadsPerDay, when set, is a whole number of at least 1' };
+	for (const k of ['threadsPerDay', 'ciFix']) if (limits[k] !== undefined && (!Number.isInteger(limits[k]) || limits[k] < 1)) return { why: `.claude/bounds.json: limits.${k}, when set, is a whole number of at least 1` };
 	// The plan shadow (T7 slice 2, S3): which owner step is the plan lock, and how many agreeing plans in a row the
 	// owner's bar is (10, the owner's pick 2026-11-16). Self-approval itself is not built; the streak is data.
 	const shadow = { step: 'design', streak: 10, ...((b && b.shadow) || {}) };
@@ -86,7 +91,10 @@ function bounds() {
 /** The log read once: the open run, what it has done, its counts, whether it is halted, loop mode, the last bounds. */
 function read() {
 	const lines = LOG && fs.existsSync(LOG) ? fs.readFileSync(LOG, 'utf8').split('\n').filter(Boolean) : [];
-	const s = { run: null, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, taps: new Set(), mode: { state: 'off', why: 'not armed', time: '' }, opened: null, lastBounds: null, shadow: null, streak: 0, chains: [] };
+	const s = { run: null, done: [], counts: {}, visualSince: 0, checks: 0, halt: null, taps: new Set(), mode: { state: 'off', why: 'not armed', time: '' }, opened: null, lastBounds: null, shadow: null, plan: null, streak: 0, chains: [] };
+	// The streak runs across runs: a plan whose verdict agreed with the owner adds one, a disagreement ends it; any other
+	// outcome moves nothing.
+	const tally = (e) => { if (e.shadow && e.shadow.outcome === 'agree') s.streak++; else if (e.shadow && e.shadow.outcome === 'disagree') s.streak = 0; };
 	const handEdit = (at) => ({ why: 'the loop log was changed by hand', at, time: new Date(0).toISOString() });
 	lines.forEach((l, i) => {
 		let e;
@@ -99,15 +107,18 @@ function read() {
 		// The owner accepts the log as it stood: an edit made later to a line above the acceptance is a new break (the
 		// build 13 sweep: an edit at an index accepted before stayed hidden).
 		else if (e.kind === 'accept') { if (e.prefix === sha(lines.slice(0, i).join('\n'))) s.broken = null; else s.broken = { at: i }; }
+		// K210: a plan locked with no run open (its verdict, then its lock); it counts in the same streak.
+		else if (e.kind === 'shadow' && e.solo) s.plan = { item: e.item, would: e.would, time: e.time, session: e.session, scored: e.scored === true, risks: e.risks || [] };
+		else if (e.kind === 'done' && e.solo) { s.plan = null; tally(e); }
 		else if (!s.run) return;
 		else if (e.kind === 'done') {
 			s.done.push(e.step); s.opened = e.time; s.shadow = null;
-			// The streak runs across runs: a plan the owner passed on the first answer adds one, one they first said No to
-			// ends it; a plan that would not approve itself moves nothing.
-			if (e.shadow && e.shadow.outcome === 'agree') s.streak++;
-			else if (e.shadow && e.shadow.outcome === 'disagree') s.streak = 0;
+			// A green CI ends a red streak, so the ci-fix cap is per streak (K210).
+			if (e.step === 'ci') delete s.counts['ci-fix'];
+			tally(e);
 		}
-		else if (e.kind === 'shadow') s.shadow = { would: e.would, step: e.step, time: e.time, session: e.session, scored: e.scored === true };
+		else if (e.kind === 'shadow') s.shadow = { would: e.would, step: e.step, time: e.time, session: e.session, scored: e.scored === true, risks: e.risks || [] };
+		else if (e.kind === 'count' && e.counter === 'ci-green') delete s.counts['ci-fix'];
 		else if (e.kind === 'count') { s.counts[e.key] = (s.counts[e.key] || 0) + 1; if (e.counter === 'visual-check') { s.visualSince = 0; s.checks++; } else if (e.counter === 'visual') s.visualSince++; }
 		else if (e.kind === 'halt') s.halt = { why: e.why, at: i, time: e.time };
 		// A resume clears the halt only: a hand edit stays until the owner accepts the log itself (the build 13 sweep: a
@@ -156,6 +167,33 @@ const killSwitch = () => { try { return fs.readdirSync(yesReader.home()).some((f
 // build 13 review: a No asked first, then a verdict written to fit it).
 const stepAct = (s, b, step) => (step.step !== b.shadow.step ? `loop ${step.step} ${code(s, step.step)}` : s.shadow ? `loop ${step.step} ${code(s, `${step.step}:${s.shadow.time}:${s.shadow.would}`)}` : null);
 const nextStep = (s, b) => b.steps.find((x) => !s.done.includes(x.step)) || null;
+// K210: the act a plan locked with no run open is answered on, made from its verdict as stepAct is.
+const soloAct = (s, b) => `loop ${b.shadow.step} ${hash6(`solo:${s.plan.item}:${s.plan.time}:${s.plan.would}`)}`;
+// The words of a risk or an answer that can match: lower case, four letters or more.
+const sig = (t) => [...new Set(String(t || '').toLowerCase().split(/[^a-z0-9]+/).filter((w) => w.length >= 4))];
+// A named risk matches what the owner said when at least two of its words, and at least half, are in their answer.
+const riskMet = (risks, said) => { const heard = new Set(sig(said)); return (risks || []).some((r) => { const w = sig(r); const hit = w.filter((x) => heard.has(x)).length; return hit >= 2 && hit * 2 >= w.length; }); };
+// K210 (the self-grading review B): the owner says Yes to nearly every plan, so a verdict that matched a Yes proved
+// nothing, and an always-yes verdict reached the bar. A plan agrees only when the owner refused or changed it (a No
+// before the Yes that locked it) and the verdict, written before they were asked, named that risk. A plain Yes scores
+// nothing; a yes verdict on a refused plan, or a refusal over a risk it never named, is a disagreement.
+function outcomeOf(sh, answers, unseen) {
+	const refused = answers.filter((a) => !a.yes);
+	if (sh.would === 'yes') return refused.length ? 'disagree' : unseen ? 'unscored' : 'plain-yes';
+	if (unseen) return 'unscored';
+	if (!refused.length) return 'cautious';
+	return riskMet(sh.risks, refused.map((a) => a.answer || '').join(' ')) ? 'agree' : 'disagree';
+}
+// The owner's answers to a plan's act since its verdict, or the reason the plan cannot lock yet; and whether every
+// answer could be seen: the same session as the verdict, no owner message since it, a transcript the reader holds whole.
+function planAnswers(sh, act) {
+	const answers = yesReader.sessionAnswers(act, { since: Date.parse(sh.time), repo: ROOT, sessionId: session() });
+	const last = answers.length ? answers[answers.length - 1].at : null;
+	if (!answers.length || answers.some((a) => a.at === last && !a.yes)) return { why: `the owner's latest answer to \`${act}\` is ${answers.length ? 'not Yes' : 'not given yet'}` };
+	const msg = lastOwnerMessage();
+	const unseen = !sh.scored || sh.session !== session() || Boolean(msg && Date.parse(msg.at) > Date.parse(sh.time)) || yesReader.sessionCut(session(), ROOT);
+	return { answers, unseen };
+}
 // The kill switch makes every step the owner's, a guard's step included (the build 12 sweep).
 const whoFor = (step) => (killSwitch() ? 'owner' : step.who);
 const unitKey = (u) => String(u).trim().toLowerCase().replace(/[^a-z0-9]+/g, '-');
@@ -184,7 +222,7 @@ function settle(s, b) {
 
 // The plan shadow's record: the streak against the owner's bar.
 function shadowLine(s, b) {
-	const at = `shadow: ${s.streak} of ${b.shadow.streak} agreeing plans in a row`;
+	const at = `shadow: ${s.streak} of ${b.shadow.streak} agreeing plans in a row (a plan agrees when the owner refused it over a risk its verdict named)`;
 	return s.streak >= b.shadow.streak ? `${at}; reached: the owner may decide whether plans like these approve themselves; self-approval stays off until then` : `${at}; self-approval stays off`;
 }
 
@@ -258,6 +296,17 @@ function lastOwnerMessage() {
 	return last;
 }
 
+// The plan's verdict from the command line: { would, why, risks } or { usage }. Each --risk names one thing that could
+// make the owner refuse or change the plan, in at least two words of four letters or more, so it can be matched.
+function verdict(rest, opt) {
+	const would = opt('--would');
+	const why = opt('--why');
+	const risks = rest.flatMap((a, i) => (a === '--risk' && i + 1 < rest.length ? [String(rest[i + 1]).trim().slice(0, 200)] : []));
+	const usage = 'usage: node .claude/loop.mjs shadow --would yes|no --why "<what the verdict rests on: the item, the spec and charter, the impact test, the red-team pass>" [--risk "<what could make the owner refuse or change it>"]... (up to 3 risks, each in at least two words of four letters or more)';
+	if (!['yes', 'no'].includes(would) || !why || !String(why).trim() || risks.length > 3 || risks.some((r) => sig(r).length < 2)) return { usage };
+	return { would, why: String(why), risks };
+}
+
 function main(argv) {
 	if (!LOG) { out('loop: this project is in no git repository, so there is nowhere to keep the run.'); return 1; }
 	const [cmd, ...rest] = argv;
@@ -303,7 +352,12 @@ function main(argv) {
 	if (cmd === 'chain') return chain(s, b, rest[0], rest.includes('--open'));
 	if (['start', 'next', 'show'].includes(cmd)) {
 		if (cmd === 'show') out(`loop mode: ${s.mode.state}${s.mode.state === 'off' ? ` (${s.mode.why})` : ''}`);
-		if (!s.run) { if (cmd === 'show') out(shadowLine(s, b)); out('No loop run is open: node .claude/loop.mjs start <item>.'); return 0; }
+		if (!s.run) {
+			if (cmd === 'show') out(shadowLine(s, b));
+			if (s.plan) out(`NEXT ${b.shadow.step} (plan ${s.plan.item}, no run open): the owner's; ask in the pop-up, the question quoting \`${soloAct(s, b)}\`, then node .claude/loop.mjs done ${b.shadow.step} --evidence "<the plan>"`);
+			out('No loop run is open: node .claude/loop.mjs start <item>.');
+			return 0;
+		}
 		if (s.halt) { out(card(s, b, s.halt.why)); return 0; }
 		const step = nextStep(s, b);
 		if (!step) { out(`Run ${s.run.item}: every step is done.`); return 0; }
@@ -330,6 +384,29 @@ function main(argv) {
 		out(`loop: resumed on the owner's Yes. Run ${s.run.item} goes on.`);
 		return 0;
 	}
+	// K210: the plan shadow where plans are locked with no run open: the verdict names its item, and the lock is the
+	// owner's Yes to the act made from it, scored as the plan step in a run is.
+	if (!s.run && cmd === 'shadow') {
+		const v = verdict(rest, opt);
+		const item = String(opt('--item') || '').trim().slice(0, 80);
+		if (v.usage || !item) { out(v.usage || 'usage: with no run open, the plan names its item: node .claude/loop.mjs shadow --item <id> --would yes|no --why "<why>" [--risk "<risk>"]...'); return 2; }
+		if (s.plan) { out(`loop: refused: plan ${s.plan.item} already carries a verdict and waits for its lock; the record keeps the first verdict. Nothing written.`); return 1; }
+		write({ kind: 'shadow', solo: true, item, step: b.shadow.step, would: v.would, why: v.why, risks: v.risks, session: session(), scored: true });
+		out(`loop: recorded: plan ${item} would${v.would === 'yes' ? '' : ' not'} approve itself. Ask the owner now, as always: self-approval stays off. node .claude/loop.mjs next prints the act to quote.`);
+		return 0;
+	}
+	if (!s.run && cmd === 'done' && rest[0] === b.shadow.step && s.plan) {
+		const evidence = opt('--evidence');
+		if (!evidence || !String(evidence).trim()) { out(`usage: node .claude/loop.mjs done ${b.shadow.step} --evidence "<proof>"`); return 2; }
+		const act = soloAct(s, b);
+		const seen = planAnswers(s.plan, act);
+		if (seen.why) { out(`loop: refused: ${seen.why}. Nothing written.`); return 1; }
+		const yes = ownerYes(s, act, s.plan.time);
+		if (!yes.tap) { out(`loop: refused: the plan lock is the owner's, and ${yes.why}. Nothing written.`); return 1; }
+		write({ kind: 'done', solo: true, step: b.shadow.step, item: s.plan.item, evidence: String(evidence), tap: yes.tap, shadow: { would: s.plan.would, outcome: outcomeOf(s.plan, seen.answers, seen.unseen) } });
+		out(`loop: plan ${s.plan.item} locked on the owner's Yes. ${shadowLine(read(), b)}`);
+		return 0;
+	}
 	if (!s.run) { out('loop: no run is open: node .claude/loop.mjs start <item>. Nothing written.'); return 1; }
 	if (cmd === 'halt') {
 		if (s.halt) { out(card(s, b, s.halt.why)); return 3; }
@@ -339,9 +416,9 @@ function main(argv) {
 	}
 	if (s.halt) { out(card(s, b, s.halt.why)); return 1; }
 	if (cmd === 'shadow') {
-		const would = opt('--would');
-		const why = opt('--why');
-		if (!['yes', 'no'].includes(would) || !why || !String(why).trim()) { out('usage: node .claude/loop.mjs shadow --would yes|no --why "<what the verdict rests on: the item, the spec and charter, the impact test, the red-team pass>"'); return 2; }
+		const v = verdict(rest, opt);
+		if (v.usage) { out(v.usage); return 2; }
+		const { would, why, risks } = v;
 		const step = nextStep(s, b);
 		if (!step || step.step !== b.shadow.step) { out(`loop: refused: the self-approval line belongs to the plan step (${b.shadow.step}), and the next step is ${step ? step.step : 'none'}. Nothing written.`); return 1; }
 		// One verdict per plan: a second could hide the first after the owner answered it.
@@ -351,7 +428,7 @@ function main(argv) {
 		const sid = session();
 		const msg = lastOwnerMessage();
 		const talked = yesReader.sessionAnswers(null, { since: Date.parse(s.opened), repo: ROOT, sessionId: sid }).length > 0 || Boolean(msg && Date.parse(msg.at) > Date.parse(s.opened));
-		write({ kind: 'shadow', step: step.step, would, why: String(why), session: sid, scored: !talked });
+		write({ kind: 'shadow', step: step.step, would, why: String(why), risks, session: sid, scored: !talked });
 		out(`loop: recorded: the plan would${would === 'yes' ? '' : ' not'} approve itself${talked ? ' (unscored: the owner answered or wrote after the step opened, so the verdict could fit their answer)' : ''}. Ask the owner now, as always: self-approval stays off.`);
 		return 0;
 	}
@@ -369,15 +446,10 @@ function main(argv) {
 			// Agreement is read from the owner's own answers to the plan's act since the verdict, never the session's word.
 			// The owner's latest answer decides the lock, a No at the same moment as a Yes included, as the guards read it
 			// (the build 13 sweep: a Yes then a No locked the plan and counted as agreement).
-			const answers = yesReader.sessionAnswers(stepAct(s, b, step), { since: Date.parse(s.shadow.time), repo: ROOT, sessionId: session() });
-			const last = answers.length ? answers[answers.length - 1].at : null;
-			if (!answers.length || answers.some((a) => a.at === last && !a.yes)) { out(`loop: refused: the owner's latest answer to \`${stepAct(s, b, step)}\` is ${answers.length ? 'not Yes' : 'not given yet'}. Nothing written.`); return 1; }
-			// Scored only where every answer can be seen: the same session as the verdict, no owner message since it, and a
-			// transcript the reader holds whole. A No is a disagreement wherever it is seen.
-			const msg = lastOwnerMessage();
-			const unseen = !s.shadow.scored || s.shadow.session !== session() || Boolean(msg && Date.parse(msg.at) > Date.parse(s.shadow.time)) || yesReader.sessionCut(session(), ROOT);
-			const outcome = s.shadow.would === 'yes' && answers.some((a) => !a.yes) ? 'disagree' : unseen ? 'unscored' : s.shadow.would === 'no' ? 'cautious' : 'agree';
-			shadowed = { would: s.shadow.would, outcome };
+			// Scored only where every answer can be seen (planAnswers); a No to a yes verdict is a disagreement wherever it is seen.
+			const seen = planAnswers(s.shadow, stepAct(s, b, step));
+			if (seen.why) { out(`loop: refused: ${seen.why}. Nothing written.`); return 1; }
+			shadowed = { would: s.shadow.would, outcome: outcomeOf(s.shadow, seen.answers, seen.unseen) };
 		}
 		if (whoFor(step) === 'owner') {
 			const yes = ownerYes(s, stepAct(s, b, step), plan ? s.shadow.time : s.opened);
@@ -410,6 +482,7 @@ function main(argv) {
 		if (limit && n >= limit) {
 			const why = counter === 'fix-round' ? `fix round ${n} of unit ${unitKey(unit)} (the bounds allow ${limit - 1})`
 				: counter === 'canary-miss' ? `canary miss ${n} on unit ${unitKey(unit)}: a second strike stops the run`
+					: counter === 'ci-fix' ? `ci-fix round ${n} since the last green CI (the bounds allow ${limit - 1}): the owner looks at the red run before more`
 					: `${n} visual increments since the last check: the owner looks before more`;
 			write({ kind: 'halt', why });
 			out(card(read(), b, why));
