@@ -998,7 +998,7 @@ const shellDir = (p) => (WIN && /^[A-Za-z]:/.test(p) ? `/${p[0].toLowerCase()}${
  *     mode: '' for PreToolUse, 'config-change' for ConfigChange
  */
 // R7.2: what the line answers when the start script itself cannot run (gone, or no sh): a deny that names the repair.
-const START_FALLBACK = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: the kit guard start script could not run, so no guard could check this call. Run kit.mjs status in the kit folder, then repair with kit.mjs install user from the release copy.' } });
+const START_FALLBACK = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: the kit guard start script could not run, so no guard could check this call. Stop retrying and ask the owner to run kit.mjs status in the kit folder, then kit.mjs install user from the release copy.' } });
 function launchCommand(launcher, nodePath, mode = '') {
 	// ConfigChange runs the launcher directly: its block keeps the old settings, so a start failure there blocks safely.
 	if (mode) return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))} ${mode}`;

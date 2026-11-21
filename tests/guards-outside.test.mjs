@@ -1923,13 +1923,17 @@ test('the guard start script retries once, names why a start failed, and lets on
 	const crash = run(fake('crash-once', `if(n===0)process.exit(1);process.stdout.write(${JSON.stringify(DENY)});`));
 	assert.equal(said(crash).permissionDecisionReason, 'push held');
 	assert.equal(fs.readFileSync(count, 'utf8'), '0');
-	// Node gone: no retry, a named cause, and the count tells the third miss to stop.
+	// A crash on both tries: the cause is named and the held session may try its call once more (it can).
+	assert.match(said(run(fake('crash-always', 'process.exit(1);'))).permissionDecisionReason, /exit 1, twice[\s\S]*Try once more \(1 of 3\)/);
+	// Node gone: no retry happens, so no "try once more"; the held session is sent to the owner, since running kit.mjs
+	// status itself is held by this same deny (the build 22 sweep).
 	const gone = path.join(fakes, 'no-node.exe');
 	const one = run(fake('ok', "process.stdout.write('{}');"), gone);
 	assert.equal(said(one).permissionDecision, 'deny');
-	assert.match(said(one).permissionDecisionReason, /node could not be started[\s\S]*Try once more \(1 of 3\)/);
-	assert.match(said(run(fake('ok2', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /\(2 of 3\)/);
-	assert.match(said(run(fake('ok3', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /Stop retrying[\s\S]*kit\.mjs status[\s\S]*install user/);
+	assert.match(said(one).permissionDecisionReason, /node could not be started[\s\S]*ask the owner to run kit\.mjs status/);
+	assert.doesNotMatch(said(one).permissionDecisionReason, /Try once more/);
+	assert.doesNotMatch(said(run(fake('ok2', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /Try once more/);
+	assert.match(said(run(fake('ok3', "process.stdout.write('{}');"), gone)).permissionDecisionReason, /Stop retrying[\s\S]*ask the owner to run kit\.mjs status[\s\S]*install user/);
 	// Always slow: denied with the cause, inside Claude Code's 10 second hook limit.
 	const stuck = run(fake('stuck', 'setTimeout(()=>{},20000);'));
 	assert.match(said(stuck).permissionDecisionReason, /did not answer within 4 seconds/);
@@ -1947,7 +1951,7 @@ test('the guard start script retries once, names why a start failed, and lets on
 	fs.rmSync(start);
 	const missing = bash(s, 'git status');
 	assert.equal(missing.decision, 'deny');
-	assert.match(missing.reason, /start script could not run[\s\S]*install user/);
+	assert.match(missing.reason, /start script could not run[\s\S]*ask the owner to run kit\.mjs status[\s\S]*install user/);
 });
 
 // R7.2: status holds the start script to its install record, as it holds the launcher line.

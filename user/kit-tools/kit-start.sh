@@ -39,8 +39,10 @@ case "$rc" in
 	126|127) cause='node could not be started for the kit guard launcher (missing or not runnable)' ;;
 	*) cause="the kit guard launcher stopped with exit $rc, twice" ;;
 esac
-if [ "$n" -ge 3 ]; then
-	next='Stop retrying: run kit.mjs status in the kit folder, then repair with kit.mjs install user from the release copy.'
+# The held session cannot run kit.mjs itself (this same deny holds it), so the repair is the owner's. No retry
+# happens for 126 and 127, so they never offer one.
+if [ "$n" -ge 3 ] || [ "$rc" -eq 126 ] || [ "$rc" -eq 127 ]; then
+	next='Stop retrying and ask the owner to run kit.mjs status in the kit folder, then kit.mjs install user from the release copy.'
 else
 	next="Try once more ($n of 3)."
 fi
