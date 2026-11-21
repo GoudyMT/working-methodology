@@ -1238,7 +1238,12 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
   assert.match(tagged, /start the closeout skill now/);
   assert.equal(run('anything else?').stdout, '');
   assert.match(tagged, /starts on its own once.*PR is merged/);
-  assert.equal(kitTools.closeoutCue({ projectDir: proj, prompt: 'My PR merged and its release is out.', session: 'off-arm', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
+  // The cues-off arm on a newest release not yet cued, so the switch is the only reason for '' (a tag already cued
+  // answers '' with or without it).
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'feat: next');
+  git('tag', 'v1.2.0');
+  assert.equal(kitTools.closeoutCue({ projectDir: proj, session: 'off-arm', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
+  assert.match(kitTools.closeoutCue({ projectDir: proj, session: 'off-arm', env: {} }), /v1\.2\.0/, 'the same tag cues with the switch on');
   git('tag', 'not-a-release');
   git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'chore: y');
   git('tag', 'nightly');

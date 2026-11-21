@@ -3,6 +3,8 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { makeTemp } from './kit-helpers.mjs';
 
 const ids = (kitTools, prompt) => kitTools.ruleCues({ kit: path.resolve('.'), prompt }).split('\n').filter(Boolean).map((l) => l.match(/^rule:([\w-]+)/)[1]);
 
@@ -54,4 +56,40 @@ test('a 200 KB prompt of repeated words returns fast with no cue', async () => {
   const ms = Date.now() - t0;
   assert.equal(out, '', 'no cue on filler');
   assert.ok(ms < 1000, `took ${ms} ms`);
+});
+
+function gitRepo() {
+  const dir = makeTemp('closeout-newest-');
+  const g = (...a) => {
+    const r = spawnSync('git', ['-C', dir, '-c', 'user.name=t', '-c', 'user.email=t@example.invalid', ...a], { encoding: 'utf8' });
+    assert.equal(r.status, 0, `${a.join(' ')}: ${r.stderr}`);
+  };
+  g('init', '-q', '-b', 'main');
+  return { dir, g };
+}
+
+// why: catches a closeout cue on an old release checked out to look at, or one chosen by name order instead of version order
+test('the closeout cue fires only when HEAD is the newest release tag', async () => {
+  const kitTools = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitTools.closeoutCue, 'function', 'the closeout cue exists');
+  const { dir, g } = gitRepo();
+  g('commit', '-q', '--allow-empty', '-m', 'feat: one');
+  g('tag', 'v1.0.0');
+  g('commit', '-q', '--allow-empty', '-m', 'feat: two');
+  g('tag', 'v1.1.0');
+  g('checkout', '-q', 'v1.0.0');
+  assert.equal(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), '', 'an old release is no cue');
+  g('checkout', '-q', 'v1.1.0');
+  assert.match(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), /HEAD is the release v1\.1\.0/);
+  assert.equal(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), '', 'once per release');
+  // Version order, not name order: 1.10.0 is newer than 1.9.0.
+  g('checkout', '-q', 'main');
+  g('commit', '-q', '--allow-empty', '-m', 'feat: three');
+  g('tag', 'v1.9.0');
+  g('commit', '-q', '--allow-empty', '-m', 'feat: four');
+  g('tag', 'v1.10.0');
+  g('checkout', '-q', 'v1.9.0');
+  assert.equal(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), '', '1.9.0 is older than 1.10.0');
+  g('checkout', '-q', 'v1.10.0');
+  assert.match(kitTools.closeoutCue({ projectDir: dir, session: 's1', env: {} }), /v1\.10\.0/);
 });

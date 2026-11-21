@@ -1943,8 +1943,8 @@ export function promptCheckReport({ kit, projectDir }) {
 
 /**
  * K191 (behaviour scenario 13 passed about 13 of 24 runs): the closeout after a merge and release rested on the
- * session noticing. The prompt hook cues it from the repo's state, a release tag at HEAD, or from the owner's own words
- * that the PR merged and its release is out: once per release tag, or once per session when no tag names it. The cue
+ * session noticing. The prompt hook cues it from the repo's state: HEAD is on the newest release tag, and the cue
+ * is given once per release tag. The owner's own words that the PR merged are no cue (the 2026-11-21 rerun). The cue
  * is recorded in git's own folder, so no tracked file changes.
  *
  * Args:
@@ -1962,9 +1962,15 @@ export function closeoutCue({ projectDir, prompt = '', session = '', env = proce
   const git = (...a) => spawnSync('git', ['-C', projectDir, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD, timeout: 3000 });
   const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
   if (common.status !== 0) return '';
-  const tag = (git('tag', '--points-at', 'HEAD').stdout || '').split('\n').map((t) => t.trim()).find((t) => /^v?\d+\.\d+\.\d+$/.test(t)) || null;
+  const releases = (...a) => (git(...a).stdout || '').split('\n').map((t) => t.trim()).filter((t) => /^v?\d+\.\d+\.\d+$/.test(t));
+  const num = (t) => t.replace(/^v/, '');
+  const here = releases('tag', '--points-at', 'HEAD');
   // Only the repo's own release tag (the paired rerun of 2026-11-21, Max's pick): a cue on the owner's words sent
   // sessions to check the rule's conditions where nothing could show them, and they stopped instead of starting.
+  if (!here.length) return '';
+  // And only the newest one: a checkout of an old release to look at it is no release that just went out.
+  const newest = releases('tag', '--list').reduce((a, b) => (semverAbove(num(b), num(a)) ? b : a));
+  const tag = here.find((t) => !semverAbove(num(newest), num(t)));
   if (!tag) return '';
   const key = `tag ${tag}`;
   const file = path.join(common.stdout.trim(), 'kit-closeout-cue');
