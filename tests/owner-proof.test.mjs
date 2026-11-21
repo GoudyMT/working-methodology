@@ -279,9 +279,15 @@ test('claude mcp add, --mcp-config, .claude.json and an agent file take the owne
 		['Bash', { command: 'echo x > .claude/agents/r.md' }],
 		['Bash', { command: 'cp a.md .claude/agents/' }],
 		['Write', { file_path: path.join(cfg, 'agents', 'r.md'), content: 'x' }],
+		// The commit security review: a subcommand held in a variable, and the skills and commands folders.
+		['Bash', { command: 'S=add; claude mcp $S x -- sh' }],
+		['Bash', { command: 'claude mcp "$(echo add)" x -- sh' }],
+		['Write', { file_path: path.join(proj, '.claude', 'skills', 'x', 'SKILL.md'), content: 'x' }],
+		['Write', { file_path: path.join(proj, '.claude', 'commands', 'x.md'), content: 'x' }],
+		['Write', { file_path: path.join(cfg, 'skills', 'x', 'SKILL.md'), content: 'x' }],
 	];
 	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
-	for (const command of ['claude mcp list', 'claude mcp get x', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
+	for (const command of ['claude mcp list', 'claude mcp get x', 'claude mcp serve', 'cat .mcp.json', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
 });
 
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the

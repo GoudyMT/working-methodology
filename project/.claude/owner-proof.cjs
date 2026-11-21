@@ -82,8 +82,10 @@ const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json,
 // S1 (the build 23a sweep): claude mcp add (add-json, add-from-claude-desktop, remove) has Claude Code write the MCP
 // servers a session starts into .claude.json or .mcp.json itself, and --mcp-config starts a session with the servers a
 // file names; each takes the same yes. Read with quotes, backslashes, backticks and carets taken out, and with no
-// program name needed, so a name the command builds (c=claude; $c mcp add) is held too.
-const MCP_ACT = /(^|[^\w-])mcp\s+(add-from-claude-desktop|add-json|add|remove)(?![\w-])|--mcp-config\b/i;
+// program name needed, so a name the command builds (c=claude; $c mcp add) is held too. Only the subcommands that
+// change nothing pass (list, get, serve); any other word after mcp, a variable ($S) included, is held (the commit
+// security review).
+const MCP_ACT = /(^|[^\w.-])mcp\s+(?!(list|get|serve)(?![\w-]))\S|--mcp-config\b/i;
 const mcpCommand = (c) => MCP_ACT.test(String(c || '').replace(/["'`\\^]/g, ''));
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
@@ -290,8 +292,9 @@ function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
 		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'bounds.json'))) return true;
 		// S1 (the build 23a sweep): an agent file's mcpServers starts a server when the agent runs, so the agents folder
-		// and every file in it take the same yes.
-		if (fits(p[i], '.claude') && fits(p[i + 1], 'agents')) return true;
+		// and every file in it take the same yes; skills and commands too, whose frontmatter can name hooks and tools (the
+		// commit security review).
+		if (fits(p[i], '.claude') && (fits(p[i + 1], 'agents') || fits(p[i + 1], 'skills') || fits(p[i + 1], 'commands'))) return true;
 	}
 	// The user's .claude.json holds the MCP servers claude mcp add writes at user and local scope (S1). Held in any folder.
 	if (p.length && fits(p[p.length - 1], '.claude.json')) return true;
@@ -301,7 +304,7 @@ function settingsShape(p) {
 	// The user's own settings when the Claude folder has another name (the 1.29.0 sweep).
 	const h = homeParts();
 	if (h.length && p.length === h.length + 1 && h.every((x, k) => p[k] === x) && (fits(p[p.length - 1], 'settings.json') || fits(p[p.length - 1], 'settings.local.json'))) return true;
-	if (h.length && p.length > h.length && h.every((x, k) => p[k] === x) && fits(p[h.length], 'agents')) return true;
+	if (h.length && p.length > h.length && h.every((x, k) => p[k] === x) && (fits(p[h.length], 'agents') || fits(p[h.length], 'skills') || fits(p[h.length], 'commands'))) return true;
 	return false;
 }
 // The folder list (E3) is the owner's to write, in their own editor: as a settings file one yes could delete it, and
