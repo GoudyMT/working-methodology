@@ -1013,6 +1013,23 @@ test('the name check reads a lowercase or dotted list code as a code and keeps k
   for (const ok of ['feat/cloud-worker-and-plugin-build', 'fix/v8-and-x86-builds', 'feat/sha256-check']) assert.equal(nameRun(['branch', ok]).status, 0, ok);
 });
 
+// The build 23b sweep: reading every lowercase letters-and-digits word as a code refused common tech words (d3, m1,
+// p95, py312, l2), so an existing branch could no longer be pushed. A lowercase code is one letter and two or three
+// digits, or a code with a range or a dot; a capital code may end in a letter or carry two dots (G1a, R7.1.2).
+// why: guards rule:commit-message-format
+test('the name check passes common lowercase tech words and still reads list codes in every shape', () => {
+  for (const ok of ['feat: update d3 charts and d3.js', 'chore: add py312 support', 'fix: p95 and p99 latency', 'feat: support apple m1 and m2', 'feat: an l2 cache', 'fix: vp9 decode', 'test: e2e on k8s', 'docs: a11y and i18n for b2b', 'chore: cs50 notes for q4'])
+    assert.equal(nameRun(['title', ok]).status, 0, ok);
+  for (const ok of ['feat/apple-m1-support', 'perf/p99-latency', 'chore/py312-support', 'feat/add-l2-cache', 'feat/update-d3-charts']) assert.equal(nameRun(['branch', ok]).status, 0, ok);
+  for (const bad of ['fix: the G1a reader', 'fix: close R7.1.2', 'fix: k21 and r7.1']) {
+    const r = nameRun(['title', bad]);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /internal code/, bad);
+  }
+  for (const bad of ['fix/guard-k212', 'feat/close-r7-1-hold', 'feature/b2-calendar']) assert.equal(nameRun(['branch', bad]).status, 1, bad);
+  assert.equal(nameRun(['repo', 'tool-v2']).status, 0, 'a version in a repo name');
+});
+
 // why: guards rule:branching (a repo name is public for good, like a branch name)
 test('the repo name check passes plain kebab words and refuses an internal code', () => {
   // A name with a number in it is still a name (web3, vue3); a code is one or two letters and a number, on its own.

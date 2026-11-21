@@ -18,13 +18,14 @@ const SUBJECT_MAX = 72;
 // A tracking code (K61, E12, A27, S23-4) tells a reader outside the project nothing, and a subject, title or repo name
 // is public for good (the owner, 2026-11-15, on a probe repo named for its list row).
 // The cloud build study (1.49.0): a code typed in lowercase (k212) or with a dot (R7.1) is the same code;
-// lowercase holds one or two letters, so a name like web3 stays a word.
-const CODE = /(^|[^A-Za-z0-9.])(?:[A-Z]{1,3}|[a-z]{1,2})\d{1,3}([-.]\d+)?(?![A-Za-z0-9]|\.\d)/;
+// A capital code may end in a letter or carry several dots (G1a, R7.1.2). The build 23b sweep: lowercase is a code only
+// as one letter and two or three digits, or with a range or a dot (k212, r7.1), so tech words stay words (d3, m1, py312).
+const CODE = /(^|[^A-Za-z0-9.])(?:[A-Z]{1,3}\d{1,3}[a-z]?(?:[-.]\d+)*|[a-z]\d{2,3}(?:[-.]\d+)*|[a-z]\d{1,3}(?:[-.]\d+)+)(?![A-Za-z0-9]|\.\d)/;
 // Names the field shares, in the same letters-and-digits shape, are words, not codes (the K61 sweep: SHA256, UTF8, S3).
-const KNOWN = /^(h[1-6]|h26[45]|s3|ec2|ie\d{1,2}|x11|x86|x64|sha\d{1,3}|md5|utf8|utf16|arm64|es\d{1,2}|v8|ipv[46]|css3|mp[34]|win32|win64|py[23]|go1|av1)$/i;
+const KNOWN = /^(h[1-6]|h26[45]|s3|ec2|ie\d{1,2}|x11|x86|x64|sha\d{1,3}|md5|utf8|utf16|arm64|es\d{1,2}|v8|ipv[46]|css3|mp[34]|win32|win64|py[23]|go1|av1|p\d{2})$/i;
 // A version (v1.33.0, v2) is a version, not a code.
 const VERSION = /^v\d+([.-]\d+)*$/i;
-const codeIn = (text) => [...text.matchAll(new RegExp(CODE.source, 'g'))].map((m) => m[0].replace(/^[^A-Za-z0-9]/, '')).find((c) => !KNOWN.test(c.replace(/[-.]\d+$/, '')) && !VERSION.test(c)) || '';
+const codeIn = (text) => [...text.matchAll(new RegExp(CODE.source, 'g'))].map((m) => m[0].replace(/^[^A-Za-z0-9]/, '')).find((c) => !KNOWN.test(c.replace(/([-.]\d+)+$/, '')) && !VERSION.test(c)) || '';
 const BRANCH_TYPES = ['feature', 'feat', 'fix', 'chore', 'test', 'perf', 'security', 'docs', 'refactor'];
 
 function message(text) {
@@ -102,19 +103,22 @@ function ident() {
 	return faults;
 }
 
+// A code in a kebab description: the first word as one letter and digits (b2-), any word as one letter and two or three
+// digits (k212), or a code and its dotted part split by the dash (r7-1). Known words and versions are words.
+const branchCode = (ws) => ws.some((w, i) => !KNOWN.test(w) && !VERSION.test(w) && ((i === 0 && /^[a-z]\d+$/.test(w)) || /^[a-z]\d{2,3}$/.test(w) || (/^[a-z]\d{1,3}$/.test(w) && /^\d+$/.test(ws[i + 1] || ''))));
 function branch(name) {
 	if (['main', 'master'].includes(name) || name.startsWith('dependabot/')) return [];
 	const m = name.match(/^([a-z]+)\/(.+)$/);
 	if (!m || !BRANCH_TYPES.includes(m[1])) return [`"${name}": a branch is <type>/<plain-kebab-description>, type one of ${BRANCH_TYPES.join(', ')}`];
 	// An internal code (b2-, f9_) or a tool prefix (claude/, worktree-) tells a reader nothing.
-	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(m[2]) || m[2].split('-').some((w) => /^[a-z]{1,2}\d{1,3}$/.test(w) && !KNOWN.test(w) && !VERSION.test(w))) {
+	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(m[2]) || branchCode(m[2].split('-'))) {
 		return [`"${name}": the description is plain words in kebab case, with no internal code or tool prefix`];
 	}
 	return [];
 }
 
 function repo(name) {
-	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) || name.split('-').some((w) => /^[a-z]{1,2}\d{1,3}$/.test(w) && !KNOWN.test(w))) {
+	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(name) || name.split('-').some((w) => /^[a-z]{1,2}\d{1,3}$/.test(w) && !KNOWN.test(w) && !VERSION.test(w))) {
 		return [`"${name}": a repo name is plain words in kebab case, lowercase, with no internal code`];
 	}
 	return [];
