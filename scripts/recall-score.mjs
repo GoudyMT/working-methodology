@@ -29,7 +29,7 @@ const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
 // A line about the kit's own version notice marks a side (it fires only on an unreleased build): the whole line goes,
 // and each removal is logged for a human to read.
-const NOTICE = /unreleased|\*\*Kit (version|update|status|notice)|kit build|startup (hook|notice|check)|the notice (says|suggests|wants|recommends|may)|commits past|current build|back to the release|to the release\b/i;
+const NOTICE = /unreleased|\*\*Kit (version|update|status|notice)|kit build|startup (hook|notice|check)|the notice (says|suggests|wants|recommends|may)|commits past|back to the release|to the release\b/i;
 // K199: a drive letter, a home folder or a share left in a path tells the machine, so the arm.
 const LEAK = /unreleased|kit build|the notice (says|suggests|wants|recommends|may)|\bv?\d+\.\d+\.\d+\b|kit-probes|\bcfg-[0-9a-f]{6}\b|\bbase-[0-9a-f]{6}\b|\b[A-Za-z]:[\\/]|(?:^|[\s(`'"])\/(?:home|Users|c)\/|\\\\[\w.$-]+[\\/]/i;
 

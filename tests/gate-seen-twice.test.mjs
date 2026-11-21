@@ -136,6 +136,19 @@ test('the blind step hides a kit-probes folder and keeps the file named after it
   assert.equal(scrub('the folder C:/Users/Max/kit-probes/b22-home2 alone'), 'the folder <project> alone');
 });
 
+// Found by the final paired run of build 22 (2026-11-21): the notice filter took every line with "current build", and
+// in three candidate runs and two release runs that was Q9's own answer line (when parked ideas are sorted), so the
+// scorers marked complete answers wrong. A real notice line names an unreleased or kit build; those still go.
+// why: catches a blinded answer that loses an answer line for using the words "current build"
+test('the blind step keeps an answer line that only says current build', async () => {
+  const { dropNotice } = await import('../scripts/recall-score.mjs');
+  const answer = '> **What happens to it later:** when every check on the current build passes, and before the deep review sweep, we sort each idea three ways:';
+  assert.equal(dropNotice(answer), answer, 'an answer about the current build is an answer, not the kit notice');
+  const removed = [];
+  assert.equal(dropNotice('> - This project runs an unreleased kit build (v1.47.0-58).', removed), '');
+  assert.equal(removed.length, 1, 'the kit notice still goes, and is logged');
+});
+
 // why: catches a second look that cannot ask the one lower question alone
 test('a recall run asks named questions alone with --only, and its header says so', async () => {
   const { parseRunArgs, prepare, currentVersion } = await recallTools();
