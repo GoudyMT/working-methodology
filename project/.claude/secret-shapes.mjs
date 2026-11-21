@@ -12,7 +12,7 @@ import safeSpawn from './safe-spawn.cjs';
 //          can write (the 1.25.0 sweep: a decoy refs/remotes ref hid a secret); a remote that cannot be read means all
 //          of the branch's history is read.
 // git on the folder this runs in, from node's own folder (build 23). Not a read-only git: ls-remote asks the remote.
-const git = (...a) => safeSpawn.toolOut('git', ['-C', process.cwd(), ...safeSpawn.NO_FSMONITOR, '-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600000 });
+const git = (...a) => safeSpawn.toolOut('git', ['-C', process.cwd(), ...safeSpawn.NO_FSMONITOR, ...safeSpawn.gitArgs(['-c', 'core.quotePath=false', ...a])], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600000, env: safeSpawn.gitEnv() });
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40,64}$/;
 

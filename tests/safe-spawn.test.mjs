@@ -84,7 +84,11 @@ test('the report scrub reads git from node\'s own folder, never a git left in th
 	const r = repo();
 	const { marker, env } = plant(r.dir, 'git');
 	const { knownWords } = await import('../project/.claude/report-scrub.mjs');
-	const words = withEnv(env, () => knownWords(r.dir, kitTemp.makeTemp('spawn-home-')));
+	// Run from the project, as a session does, so a launch from the folder it stands in would find the planted git.
+	const was = process.cwd();
+	process.chdir(r.dir);
+	let words;
+	try { words = withEnv(env, () => knownWords(r.dir, kitTemp.makeTemp('spawn-home-'))); } finally { process.chdir(was); }
 	assert.equal(fs.existsSync(marker), false, 'the git in the project ran');
 	assert.ok(words.includes('plantedcheckname'), `the real git's answer is missing: ${words.join(', ')}`);
 });
@@ -135,4 +139,53 @@ test('the helper starts every program from node\'s own folder, hidden, with a ti
 	// A read turns every fetch protocol off; a git that may fetch or push keeps them.
 	assert.ok(s.NO_PROGRAMS.includes('protocol.allow=never') && s.NO_PROGRAMS.includes('core.fsmonitor=false'));
 	assert.deepEqual(s.NO_FSMONITOR, ['-c', 'core.fsmonitor=false']);
+});
+
+// The build 23a sweep: the helper turned off fsmonitor and the fetch protocols, but a project's settings env could name
+// GIT_EXTERNAL_DIFF, and the repo's own config or attributes could name a diff, textconv or clean-filter program, and
+// git status could run the post-index-change hook. Each plants a program that writes a marker, then reads through the
+// helper as the kit's checks do; none of them runs. A plain git, with the same repo and env, runs them (the control).
+// why: guards rule:outward-acts (no program a project or its settings name runs inside the kit's own git reads)
+test('a git read through the helper runs no program the repo or the environment names, where plain git does', () => {
+	const s = require(path.resolve(COPIES[0]));
+	const dir = kitTemp.makeTemp('git-programs-');
+	const marks = path.join(dir, 'marks');
+	fs.mkdirSync(marks);
+	const sh = (name) => { const f = path.join(dir, `${name}.sh`); fs.writeFileSync(f, `#!/bin/sh\necho ran > "${marks.split(path.sep).join('/')}/${name}"\ncat\n`, { mode: 0o755 }); return f.split(path.sep).join('/'); };
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.writeFileSync(path.join(dir, 'a.txt'), 'one\n');
+	fs.writeFileSync(path.join(dir, '.gitattributes'), 'a.txt diff=planted filter=planted\n');
+	g('add', '.');
+	g('commit', '-qm', 'one');
+	g('config', 'diff.planted.textconv', `sh '${sh('textconv')}'`);
+	g('config', 'filter.planted.clean', `sh '${sh('clean')}'`);
+	g('config', 'core.hooksPath', '.hooks');
+	g('config', 'diff.external', `sh '${sh('config-diff')}'`);
+	fs.mkdirSync(path.join(dir, '.hooks'));
+	fs.writeFileSync(path.join(dir, '.hooks', 'post-index-change'), `#!/bin/sh\necho ran > "${marks.split(path.sep).join('/')}/hook"\n`, { mode: 0o755 });
+	const ext = sh('external');
+	const touch = () => { fs.writeFileSync(path.join(dir, 'a.txt'), 'two\n'); const t = new Date(Date.now() + 5000); fs.utimesSync(path.join(dir, 'a.txt'), t, t); };
+	const ran = () => fs.readdirSync(marks).sort();
+	const env = { ...process.env, GIT_EXTERNAL_DIFF: `sh '${ext}'` };
+	touch();
+	// Each read still runs to the end (an empty diff.external made git diff fail).
+	for (const args of [['status', '--porcelain'], ['diff', 'HEAD'], ['-c', 'core.quotePath=false', 'diff', 'HEAD'], ['log', '-p', '-1'], ['show', 'HEAD']]) assert.equal(s.gitRead(dir, args, { encoding: 'utf8', env }).status, 0, args.join(' '));
+	assert.match(s.git(dir, ['diff', 'HEAD'], { encoding: 'utf8', env }).stdout, /^-one$/m);
+	assert.deepEqual(ran(), [], 'a program ran inside a helper read');
+	// The control: plain git, same repo and env, runs them, so the planted programs are real.
+	touch();
+	spawnSync('git', ['status', '--porcelain'], { cwd: dir, encoding: 'utf8', env });
+	spawnSync('git', ['diff', 'HEAD'], { cwd: dir, encoding: 'utf8', env });
+	spawnSync('git', ['diff', 'HEAD'], { cwd: dir, encoding: 'utf8' });
+	assert.ok(ran().length >= 3 && ran().includes('config-diff'), `plain git ran: ${ran().join(', ')}`);
+	// A read turns the fetch protocols off; a git that may fetch keeps them.
+	const other = kitTemp.makeTemp('git-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', other]);
+	const url = `file://${other.split(path.sep).join('/').replace(/^([A-Za-z]):/, '/$1:')}`;
+	assert.notEqual(s.gitRead(dir, ['ls-remote', url], { encoding: 'utf8' }).status, 0, 'a read fetched');
+	assert.equal(s.git(dir, ['ls-remote', url], { encoding: 'utf8' }).status, 0, 'a git that may fetch can');
+	// What git hands a hook to name the commit's author, and the index a commit uses, still reach the read.
+	const who = s.gitRead(dir, ['var', 'GIT_AUTHOR_IDENT'], { encoding: 'utf8', env: { ...process.env, GIT_AUTHOR_NAME: 'Kept Name', GIT_AUTHOR_EMAIL: 'k@x' } });
+	assert.match(who.stdout, /^Kept Name <k@x>/);
 });

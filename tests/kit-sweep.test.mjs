@@ -724,15 +724,18 @@ test('C4: the guard starts each role once, by the sweep and role its brief names
 // why: guards rule:outward-acts
 test('C9f: the guard reads each folder\'s HEAD once, however long the log', () => {
   const dir = sweepRepo();
-  // git's own trace counts its runs, on every system; a shim script would not run on Windows, the only CI system.
-  const count = path.join(makeTemp('trace-'), 'count');
+  // git's own trace counts its runs, on every system; a shim script would not run on Windows, the only CI system. The
+  // kit's git drops every GIT_* variable but who a commit is by (1.49.0), so the trace is named in a home config.
+  const home = makeTemp('trace-');
+  const count = path.join(home, 'count');
+  fs.writeFileSync(path.join(home, '.gitconfig'), `[trace2]\n\tnormalTarget = ${count.split(path.sep).join('/')}\n`);
   const lines = [];
   const sha = (x) => crypto.createHash('sha256').update(x).digest('hex').slice(0, 16);
   for (let i = 0; i < 200; i++) lines.push(JSON.stringify({ kind: 'decision', contract: path.join(dir, 'sweeps', 'old.json'), hash: 'x', head: '0000000', decision: 'approved', prev: i ? sha(lines[i - 1]) : '' }));
   fs.writeFileSync(path.join(dir, '.git', 'kit-sweep-approvals.jsonl'), lines.join('\n') + '\n');
-  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'go. Call cap: 5.' } }, { GIT_TRACE: count });
+  const r = runHook('user/kit-hooks/sweep-guard.cjs', { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'Agent', tool_input: { subagent_type: 'reviewer', prompt: 'go. Call cap: 5.' } }, { HOME: home });
   assert.match(r.stdout, /No cleared Swarm Contract/);
-  const runs = read(count).split('\n').filter((l) => /trace: built-in: git /.test(l)).length;
+  const runs = read(count).split('\n').filter((l) => / start /.test(l)).length;
   assert.ok(runs >= 1 && runs <= 3, `${runs} git calls`);
 });
 
