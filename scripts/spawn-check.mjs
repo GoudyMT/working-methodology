@@ -8,8 +8,12 @@
 // Prints one line per launch it cannot show is safe, then the count. Exit 0 when there are none, 1 when there are, 2
 // when it could not run. It reads code, not comments or the text inside strings; a call whose options it cannot read
 // (an options object held in a variable) counts as unsafe, since it cannot tell.
-// What it does not judge: a program named by a variable (merge-gate's realRun, watch.mjs's program(), the browser
-// visuals.mjs finds), which those files resolve to a full path themselves; shell scripts (.sh, .ps1).
+// It follows child_process under any name a file gives it (import * as x, a default import, const x = require(...)),
+// a call renamed as it is taken out ({ spawnSync: run }, { execSync as sh }), and a program held in a const set to a
+// string. A cwd counts only at the top level of the options object, never one nested in another option.
+// What it does not judge: a program named by any other variable or call (merge-gate's realRun, watch.mjs's program(),
+// the browser visuals.mjs finds), which those files resolve to a full path themselves; a dynamic import(); shell
+// scripts (.sh, .ps1).
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -103,6 +107,46 @@ function closer(masked, open) {
 }
 
 const SAFE_VALUE = String.raw`(?:path|require\(\s*['"](?:node:)?path['"]\s*\))\.dirname\(\s*process\.execPath\s*\)`;
+const MODULE = String.raw`['"](?:node:)?child_process['"]`;
+const NAME = String.raw`[A-Za-z_$][\w$]*`;
+const esc = (x) => x.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&');
+
+// The names a file gives child_process and its calls (the build 23a sweep, V2): receivers (proc in proc.spawnSync)
+// and renamed calls (run in { spawnSync: run }), read only where the statement starts in code.
+function bindings(src, inCode) {
+	const receivers = new Set(['child_process', 'childProcess', 'cp']);
+	const renamed = new Map();
+	const named = (list, sep) => {
+		for (const part of String(list || '').split(',')) {
+			const m = part.trim().match(new RegExp(`^(${NAME})\\s*${sep}\\s*(${NAME})$`));
+			if (m && CALLS.includes(m[1]) && m[2] !== m[1]) renamed.set(m[2], m[1]);
+		}
+	};
+	const imports = new RegExp(String.raw`\bimport\s+(?:\*\s*as\s+(${NAME})|(${NAME})(?:\s*,\s*\{([^}]*)\})?|\{([^}]*)\})\s*from\s*${MODULE}`, 'g');
+	for (const m of src.matchAll(imports)) {
+		if (!inCode(m.index)) continue;
+		if (m[1] || m[2]) receivers.add(m[1] || m[2]);
+		named(m[3] ?? m[4], 'as');
+	}
+	const requires = new RegExp(String.raw`\b(?:const|let|var)\s+(?:(${NAME})|\{([^}]*)\})\s*=\s*require\(\s*${MODULE}\s*\)`, 'g');
+	for (const m of src.matchAll(requires)) {
+		if (!inCode(m.index)) continue;
+		if (m[1]) receivers.add(m[1]);
+		named(m[2], ':');
+	}
+	return { receivers, renamed };
+}
+
+// The brackets open at `at`, from the call's own parenthesis: '({' is the top of an options object.
+function openAt(masked, from, at) {
+	const stack = [];
+	for (let k = from; k < at; k++) {
+		const c = masked[k];
+		if (c === '(' || c === '[' || c === '{') stack.push(c);
+		else if (c === ')' || c === ']' || c === '}') stack.pop();
+	}
+	return stack.join('');
+}
 
 /**
  * Every launch of a bare program name in one file's source that does not start from node's own folder.
@@ -117,25 +161,38 @@ export function scanText(src) {
 	const inCode = (k) => masked[k] === src[k];
 	const safeNames = new Set([...src.matchAll(new RegExp(String.raw`\b([A-Za-z_$][\w$]*)\s*=\s*${SAFE_VALUE}`, 'g'))]
 		.filter((m) => inCode(m.index)).map((m) => m[1]));
-	const safeCwd = new RegExp(String.raw`\bcwd\s*:\s*(?:${SAFE_VALUE}|(${[...safeNames].map((s) => s.replace(/[\\^$.*+?()[\]{}|]/g, '\\$&')).join('|') || '(?!)'})\b)`);
+	const safeCwd = new RegExp(String.raw`\bcwd\s*:\s*(?:${SAFE_VALUE}|(${[...safeNames].map(esc).join('|') || '(?!)'})\b)`, 'g');
+	// Names held to a string: const GIT = 'git'.
+	const held = new Map([...src.matchAll(new RegExp(String.raw`\bconst\s+(${NAME})\s*=\s*(?=['"\`])`, 'g'))]
+		.filter((m) => inCode(m.index)).map((m) => [m[1], literalAt(src, m.index + m[0].length)]).filter(([, v]) => v !== null));
+	const { receivers, renamed } = bindings(src, inCode);
 	const found = [];
-	// A call by its bare name, or through an object (child_process.spawnSync, require('node:child_process').spawnSync),
-	// never a method of something else (a regex's .exec).
-	const re = new RegExp(String.raw`(^|[^\w$.]|\)\.|\b(?:child_process|childProcess|cp)\.)(${CALLS.join('|')})\s*\(`, 'g');
+	// A call by its bare name or a name the file renamed it to, or through child_process under any name it has
+	// (proc.spawnSync, require('node:child_process').spawnSync), never a method of something else (a regex's .exec).
+	const names = [...CALLS, ...[...renamed.keys()].map(esc)];
+	const re = new RegExp(String.raw`(^|[^\w$.]|\)\.|\b(?:${[...receivers].map(esc).join('|')})\.)(${names.join('|')})\s*\(`, 'g');
 	for (const m of masked.matchAll(re)) {
-		const call = m[2];
+		const isCall = CALLS.includes(m[2]);
+		// A renamed call counts only by its bare name; proc.run is no launch.
+		if (!isCall && /\.$/.test(m[1])) continue;
+		const call = isCall ? m[2] : renamed.get(m[2]);
 		const open = m.index + m[0].length - 1;
 		let a = open + 1;
 		while (a < src.length && /\s/.test(masked[a])) a++;
-		const lit = literalAt(src, a);
+		let lit = literalAt(src, a);
+		if (lit === null) {
+			const v = masked.slice(a).match(new RegExp(String.raw`^(${NAME})\s*[,)]`));
+			lit = v && held.has(v[1]) ? held.get(v[1]) : null;
+		}
 		if (lit === null) continue;
 		const program = SHELL_LINE.has(call) ? (lit.trim().split(/\s+/)[0] || '').replace(/^["']|["']$/g, '') : lit;
 		if (!program || /[\\/:]/.test(program)) continue;
 		const end = closer(masked, open);
 		// The options are read in the source, and count only in code, so a cwd: written inside a string never does.
 		const own = src.slice(open, end + 1);
-		const hit = safeCwd.exec(own);
-		if (!hit || !inCode(open + hit.index)) found.push({ line: src.slice(0, m.index + m[1].length).split('\n').length, call, program });
+		// Only a cwd at the top of an options object counts, never one inside another option or the argument list.
+		const safe = [...own.matchAll(safeCwd)].some((h) => inCode(open + h.index) && openAt(masked, open, open + h.index) === '({');
+		if (!safe) found.push({ line: src.slice(0, m.index + m[1].length).split('\n').length, call, program });
 	}
 	return found;
 }

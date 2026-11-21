@@ -92,6 +92,62 @@ test('the command scans project/ and user/ of a kit root, names each file and li
 	assert.equal(spawnSync(process.execPath, [SCRIPT, path.join(root, 'nowhere')], { encoding: 'utf8' }).status, 2, 'a root with nothing to read is no pass');
 });
 
+// The build 23a sweep (V2, F4): child_process under another name, a call renamed as it is taken out, a program held in
+// a const, and a cwd: nested inside another option or the argument list each hid a launch.
+// why: catches a git or gh launch from the project folder that the check let through under another name
+test('the check follows child_process under another name, a renamed call, a program held in a name, and a nested cwd', () => {
+	const cases = [
+		["import * as proc from 'node:child_process';\nproc.spawnSync('git', []);", ['2 spawnSync(git)']],
+		["import proc from 'child_process';\nproc.exec('gh pr view 1');", ['2 exec(gh)']],
+		["const proc = require('node:child_process');\nproc.execFileSync('gh', ['api']);", ['2 execFileSync(gh)']],
+		["const { spawnSync: run } = require('node:child_process');\nrun('git', ['status']);", ['2 spawnSync(git)']],
+		["import { execSync as sh, spawn } from 'child_process';\nsh('git status');\nspawn('ps', []);", ['2 execSync(git)', '3 spawn(ps)']],
+		["const GIT = 'git';\nspawnSync(GIT, ['status']);", ['2 spawnSync(git)']],
+		["const SAFE = path.dirname(process.execPath);\nspawnSync('git', ['a'], { env: { cwd: SAFE } });", ['2 spawnSync(git)']],
+		["const SAFE = path.dirname(process.execPath);\nspawnSync('git', [{ cwd: SAFE }]);", ['2 spawnSync(git)']],
+		// The same forms from node's own folder, with a full path, or through a name that is no launch, pass.
+		["const proc = require('child_process');\nproc.spawnSync('git', [], { cwd: path.dirname(process.execPath) });", []],
+		["const { spawnSync: run } = require('node:child_process');\nrun(process.execPath, []);", []],
+		["const GIT = '/usr/bin/git';\nspawnSync(GIT, []);", []],
+		["const { run } = require('./lib.cjs');\nrun('git');", []],
+		["const SAFE = path.dirname(process.execPath);\nspawnSync('git', a, { env: {}, cwd: SAFE });", []],
+		["// import * as proc from 'child_process'\nproc.spawnSync('git');", []],
+	];
+	for (const [src, want] of cases) assert.deepEqual(programs(src), want, src);
+});
+
+// The build 23a sweep (V3): the mask test showed comments and literals blanked, not that a slash after a value is
+// division or that a quote inside a regex starts no string; either slip blanks the code after it and hides a launch.
+// why: catches a mask that reads division as a regex or a quote in a regex as a string, and so hides a launch after it
+// planted: {"file":"scripts/spawn-check.mjs","was":"if (/[(,=:[!&|?{};+\\-*%<>~^]/.test(last)) return true;","to":"if (/[(,=:[!&|?{};+\\-*%<>~^)]/.test(last)) return true;"}
+// planted: {"file":"scripts/spawn-check.mjs","was":"if (src[j] === '[') cls = true;","to":"if (src[j] === '[') cls = false;"}
+test('the mask reads division as division and a quote inside a regex as part of it, so a launch after either is found', () => {
+	const div = 'const q = (a) / b / c;';
+	assert.equal(mask(div), div);
+	assert.deepEqual(programs("const r = /[/]'/; spawnSync('git', []);"), ['1 spawnSync(git)']);
+	assert.deepEqual(programs("const q = (a) / 2; spawnSync('git', []); const z = 1 / 2;"), ['1 spawnSync(git)']);
+	assert.equal(mask('const t = `a${b}c`;'), 'const t = `      `;');
+});
+
+// The build 23a sweep (V4): the command test had no .js file, no node_modules folder and no --dirs.
+// why: guards the owner's pick of 2026-11-21 (every installed .js file is read, a package folder is not, and --dirs picks the folders)
+// planted: {"file":"scripts/spawn-check.mjs","was":"const EXTS = /\\.(mjs|cjs|js)$/;","to":"const EXTS = /\\.(mjs|cjs)$/;"}
+// planted: {"file":"scripts/spawn-check.mjs","was":"if (e.name !== 'node_modules') walk(p);","to":"walk(p);"}
+// planted: {"file":"scripts/spawn-check.mjs","was":"const at = args.indexOf('--dirs');","to":"const at = args.indexOf('--dir');"}
+test('the command reads .js files, skips node_modules, and reads only the folders --dirs names', () => {
+	const root = kitTemp.makeTemp('spawn-check-dirs-');
+	const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
+	put('project/.claude/a.js', "spawnSync('git', ['status']);\n");
+	put('project/node_modules/x/b.js', "spawnSync('git', ['status']);\n");
+	put('user/c.cjs', "spawnSync('gh', ['api']);\n");
+	put('scripts/d.mjs', "\nspawnSync('ps', []);\n");
+	assert.deepEqual(scan(root).map((f) => `${f.file}:${f.line}`), ['project/.claude/a.js:1', 'user/c.cjs:1']);
+	const only = spawnSync(process.execPath, [SCRIPT, root, '--dirs', 'scripts'], { encoding: 'utf8' });
+	assert.equal(only.status, 1, only.stdout + only.stderr);
+	assert.deepEqual(only.stdout.trim().split(/\r?\n/).slice(0, 2), ["scripts/d.mjs:2 spawnSync('ps')", '1 unsafe bare-name launch: start each from node\'s own folder, through safe-spawn.cjs (or its options inline in a guard that must load alone)']);
+	assert.equal(spawnSync(process.execPath, [SCRIPT, root, '--dirs', 'nowhere'], { encoding: 'utf8' }).status, 2);
+});
+
 // why: guards the owner's pick of 2026-11-21 (the kit's own installed files hold no unsafe launch, with no list of exceptions)
 test('the kit\'s own installed files hold no bare-name launch outside node\'s own folder', () => {
 	const r = spawnSync(process.execPath, [SCRIPT], { encoding: 'utf8' });
