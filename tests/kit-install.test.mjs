@@ -1252,7 +1252,7 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
 
 // K192 (the owner's pick, 2026-11-20): recall Q4, Q7 and Q9 missed one part of their rule at scorer-noise level. The
 // prompt hook cues the rule's own words when a message names its topic; each cue quotes its source word for word.
-// why: catches a message on a push, a swarm or a later idea that reaches the session with no rule in front of it
+// why: guards rule:outward-acts and rule:visual-design-collaboration: a message on their topic gets the rule in front of it
 test('the prompt hook cues a rule in its own words when a message names its topic (K192)', async () => {
   const kitTools = await import('../scripts/kit.mjs');
   assert.equal(typeof kitTools.ruleCues, 'function', 'K192: the rule cues');

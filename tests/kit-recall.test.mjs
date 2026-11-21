@@ -1639,7 +1639,7 @@ test('recall (K231): an arm carries its own global CLAUDE.md into its probe, and
 
 // K231 (S7, flag F5): user/CLAUDE.md is in every session's start text, but the gate's trigger never named it, so a PR
 // changing only it (K219) passed the gate with no score.
-// why: catches a user/CLAUDE.md change that merged with no recall score
+// why: guards rule:kit-standards: a user/CLAUDE.md change that merged with no recall score
 test('recall gate (K231): a PR that changes only user/CLAUDE.md needs a gate line', async () => {
   const { checkGate } = await recallTools();
   const r = checkGate(gateFacts({ changed: ['user/CLAUDE.md'], added: [] }));

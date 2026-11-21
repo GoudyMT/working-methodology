@@ -15,7 +15,9 @@ const require = createRequire(import.meta.url);
 kitTemp.sessionRoot();
 const KIT = path.resolve('.');
 const GRANT_CLI = path.resolve('user/kit-tools/grant.mjs');
-const grantLib = () => require('../user/kit-tools/owner-grant.cjs');
+// The library is checked by path first, so a tree without it fails each test on an assertion, not a crash.
+const GRANT_LIB = path.resolve('user/kit-tools/owner-grant.cjs');
+const grantLib = () => { assert.ok(fs.existsSync(GRANT_LIB), 'owner-grant.cjs holds the grant check'); return require(GRANT_LIB); };
 const { askText } = require('../project/.claude/owner-yes.cjs');
 const ENV = { ...process.env };
 for (const k of ['CLAUDECODE', 'AI_AGENT', 'KIT_PUSH_APPROVED', 'CLAUDE_CONFIG_DIR', 'KIT_CLAUDE_HOME', 'CLAUDE_PROJECT_DIR', 'CLAUDE_CODE_SESSION_ID', 'CLAUDE_CODE_REMOTE']) delete ENV[k];

@@ -1362,7 +1362,7 @@ test('the sheet page ships no private data, calls no third party, and writes the
 
 // K219 (build 23b): the no-raw-non-ASCII rule flattened the arrow glyphs, so the global CLAUDE.md banned the very
 // spellings it then required; and "prefer 2025-2026 approaches" went stale with nothing to refresh it.
-// why: catches instruction text that contradicts itself or pins a year range that goes stale (K219)
+// why: guards rule:instruction-priority: instruction text that contradicts itself or pins a stale year range (K219)
 test('the arrow rule bans none of the spellings it requires, and no instruction pins a year range (K219)', () => {
   const lines = read(path.resolve('user/CLAUDE.md')).split('\n');
   const ban = lines.find((l) => /Never use unicode arrows/i.test(l));
@@ -1379,7 +1379,7 @@ test('the arrow rule bans none of the spellings it requires, and no instruction 
 
 // T12 + E24 C (build 23b): a cloud thread loads no repo hooks, so it takes only the fixed worker jobs. The rule, the
 // cloud refusals and the worker brief name one job list, so a session reading any of them sends the same work out.
-// why: guards rule:where-work-runs
+// why: guards the owner's fixed list of five cloud jobs, one list wherever it is read
 test('the where-work-runs rule, the cloud refusals and the worker brief name one job list (T12)', () => {
   const text = read(path.resolve('rules/agent-teams.md'));
   const start = text.indexOf('{#where-work-runs}');

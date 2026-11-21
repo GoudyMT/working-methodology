@@ -15,7 +15,7 @@ const fwd = (p) => p.split(path.sep).join('/');
 
 // K175 (proof sweep: "Methodology kit not found", and the prompt hook blocked every message): a plugin has no install
 // step, so no Claude folder holds a kit-install.json naming the kit; the kit sits at <plugin root>/kit.
-// why: catches a plugin session that starts with no kit report and full-stops every message
+// why: guards rule:kit-standards: a plugin session that starts with no kit report and full-stops every message
 test('under a plugin the start-up hook finds the kit at the plugin root and names /kit:methodology-kit (K175)', () => {
   const { kit } = caseKit();
   copyKitCli(kit);
@@ -151,7 +151,7 @@ test('build plugin writes the plugin layout, the same bytes on every run (K174)'
 
 // K216 (weekly 1120 item 1): a hook that cannot start applies a settings change, and a PreToolUse one lets the call
 // through, unless the entry blocks on failure.
-// why: catches a plugin hooks.json whose tool or settings guard fails open
+// why: guards rule:security-standards: a plugin hooks.json whose tool or settings guard fails open
 test('the plugin hooks.json blocks on failure for PreToolUse and ConfigChange, and wires every event (K174, K216)', () => {
   const hooks = JSON.parse(fs.readFileSync(path.join(plugin(), 'hooks/hooks.json'), 'utf8')).hooks;
   assert.deepEqual(Object.keys(hooks).sort(), ['ConfigChange', 'PreToolUse', 'SessionStart', 'SubagentStop', 'UserPromptSubmit']);
@@ -175,7 +175,7 @@ test('the plugin hooks.json blocks on failure for PreToolUse and ConfigChange, a
   assert.match(reason(JSON.parse(r.stdout)), /plugin folder holds the guards/);
 });
 
-// why: catches a changed guard file in the plugin that still lets calls run
+// why: guards rule:security-standards: a changed guard file in the plugin that still lets calls run
 test('the plugin launcher refuses every call once one file in its manifest changed (K174)', () => {
   const src = plugin();
   const root = path.join(makeTemp('plugin-copy-'), 'kit-plugin');
@@ -194,7 +194,7 @@ test('the plugin launcher refuses every call once one file in its manifest chang
   assert.match(reason(launch(root, call).out), /guard-manifest\.json/);
 });
 
-// why: catches a session that edits the plugin's own guard files and so turns them off
+// why: guards rule:security-standards: a session that edits the plugin's own guard files and so turns them off
 test('the plugin launcher refuses a write into the plugin folder, and lets a kit tool run from it (K174)', () => {
   const root = plugin();
   const repo = gitRepo();
@@ -208,7 +208,7 @@ test('the plugin launcher refuses a write into the plugin folder, and lets a kit
 });
 
 // K206 P3: a kit tool from another Claude folder than the plugin's own is refused, with this session's command.
-// why: catches a plugin session that runs another Claude folder's approve.mjs
+// why: guards rule:security-standards: a plugin session that runs another Claude folder's approve.mjs
 test('the plugin launcher denies another Claude folder\'s approve.mjs (K174, K206)', () => {
   const root = plugin();
   const other = makeTemp('other-cfg-');
@@ -223,7 +223,7 @@ test('the plugin launcher denies another Claude folder\'s approve.mjs (K174, K20
 
 // The proof (gap-fixes r9): plugin agents ignore the hooks: block in their own file, so the launcher runs them by
 // agent_type, which Claude Code hands every hook of a subagent's call.
-// why: catches a plugin builder that edits outside its worktree, or a checker that changes files, unheld
+// why: guards rule:agent-role-table: a plugin builder that edits outside its worktree, or a checker that changes files, unheld
 test('the plugin launcher runs each role\'s hooks for the matching agent_type (K174)', () => {
   const root = plugin();
   const repo = gitRepo();
@@ -265,7 +265,7 @@ test('the plugin launcher hands an owner\'s hold to owner-grant.cjs only for a m
 
 // K179: the marketplace file pins the plugin to the release tag and the plugin repo's commit (a git-subdir source, as
 // proven locally: a wrong sha refused the install), and a build is refused off a clean release.
-// why: catches a published plugin whose marketplace entry follows a moving branch, or a build from a changed folder
+// why: guards rule:security-standards: a marketplace entry that follows a moving branch, or a build from a changed folder
 test('build plugin writes the marketplace pinned to tag and commit, and refuses a folder off its release (K179)', () => {
   const kit = path.join(makeTemp('plugin-rel-'), 'kit');
   fs.mkdirSync(kit);
