@@ -171,6 +171,10 @@ const GATE_FILE = /(^|\/)\.(github|githooks|claude)\/|(^|\/)_Templates\/ci-[^/]*
 const DATA_FILE = /^docs\/.*\.(md|json|txt|png|svg|jpe?g|gif|csv)$|^(VERSION|CHANGELOG\.md)$|^\.kit\/[^/]+\.json$/;
 const TEST_FILE = /(^|\/)(tests?|__tests__)\/|\.(test|spec)\.[a-z]+$|_test\.[a-z]+$/;
 const DOC_FILE = /\.(md|txt|rst)$/i;
+// CM6 (c, reproduced on 1.47.0): code a project ships, and a skill's own file, are fix work however small; only tests,
+// docs, records and maps are triage (the build 18 plan, section 4).
+const SHIPPED_CODE = /\.(c?js|mjs|tsx?|jsx|py|sh|bash|ps1|psm1|go|rs|java|kt|rb|php|cs|swift|c|cc|cpp|h|sql|vue|svelte)$/i;
+const SKILL_FILE = /(^|\/)skills\/[^/]+\/SKILL\.md$/i;
 // What a sweep or a release commits about itself is not source: a committed contract, the project's caps file
 // and a migration file pushed a fix or triage sweep up a tier. Any other added .json still counts.
 const KIT_JSON = /^(docs\/migrations\/[^/]+\.json|\.kit\/sweep-approval\.json)$/i;
@@ -326,6 +330,8 @@ function diffFacts() {
 		deps: all.filter((f) => DEP_FILE.test(f)).some((f) => depsChanged(base, f)),
 		tests: all.some((f) => TEST_FILE.test(f)),
 		addedSource: added.filter((f) => !TEST_FILE.test(f) && !DOC_FILE.test(f) && !DATA_FILE.test(f)),
+		// CM6 (c): shipped code and skills are fix work at any size (the build 18 plan, section 4).
+		shipped: all.filter((f) => !sweepOwned(f) && !TEST_FILE.test(f) && (SHIPPED_CODE.test(f) || SKILL_FILE.test(f))),
 		added,
 		lines,
 		// A workflow may run a script from another folder (working-directory, cd), so a file whose name a workflow names
@@ -449,6 +455,7 @@ function check(c, facts, log = []) {
 		if (facts.gate.length && TIER_RANK[tier] < TIER_RANK.feature) why.push(`${facts.gate[0]} is gate code (CI, a git hook, a guard, the kit's hooks, tools or install): feature work with the security-sensitive modifier, not ${tier}`);
 		if (tier !== 'feature' && facts.addedSource.length) why.push(`an added source file (${facts.addedSource[0]}) is feature work, not ${tier}`);
 		const addedCode = facts.added.filter((f) => !DOC_FILE.test(f) && !DATA_FILE.test(f) && !TEST_FILE.test(f));
+		if (tier === 'triage' && facts.shipped.length) why.push(`shipped code or a skill (${facts.shipped[0]}) is fix work, not triage`);
 		if (tier === 'triage' && (addedCode.length || facts.triageLines > TRIAGE_MAX_LINES)) why.push(`${facts.triageLines} changed lines that are not docs, records or moved tests, ${addedCode.length} added files: more than a triage change`);
 	}
 	const roles = Array.isArray(c.roles) ? c.roles : [];

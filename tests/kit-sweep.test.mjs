@@ -1126,3 +1126,29 @@ test('the floor reads the diff the way git wrote it: hunk text, nested docs code
   const emptied = approveRun(one, changed({ 'tests/g.test.mjs': body }, { 'tests/g.test.mjs': 'x\n', 'tests/dead.test.mjs': `if (false) {\n${body}}\n` }));
   assert.equal(emptied.status, 1, `lines taken out of a test that stays are a changed test: ${emptied.stdout}`);
 });
+
+// CM6 (c), K170 (the S1 replay, reproduced on 1.47.0): the build 18 plan says shipped scripts and skills are fix work
+// and only tests, docs, records and maps are triage, yet a one-line edit to a shipped script or a SKILL.md outside the
+// gate files was approved as triage.
+// why: catches a shipped script or skill change swept at the triage floor
+test('a one-line change to a shipped script or a skill is fix work, not triage (CM6)', () => {
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  const edit = (f, base, next) => {
+    const dir = makeTemp('approve-');
+    g(dir, 'init', '-q', '-b', 'main');
+    fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+    fs.writeFileSync(path.join(dir, f), base);
+    commitAll(dir, 'base', true);
+    g(dir, 'checkout', '-q', '-b', 'fix/x');
+    fs.writeFileSync(path.join(dir, f), next);
+    commitAll(dir, 'change', true);
+    fs.mkdirSync(path.join(dir, 'sweeps'));
+    return approveRun(one, dir);
+  };
+  for (const f of ['scripts/mutation-check.mjs', 'src/app.py', 'user/skills/tdd/SKILL.md']) {
+    const r = edit(f, 'a\n', 'b\n');
+    assert.equal(r.status, 1, `${f}: ${r.stdout}`);
+    assert.match(r.stdout, /shipped code or a skill .* is fix work, not triage/, f);
+  }
+  for (const f of ['docs/guide.md', 'README.md', 'tests/a.test.mjs']) assert.equal(edit(f, 'a\n', 'b\n').status, 0, f);
+});
