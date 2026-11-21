@@ -10,10 +10,12 @@
 # folders, never from the session's PATH, so a planted one cannot answer for the launcher. node is an absolute path.
 # K250 (1.49.0): Git for Windows keeps no git in /usr/bin or /bin, so the guards could not ask git anything and a
 # worktree-config project had every call held. The launcher gets the system folders plus Git for Windows' own /cmd
-# (part of the install this shell runs from), never the session's PATH, so a planted git cannot answer either.
+# (part of the install this shell runs from), never the session's PATH, so a planted git cannot answer either. A Mac
+# or Linux git kept outside them (Homebrew, a source build) is found in /usr/local/bin or /opt/homebrew/bin, after the
+# system folders, so the system's own git answers first where there is one (the build 23a sweep).
 PATH=/usr/bin:/bin
 export PATH
-run_path="$PATH"
+run_path="$PATH:/usr/local/bin:/opt/homebrew/bin"
 if [ -x /cmd/git.exe ]; then run_path="/cmd:$PATH"; fi
 node="$1"
 launcher="$2"
