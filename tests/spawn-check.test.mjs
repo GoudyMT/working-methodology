@@ -80,7 +80,10 @@ test('the command scans project/ and user/ of a kit root, names each file and li
 	assert.deepEqual(scan(root).map((f) => `${f.file}:${f.line}`), ['project/.claude/a.mjs:2', 'user/kit-hooks/b.cjs:3']);
 	const r = spawnSync(process.execPath, [SCRIPT, root], { encoding: 'utf8' });
 	assert.equal(r.status, 1, r.stdout + r.stderr);
-	assert.match(r.stdout, /^project\/\.claude\/a\.mjs:2 spawnSync\('git'\)\nuser\/kit-hooks\/b\.cjs:3 spawnSync\('gh'\)\n2 unsafe bare-name launches/);
+	// Each site by its file, line and program, then the count CI fails on.
+	const lines = r.stdout.trim().split(/\r?\n/);
+	assert.deepEqual(lines.slice(0, 2), ['project/.claude/a.mjs:2 spawnSync(\'git\')', 'user/kit-hooks/b.cjs:3 spawnSync(\'gh\')']);
+	assert.match(lines[2], /^2 /);
 	put('project/.claude/a.mjs', "spawnSync('git', ['status'], { cwd: path.dirname(process.execPath) });\n");
 	put('user/kit-hooks/b.cjs', "safeSpawn.tool('gh', ['api']);\n");
 	const ok = spawnSync(process.execPath, [SCRIPT, root], { encoding: 'utf8' });

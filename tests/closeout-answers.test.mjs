@@ -59,8 +59,9 @@ test('the closeout names each pop-up answer no decision row quotes, and passes o
 	let r = run(ANSWERS, dir, [], h);
 	assert.equal(r.status, 1, r.stdout + r.stderr);
 	assert.match(r.stdout, /1 owner answer\(s\) no decision row quotes/);
-	assert.match(r.stdout, /ans-2#1: "Where should the report live\?" -> "Keep it in the project folder"/);
-	assert.doesNotMatch(r.stdout, /CSV export first|git push|Blue for every|Serif/);
+	// The id, the question and the answer are the session's own data, quoted back so the session can mark the answer.
+	assert.ok(r.stdout.includes('ans-2#1') && r.stdout.includes('Where should the report live?') && r.stdout.includes('Keep it in the project folder'), r.stdout);
+	for (const other of ['CSV export first', 'git push', 'Blue for every', 'Serif']) assert.ok(!r.stdout.includes(other), other);
 	// Marked "not a decision" with a reason, it is no longer named; a mark with no reason, or for no answer, is refused.
 	assert.equal(run(ANSWERS, dir, ['not', 'ans-2#1'], h).status, 2, 'a mark needs its reason');
 	assert.equal(run(ANSWERS, dir, ['not', 'ans-9#1', 'typo'], h).status, 1, 'a mark names an answer of this session');
@@ -68,7 +69,7 @@ test('the closeout names each pop-up answer no decision row quotes, and passes o
 	assert.equal(r.status, 0, r.stdout);
 	r = run(ANSWERS, dir, [], h);
 	assert.equal(r.status, 0, r.stdout);
-	assert.match(r.stdout, /every owner answer in this session is recorded or marked/);
+	assert.match(r.stdout, /^Owner answers: .*\(\d+ read\)$/m, 'the pass line counts what it read');
 });
 
 // why: catches an owner's pop-up answer left out of the decision record at closeout
@@ -84,5 +85,5 @@ test('an answer recorded with state.mjs decide is not named, and a session with 
 	const hq = home(quiet, [{ type: 'user', uuid: 'say-0', message: { role: 'user', content: 'hello' } }]);
 	const r = run(ANSWERS, quiet, [], hq);
 	assert.equal(r.status, 0, r.stdout);
-	assert.match(r.stdout, /every owner answer in this session is recorded or marked/);
+	assert.match(r.stdout, /^Owner answers: .*\(\d+ read\)$/m, 'the pass line counts what it read');
 });

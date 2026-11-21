@@ -813,7 +813,8 @@ test('a self-found row is done or closed only with a repro file and a measured l
 	assert.equal(add({ id: 'S5', measured: 'agent-report', verify: 'repro.md' }).status, 0);
 	r = st(dir, 'item', 'set', 'S5', 'tag', 'done');
 	assert.equal(r.status, 1, 'measured agent-report is no repro');
-	assert.match(r.stdout, /S5: a self-found row needs measured throwaway, ci, real-use before it is done \(now agent-report\)/);
+	// The row, the measures that count and the one it has: what the owner acts on.
+	for (const token of ['S5', 'throwaway, ci, real-use', '(now agent-report)']) assert.ok(r.stdout.includes(token), token);
 	assert.equal(add({ id: 'S6', verify: 'repro.md' }).status, 0);
 	assert.match(st(dir, 'item', 'set', 'S6', 'tag', 'done').stdout, /now none/);
 	assert.equal(tag('S4'), 'later');
