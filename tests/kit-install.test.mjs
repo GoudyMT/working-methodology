@@ -1269,12 +1269,12 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   assert.match(cue('While building I noticed an unrelated idea for later. Where does it go?'), /^rule:parking-lot \(standards\/reviews-and-findings\.md\): .*Parking Lot.*all gates green/m);
   assert.match(cue('fan out three subagents over src/'), /rule:swarm-contract/);
   // The paired run of 2026-11-21: Q10's sweep, and a merged PR that names no push or PR opening.
-  assert.match(cue('The feature is done and green. What review is required before its PR?'), /^rule:pre-pr-deep-sweep \(CLAUDE\.md\): .*agents actually running/m);
+  assert.match(cue('The feature is done and green. What review is required before its PR?'), /^rule:pre-pr-deep-sweep \(the kit's CLAUDE\.md template\): .*agents actually running/m);
   assert.equal(cue('My PR merged and its release is out. What happens next?'), '', 'a merged PR is no push');
   // The Q6 check of 2026-11-21: one agent's findings are no swarm, so the swarm contract is no cue for them.
   assert.equal(cue('A review agent reported 9 findings. How do I handle them?'), '', 'one review agent is no swarm');
   assert.equal(kitTools.ruleCues({ kit: path.resolve('.'), prompt: 'Push the branch.', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
-  for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?'.replace('push back', 'argue')]) assert.equal(cue(quiet), '', quiet);
+  for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?']) assert.equal(cue(quiet), '', quiet);
   // Through the hook, beside the kit check.
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));

@@ -1975,6 +1975,7 @@ export function closeoutCue({ projectDir, prompt = '', session = '', env = proce
   return `Closeout cue: ${why}. rule:compact-ritual: the Closeout "${CLOSEOUT_RULE}". When those hold, start the closeout skill now.`;
 }
 
+const CUE_TEXT_MAX = 2000;
 /**
  * K192 (the owner's pick, 2026-11-20): when a message names a topic in the kit's rules/cues.json, the rule's own
  * words, quoted from its source, go in front of the session. A kit with no cues file, or a bad one, says nothing.
@@ -1990,8 +1991,11 @@ export function ruleCues({ kit, prompt = '', env = process.env }) {
   if (env.KIT_RULE_CUES === 'off') return '';
   let data;
   try { data = JSON.parse(fs.readFileSync(path.join(kit, 'rules', 'cues.json'), 'utf8')); } catch { return ''; }
+  // A cue's regexes scan sentence by sentence; on a pasted log with no full stop each scan runs to the end, so only a
+  // message's opening is read (a topic is named there, and a long paste is no question about a rule).
+  const text = String(prompt).slice(0, CUE_TEXT_MAX);
   return (data.cues || [])
-    .filter((c) => { try { return new RegExp(c.when, 'i').test(prompt); } catch { return false; } })
+    .filter((c) => { try { return new RegExp(c.when, 'i').test(text); } catch { return false; } })
     .map((c) => `rule:${c.rule} (${c.home}): ${c.quotes.join(' ... ')}`)
     .join('\n');
 }

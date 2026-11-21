@@ -5,7 +5,7 @@
       "rule": "outward-acts",
       "home": "AGENTS.md",
       "source": "rules/core.md",
-      "when": "\\bpush(es|ed|ing)?\\b|\\bopen(s|ing)? (the |its |a |my )?(PR|pull request)\\b",
+      "when": "\\bgit push\\b|\\bpush(?:es|ed|ing)?(?: \\w+){0,2} (?:branch|origin|remote|main|commits?|PRs?|pull requests?)\\b|\\bpush(?:es|ed|ing)?\\b[^.?!]{0,40}\\b(?:to|into) (?:the |its )?(?:origin|remote|main|branch)\\b|\\bopen(?:s|ing)? (?:the |its |a |my )?(?:PR|pull request)\\b",
       "quotes": [
         "It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete.",
         "is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner."
@@ -15,7 +15,7 @@
       "rule": "swarm-contract",
       "home": "standards/agent-teams.md",
       "source": "rules/agent-teams.md",
-      "when": "\\b(swarm|fan-?out|sub-?agents?|review agents|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (\\w+ )?agents)\\b",
+      "when": "\\b(swarm|fan-?out|sub-?agents?|review agents|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (?!user )(\\w+ )?agents)\\b",
       "quotes": [
         "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract.",
         "STOP: no agent runs until the contract is approved",
@@ -34,9 +34,9 @@
     },
     {
       "rule": "pre-pr-deep-sweep",
-      "home": "CLAUDE.md",
+      "home": "the kit's CLAUDE.md template",
       "source": "project/CLAUDE.md",
-      "when": "\\b(sweep|review)\\b[^.?!]*\\b(PRs?|pull requests?)\\b|\\b(PRs?|pull requests?)\\b[^.?!]*\\b(sweep|review)\\b",
+      "when": "\\bsweep\\b|\\breview\\b[^.?!]*\\bbefore\\b[^.?!]*\\b(PRs?|pull requests?|merg\\w*)\\b",
       "quotes": [
         "No feature / sub-project PR opens for review or merges to `main` without a deep multi-agent sweep",
         "an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded and summarized in the PR.",
