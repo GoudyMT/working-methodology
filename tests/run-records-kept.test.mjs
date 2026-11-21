@@ -57,7 +57,8 @@ test('the blind step refuses an out folder that already holds a sealed map or sc
   assert.match(String(thrown(() => blind(scorerOnly, [run], () => 0))?.message), /already holds a blind/);
 });
 
-// why: catches the {{CLAUDE_HOME}} fill writing through a link into a file outside the probe
+// why: guards the owner's throwaway-only rule: the {{CLAUDE_HOME}} fill never writes through a link outside the probe
+// planted: {"file":"scripts/recall-behave.mjs","was":"else if (e.isFile() && e.name.endsWith('.md'))","to":"else if ((e.isFile() || e.isSymbolicLink()) && e.name.endsWith('.md'))"}
 test('filling a probe user layer never writes through a link to a file outside it', async (t) => {
   const { copyUserLayer } = await import('../scripts/recall-behave.mjs');
   const root = makeTemp('layer-link-');

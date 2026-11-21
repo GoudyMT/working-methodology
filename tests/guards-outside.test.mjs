@@ -1987,8 +1987,8 @@ test('the guard start script retries once, names why a start failed, and lets on
 // K250 (1.49.0): the start script trimmed PATH for the launcher too, so on Windows (Git for Windows keeps no git in
 // /usr/bin or /bin) every git the guards ask was missing: a worktree-config project had every call held. The launcher
 // now gets the system folders plus Git for Windows' own /cmd; never the session's PATH, where a planted git could answer.
-// why: catches a launcher that cannot find git through the start script, and one that takes git from the session PATH
-test('the guard start script lets the launcher find git, never a git planted on the session PATH (K250)', () => {
+// why: guards rule:outward-acts (the guards must reach git on Windows, and never a git planted on the session PATH)
+test('the guard start script lets the launcher find git, never a git planted on the session PATH (K250)', { windows: true }, () => {
 	const { home } = setup();
 	const start = path.join(home, 'kit-tools', 'kit-start.sh');
 	const bin = kitTemp.makeTemp('session-path-');
