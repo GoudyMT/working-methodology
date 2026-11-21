@@ -13,6 +13,13 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 import { ATTRIBUTION, CORPUS, FAKE_PHRASE, GOOD_MAP, NAMES, ROWS, addThirdParty, canary, canaryLog, canaryRepo, caseKit, commitAll, excludeFile, firstPush, front, g, gitTree, honestBody, kitInstall, leanAudit, localProject, makeKit, makeTemp, mapRepo, mapRun, msgFile, nameRun, notesAudit, overlayKit, phraseLine, promptGate, read, readyProject, released, require, role, ruleFiles, runHook, sessionStartReport, status, stdAudit, trackRun, words } from './kit-helpers.mjs';
 
+// The 1.49.0 commit hook was added from Windows with no executable bit, so off Windows git skipped it and said so
+// only in a hint: a commit by a tool-named author went through in a fresh clone.
+// why: guards rule:commit-message-format
+test('the kit source records its own commit and push hooks as executable, so git runs them off Windows', { windows: 'also' }, () => {
+  for (const h of ['commit-msg', 'pre-push']) assert.match(spawnSync('git', ['ls-files', '-s', `.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
+});
+
 // why: guards rule:outward-acts
 test('the git pre-push hook is executable, in the kit and where install writes it', { windows: true }, () => {
   for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
