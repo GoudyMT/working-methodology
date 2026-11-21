@@ -7,10 +7,17 @@
 //
 // Usage: node scripts/recall-score.mjs blind <out folder> <run.md> [<run.md> ...]
 //        node scripts/recall-score.mjs score <scorer A output> <scorer B output> <sealed-map.json> <label>
+//             [--again <scorer A output> <scorer B output> <sealed-map.json>]
 // Runs are named cand-*, base-* and control-* by the lead; the scorer sees only R01, R02, ...
 // K198 (Max's fixed gate and his picks, 2026-11-20): a gate is 5 candidate runs and 5 runs of the release measured the
 // same day, flat; two blind scorers read every run and a run's score is their average, never rounded up; the candidate's
-// median must reach 14 and no question may sum lower, over both scorers and all runs, than on the release.
+// median must reach 14 and no question may be worse than on the release.
+// Seen twice (Max's pick, 2026-11-21, after four paired runs): on one look the release scored "worse" than itself. Its
+// two sets of five runs that day differed by a run on Q6 one way and on Q7 and Q14 the other, the same five answers got
+// 7, 9 and 10 marks of 10 on Q10 from three pairs of scorers, and a build that changed nothing failed the check about
+// four times in five. So a question that sums lower, over both scorers and all runs, is asked again alone (recall.mjs
+// --only), 5 new sessions a side the same day with two new blind scorers, and is worse only when it sums lower again.
+// One look prints no gate line; --again scores both looks together.
 // K200: runs named any other way (pc-*, cloud-*) are tallied side by side with no gate line.
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -64,8 +71,9 @@ export function scrub(text) {
 }
 
 export function blindRun(text, removed = []) {
-  const at = text.indexOf('\n## 1. ');
-  if (at < 0) throw new Error('no question 1 in the run');
+  // From the first question on: a second look asks one question alone, so its run starts at that question.
+  const at = text.search(/\n## \d+\. /);
+  if (at < 0) throw new Error('no question in the run');
   return scrub(dropNotice(text.slice(at + 1), removed));
 }
 
@@ -113,10 +121,38 @@ const GATE_ARMS = ['cand', 'base', 'control'];
 const TITLES = { cand: 'Candidate', base: 'Baseline', control: 'Control' };
 
 /** K198: every candidate and release run measured within one day of every other; a run with no time fails. */
-function sameDay(arms, when) {
-  const times = [...arms.cand, ...arms.base].map((r) => Date.parse(when?.[r.id] ?? ''));
+function sameDay(times) {
   if (times.some(Number.isNaN)) throw new Error('the release arm must be measured the same day as the candidate: every candidate and release run needs its "When:" time in the sealed map (blind it with this tool)');
   if (Math.max(...times) - Math.min(...times) > DAY_MS) throw new Error('the release arm must be measured the same day as the candidate: these runs are more than a day apart');
+}
+const timesOf = (runs, when) => runs.map((r) => Date.parse(when?.[r.id] ?? ''));
+
+/**
+ * The second look at the questions that summed lower on the first: 5 new runs a side that asked those questions alone,
+ * marked by two new blind scorers, the same day as the first look.
+ *
+ * Args:
+ *     lower: the question numbers the first look names; first: (arm, q) => that look's sum;
+ *     again: { sets, map, when } of the second look; firstTimes: the first look's run times
+ *
+ * Returns:
+ *     { asked: [{ q, first: [candidate sum, release sum], second: [...] }], worse: the questions lower both times }
+ */
+function secondLook(lower, first, again, firstTimes) {
+  if (!Array.isArray(again.sets) || again.sets.length !== SCORERS) throw new Error(`a second look needs ${SCORERS} blind scorers' files; got ${Array.isArray(again.sets) ? again.sets.length : 0}`);
+  const arms = { cand: [], base: [] };
+  for (const [id, run] of Object.entries(again.map || {})) {
+    const arm = run.split('-')[0];
+    if (!arms[arm]) throw new Error(`a second look is candidate and release runs only, named cand-<n> and base-<n>; got ${run}`);
+    const per = again.sets.map((x) => x[id]);
+    for (const q of lower) if (per.some((x) => !x || x[q] === undefined)) throw new Error(`${id}: the second look has no score for question ${q} from each scorer; ask every lower question again (recall.mjs --only ${lower.join(',')})`);
+    arms[arm].push({ id, s: Object.fromEntries(lower.map((q) => [q, per.reduce((n, x) => n + x[q], 0)])) });
+  }
+  if (arms.cand.length !== RUNS || arms.base.length !== RUNS) throw new Error(`a second look is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${arms.cand.length} and ${arms.base.length}`);
+  sameDay([...firstTimes, ...timesOf([...arms.cand, ...arms.base], again.when)]);
+  const sum = (a, q) => arms[a].reduce((n, r) => n + r.s[q], 0);
+  const asked = lower.map((q) => ({ q, first: [first('cand', q), first('base', q)], second: [sum('cand', q), sum('base', q)] }));
+  return { asked, worse: asked.filter((x) => x.second[0] < x.second[1]).map((x) => x.q) };
 }
 
 /**
@@ -124,13 +160,14 @@ function sameDay(arms, when) {
  *
  * Args:
  *     sets: one { R01: { 1: 0|1, ... } } per scorer; map: { R01: 'cand-1' }; count: questions per run;
- *     opts: { when: { R01: ISO time } } from the sealed map
+ *     opts: { when: { R01: ISO time } } from the sealed map, and again: { sets, map, when } of a second look
  *
  * Returns:
- *     { table, medians, worse, gate }; with cand, base and control runs, also candMedian, baseMedian,
- *     controlMedian and pass (the median reaches the floor and no question is worse)
+ *     { table, medians, lower, worse, gate }; with cand, base and control runs, also candMedian, baseMedian,
+ *     controlMedian, pending (a question summed lower and has not been asked again), asked (both looks of each such
+ *     question) and pass (the median reaches the floor, nothing is pending and no question is worse)
  */
-export function summarize(sets, map, count, { when } = {}) {
+export function summarize(sets, map, count, { when, again } = {}) {
   if (!Array.isArray(sets) || sets.length !== SCORERS) throw new Error(`a score needs ${SCORERS} blind scorers' files; got ${Array.isArray(sets) ? sets.length : 0}`);
   const arms = {};
   for (const [id, run] of Object.entries(map)) {
@@ -151,14 +188,20 @@ export function summarize(sets, map, count, { when } = {}) {
     `| Total | ${names.map((a) => arms[a].map((r) => r.total).join(', ')).join(' | ')} |`];
   const medians = Object.fromEntries(names.map((a) => [a, median(arms[a].map((r) => r.total))]));
   const gate = GATE_ARMS.every((a) => arms[a]);
-  if (!gate) return { table, medians, worse: [], gate };
+  if (!gate) return { table, medians, lower: [], worse: [], gate };
   if (arms.cand.length !== RUNS || arms.base.length !== RUNS) throw new Error(`a gate is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${arms.cand.length} and ${arms.base.length}`);
-  sameDay(arms, when);
-  // A question that sums lower over both scorers and all candidate runs than over the release's is worse (K198).
+  const firstTimes = timesOf([...arms.cand, ...arms.base], when);
+  sameDay(firstTimes);
+  // A question that sums lower over both scorers and all candidate runs than over the release's is asked again; it is
+  // worse only when the second look shows it lower too (seen twice).
   const sum = (a, q) => arms[a].reduce((n, r) => n + r.s[q], 0);
-  const worse = qs.filter((q) => sum('cand', q) < sum('base', q));
+  const lower = qs.filter((q) => sum('cand', q) < sum('base', q));
+  if (again && !lower.length) throw new Error('nothing summed lower on the first look, so no second look is owed: score the first look alone');
+  const { asked, worse } = again ? secondLook(lower, sum, again, firstTimes) : { asked: [], worse: [] };
   const candMedian = medians.cand;
-  return { table, medians, worse, gate, candMedian, baseMedian: medians.base, controlMedian: medians.control, pass: candMedian >= FLOOR && !worse.length };
+  // Under the floor the build fails whatever a second look shows, so none is asked for.
+  const pending = lower.length > 0 && !again && candMedian >= FLOOR;
+  return { table, medians, lower, asked, worse, pending, gate, candMedian, baseMedian: medians.base, controlMedian: medians.control, pass: candMedian >= FLOOR && !pending && !worse.length };
 }
 
 /**
@@ -167,18 +210,31 @@ export function summarize(sets, map, count, { when } = {}) {
  * The gate line is in whole points, as the base branch's parser reads: the candidate's median rounded down and the
  * release's and control's rounded up, so a half point never helps the candidate.
  */
-export function score(files, mapFile, label, kit = KIT) {
-  if (!/^\w[\w.-]*$/.test(label || '')) throw new Error('usage: score <scorer A output> <scorer B output> <sealed-map.json> <label>');
+// again: { files: [scorer A, scorer B], mapFile } of the second look, when a question summed lower on the first.
+export function score(files, mapFile, label, kit = KIT, again = null) {
+  if (!/^\w[\w.-]*$/.test(label || '')) throw new Error('usage: score <scorer A output> <scorer B output> <sealed-map.json> <label> [--again <scorer A output> <scorer B output> <sealed-map.json>]');
   if (!Array.isArray(files) || files.length !== SCORERS) throw new Error(`a score needs two blind scorers' files; got ${Array.isArray(files) ? files.length : 0}`);
   const keysText = fs.readFileSync(path.join(kit, 'docs/evals/recall-questions.md'), 'utf8');
   const keys = currentVersion(keysText);
   const brief = currentVersion(fs.readFileSync(path.join(kit, 'docs/evals/recall-scorer-brief.md'), 'utf8'));
   const sealed = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
-  const r = summarize(files.map((f) => readScores(fs.readFileSync(f, 'utf8'))), sealed.map, questionCount(keysText, keys), { when: sealed.when });
+  const second = again && (() => {
+    if (!Array.isArray(again.files) || again.files.length !== SCORERS) throw new Error(`a second look needs two blind scorers' files; got ${Array.isArray(again.files) ? again.files.length : 0}`);
+    const map2 = JSON.parse(fs.readFileSync(again.mapFile, 'utf8'));
+    return { sets: again.files.map((f) => readScores(fs.readFileSync(f, 'utf8'))), map: map2.map, when: map2.when };
+  })();
+  const r = summarize(files.map((f) => readScores(fs.readFileSync(f, 'utf8'))), sealed.map, questionCount(keysText, keys), { when: sealed.when, again: second || undefined });
   if (!r.gate) return { ...r, line: null, lines: [] };
+  // One look with a lower question decides nothing: no gate line until it is asked again.
+  if (r.pending) return { ...r, line: null, lines: [], lowerLine: `lower once: ${r.lower.join(', ')}` };
   const line = `gate: ${label} median ${Math.floor(r.candMedian)} baseline ${Math.ceil(r.baseMedian)} brief v${brief} keys v${keys}`;
-  const lines = [`scorers: ${SCORERS}`, `worse: ${r.worse.join(', ') || 'none'}`, `control: ${Math.ceil(r.controlMedian)}`, line];
-  return { ...r, line, lines, controlLine: lines[2] };
+  const top = SCORERS * RUNS;
+  const askedLine = r.asked.length ? [`asked again: ${r.asked.map((x) => `${x.q} (${x.first[0]} of ${top} against ${x.first[1]}, then ${x.second[0]} of ${top} against ${x.second[1]})`).join('; ')}`] : [];
+  const controlLine = `control: ${Math.ceil(r.controlMedian)}`;
+  // Lower on one look, under the floor: named, though the floor already decides.
+  const onceLine = !r.asked.length && r.lower.length ? [`lower once: ${r.lower.join(', ')}`] : [];
+  const lines = [`scorers: ${SCORERS}`, ...askedLine, ...onceLine, `worse: ${r.worse.join(', ') || 'none'}`, controlLine, line];
+  return { ...r, line, lines, controlLine };
 }
 
 const realOf = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
@@ -188,25 +244,36 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
     const { map } = blind(rest[0], rest.slice(1));
     console.log(`blinded ${Object.keys(map).length} runs into ${rest[0]}/scorer; the map is sealed in sealed-map.json`);
   } else if (cmd === 'score') {
-    if (rest.length !== 4) {
-      console.log('Usage: node scripts/recall-score.mjs score <scorer A output> <scorer B output> <sealed-map.json> <label>');
+    const USAGE = 'Usage: node scripts/recall-score.mjs score <scorer A output> <scorer B output> <sealed-map.json> <label> [--again <scorer A output> <scorer B output> <sealed-map.json>]';
+    if (!(rest.length === 4 || (rest.length === 8 && rest[4] === '--again'))) {
+      console.log(USAGE);
       process.exit(2);
     }
-    const r = score(rest.slice(0, 2), rest[2], rest[3]);
+    const r = score(rest.slice(0, 2), rest[2], rest[3], KIT, rest.length === 8 ? { files: rest.slice(5, 7), mapFile: rest[7] } : null);
     console.log(r.table.join('\n'));
     console.log(`\n${Object.entries(r.medians).map(([a, m]) => `${a} median ${m}`).join(', ')}.`);
     if (!r.gate) console.log('\nno gate line: a gate needs cand, base and control runs.');
-    else {
-      console.log(`Questions summing lower over both scorers than on the release: ${r.worse.join(', ') || 'none'}.`);
+    else if (r.pending) {
+      const list = r.lower.join(',');
+      console.log(`Questions summing lower over both scorers than on the release, on this one look: ${r.lower.join(', ')}.`);
+      console.log(`\n${r.lowerLine}`);
+      console.log(`\nNo gate line yet. One look cannot tell a break from one unlucky answer (the release scores lower than itself this way), so ask ${r.lower.length > 1 ? 'these questions' : 'this question'} again alone, today, 5 new sessions on each side:`);
+      console.log(`  node scripts/recall.mjs <label> [kit folder] --only ${list}     (5 labels named cand-<x>-<n> on the candidate, 5 named base-<x>-<n> on the release)`);
+      console.log('Blind those ten runs, have two new blind scorers mark them, and score both looks together:');
+      console.log(`  node scripts/recall-score.mjs score <the four arguments above> --again <scorer A output> <scorer B output> <sealed-map.json>`);
+      console.log('A question is worse only when it sums lower again.');
+      process.exitCode = 1;
+    } else {
+      console.log(`Questions summing lower over both scorers than on the release: ${r.lower.join(', ') || 'none'}${r.asked.length ? `; lower again when asked alone: ${r.worse.join(', ') || 'none'}` : ''}.`);
       console.log(`\n${r.lines.join('\n')}`);
       if (!r.pass) {
-        const why = [r.candMedian < FLOOR && `the candidate's median of ${r.candMedian} is under the floor of ${FLOOR}`, r.worse.length && `questions ${r.worse.join(', ')} do worse than the release`].filter(Boolean);
+        const why = [r.candMedian < FLOOR && `the candidate's median of ${r.candMedian} is under the floor of ${FLOOR}`, r.worse.length && `questions ${r.worse.join(', ')} do worse than the release on two looks`].filter(Boolean);
         console.log(`\nThis build does not pass: ${why.join('; ')}. There is no override (K198): fix the cause, then run a new candidate.`);
         process.exitCode = 1;
       }
     }
   } else {
-    console.log('Usage: node scripts/recall-score.mjs blind <out> <run.md> ... | score <scorer A output> <scorer B output> <sealed-map.json> <label>');
+    console.log('Usage: node scripts/recall-score.mjs blind <out> <run.md> ... | score <scorer A output> <scorer B output> <sealed-map.json> <label> [--again <scorer A output> <scorer B output> <sealed-map.json>]');
     process.exit(2);
   }
 }

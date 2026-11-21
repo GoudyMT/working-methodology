@@ -226,7 +226,8 @@ test('the behaviour line (K198) needs 5 runs a side from the same day and names 
 	const control = [save('control', ['1-a', '2-b', '3-c'])];
 	// pin: 1 (the gate reads this line)
 	assert.equal(behaviourLine({ label: 'x', cand: five('cand'), base: five('base'), control }), 'behaviour: x median 3 baseline 3 suite v2 control 0\nbehaviour worse: none');
-	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base'), control }), /\nbehaviour worse: 2-b$/);
+	// Seen twice (the owner's pick, 2026-11-21): one look names it and holds back the worse line (tests/gate-seen-twice.test.mjs).
+	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base'), control }), /\nbehaviour lower once: 2-b$/);
 	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base', ['2-b']), control }), /\nbehaviour worse: none$/);
 	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand').slice(1), base: five('base'), control }), /5 candidate runs and 5 release runs/);
 	const late = [...five('base').slice(1), save('base', [], '2026-11-18T09:00:00.000Z')];

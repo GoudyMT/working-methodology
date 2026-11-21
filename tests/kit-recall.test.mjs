@@ -354,15 +354,19 @@ test('recall gate reads the last gate line added, so a failed run can be followe
   assert.equal(checkGate(gateFacts({ added: [...failedFirst].reverse() })).ok, false);
 });
 
+// The owner's pick, 2026-11-21: the same-day release score is no longer held against the last one recorded (that check
+// had no way out once K198 took the marker away); the floor of 14 is what stops a typed-low line.
+// renamed from: a typed baseline cannot fall under the last one recorded on the same ruler
 // why: guards rule:ci-gate
-test('a typed baseline cannot fall under the last one recorded on the same ruler', async () => {
+test('a typed-low gate line fails on the floor, not on the last recorded baseline', async () => {
   const { checkGate } = await recallTools();
-  const low = { added: ['gate: a median 0 baseline 0 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } };
+  const low = { added: ['scorers: 2', 'worse: none', 'gate: a median 0 baseline 0 brief v1 keys v2'], was: { brief: 1, keys: 2 }, floor: 14 };
   const r = checkGate(gateFacts(low));
   assert.equal(r.ok, false);
-  assert.match(r.detail, /baseline 0 is under the last recorded baseline 9/);
-  assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 0 baseline 0 brief v1 keys v2 owner-accepted'] })).ok, false);
-  assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 9 baseline 9 brief v1 keys v2'] })).ok, true);
+  assert.match(r.detail, /median 0 is under the floor of 14/);
+  assert.doesNotMatch(r.detail, /last recorded baseline/);
+  assert.equal(checkGate(gateFacts({ ...low, added: ['scorers: 2', 'worse: none', 'gate: a median 0 baseline 0 brief v1 keys v2 owner-accepted'] })).ok, false);
+  assert.equal(checkGate(gateFacts({ ...low, added: ['scorers: 2', 'worse: none', 'gate: a median 14 baseline 9 brief v1 keys v2'] })).ok, true);
 });
 
 // why: guards rule:ci-gate
@@ -408,9 +412,9 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.equal(kept.ok, true, kept.detail);
   assert.match(kept.detail, /^kit-1\.19\.0: median 9/);
   assert.equal(checkGate(gateFacts({ added: [GOOD_ENTRY.replace('median 8', 'median 9'), next], removed: [GOOD_ENTRY] })).ok, false, 'a changed line is a drop');
-  const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } }));
+  const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['scorers: 2', 'worse: none', 'gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2 }, floor: 14 }));
   assert.equal(typed.ok, false);
-  assert.match(typed.detail, /under the last recorded baseline 9/);
+  assert.match(typed.detail, /under the floor of 14/);
 });
 
 // S22-1, E31: the suite runs on Linux and the Windows-only tests on Windows; the required check (kit-tests) passes
@@ -517,7 +521,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   git('commit', '-qam', 'typed down');
   const typed = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
   assert.equal(typed.status, 1, typed.stdout + typed.stderr);
-  assert.match(typed.stdout, /under the last recorded baseline 8/);
+  assert.match(typed.stdout, /under the floor of 14/);
   // The last baseline on the ruler counts, not the first.
   const scores = 'docs/evals/results/recall-scores.md';
   const now = `brief v${brief} keys v${keys} control 0`;
@@ -532,9 +536,6 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
-  const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median ${bar} baseline 8 ${now}`);
-  assert.equal(second.status, 1, second.stdout);
-  assert.match(second.stdout, /last recorded baseline 9/);
   // The real command reads the bar from the current keys; a median under it fails, and no marker passes anything (K198).
   const floor = `gate: a median ${bar} baseline 6 ${now}`;
   const under = round('under-bar', floor, `gate: weak median ${bar - 1} baseline 6 ${now}`);
@@ -1107,7 +1108,7 @@ test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the f
   r.record('gate: a median 10 baseline 9 brief v1 keys v4 control 0');
   const out = r.gate();
   assert.equal(out.status, 1, out.stdout + out.stderr);
-  assert.match(out.stdout, /under the last recorded baseline 10/);
+  assert.match(out.stdout, /under the floor of 14/);
 });
 
 // why: guards rule:instruments-and-evals
@@ -1333,14 +1334,16 @@ test('recall-score (K198): a question is worse when its marks over both scorers 
   const { summarize } = await import('../scripts/recall-score.mjs');
   const clean = [[], []];
   const run = (cand, base) => { const { map, sets } = scoreSets(fiveEach(cand, base)); return summarize(sets, map, 14, { when: sameDay(map) }); };
-  // One scorer docks Q4 once on the candidate: 9 of 10 against the release's 10 of 10.
+  // One scorer docks Q4 once on the candidate: 9 of 10 against the release's 10 of 10. Seen twice (the owner's pick,
+  // 2026-11-21): one look names it lower and passes nothing until it is asked again (tests/gate-seen-twice.test.mjs).
   const once = run([[[4], []], clean, clean, clean, clean]);
-  assert.deepEqual(once.worse, [4]);
-  assert.equal(once.pass, false, 'a median of 14 with a worse question does not pass');
-  // The same miss on the release too: no worse.
-  assert.deepEqual(run([[[4], []], clean, clean, clean, clean], [[[], [4]], clean, clean, clean, clean]).worse, []);
-  // Better than the release is never worse.
-  assert.deepEqual(run(Array(5).fill(clean), [[[7], [7]], clean, clean, clean, clean]).worse, []);
+  assert.deepEqual(once.lower, [4]);
+  assert.equal(once.pending, true);
+  assert.equal(once.pass, false, 'a median of 14 with a lower question does not pass on one look');
+  // The same miss on the release too: nothing lower.
+  assert.deepEqual(run([[[4], []], clean, clean, clean, clean], [[[], [4]], clean, clean, clean, clean]).lower, []);
+  // Better than the release is never lower.
+  assert.deepEqual(run(Array(5).fill(clean), [[[7], [7]], clean, clean, clean, clean]).lower, []);
 });
 
 // why: guards rule:ci-gate
@@ -1518,7 +1521,8 @@ test('recall-score (T2): the table keeps its columns and "worse" names only what
   const clean = [[], []];
   const { map, sets } = scoreSets(fiveEach([[[2], [2]], clean, clean, clean, clean], [[[1], [1]], clean, clean, clean, clean]));
   const r = summarize(sets, map, 14, { when: sameDay(map) });
-  assert.deepEqual(r.worse, [2]);
+  // Seen twice (the owner's pick, 2026-11-21): one look names what the candidate lost as lower.
+  assert.deepEqual(r.lower, [2]);
   assert.ok(r.table.includes('| 1 | 1, 1, 1, 1, 1 | 0, 1, 1, 1, 1 | 0 |'), r.table.join('\n'));
   assert.ok(r.table.includes('| 2 | 0, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |'), r.table.join('\n'));
 });

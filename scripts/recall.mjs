@@ -20,11 +20,14 @@
 // last added gate line shows a median of 14 or more (K198), no lower than the release measured the same day, on the
 // current brief and keys, with two blind scorers and no question worse than that release; the behaviour line is held
 // the same way. No marker passes a miss (K198 removed the owner's): a miss is fixed. The numbers are typed and the runs
-// are not in the repo, so the check holds them against main: a baseline may not fall under the last one recorded on
-// the same ruler, and a PR may not move or reword its ruler.
+// are not in the repo, so a PR may not move or reword its ruler.
+// A question or scenario is worse only when it is lower on two looks (the owner's pick, 2026-11-21; recall-score.mjs
+// says why): one that sums lower is asked again alone, with --only here, and the score tools print the "worse" lines
+// only once both looks are in.
 //
 // Usage: node scripts/recall.mjs <label> [kit folder]    (the kit folder defaults to this one)
 //        node scripts/recall.mjs <label> --no-kit        (the control: the same path, nothing installed)
+//        node scripts/recall.mjs <label> [kit folder] --only <n,...>   (a second look: those questions alone)
 //        node scripts/recall.mjs gate <base> <head>
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -136,11 +139,21 @@ export function installFacts({ projectDir, home, osHome = os.homedir() }) {
 
 /** The run's arguments, or a refusal. The old "<folder> <label>" call fails here: a label is one plain word. */
 export function parseRunArgs(argv) {
-  const usage = 'usage: node scripts/recall.mjs <label> [kit folder] | <label> --no-kit';
-  const [label, second] = argv;
-  if (argv.length < 1 || argv.length > 2 || !/^\w[\w.-]*$/.test(label)) throw new Error(usage);
+  const usage = 'usage: node scripts/recall.mjs <label> [kit folder] [--only <n,...>] | <label> --no-kit';
+  // --only <n,...>: a second look asks the named questions alone (seen twice); a plain run carries no such field.
+  const at = argv.indexOf('--only');
+  let only = null;
+  let rest = argv;
+  if (at >= 0) {
+    const list = String(argv[at + 1] ?? '');
+    if (!/^[1-9]\d*(,[1-9]\d*)*$/.test(list)) throw new Error(usage);
+    only = [...new Set(list.split(',').map(Number))].sort((a, b) => a - b);
+    rest = [...argv.slice(0, at), ...argv.slice(at + 2)];
+  }
+  const [label, second] = rest;
+  if (rest.length < 1 || rest.length > 2 || !/^\w[\w.-]*$/.test(label)) throw new Error(usage);
   const noKit = second === '--no-kit';
-  return { label, kitDir: second && !noKit ? second : null, noKit };
+  return { label, kitDir: second && !noKit ? second : null, noKit, ...(only ? { only } : {}) };
 }
 
 /**
@@ -267,8 +280,8 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir(), forget }) 
   }
 }
 
-export function runHeader({ label, keys, facts, when, cli }) {
-  return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`,
+export function runHeader({ label, keys, facts, when, cli, only = null }) {
+  return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`, ...(only ? [`Only: ${only.join(', ')}`] : []),
     `Project kit: ${facts.project}`, `User kit: ${facts.user}`, ...(facts.global ? [`Global CLAUDE.md also loaded from ~/.claude: ${facts.global}`] : []), `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
@@ -278,7 +291,7 @@ export function runHeader({ label, keys, facts, when, cli }) {
  * Args:
  *     facts: { changed: file paths, added and removed: lines the PR adds to and takes from the scores file,
  *         brief, keys: current versions, bar: the current keys' pass bar, null when they have none,
- *         was: { brief, keys, baseline } on the base, each null when the base has none, and edited when a ruler
+ *         was: { brief, keys } on the base, each null when the base has none, and edited when a ruler
  *         file differs from the base under the same version }
  *
  * Returns:
@@ -303,7 +316,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   // K198: no line the PR adds may carry the owner's marker; a recorded line only shown again is history.
   const marked = added.map((l) => l.trim()).filter((l) => /^(gate|behaviour):/.test(l) && OWNER_MARK.test(l) && !removedLines.includes(l));
   if (marked.length) return { ok: false, detail: `the owner-accept override is gone (K198): a miss is fixed, never accepted, so no line may end in owner-accepted: ${marked[marked.length - 1]}` };
-  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it' };
+  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the record of past scores stays' };
   if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
@@ -348,7 +361,10 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
     scoredAsked && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
     moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
-    !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
+    // The owner's pick, 2026-11-21: the same-day release score is no longer held against the last one recorded. With no
+    // marker left to pass a miss that check had no way out (1.47.0 scored 12 that day against its recorded 13), and at a
+    // floor of 14 of 14 a typed-low baseline cannot help a candidate pass. A floor under the top score would need it back
+    // (tests/gate-seen-twice.test.mjs holds the floor to the top score).
     Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
   ].filter(Boolean);
   if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
@@ -383,8 +399,6 @@ function gate([base, head]) {
   const baseVersion = (rel) => { const m = onBase(rel).match(/^Current version: v(\d+)$/m); return m ? Number(m[1]) : null; };
   const [brief, keys] = [currentVersion(now(BRIEF)), currentVersion(now(QUESTIONS_REL))];
   const edited = [[BRIEF, brief], [QUESTIONS_REL, keys]].some(([rel, v]) => baseVersion(rel) === v && onBase(rel) !== now(rel));
-  // The last baseline recorded on this same ruler, if the base has one.
-  const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
   // --text: an attribute or a NUL byte must not hide the record from the check.
   const record = git('diff', '--text', '-U0', `${base}...${head}`, '--', SCORES);
   // K116: the graded files that differ between the commit the run scored and the head. A commit that is not on the
@@ -422,14 +436,14 @@ function gate([base, head]) {
     keys,
     // Keys recall cannot run (no Pass line) cannot grade a PR (B7).
     bar: (() => { questionCount(now(QUESTIONS_REL), keys); return passBar(now(QUESTIONS_REL), keys); })(),
-    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },
+    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), edited },
   });
   console.log(r.detail);
   if (!r.ok) process.exitCode = 1;
 }
 
 /** What a run asks and records, or a refusal: all of it before any session starts. */
-export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
+export function prepare({ projectDir, label, home, osHome, text, when, cli, only = null }) {
   checkUserLayer(home, osHome);
   const facts = installFacts({ projectDir, home, osHome });
   const keys = currentVersion(text);
@@ -437,7 +451,10 @@ export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
   const count = questionCount(text, keys);
   if (!qs.length || qs.length !== count) throw new Error(`expected ${count} questions, found ${qs.length}`);
   if (qs.some((x, i) => x.n !== i + 1)) throw new Error(`the questions must be numbered 1 to ${count}`);
-  return { qs, lines: runHeader({ label, keys, facts, when, cli }) };
+  // A second look asks only the questions that summed lower on the first, each still in its own fresh session.
+  const missing = (only || []).find((n) => !qs.some((x) => x.n === n));
+  if (missing !== undefined) throw new Error(`--only: no question ${missing} on keys v${keys}`);
+  return { qs: only ? qs.filter((x) => only.includes(x.n)) : qs, lines: runHeader({ label, keys, facts, when, cli, only }) };
 }
 
 /** Ask each question in a fresh session in the probe folder, and return the answers as run-file lines. */
@@ -457,7 +474,8 @@ export function askAll({ qs, projectDir, run }) {
       throw new Error(`question ${n}: no answer (exit ${r.status}): ${(answer || r.stderr || '').trim().slice(0, 200)}`);
     }
     lines.push(`## ${n}. ${q}`, '', `Key: ${key}`, '', 'Answer:', '', answer.split('\n').map((l) => '> ' + l).join('\n'), '', 'Score: _', '');
-    console.log(`[${n}/${qs.length}] answered (${answer.length} chars)`);
+    // Counted, not numbered: a second look asks only some questions (--only).
+    console.log(`[${lines.length / 10}/${qs.length}] answered (${answer.length} chars)`);
   }
   return lines;
 }
@@ -472,7 +490,7 @@ export function askAll({ qs, projectDir, run }) {
  * Returns:
  *     the path of the saved run
  */
-export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
+export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools, only = null }) {
   checkUserLayer(home, osHome);
   checkHome(env);
   checkSessionHome(home, run);
@@ -481,7 +499,7 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
     const cli = `${(run('claude', ['--version'], {}).stdout || 'unknown').trim()}; model ${RECALL_MODEL}, effort ${RECALL_EFFORT}`;
-    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli });
+    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli, only });
     lines.push(...askAll({ qs, projectDir, run }));
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, `${label}.md`);
@@ -502,7 +520,7 @@ export function refuseOverCap(kitDir, noKit) {
 }
 
 async function main(argv) {
-  const { label, kitDir, noKit } = parseRunArgs(argv);
+  const { label, kitDir, noKit, only } = parseRunArgs(argv);
   refuseOverCap(kitDir, noKit);
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
@@ -511,7 +529,7 @@ async function main(argv) {
   // Loaded here so the gate command runs only this file's code.
   const kitTools = await import('./kit.mjs');
   const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
-  const out = recallRun({ label, kitDir, noKit, home, osHome: os.homedir(), env: process.env, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), outDir: OUT_DIR, run, kitTools });
+  const out = recallRun({ label, kitDir, noKit, home, osHome: os.homedir(), env: process.env, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), outDir: OUT_DIR, run, kitTools, only });
   console.log(`saved ${out}`);
 }
 
