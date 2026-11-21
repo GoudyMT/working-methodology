@@ -1177,10 +1177,10 @@ function shellWritesFrom(command, tool, start, names) {
 	// dot made by quoting ('.'*) is still matched.
 	const quoteSign = tool === 'PowerShell' ? /["'`]/ : /["'`\\]/;
 	// The shell drops a backslash inside double quotes before a sign it keeps (\*), so each sign may follow one.
-	// R1 (the build 23a sweep): each piece of inert code is taken out once, at its own word (with its quotes in the
-	// source, bare in the plain text), so its text elsewhere in the command (a '.' took every dot out) is still read.
-	const spelled = (c) => new RegExp(`(^|[\\s;|&()])(["']?)${[...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('')}\\2(?=$|[\\s;|&()])`);
-	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), (m, lead) => `${lead} `), t);
+	// R1 (the build 23a sweep): each piece of inert code is cut once, where it is node's -e or -p argument (quoted in
+	// the source, bare in the plain text), so its text elsewhere in the command (a '.' took every dot out) is still read.
+	const spelled = (c) => new RegExp(`(^|[\\s;|&()])(-e|-p|-pe|--eval|--print)(\\s+)(["']?)${[...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('')}\\4(?=$|[\\s;|&()])`);
+	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), (m, lead, flag, gap) => `${lead}${flag}${gap} `), t);
 	return [raw, text].map(textOnly).some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
 		const quoted = quoteSign.test(word);
 		return word.split(/["'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
