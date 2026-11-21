@@ -478,11 +478,11 @@
    },
    {
     "name": "Code security",
-    "result": "K178 held out after a critical; grant code, plugin launcher, worker runner and cloud push fixed; the cloud check and the plugin write check kept as owner-accepted limits"
+    "result": "K178 held out after a critical; grant code, plugin launcher, worker runner and cloud push fixed; two owner-accepted limits"
    },
    {
     "name": "Gaps, scaling, test value",
-    "result": "Install limits, plugin start texts, cues, record text and twelve test gaps fixed; seven findings shown not real or moot; two lows moved to the list on the owner's yes"
+    "result": "Install limits, plugin texts, cues, record text and twelve test gaps fixed; seven not real or moot; two lows to the list"
    },
    {
     "name": "Alignment",
@@ -496,12 +496,12 @@
    "low": 27
   },
   "accepted": [
-   "high K2: the cloud check reads one variable the session can unset; it predates this build, and the check that leaned on it (K178) is held out. The owner accepted it as a named limit, to fix with K178",
-   "high BG5: the plugin write check cannot read a path that opens with an expansion it cannot resolve; a write that lands on a guard, role or hook file is caught by the manifest check on the next call. The owner accepted it as a named limit"
+   "high K2: a session can unset the one variable the cloud check reads; predates this build; owner-accepted limit, to fix with K178",
+   "high BG5: the plugin write check misses a path opening with an unresolved expansion; the manifest check holds the next call; owner-accepted limit"
   ],
   "deferred": [
-   "low N8: with the pinned node gone, the settings-change hook refuses every change with no kit text (list item)",
-   "low N9: the plugin hooks file lines are not yet run on Windows (list item)"
+   "low N8: no kit text when the pinned node is gone (list item)",
+   "low N9: plugin hook lines unrun on Windows (list item)"
   ],
   "fixes": [
    {
