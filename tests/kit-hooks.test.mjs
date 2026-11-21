@@ -1290,6 +1290,7 @@ test('both guards read a command through the one reading module, and keep no rea
 
 // why: guards rule:first-push-gate. K27, the 1.27.0 install review: the check took its project from KIT_HOOK_PROJECT
 // whenever it was set, so a tool that set it before a git command pointed the gate at another folder.
+// planted: {"file":"project/.claude/first-push-check.mjs","was":"named !== commonDir(process.cwd())","to":"named === commonDir(process.cwd())"}
 test('the first push check reads only the repository it runs in, whatever KIT_HOOK_PROJECT names', () => {
   const run = (...a) => spawnSync(...a);
   const root = kitTemp.makeTemp('k27-');
