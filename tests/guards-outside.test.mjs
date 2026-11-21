@@ -1788,6 +1788,32 @@ test('a capital class, a bracket set with a comma and a chain of cd .. name the 
 	for (const c of [`echo '{A,b}pp' && git status`, `ls "my "{A,b}pp; git status`]) assert.equal(call(c), 'runs', c);
 });
 
+// K242 (build 23a): a wildcard that matched more than 64 folders (du -sh node_modules/*) was held as "more than 64
+// folders to read its wildcards from", though no later wildcard reads from them. The cap now holds only while a
+// wildcard after it would read from those folders; a project among the matches is still named.
+// why: catches du -sh node_modules/* held when the folder holds over 64 packages
+test('one wildcard over many folders runs; a project among them, or a later wildcard read from them, still holds', () => {
+	const { home, proj } = setup({ projName: 'App' });
+	const call = (command, cwd) => {
+		const r = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command }, cwd, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: cwd, CLAUDE_CONFIG_DIR: home } });
+		return r.stdout ? (JSON.parse(r.stdout).hookSpecificOutput || {}).permissionDecision || 'note' : 'runs';
+	};
+	const work = kitTemp.makeTemp('k242-');
+	for (let i = 0; i < 3000; i++) fs.mkdirSync(path.join(work, 'node_modules', `p${i}`, 'lib'), { recursive: true });
+	const t0 = Date.now();
+	for (const c of ['du -sh node_modules/*', 'du -sh node_modules/* | sort -h | tail -20', 'ls -d node_modules/*/lib']) assert.equal(call(c, work), 'runs', c);
+	assert.ok(Date.now() - t0 < 6000, `three calls over 3,000 folders took ${Date.now() - t0} ms`);
+	// The project among many folders the wildcard matches is still named, and a second wildcard read from the matches
+	// (as a cd into them may have moved the shell) still holds past the cap.
+	const parent = path.dirname(proj);
+	for (let i = 0; i < 200; i++) fs.mkdirSync(path.join(parent, `k242-d${i}`));
+	assert.equal(call('cp x */.claude/guard.cjs', parent), 'deny', 'a project among 200 folders');
+	// Held by the project's own guard, not by the count.
+	const why = spawnSync(process.execPath, [path.join(home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'cp x */.claude/guard.cjs' }, cwd: parent, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: parent, CLAUDE_CONFIG_DIR: home } });
+	assert.doesNotMatch(why.stdout, /folders to read its wildcards/);
+	assert.equal(call('cd node_modules/* && cp x */.claude/guard.cjs', work), 'deny', 'a later wildcard over the matches');
+});
+
 // The build 16 sweep: the wildcard was matched as folded text, so a class that needs the capital (M of MyApp) and a
 // later capital in the name (A) could not both match; and a dotted name beside many folders was looked up in each,
 // 28 s against the hook's 10.
@@ -1892,6 +1918,28 @@ test('a folder list gone or changed since install holds every call until the own
 });
 
 // R7.2 (the owner's pick, 2026-11-21): a launcher that could not start (node missing) or started slowly left Claude
+// The build 23a sweep (F5): the start script gave the launcher /usr/bin and /bin only, so on a Mac or Linux machine whose
+// git sits in /usr/local/bin or /opt/homebrew/bin (Homebrew, a source build) the guards could not ask git anything, the
+// K250 symptom off Windows. Those folders now follow the system ones; Git for Windows keeps its own /cmd first.
+// why: guards rule:outward-acts (the guards must reach git on a Mac or Linux machine, never a git on the session PATH)
+test('the guard start script gives the launcher the system folders, then the Mac and Linux git folders', () => {
+	const fakes = kitTemp.makeTemp('start-path-');
+	const show = path.join(fakes, 'show.cjs');
+	fs.writeFileSync(show, "process.stdout.write(process.env.PATH);");
+	// A copy in a temp folder: the script keeps its miss count beside itself, never in the kit source.
+	const start = path.join(kitTemp.makeTemp('start-copy-'), 'kit-tools', 'kit-start.sh');
+	fs.mkdirSync(path.dirname(start));
+	fs.copyFileSync(path.resolve('user/kit-tools/kit-start.sh'), start);
+	const r = spawnSync(BASH, ['-c', `sh '${posix(start)}' '${posix(process.execPath)}' '${posix(show)}'`], { input: '{}', encoding: 'utf8', env: ENV, timeout: 30000 });
+	assert.equal(r.status, 0, r.stderr);
+	if (process.platform === 'win32') {
+		// Git for Windows hands node the folders in Windows form; its own cmd folder comes first.
+		assert.match(r.stdout.split(';')[0], /[\\/]cmd$/i, r.stdout);
+		return;
+	}
+	assert.equal(r.stdout, '/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin'); // pin: 1 (the shell reads the PATH in order)
+});
+
 // Code blocking every call with only "exit 127" or "timed out". kit-start.sh runs it with a 4 second limit, retries a
 // slow start or a crash once, lets only the launcher's own exit 0 through, and names the cause, counting misses so the
 // third tells the owner to stop retrying and repair.
@@ -1956,6 +2004,27 @@ test('the guard start script retries once, names why a start failed, and lets on
 	assert.equal(missing.decision, 'deny');
 	assert.match(missing.reason, /start script could not run[\s\S]*ask the owner/);
 	assert.match(missing.reason, /kit\.mjs status[\s\S]*install user/);
+});
+
+// K250 (1.49.0): the start script trimmed PATH for the launcher too, so on Windows (Git for Windows keeps no git in
+// /usr/bin or /bin) every git the guards ask was missing: a worktree-config project had every call held. The launcher
+// now gets the system folders plus Git for Windows' own /cmd; never the session's PATH, where a planted git could answer.
+// why: guards rule:outward-acts (the guards must reach git on Windows, and never a git planted on the session PATH)
+test('the guard start script lets the launcher find git, never a git planted on the session PATH (K250)', { windows: true }, () => {
+	const { home } = setup();
+	const start = path.join(home, 'kit-tools', 'kit-start.sh');
+	const bin = kitTemp.makeTemp('session-path-');
+	// A planted git (both shapes, so either OS would pick it), timeout and cat on the session's PATH.
+	for (const n of ['git', 'git.cmd', 'timeout', 'cat']) fs.writeFileSync(path.join(bin, n), "#!/bin/sh"+String.fromCharCode(10)+"printf planted"+String.fromCharCode(10), { mode: 0o755 });
+	// Windows runs only an .exe by a bare name: node itself, copied as git.exe, answers with its own version.
+	if (process.platform === 'win32') fs.copyFileSync(process.execPath, path.join(bin, 'git.exe'));
+	const fake = path.join(bin, 'launch.cjs');
+	fs.writeFileSync(fake, "const r=require('child_process').spawnSync('git',['--version'],{encoding:'utf8'});let i='';process.stdin.on('data',(d)=>i+=d).on('end',()=>process.stdout.write(JSON.stringify({git:r.stdout||String(r.error&&r.error.code),input:i})));");
+	const shPath = posix(bin).replace(/^([A-Za-z]):/, (m, d) => `/${d.toLowerCase()}`);
+	const r = spawnSync(BASH, ['-c', `PATH='${shPath}':"$PATH" sh '${posix(start)}' '${posix(process.execPath)}' '${posix(fake)}'`], { input: '{"tool_name":"Bash"}', encoding: 'utf8', env: ENV, timeout: 30000 });
+	const out = JSON.parse(r.stdout);
+	assert.match(out.git, /^git version/, 'the launcher finds the real git');
+	assert.equal(out.input, '{"tool_name":"Bash"}', 'the input reached the launcher through the system cat, not the planted one');
 });
 
 // R7.2: status holds the start script to its install record, as it holds the launcher line.

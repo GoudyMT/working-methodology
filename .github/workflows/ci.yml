@@ -49,6 +49,30 @@ jobs:
           git config --global user.email "kit-ci@users.noreply.github.com"
           git config --global init.defaultBranch main
 
+      # K128 (build 17): the spawn check below judges this PR, so it runs the base commit's copy, unpacked before any of
+      # the PR's code runs.
+      - name: The base commit's scripts
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
+
+      # Build 23 (K212-K214 and their class; the owner's pick 2026-11-21): every launch of a program by its bare name in
+      # the files install copies starts from node's own folder, where Windows cannot find a git.exe or gh.exe the agent
+      # left in a project. No list of sites it lets through.
+      - name: Spawn check
+        shell: bash
+        run: |
+          S="$RUNNER_TEMP/base/scripts/spawn-check.mjs"; [ -f "$S" ] || { echo "the base has no spawn-check.mjs: this PR's copy runs"; S=scripts/spawn-check.mjs; }
+          node "$S" .
+
       # Push to main: every test, through the guarded runner, recording the coverage map, kept with this run.
       - name: Every test, with the coverage map
         if: github.event_name != 'pull_request'
@@ -401,9 +425,18 @@ jobs:
           node "$N" branch "$HEAD_REF"
           # The squash subject is the title with " (#n)" added: that whole line is held to the limit.
           node "$N" title "$PR_TITLE (#$PR_NUMBER)"
-          for c in $(git rev-list --no-merges "$PR_BASE..$PR_HEAD"); do
-            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
-            node "$N" message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+          # K244: who each commit is by, author and committer, held to the same check as the commit-msg hook (a commit
+          # made with --no-verify, on the web or in a cloud session skipped that hook).
+          I="$RUNNER_TEMP/base/project/.claude/name-check.mjs"; grep -q "mode === 'ident'" "$I" 2> /dev/null || { echo "the base has no author check in name-check.mjs: this PR's copy runs"; I=project/.claude/name-check.mjs; }
+          # The build 23a sweep: a merge commit is checked for who made it too; its message is git's own.
+          for c in $(git rev-list "$PR_BASE..$PR_HEAD"); do
+            if [ -z "$(git rev-list --no-walk --merges "$c")" ]; then
+              git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
+              node "$N" message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+            fi
+            GIT_AUTHOR_NAME="$(git log -1 --format=%an "$c")" GIT_AUTHOR_EMAIL="$(git log -1 --format=%ae "$c")" \
+              GIT_COMMITTER_NAME="$(git log -1 --format=%cn "$c")" GIT_COMMITTER_EMAIL="$(git log -1 --format=%ce "$c")" \
+              node "$I" ident || { echo "commit $c"; exit 1; }
           done
 
       # The pre-commit secret check runs only on the owner's machine; this scans every line and file the PR adds with

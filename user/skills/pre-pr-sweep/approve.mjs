@@ -42,7 +42,6 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
@@ -52,6 +51,8 @@ const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
 const { sessionYes, unquotedYes, sessionGap } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
+// git starts from node's own folder, never the repo, through the helper the PR audits use (build 23).
+const safeSpawn = createRequire(import.meta.url)('../../kit-tools/audits/safe-spawn.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
 
 // A tier's cap counts only the roles beyond its floor (2026-11-03): a cap below the floor made a
@@ -230,7 +231,10 @@ const args = process.argv.slice(2);
 const opt = (name) => { const i = args.indexOf(name); return i >= 0 ? args[i + 1] : undefined; };
 const has = (name) => args.includes(name);
 const contractFile = args[0] && !args[0].startsWith('--') ? path.resolve(args[0]) : null;
-const git = (...a) => spawnSync('git', ['-C', contractFile ? path.dirname(contractFile) : process.cwd(), ...a], { encoding: 'utf8' });
+const git = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8' });
+// K218: git for the base copy of the rules, through the safe-spawn read (node's own folder, fsmonitor and every fetch
+// protocol off), with lazy fetch off too: a planted git.exe or a hook program in the repo config never runs.
+const baseGit = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8', env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 
 // The log: one per repo, in its git folder.
@@ -388,11 +392,11 @@ const PATCH_MAX = 200;
 // Null when git cannot say: the caller treats that as unknown, never as "no earlier sweep".
 function branchPatches(base) {
 	if (!base) return [];
-	const big = { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024 };
-	const diff = spawnSync('git', ['-C', path.dirname(contractFile), 'log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`], big);
+	const big = { encoding: 'utf8', maxBuffer: 1024 * 1024 * 1024, timeout: 600000 };
+	const diff = safeSpawn.gitRead(path.dirname(contractFile), ['log', '-p', '--no-merges', `-${PATCH_MAX}`, '--format=commit %H', `${base}..HEAD`], big);
 	if (diff.status !== 0 || diff.error) return null;
 	if (!diff.stdout) return [];
-	const ids = spawnSync('git', ['patch-id', '--stable'], { ...big, input: diff.stdout });
+	const ids = safeSpawn.tool('git', ['patch-id', '--stable'], { ...big, input: diff.stdout });
 	return ids.status === 0 && !ids.error ? ids.stdout.split('\n').map((l) => l.split(' ')[0]).filter(Boolean) : null;
 }
 
@@ -629,7 +633,7 @@ function decide() {
 	// The build 11 sweep: a contract's text goes into its briefs, so one that carries the confirmation phrase would
 	// hand a reviewer what it must find by reading. Read as the canary reads it: letters and digits, any case.
 	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
-	const block = rulesBlock();
+	const block = rulesBlock(facts);
 	if (block && block.phrase && words(block.phrase).trim()) (c.roles || []).forEach((r, i) => { if (words(JSON.stringify(r)).includes(words(block.phrase))) fix.push(`role ${i + 1}'s text carries the confirmation phrase: take it out, the reviewer finds it by reading`); });
 	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
@@ -734,28 +738,69 @@ const FINDING_CAP = 8;
 const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
 // The rules block every brief points at, by file and line range, so the reviewer reads the block and not the module
 // around it: the file the rule index names for rule:agent-team-adapter, else the module where the kit puts it.
-// It is read from the main checkout, where the canary reads the phrase, so a reviewer in a worktree (where the notes may
-// be untracked) is sent to the same file the check reads (the build 11 sweep). A file the index names outside the
-// repo is not read.
-function rulesBlock() {
-	const top = path.dirname(path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git'));
+// K218: a file git tracks is read as the merge base has it (the K128 pattern), so a branch cannot edit the rules its
+// own reviewers work under; with a sweep hash the base copy is written to the sweep's scratch folder and the brief
+// points there. A file git does not track (a project's untracked notes) is not part of the change under review, so it is
+// read from the main checkout, as in a worktree (the build 11 sweep). A file the branch adds has no base copy and gives
+// no block. A file the index names outside the repo is not read.
+function rulesBlock(facts, hash) {
+	const commonDir = path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git');
+	const top = path.dirname(commonDir);
+	const mb = facts && facts.base ? baseGit('merge-base', facts.base, 'HEAD').stdout.trim() : '';
+	const tracked = (f) => baseGit('ls-files', '--error-unmatch', '--', `:(top)${f}`).status === 0 || Boolean(mb && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0);
+	// The build 23a commit security review: where the base holds any of the rule files, only base copies count, so an
+	// untracked index or rules file in the checkout cannot name the block either.
+	const atBase = (f) => Boolean(mb) && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0;
+	const baseRules = ['standards/INDEX.md', 'standards/agent-teams.md', 'rules/agent-teams.md'].some(atBase);
+	const readRule = (f) => {
+		if (baseRules && !atBase(f)) return null;
+		if (tracked(f)) {
+			if (!mb) return null;
+			const r = baseGit('show', `${mb}:${f}`);
+			return r.status === 0 ? { text: r.stdout, base: true } : null;
+		}
+		try { return { text: fs.readFileSync(path.join(top, f), 'utf8'), base: false }; } catch { return null; }
+	};
 	let file = null;
-	try { const row = fs.readFileSync(path.join(top, 'standards', 'INDEX.md'), 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m); if (row) file = row[1]; } catch { /* no index */ }
+	const index = readRule('standards/INDEX.md');
+	const row = index && index.text.match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m);
+	if (row) file = row[1];
 	const inside = (f) => { const r = path.relative(top, path.resolve(top, f)); return r && !r.startsWith('..') && !path.isAbsolute(r); };
 	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter((f) => f && inside(f))) {
-		let lines;
-		try { lines = fs.readFileSync(path.join(top, f), 'utf8').split(/\r?\n/); } catch { continue; }
+		const got = readRule(f);
+		if (!got) continue;
+		let where = toPosix(path.join(top, f));
+		// The base copy sits in the git folder, which no tool writes, so it cannot be rewritten before a reviewer reads it.
+		if (got.base && hash) {
+			const dir = path.join(commonDir, `kit-sweep-${hash.slice(0, 8)}`);
+			fs.mkdirSync(dir, { recursive: true });
+			const copy = path.join(dir, `rules-base-${path.basename(f)}`);
+			fs.writeFileSync(copy, got.text);
+			where = toPosix(copy);
+		}
+		const lines = got.text.split(/\r?\n/);
 		const start = lines.findIndex((l) => /\*\*Rules every brief carries\*\*/.test(l));
 		// The line the canary reads the phrase from, as it reads it.
 		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /^\s*Confirmation phrase: .* with: \S/.test(l));
-		if (end > start) return { file: toPosix(path.join(top, f)), offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim() };
-		return { file: toPosix(path.join(top, f)) };
+		if (end > start) return { file: where, offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim() };
+		return { file: where };
 	}
 	return null;
 }
+// K218: the canary checks a reviewer's first line against the file its brief names, so the file is recorded in the git
+// folder with the commit it was written for; the canary reads it only while HEAD is that commit.
+function recordRules(block) {
+	if (common.status !== 0) return;
+	const f = path.join(common.stdout.trim(), 'kit-sweep-rules.json');
+	try {
+		if (block && block.phrase) fs.writeFileSync(f, JSON.stringify({ head: git('rev-parse', 'HEAD').stdout.trim(), file: block.file, phrase: block.phrase }) + '\n');
+		else fs.rmSync(f, { force: true });
+	} catch { /* the canary then reads the main checkout, as before */ }
+}
 function writeBriefs(c, hash, ceilings, facts, unit = 'tokens') {
 	const top = git('rev-parse', '--show-toplevel').stdout.trim();
-	const block = rulesBlock();
+	const block = rulesBlock(facts, hash);
+	recordRules(block);
 	const head = git('rev-parse', '--short', 'HEAD').stdout.trim();
 	const base = git('rev-parse', '--short', facts.base).stdout.trim() || facts.baseName;
 	const hooked = hookState(facts.base) !== 'none';
@@ -1069,7 +1114,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		let ran = (parsed.find((e) => e && e.cwd) || {}).cwd;
 		while (ran && !fs.existsSync(ran) && path.dirname(ran) !== ran) ran = path.dirname(ran);
 		const { GIT_DIR: _d, GIT_COMMON_DIR: _c, ...env } = process.env;
-		const at = ran && spawnSync('git', ['-C', ran, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
+		const at = ran && safeSpawn.gitRead(ran, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', env });
 		if (at && at.status === 0 && path.resolve(at.stdout.trim()).toLowerCase() !== path.dirname(LOG).toLowerCase()) { bad.push(`${id} (ran in another repo)`); return null; }
 		// The brief names its sweep and role, so a transcript counts only for this contract and in its role's place.
 		const asked = (parsed.find((e) => e && e.message && e.message.role === 'user') || {}).message;

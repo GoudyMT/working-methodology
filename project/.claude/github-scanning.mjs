@@ -1,6 +1,6 @@
 // GitHub's own secret scanning and push protection, a second net behind the first push check (N9, a 1.26.0
 // carry-over). It only reports: GitHub may be out of reach, and the owner turns them on, not a tool.
-import { spawnSync } from 'node:child_process';
+import safeSpawn from './safe-spawn.cjs';
 
 // The owner/name of each GitHub remote, from `git remote -v`. A name that is not plain is left out, so it never
 // reaches the API path.
@@ -12,7 +12,8 @@ export function githubRepos(remotesText) {
 	return [...repos];
 }
 
-const ask = (args) => spawnSync('gh', args, { encoding: 'utf8', timeout: 8000 });
+// gh from node's own folder (build 23); each call names its repo.
+const ask = (args) => safeSpawn.tool('gh', args, { encoding: 'utf8', timeout: 8000 });
 
 /**
  * One note for each public GitHub repo whose secret scanning or push protection is not on, or that GitHub did not answer.

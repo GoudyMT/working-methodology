@@ -9,7 +9,7 @@
 //   node .claude/improvement-report.mjs list                     the reports and their status
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import safeSpawn from './safe-spawn.cjs';
 import { fileURLToPath } from 'node:url';
 
 const HERE = path.dirname(fileURLToPath(import.meta.url));
@@ -24,7 +24,7 @@ const SECTIONS = ['Summary', 'Timeline', 'Root causes', 'Impact', 'Fixes', 'What
 const KINDS = ['rule text', 'skill step', 'script', 'hook', 'template', 'role file', 'other'];
 const EFFECTS = ['same', 'higher'];
 
-const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 const today = () => new Date().toISOString().slice(0, 10);
 const slug = (s) => s.toLowerCase().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '').slice(0, 60);
 // A table row's cells; a pipe inside a code span is part of the cell, not a column break.

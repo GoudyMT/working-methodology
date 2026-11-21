@@ -1,6 +1,6 @@
 import fs from 'node:fs';
-import { execFileSync } from 'node:child_process';
 import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
+import safeSpawn from './safe-spawn.cjs';
 
 // The branch secret scan: every line the branch adds and every file it adds, against the same patterns the commit
 // check uses. The pre-commit hook stops a slip on the owner's machine; a commit made anywhere else (the web, a cloud
@@ -11,7 +11,8 @@ import { SECRET_FILE, SECRET_VALUE } from './secret-patterns.mjs';
 //          against what the remote itself says it has (ls-remote), never the local remote-tracking refs, which a session
 //          can write (the 1.25.0 sweep: a decoy refs/remotes ref hid a secret); a remote that cannot be read means all
 //          of the branch's history is read.
-const git = (...a) => execFileSync('git', ['-c', 'core.quotePath=false', ...a], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+// git on the folder this runs in, from node's own folder (build 23). Not a read-only git: ls-remote asks the remote.
+const git = (...a) => safeSpawn.toolOut('git', ['-C', process.cwd(), ...safeSpawn.NO_FSMONITOR, ...safeSpawn.gitArgs(['-c', 'core.quotePath=false', ...a])], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600000, env: safeSpawn.gitEnv() });
 const ZERO = /^0+$/;
 const SHA = /^[0-9a-f]{40,64}$/;
 

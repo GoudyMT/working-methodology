@@ -223,6 +223,110 @@ test('a settings write that turns the hooks off is never by a tool, in any spell
 	assert.match(why('Edit', { file_path: edge, old_string: 'QQ', new_string: 'Hooks', replace_all: true }), /^Never by a tool/);
 });
 
+// K217 (build 23a, weekly item 4, planted hooks): the guard held agent writes to .claude/settings*.json but not to
+// .mcp.json, whose servers Claude Code starts with the session (with no trust question under claude -p). A write to it
+// now takes the owner's yes for the exact act, like a settings write; reading it stays free.
+// why: guards rule:security-standards (a planted .mcp.json server runs code at the next start)
+test('a tool write to .mcp.json takes the owner\'s yes, as a settings write does', () => {
+	const proj = kitTemp.makeTemp('mcp-');
+	fs.mkdirSync(path.join(proj, '.claude'));
+	fs.writeFileSync(path.join(proj, '.mcp.json'), '{"mcpServers": {}}\n');
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const file = path.join(proj, '.mcp.json');
+	const held = [
+		['Write', { file_path: file, content: '{"mcpServers": {"x": {"command": "sh"}}}' }],
+		['Write', { file_path: '.mcp.json', content: '{}' }],
+		['Edit', { file_path: file, old_string: '{}', new_string: '{"x": {"command": "sh"}}' }],
+		['Bash', { command: 'echo {} > .mcp.json' }],
+		['Bash', { command: 'cp /tmp/m.json ./.mcp.json' }],
+		['Bash', { command: 'echo {} > .mcp*' }],
+		['Bash', { command: 'cd sub/.. && tee .mcp.json < x' }],
+		['PowerShell', { command: 'Set-Content .mcp.json "{}"' }],
+	];
+	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
+	for (const command of ['cat .mcp.json', 'grep -n mcpServers .mcp.json']) assert.equal(why('Bash', { command }), '', command);
+});
+
+// S1 (the build 23a sweep, high): .mcp.json was held, but claude mcp add wrote a server into .claude.json through
+// Claude Code itself, a tool could write .claude.json directly, an agent file's mcpServers started one when the agent
+// ran, and --mcp-config started a session with a file's servers. Each takes the owner's yes; reading and listing stay free.
+// why: guards rule:security-standards (an MCP server added with no yes runs code at the next start)
+test('claude mcp add, --mcp-config, .claude.json and an agent file take the owner\'s yes; listing and reading run', () => {
+	const proj = kitTemp.makeTemp('mcp-add-');
+	fs.mkdirSync(path.join(proj, '.claude', 'agents'), { recursive: true });
+	const why = (tool_name, tool_input) => {
+		const r = spawnSync(process.execPath, [HOOK], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: proj }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg } });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecisionReason : '';
+	};
+	const held = [
+		['Bash', { command: 'claude mcp add x -- sh -c id' }],
+		['Bash', { command: 'claude mcp add-json x \'{"command":"sh"}\'' }],
+		['Bash', { command: 'claude mcp add-from-claude-desktop' }],
+		['PowerShell', { command: 'claude.exe mcp remove x' }],
+		['Bash', { command: 'c=claude; $c mcp add x -- sh' }],
+		['Bash', { command: 'npx @anthropic-ai/claude-code mcp add x -- sh' }],
+		['Bash', { command: 'cl\'aude\' m"cp" add x -- sh' }],
+		['Bash', { command: 'claude -p hi --mcp-config m.json' }],
+		['Write', { file_path: path.join(proj, '.claude.json'), content: '{"mcpServers": {}}' }],
+		['Bash', { command: 'echo {} > ~/.claude.json' }],
+		['Write', { file_path: path.join(proj, '.claude', 'agents', 'r.md'), content: '---\nmcpServers: {}\n---\n' }],
+		['Edit', { file_path: path.join(proj, '.claude', 'agents', 'r.md'), old_string: 'a', new_string: 'b' }],
+		['Bash', { command: 'echo x > .claude/agents/r.md' }],
+		['Bash', { command: 'cp a.md .claude/agents/' }],
+		['Write', { file_path: path.join(cfg, 'agents', 'r.md'), content: 'x' }],
+		// The commit security review: a subcommand held in a variable, and the skills and commands folders.
+		['Bash', { command: 'S=add; claude mcp $S x -- sh' }],
+		['Bash', { command: 'claude mcp "$(echo add)" x -- sh' }],
+		['Write', { file_path: path.join(proj, '.claude', 'skills', 'x', 'SKILL.md'), content: 'x' }],
+		['Write', { file_path: path.join(proj, '.claude', 'commands', 'x.md'), content: 'x' }],
+		['Write', { file_path: path.join(cfg, 'skills', 'x', 'SKILL.md'), content: 'x' }],
+		['Write', { file_path: path.join(cfg, 'plugins', 'p', 'hooks', 'hooks.json'), content: '{}' }],
+		['Write', { file_path: path.join(proj, '.claude', 'plugins', 'p', 'plugin.json'), content: '{}' }],
+		['Bash', { command: 'claude mcp serve' }],
+		['Bash', { command: 'claude plugin install x@market' }],
+		['Bash', { command: 'claude plugin marketplace add o/r' }],
+		['Bash', { command: 'claude --plugin-dir ./p' }],
+		['Bash', { command: 'claude -p hi --settings s.json' }],
+		['Bash', { command: 'claude --agents \'{"x":{}}\'' }],
+		// The fourth and fifth commit security reviews: a claude named through a variable, an empty expansion inside mcp,
+		// the setting sources and the permission flags, and approve.mjs with an expansion beside it.
+		['Bash', { command: 'c=claude; $c -p hi --settings s.json' }],
+		['Bash', { command: 'claude m${X}cp add x -- sh' }],
+		['Bash', { command: 'claude -p hi --setting-sources project' }],
+		['Bash', { command: 'claude -p hi --dangerously-skip-permissions' }],
+		['Bash', { command: 'claude -p hi --allowedTools Bash' }],
+		['Bash', { command: 'node approve.mjs c.json --outcome --agents $X' }],
+		// The sixth commit security review: the exemption only for node running approve.mjs, braces and quotes that build
+		// a word, and the permission flag family.
+		['Bash', { command: 'claude --agents x approve.mjs' }],
+		['Bash', { command: 'node approve.mjs c.json --outcome --agents auto; claude -p hi --agents x' }],
+		['Bash', { command: 'claude {mcp,x} add x -- sh' }],
+		['Bash', { command: "claude $'\\x6dcp' add x -- sh" }],
+		['Bash', { command: 'claude -p hi --permission-prompt-tool x' }],
+		['Bash', { command: 'claude -p hi --disallowed-tools Bash' }],
+		// The seventh: a glob that could expand to a name, and an approve.mjs line with anything else in it.
+		['Bash', { command: 'claude m?p add x -- sh' }],
+		['Bash', { command: '(claude m?p add x -- sh)' }],
+		['Bash', { command: '{ claude m?p add x -- sh; }' }],
+		['Bash', { command: 'if true; then cl?ude mcp add x -- sh; fi' }],
+		['Bash', { command: 'env X=1 cl?ude mcp add x -- sh' }],
+		['Bash', { command: 'claude m?p>o add x -- sh' }],
+		['Bash', { command: 'claude --verbose m?p add x -- sh' }],
+		['Bash', { command: 'node approve.mjs c.json --outcome\n--agents x' }],
+		['Bash', { command: 'node approve.mjs c.json --outcome --agents auto > out.txt' }],
+	];
+	for (const [tool, input] of held) assert.match(why(tool, input), /^Owner's yes needed/, `${tool} ${JSON.stringify(input)}`);
+	// A wildcard program word is refused outright by the dash check, more strictly still.
+	assert.notEqual(why('Bash', { command: '/usr/bin/cl*de mcp add x -- sh' }), '');
+	assert.notEqual(why('Bash', { command: 'true;cl?ude m?p add x -- sh' }), '');
+	for (const command of ['claude mcp list', 'claude mcp get x', 'claude plugin list', 'npm i eslint-plugin-x', 'node approve.mjs c.json --outcome --agents auto', 'node ../skills/pre-pr-sweep/approve.mjs c.json --outcome --agents a1,b2 --findings 3', 'node .claude/state.mjs decide --from $F', 'ls .claude/{a,b}', 'ls *.md', 'rm -f tests/*.tmp', 'cat .mcp.json', 'cat .claude/agents/r.md', 'claude -p hi', 'cat ~/.claude.json', 'git add .claude/agents/r.md']) assert.equal(why('Bash', { command }), '', command);
+});
+
 // why: guards rule:security-standards (a domain hard boundary, rule:project-adapter A2, held by code). E3: the
 // workbench's deny rules stopped the edit tools but not a shell write into the kit source or the release copy. A
 // project lists such folders in .claude/protected-folders.json; that list is the owner's to write, and a bad one fails closed.

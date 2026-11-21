@@ -60,6 +60,11 @@ function tailLines(file, cap = TAIL_BYTES) {
 	return buf.toString('utf8').split('\n').slice(1);
 }
 
+// R7.1 (build 23a): the record shape a person's answer must carry to count, in one place, so the readers here and the
+// use check agree (it once read only whether .decision existed, K224). Claude Code does not document this field: if
+// it changes, no yes is read (fail closed) and yesCanary names why.
+const YES_RECORD = (e) => { const d = e && e.permissionDecision; return Boolean(d && d.decision === 'accept' && /^user(_temporary)?$/.test(String(d.source || ''))); };
+
 // The code spans of a question: the acts it quotes, each read whole.
 const spans = (question) => [...String(question).matchAll(/`([^`]+)`/g)].map((m) => squash(m[1]));
 
@@ -80,9 +85,8 @@ function yeses(lines, { all = false } = {}) {
 			// A pop-up Claude filled in itself is no person's answer.
 			if (b.type === 'tool_use' && b.name === 'AskUserQuestion' && e.type === 'assistant' && b.input && b.input.answers === undefined && Array.isArray(b.input.questions)) asked.set(b.id, { questions: b.input.questions, line: n });
 			if (b.type !== 'tool_result' || e.type !== 'user' || !asked.has(b.tool_use_id)) continue;
-			const d = e.permissionDecision || {};
 			const r = e.toolUseResult || {};
-			if (d.decision !== 'accept' || !/^user/.test(String(d.source || '')) || !r.answers) continue;
+			if (!YES_RECORD(e) || !r.answers) continue;
 			const at = Date.parse(e.timestamp);
 			if (!Number.isFinite(at)) continue;
 			const qs = asked.get(b.tool_use_id).questions;
@@ -95,7 +99,7 @@ function yeses(lines, { all = false } = {}) {
 				// K144 (build 18): each question of a pop-up is its own tap, kept by the pop-up's id and the question's place;
 				// a pop-up of one question keeps the plain id, as taps spent before 1.44.0 were kept.
 				const id = qs.length > 1 ? `${b.tool_use_id}_q${k}` : String(b.tool_use_id);
-				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id, yes });
+				if (yes || all) out.push({ at, acts: spans(q.question), text: squash(q.question), line: n, asked: asked.get(b.tool_use_id).line, id, yes, answer });
 			}
 		}
 	}
@@ -170,6 +174,35 @@ function spend(popUp, call) {
 	}
 }
 
+// The R7.1 canary: when no yes was read for an act, whether a person's Yes to it is in the transcript all the same, on a
+// record that fails YES_RECORD. That means Claude Code changed the record, not that the owner said nothing: the named
+// warning, or ''. It never grants; a No, a pop-up Claude filled in itself and a subagent's answer stay quiet.
+function yesCanary(input, acts = [actText(input)]) {
+	const want = acts.map((a) => squash(a)).filter(Boolean);
+	if (!want.length || !input || !ownTranscript(input)) return '';
+	let lines;
+	try { lines = tailLines(String(input.transcript_path)); } catch { return ''; }
+	const asked = new Map();
+	let found = '';
+	for (const raw of lines) {
+		let e;
+		try { e = JSON.parse(raw); } catch { continue; }
+		if (!e || e.isSidechain) continue;
+		for (const b of (e.message && Array.isArray(e.message.content) ? e.message.content : [])) {
+			if (!b) continue;
+			if (b.type === 'tool_use' && b.name === 'AskUserQuestion' && e.type === 'assistant' && b.input && b.input.answers === undefined && Array.isArray(b.input.questions)) asked.set(b.id, b.input.questions);
+			if (b.type !== 'tool_result' || e.type !== 'user' || !asked.has(b.tool_use_id)) continue;
+			const r = e.toolUseResult || {};
+			if (!r.answers || typeof r.answers !== 'object') continue;
+			const said = asked.get(b.tool_use_id).some((q) => q && spans(q.question).some((a) => want.includes(a)) && YES_LABEL.test(String(r.answers[q.question] ?? '')));
+			if (!said) continue;
+			// The newest answer to the act decides: a later good record clears an older changed one.
+			found = YES_RECORD(e) ? '' : `Canary (R7.1): a Yes to this act is in the transcript, but its record's permissionDecision is ${JSON.stringify(e.permissionDecision ?? null).slice(0, 80)}, not {decision: "accept", source: "user..."}. Claude Code may have changed the record; the guards cannot read the owner's yes until the kit follows. Report this to the kit; asking again will not help.`;
+		}
+	}
+	return found;
+}
+
 // What Claude is told when an act is held: how to get the owner's yes, or, in a subagent, to hand it back.
 // With an act, the refusal names that one act to quote and run, so the session never has two to choose from (the
 // 1.26.0 sweep, C7); `lead` opens the instruction ("To run it", or a condition such as "Only for a new repo's first push").
@@ -188,7 +221,9 @@ function howToAsk(input, act = '', lead = 'To run it') {
 // order a session acts on.
 function askText(what, input, act = '', lead = 'To run it') {
 	if (input && input.agent_id) return `Hand back: a subagent cannot get the owner's yes. Leave this out (${what}) and name it in your report, so the lead asks.`;
-	return `Owner's yes needed: ${what}.` + howToAsk(input, act, lead);
+	let canary = '';
+	try { canary = yesCanary(input, [actText(input), act]); } catch { /* the refusal stands without it */ }
+	return `Owner's yes needed: ${what}.` + howToAsk(input, act, lead) + (canary ? ` ${canary}` : '');
 }
 const heldText = (what) => `Held: ${what}.`;
 const yesText = (what) => `Owner's yes given in the pop-up for this exact command: ${what}.`;
@@ -211,8 +246,11 @@ function pushAct(act) {
 	if (at < 0 || !w.slice(0, at).includes('git')) return null;
 	const rest = w.slice(at + 1);
 	const flags = rest.filter((x) => x.startsWith('-'));
-	const specs = rest.filter((x) => !x.startsWith('-')).slice(1);
+	const words = rest.filter((x) => !x.startsWith('-'));
+	const specs = words.slice(1);
 	return {
+		// The build 23a sweep: the remote the yes names, so a yes to push one remote is no yes for another.
+		remote: words[0] || '',
 		dests: specs.map((s) => s.replace(/^\+/, '').split(':').pop()),
 		force: flags.some((f) => /^(-f|--force|--force-with-lease)/.test(f)) || specs.some((s) => s.startsWith('+')),
 		del: flags.includes('-d') || flags.includes('--delete') || specs.some((s) => s.startsWith(':')),
@@ -222,9 +260,9 @@ function pushAct(act) {
 // Whether a yes to this act covers a push of this ref: a destination written in full (refs/heads/x, refs/tags/x) names
 // only that kind of ref; a short name covers either, as git itself resolves it (the 1.25.0 sweep, R2.9: a yes to push
 // a branch let a tag of the same name go).
-function grantsRef(act, ref, kind = '') {
+function grantsRef(act, ref, kind = '', remote = '') {
 	const p = pushAct(act);
-	if (!p) return false;
+	if (!p || (remote && p.remote !== remote)) return false;
 	const short = String(ref).replace(/^refs\/(heads|tags)\//, '');
 	const named = p.dests.some((d) => (/^refs\//.test(d) ? d === ref : d === short));
 	return named && (kind !== 'force' || p.force) && (kind !== 'delete' || p.del);
@@ -234,7 +272,9 @@ function grantsRef(act, ref, kind = '') {
 // tool shell), in this repo's folder of transcripts, holds a fresh Yes to a push whose destination is this ref, that
 // forces or deletes only if the yes says so, and that no owner push of this ref in the push log has used yet.
 // kind: '' (a plain push), 'force' or 'delete', as the hook read the ref line.
-function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(), now = Date.now()) {
+// remote: the remote the hook pushes to (its first argument), which the yes must name. maxAge: how old a yes may be, in
+// minutes (the owner's own push takes 10, the build 23a sweep: a session id can name any session of the project).
+function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(), now = Date.now(), remote = '', maxAge = FRESH_MS / 60000) {
 	const name = String(ref).replace(/^refs\/(heads|tags)\//, '');
 	if (!name || !/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return false;
 	const root = path.join(home(), 'projects');
@@ -243,7 +283,9 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
-	const keys = above(real).map(key);
+	// The build 23a sweep: the session ran in this repo (or the main checkout of this worktree), not a folder above it
+	// that holds other repos too.
+	const keys = [real, common ? path.dirname(path.resolve(repo, common)) : real].map(key);
 	let dirs = [];
 	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return false; }
 	// The push log the hook writes, in the repo's common git folder (a worktree shares it); unreadable but present
@@ -252,14 +294,15 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 	let used = [];
 	// A push of either kind of ref with this name spends a yes, so one tap to a short name allows one push (the review
 	// on ceecedd).
+	// K215 (build 23a): the owner's own push (owner-hand) now runs on a yes too, so its log line spends one.
 	const kinds = [ref, `refs/heads/${name}`, `refs/tags/${name}`];
-	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => p[1] === 'owner' && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
+	try { used = fs.readFileSync(log, 'utf8').split('\n').map((l) => l.split(' ')).filter((p) => (p[1] === 'owner' || p[1] === 'owner-hand') && kinds.includes(p[2])).map((p) => Date.parse(p[0])); } catch (e) { if (e.code !== 'ENOENT') return false; }
 	for (const d of dirs) {
 		let lines;
 		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
 		for (const y of yeses(lines)) {
-			if (now - y.at < 0 || now - y.at > FRESH_MS || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
-			for (const a of y.acts) if (grantsRef(a, ref, kind)) return true;
+			if (now - y.at < 0 || now - y.at > Math.min(FRESH_MS, maxAge * 60000) || used.some((t) => !Number.isFinite(t) || t >= y.at)) continue;
+			for (const a of y.acts) if (grantsRef(a, ref, kind, remote)) return true;
 		}
 	}
 	return false;
@@ -286,9 +329,10 @@ function sessionYeses(sessionId, repo, { all = false } = {}) {
 	return out;
 }
 // Every answer the owner gave to one act after a time (with act null, to any pop-up), oldest first, a No included:
-// { at, yes }. For the loop's plan shadow (T7 slice 2), which counts a plan the owner answered No to as a disagreement.
+// { at, yes, answer }. For the loop's plan shadow (T7 slice 2), which counts a plan the owner answered No to as a
+// disagreement, and (K210) reads what a No said to match it against the risks the verdict named.
 function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
-	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes })).sort((a, b) => a.at - b.at);
+	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes, answer: y.answer })).sort((a, b) => a.at - b.at);
 }
 // The owner's latest answer to one act after a time, as the guards read it: { at, yes, single, tap } or null. single is
 // whether the question quoted this act alone (the build 13 sweep: the loop took any Yes, the newest even after a No, and
@@ -341,6 +385,31 @@ function unquotedYes(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSI
 	return best;
 }
 
-if (require.main === module && process.argv[2] === '--push') process.exitCode = pushGrant(process.argv[3], process.env.CLAUDE_CODE_SESSION_ID, process.argv[4] || '', process.argv[5] || '') ? 0 : 1;
+// The build 23a sweep (K224): a refused push names the canary when a Yes to it is there but its record changed shape.
+function pushCanary(ref, sessionId, repo = process.cwd()) {
+	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return '';
+	const root = path.join(home(), 'projects');
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	let dirs = [];
+	try { dirs = fs.readdirSync(root).filter((d) => d.toLowerCase() === key(real)); } catch { return ''; }
+	for (const d of dirs) {
+		const file = path.join(root, d, `${sessionId}.jsonl`);
+		let lines;
+		try { lines = tailLines(file); } catch { continue; }
+		// Every act a pop-up quoted, whatever its record: yeses() skips a record that fails the shape test.
+		const acts = lines.flatMap((l) => { try { const e = JSON.parse(l); return (e.message && Array.isArray(e.message.content) ? e.message.content : []).filter((b) => b && b.type === 'tool_use' && b.name === 'AskUserQuestion' && b.input && Array.isArray(b.input.questions)).flatMap((b) => b.input.questions.flatMap((q) => spans(q && q.question))); } catch { return []; } }).filter((x) => grantsRef(x, ref));
+		const text = acts.length ? yesCanary({ transcript_path: file, session_id: sessionId, cwd: real }, acts) : '';
+		if (text) return text;
+	}
+	return '';
+}
+if (require.main === module && process.argv[2] === '--push') {
+	const [ref, kind, common, remote, age] = process.argv.slice(3);
+	const ok = pushGrant(ref, process.env.CLAUDE_CODE_SESSION_ID, kind || '', common || '', process.cwd(), Date.now(), remote || '', Number(age) || FRESH_MS / 60000);
+	if (!ok) { const c = pushCanary(ref, process.env.CLAUDE_CODE_SESSION_ID); if (c) process.stderr.write(c + '\n'); }
+	process.exitCode = ok ? 0 : 1;
+}
 
-module.exports = { home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
+module.exports = { YES_RECORD, yesCanary, home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };

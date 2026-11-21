@@ -772,13 +772,88 @@ test('a step counts its open rows by name, build or release, never a closed one'
 	add('K20', 'later', '8');
 	add('K21', 'next', '1.34.0');
 	add('K22', 'next', 'build 8');
-	// A done row carries its verify result (TC1, build 20); "8" names no release, so the file is the proof.
+	// A done row carries its verify result (TC1, build 20); "8" names no release, so the file is the proof. A self-found
+	// row also names how it was reproduced (K209).
 	put(dir, 'v.md', 'Verified.\n');
-	add('K23', 'done', '8', { caught_by: 'sweep', verify: 'v.md' });
+	add('K23', 'done', '8', { caught_by: 'sweep', verify: 'v.md', measured: 'throwaway' });
 	add('K24', 'later', '18');
 	put(dir, '_Master Roadmap.md', '<!-- list:begin roadmap -->\n<!-- list:end -->\n');
 	assert.equal(st(dir, 'render').status, 0);
 	assert.match(read(dir, '_Master Roadmap.md'), /^\| 8 \| 1\.34\.0 \| State as data \| released \| 3 \|$/m);
+});
+
+// K209 (build 23a): 81 of 88 self-found rows shipped with no recorded repro. A row the kit found on itself is suspect
+// until it is reproduced, so done or closed needs a verify file that is not empty and measured throwaway, ci or
+// real-use, on both write paths (item set and item add), and list marks it SUSPECT until then. Owner and outside
+// rows keep the old rule. Cases from the narrowing proof (proof-sweep/narrowing/K209/run.mjs).
+// why: catches a self-found row tagged done or closed with no recorded repro
+test('a self-found row is done or closed only with a repro file and a measured label, and list shows it SUSPECT until then', () => {
+	const dir = project();
+	const add = (o) => st(dir, 'item', 'add', '--from', json(dir, { title: o.id, tag: 'later', at: 'build 23', severity: 'medium', origin: 'self', caught_by: 'self', ...o }));
+	const tag = (id) => rows(dir).find((r) => r.id === id)?.tag ?? 'absent';
+	put(dir, 'empty.md', '');
+	put(dir, 'blank.md', ' \n\n');
+	put(dir, 'repro.md', 'repro: exit 1 before the fix, exit 0 after\n');
+	// C1 to C6: item set
+	assert.equal(add({ id: 'S1', measured: 'throwaway' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'S1', 'tag', 'done').status, 1, 'done with no verify');
+	assert.equal(st(dir, 'item', 'set', 'S1', 'verify', 'empty.md').status, 0);
+	let r = st(dir, 'item', 'set', 'S1', 'tag', 'done');
+	assert.equal(r.status, 1, 'done with an empty verify file');
+	assert.match(r.stdout, /S1: its verify result empty\.md is empty/);
+	assert.equal(st(dir, 'item', 'set', 'S1', 'verify', 'blank.md').status, 0);
+	assert.equal(st(dir, 'item', 'set', 'S1', 'tag', 'done').status, 1, 'done with a whitespace-only verify file');
+	r = st(dir, 'item', 'set', 'S1', 'tag', 'closed');
+	assert.equal(r.status, 1, 'closed with a blank verify file');
+	assert.equal(tag('S1'), 'later');
+	assert.equal(add({ id: 'S4', measured: 'throwaway' }).status, 0);
+	r = st(dir, 'item', 'set', 'S4', 'tag', 'closed');
+	assert.equal(r.status, 1, 'a self row closed with no verify');
+	assert.match(r.stdout, /S4: a self-found row closes only with its proof/);
+	assert.equal(add({ id: 'S5', measured: 'agent-report', verify: 'repro.md' }).status, 0);
+	r = st(dir, 'item', 'set', 'S5', 'tag', 'done');
+	assert.equal(r.status, 1, 'measured agent-report is no repro');
+	// The row, the measures that count and the one it has: what the owner acts on.
+	for (const token of ['S5', 'throwaway, ci, real-use', '(now agent-report)']) assert.ok(r.stdout.includes(token), token);
+	assert.equal(add({ id: 'S6', verify: 'repro.md' }).status, 0);
+	assert.match(st(dir, 'item', 'set', 'S6', 'tag', 'done').stdout, /now none/);
+	assert.equal(tag('S4'), 'later');
+	assert.equal(tag('S5'), 'later');
+	assert.equal(tag('S6'), 'later');
+	// C7, C8: item add
+	assert.equal(add({ id: 'S7', tag: 'done', verify: 'empty.md', measured: 'throwaway' }).status, 1, 'added done with an empty verify');
+	assert.equal(add({ id: 'S8', tag: 'closed', measured: 'throwaway' }).status, 1, 'added closed with no verify');
+	assert.equal(tag('S7'), 'absent');
+	assert.equal(tag('S8'), 'absent');
+	// C9: a versioned self row with the full release proof still owes a real measured label.
+	put(dir, 'rel.md', 'RELEASE COMPLETE: every step of v1.49.0 is done.\n');
+	spawnSync('git', ['-C', dir, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	fs.writeFileSync(path.join(dir, '.git', 'kit-release-checks.jsonl'), `${JSON.stringify({ version: '1.49.0' })}\n`);
+	assert.equal(add({ id: 'S9', at: 'build 23 (1.49.0)', measured: 'estimate', verify: 'rel.md' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'S9', 'tag', 'done').status, 1, 'measured estimate on a versioned self row');
+	// C10: list, list --full and --agent are not changed in shape; the short view and the full line say SUSPECT.
+	assert.match(st(dir, 'list').stdout, /^S5 .*SUSPECT /m);
+	assert.match(st(dir, 'list', '--full').stdout, /^S5 .* SUSPECT: /m);
+	// A1 to A6: no false alarm.
+	assert.equal(add({ id: 'P1', measured: 'throwaway', verify: 'repro.md' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'P1', 'tag', 'done').status, 0, 'a proven self row is done');
+	assert.equal(add({ id: 'P2', measured: 'real-use', verify: 'repro.md' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'P2', 'tag', 'closed').status, 0, 'a proven self row closes');
+	assert.equal(add({ id: 'O1', origin: 'owner', caught_by: 'owner' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'O1', 'tag', 'closed').status, 0, 'an owner row still closes with no verify');
+	assert.equal(add({ id: 'O2', origin: 'owner', caught_by: 'owner', verify: 'repro.md' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'O2', 'tag', 'done').status, 0, 'an owner row needs no measured label');
+	assert.equal(add({ id: 'P4', at: 'build 23 (1.49.0)', measured: 'ci', verify: 'rel.md' }).status, 0);
+	assert.equal(st(dir, 'item', 'set', 'P4', 'tag', 'done').status, 0, 'a versioned proven self row is done');
+	assert.equal(add({ id: 'P5', measured: 'throwaway', verify: 'repro.md' }).status, 0);
+	const full = st(dir, 'list', '--full', '--all').stdout;
+	assert.doesNotMatch(full, /^(P\d|O\d) .*SUSPECT/m, 'a proven self row and an owner row are not SUSPECT');
+	// A row already done before this rule (written by hand) still takes a note.
+	const lines = read(dir, '_List.jsonl').split('\n');
+	const at = lines.findIndex((l) => l.includes('"id":"S6"'));
+	lines[at] = JSON.stringify({ ...JSON.parse(lines[at]), tag: 'done' });
+	put(dir, '_List.jsonl', lines.join('\n'));
+	assert.equal(st(dir, 'item', 'set', 'S6', 'note', 'later word').status, 0, 'a legacy done self row stays editable');
 });
 
 // why: guards the owner's lock of T4 slice 2, 2026-11-15: the list as data, labelled by catcher and measure (J3, J4, T11)

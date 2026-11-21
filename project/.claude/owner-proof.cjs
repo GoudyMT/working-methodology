@@ -78,7 +78,38 @@ const DASH_UNSURE = 'Never by a tool: part of this command is more than the guar
 // definition, a substitution) may change what it runs, so it is held; on 1.46.1 this named the guard files instead.
 const BESIDE_REASON = 'Never by a tool: this names a protected file beside another command the guard cannot read as plain (a program it does not know, a definition, a substitution), which may change what the read runs. Run the read as a command of its own.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install; the report channel\'s kit-report.json and kit-scrub-words.json are the owner\'s, and kit-reports/ is written by kit-report.mjs. Read them, or ask the owner to reinstall the kit or change their own file.';
-const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
+const SETTINGS_REASON = 'a write to a settings file, the bounds file, .mcp.json, .claude.json or an agent, skill, command or plugin file, or a claude mcp or plugin change or a session flag that loads them, which wire the guards, the loop and the code a session starts';
+// S1 (the build 23a sweep): claude mcp add (add-json, add-from-claude-desktop, remove) has Claude Code write the MCP
+// servers a session starts into .claude.json or .mcp.json itself, and --mcp-config starts a session with the servers a
+// file names; each takes the same yes. Read with quotes, backslashes, backticks and carets taken out, and with no
+// program name needed, so a name the command builds (c=claude; $c mcp add) is held too. Only the subcommands that
+// read pass (list, get); any other word after mcp, a variable ($S) included, is held (the commit security review). The
+// same for claude plugin (install, marketplace add), and the session flags that load plugins, settings or agents or
+// loosen permissions (any flag naming permission, tools or dangerously), in any command. It is read as written and
+// with every plain expansion taken out (an empty ${X} inside m${X}cp leaves mcp); a brace, an ANSI-C or locale quote,
+// a backtick or a $( beside a claude, mcp or plugin word is held as unsure. The one exemption is approve.mjs --agents,
+// the sweep's own outcome step: a segment that runs node on approve.mjs, in a command that names no claude.
+const MCP_ACT = /(^|[^\w.-])(mcp|plugins?)\s+(?!(list|get)(?![\w-]))\S|--(mcp-config|plugin-dir|settings|setting-sources|agents|[\w-]*(permission|tools|dangerously)[\w-]*)\b/i;
+const CLAUDE_WORD = /(^|[^\w./\\-])(claude|mcp|plugins?)(?![\w.-])/i;
+// The folders under a Claude folder whose files Claude Code loads as code or as the tools a session runs with: agents,
+// skills and commands (their frontmatter can name hooks and tools), and plugins (which carry all of those and hooks).
+const LOADED = ['agents', 'skills', 'commands', 'plugins'];
+// A glob word with a letter that could expand to claude, mcp or plugin (cl*de, m?p, plugi[n]) is unsure too,
+// wherever it sits: after a keyword, a wrapper or $( it may run as a command (the commit security reviews).
+const NAMES = ['claude', 'mcp', 'plugin', 'plugins'];
+const globMay = (w) => { let re; try { re = new RegExp('^' + w.split(/[\\/]/).pop().replace(/[.+^$(){}|\\]/g, '\\$&').replace(/\[[^\]]*\]/g, '.').replace(/\*/g, '.*').replace(/\?/g, '.') + '$', 'i'); } catch { return true; } return NAMES.some((n) => re.test(n)); };
+const globNames = (t) => t.split(/[\s;&|<>()`{}]+/).map((x) => x.replace(/^[^\w./\\*?[]+|[^\w./\\*?\]]+$/g, '').split(/[\\/]/).pop()).some((x) => /[?*[]/.test(x) && /[a-z]/i.test(x) && globMay(x));
+const mcpCommand = (c) => {
+	let t = String(c || '');
+	const bare0 = t.replace(/["'`\\^]/g, '');
+	if ((CLAUDE_WORD.test(bare0) && /[{`]|\$['"(]/.test(t)) || globNames(bare0)) return true;
+	// The sweep's own outcome step: one plain node invocation of approve.mjs, with no other command, expansion,
+	// redirection or wildcard beside it.
+	if (!/[\x00-\x08\x0a-\x1f\x7f]/.test(t) && /^[ \t]*([\w.:\\/-]*[\\/])?node(\.exe)?[ \t]+[\w.:\\/-]*approve\.mjs([ \t]+[\w.:\\/,=-]+)*[ \t]*$/i.test(t)) t = t.replace(/[ \t]--agents[ \t]+[\w,-]+/g, ' ');
+	const bare = t.replace(/["'`\\^]/g, '');
+	const empty = t.replace(/\$(\{[^}]*\}|\([^)]*\)|[A-Za-z_]\w*|'[^']*'|\d)/g, '').replace(/["'`\\^]/g, '');
+	return MCP_ACT.test(bare) || MCP_ACT.test(empty);
+};
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
 // script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).
@@ -283,10 +314,20 @@ function guardShape(p) {
 function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
 		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'bounds.json'))) return true;
+		// S1 (the build 23a sweep): an agent file's mcpServers starts a server when the agent runs, so the agents folder
+		// and every file in it take the same yes; skills and commands too, whose frontmatter can name hooks and tools (the
+		// commit security review).
+		if (fits(p[i], '.claude') && LOADED.some((d) => fits(p[i + 1], d))) return true;
 	}
+	// The user's .claude.json holds the MCP servers claude mcp add writes at user and local scope (S1). Held in any folder.
+	if (p.length && fits(p[p.length - 1], '.claude.json')) return true;
+	// K217 (build 23a): .mcp.json names the MCP servers Claude Code starts with a session, so a planted server runs code
+	// at the next start; it takes the same yes. Held in any folder, the safe side: a folder may be opened as a project.
+	if (p.length && fits(p[p.length - 1], '.mcp.json')) return true;
 	// The user's own settings when the Claude folder has another name (the 1.29.0 sweep).
 	const h = homeParts();
 	if (h.length && p.length === h.length + 1 && h.every((x, k) => p[k] === x) && (fits(p[p.length - 1], 'settings.json') || fits(p[p.length - 1], 'settings.local.json'))) return true;
+	if (h.length && p.length > h.length && h.every((x, k) => p[k] === x) && LOADED.some((d) => fits(p[h.length], d))) return true;
 	return false;
 }
 // The folder list (E3) is the owner's to write, in their own editor: as a settings file one yes could delete it, and
@@ -385,6 +426,27 @@ function moved(segment, cwd) {
 const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
 // Programs a reader may pipe a transcript into: they read their input and write only their output.
 const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
+// K229 (build 23a): readers that are plain only in some forms, so they are kept out of READERS and read by their words:
+// rg with no option that runs another program (--pre, --hostname-bin, a search of zipped files), find with no action
+// that deletes, runs or writes (-delete, -exec, -ok, -fprint, -fls), echo (its redirect is read like any other), date
+// with only a format or a display option (never -s, which sets the clock), and npm ls (npm list), which runs no script.
+// The program by its plain name only: a path keeps the strict reading.
+const FIND_ACTS = /^-(delete|exec|execdir|ok|okdir|fprint|fprint0|fprintf|fls)$/;
+const NPM_LS_OPTIONS = /^(--(all|json|long|parseable|global|link|unicode|no-unicode|color|no-color|package-lock-only|production|dev|workspaces|include-workspace-root|depth|omit|include|workspace|silent)(=[\w@./-]*)?|-[aglpw]+)$/;
+function wordReader(w) {
+	const first = String(w[0] || '');
+	if (/[\\/]/.test(first)) return false;
+	const p = first.toLowerCase().replace(/\.(exe|cmd|bat)$/, '');
+	const args = w.slice(1).map(String);
+	if (p === 'rg') return !args.some((a) => /^--(pre|hostname-bin|search-zip)|^-[A-Za-z]*z/.test(a));
+	if (p === 'find') return !args.some((a) => FIND_ACTS.test(a));
+	if (p === 'echo') return true;
+	if (p === 'date') return args.every((a) => /^(\+[^;&|<>`$]*|-[uRI]+|--utc|--universal|--rfc-email|--iso-8601(=\w+)?)$/.test(a));
+	// R2 (the build 23a sweep): npm takes any option it knows by a short start (--userconf) and options that run code
+	// (--onload-script), so npm ls is plain only with the options that change what it shows.
+	if (p === 'npm') return (args[0] === 'ls' || args[0] === 'list') && args.slice(1).every((a) => NPM_LS_OPTIONS.test(a) || /^[\w@][\w@./-]*$/.test(a));
+	return false;
+}
 
 // K32 (the plan check's P2): whether a word is <plain folders>/<a wildcard part>, under a folder the guard knows, and
 // that folder, read from the disk, holds nothing a guard shape could name: no name that starts with a dot or kit-,
@@ -900,6 +962,8 @@ function shellWritesFrom(command, tool, start, names) {
 	// replaced, a lone redirect), so after a command that can make a link nothing more runs in the same command: it is
 	// held, and runs as a command of its own, where the link is on disk and followed.
 	let linkMade = false;
+	// K154: inline node code read as text (its wildcards no file name), kept out of the last whole-text reading too.
+	const inertCode = [];
 	const hit = (x) => {
 		const where = Array.isArray(cwd) ? `A${cwdKey(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
@@ -932,7 +996,9 @@ function shellWritesFrom(command, tool, start, names) {
 	// behind; &> and >&file still name a file and stay a redirect the words below read.
 	// In PowerShell a backslash is the path separator, not a quote (K32), so a folder may hold one.
 	// A new line ends a folder change as ; does (the 1.36.1 sweep).
-	const DEFINITION = /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS)\s*\+?=)|function:|alias:/i;
+	// K229 (build 23a): rg reads its options (--pre among them) from RIPGREP_CONFIG_PATH and npm from npm_config_*, so
+	// setting either is a definition too.
+	const DEFINITION = /(^|[\s|(){}])(function\s+[\w.:-]+|[\w.:-]+\s*\(\s*\)|alias\s|set-alias\s|sal\s|new-alias\s|nal\s|enable\s|hash\s|(export\s+|\$env:)?(PATH|PATHEXT|BASH_ENV|ENV|NODE_OPTIONS|RIPGREP_CONFIG_PATH|npm_config_\w+)\s*\+?=)|function:|alias:/i;
 	// K87 (build 11): a kit script followed by another command was held as a write. A program's exemption holds when
 	// every OTHER command beside it is plain: a reader, a folder change, a plain assignment or a git read. Those define
 	// nothing before it, and after it they cannot write what it was handed. Anything else beside it may: a definition, a
@@ -955,7 +1021,7 @@ function shellWritesFrom(command, tool, start, names) {
 		// K145 (build 19): a PowerShell statement that is one quoted string ("==== $i") prints it, as Write-Output does; a
 		// substitution in it ($(...)) keeps the strict reading through the check below.
 		// K158 (build 21): true, : and pwd print or return and define nothing (false stays strict: false || x is a test row).
-		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
+		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || wordReader(w) || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			// K196: git -C <folder> runs the same read from that folder.
@@ -977,10 +1043,16 @@ function shellWritesFrom(command, tool, start, names) {
 	// A pipe after a cd counts only when every stage of every pipeline is a plain reader with no redirect: a file list
 	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
 	const firstPipe = segments.findIndex((g) => g.end === '|');
-	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p)) && !g.some((x) => x.redirect); };
-	const pipesRead = segments.every((g, i) => !(g.end === '|' || (i > 0 && segments[i - 1].end === '|')) || stageReads(g));
+	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
+	// K252 (build 23a): a stage that only sends its output on (node x.mjs 2>&1 | tail) runs in a shell of its own, so it
+	// cannot move the folder; it counts with no redirect but one output pointed at another, and its own words are read
+	// below as any command's are. Every stage that takes the pipe must still read.
+	const sendsOn = (g) => g.every((x) => !x.redirect || /^\d$/.test(x.value));
+	const pipesRead = segments.every((g, i) => (i > 0 && segments[i - 1].end === '|' ? stageReads(g) : g.end !== '|' || sendsOn(g)));
 	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|') || (firstPipe >= 0 && !pipesRead);
-	const apartAt = (s) => grouped || otherBreak || (firstPipe >= 0 && firstPipe <= s);
+	// K228 (build 23a): a bracket inside quotes ("(a.js)", node -e '...(...)') is text, so only one outside quotes, as
+	// bracketed reads it (strict for anything that reading does not model), makes the cd unsure.
+	const apartAt = (s) => bracketed || otherBreak || (firstPipe >= 0 && firstPipe <= s);
 	for (let s = 0; s < segments.length; s++) {
 		if (linkMade) return true;
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
@@ -1037,8 +1109,15 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
-		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && tails(w).some((t) => names(t, cwd)));
-		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && (hit(x) || inside(x)));
+		// K154 (build 23a, the owner's pick: narrow it): inline node code that can reach no file (no require, import,
+		// process, a constructor, bracket access, a $ the shell may expand, or a call that writes, lists, opens or runs)
+		// cannot use a wildcard, so a
+		// wildcard piece in it is text; a plain name in it is still read, and the strict reading holds for any other code.
+		const code = (x) => tool === 'Bash' && program === 'node' && x.quoted && /^(-e|-p|-pe|--eval|--print)$/.test(all[segment.indexOf(x) - 1] || '')
+			&& !/require|import|process|module|global|constructor|prototype|eval|Function|Reflect|Deno|Bun|\bfs\b|spawn|exec|fork|glob|write|append|unlink|\brm|rename|copy|cp\b|mkdir|link|open|truncate|chmod|chown|utimes|readdir|watch|\[|\\u|\\x|`|\$/.test(x.value);
+		if (segment.some(code)) inertCode.push(...segment.filter(code).map((x) => x.value));
+		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && !(code(x) && /[*?[\]]/.test(w)) && tails(w).some((t) => names(t, cwd)));
+		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && ((!code(x) && hit(x)) || inside(x)));
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
@@ -1054,9 +1133,10 @@ function shellWritesFrom(command, tool, start, names) {
 		}
 		if (hits.length === 0) continue;
 		if (segment.some((x) => x.redirect && hit(x))) return true;
-		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || printSed(all)) && !definesBefore(s)) {
+		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || wordReader(all) || printSed(all)) && !definesBefore(s)) {
 			// Piped on, the read must go to another reader.
-			if (segment.end === '|' && segments[s + 1] && !PIPE_READERS.has(path.basename(slash(segments[s + 1][0]?.value || '')).replace(/\.(exe|cmd|bat)$/, ''))) return true;
+			const next = segments[s + 1] && segments[s + 1].filter((x) => !x.redirect).map((x) => x.value);
+			if (segment.end === '|' && next && !PIPE_READERS.has(path.basename(slash(next[0] || '')).replace(/\.(exe|cmd|bat)$/, '')) && !wordReader(next)) return true;
 			continue;
 		}
 		if (COPIERS.has(program) && !definesBefore(s)) {
@@ -1091,11 +1171,20 @@ function shellWritesFrom(command, tool, start, names) {
 	if (named) return false;
 	const raw = source;
 	// Read from the folder the shell starts in, as the words above are: a bare kit-owner.json there is placed.
-	return [raw, text].some((t) => {
-		// In PowerShell a backslash is the path separator, not a quote (K32).
-		const quoted = (tool === 'PowerShell' ? /["'`]/ : /["'`\\]/).test(t);
-		return t.split(/[\s;|&<>()"'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
-	});
+	// K226 (build 23a): a quote anywhere once made every word here read as quoted, so a plain folder glob beside a quoted
+	// pattern (grep -rn 'foo' src/**/*.ts) could match .claude. Quoting is now read per shell word: a word with no quote,
+	// backtick or backslash of its own is read as the shell reads it; a word holding one is read the strict way, so a
+	// dot made by quoting ('.'*) is still matched.
+	const quoteSign = tool === 'PowerShell' ? /["'`]/ : /["'`\\]/;
+	// The shell drops a backslash inside double quotes before a sign it keeps (\*), so each sign may follow one.
+	// R1 (the build 23a sweep): each piece of inert code is cut once, where it is node's -e or -p argument (quoted in
+	// the source, bare in the plain text), so its text elsewhere in the command (a '.' took every dot out) is still read.
+	const spelled = (c) => new RegExp(`(^|[\\s;|&()])(-e|-p|-pe|--eval|--print)(\\s+)(["']?)${[...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('')}\\4(?=$|[\\s;|&()])`);
+	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), (m, lead, flag, gap) => `${lead}${flag}${gap} `), t);
+	return [raw, text].map(textOnly).some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
+		const quoted = quoteSign.test(word);
+		return word.split(/["'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
+	}));
 }
 
 // Turning every hook off is a gate bypass, never a settings change a yes may approve (K21). JSON reads \u escapes as
@@ -1201,6 +1290,7 @@ function answer(input) {
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(heldBeside(shapeNames(guardShape)) ? BESIDE_REASON : GUARD_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(listShape))) return deny(heldBeside(shapeNames(listShape)) ? BESIDE_REASON : LIST_REASON);
 		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
+		if (mcpCommand(t.command)) return settings();
 	}
 	return null;
 }

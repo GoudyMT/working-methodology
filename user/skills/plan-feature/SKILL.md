@@ -114,10 +114,14 @@ rebuilt test-first (rule:tdd).
 
 **The self-approval line (shadow mode), before the owner's yes:** the design ends with `Would self-approve: yes|no`
 and why: grounded in the list item, the spec and the Success Charter; the impact test all no; the red-team pass
-clean; no Tier 0, no new direction, no visual call and no budget raise. Under the loop driver, record it before
-asking: `node .claude/loop.mjs shadow --would yes|no --why "<why>"`; the plan step is not done without it, and the
-driver counts from the owner's own answers how many plans in a row they passed as they were. The owner still says
-yes to every design: the line only builds the record that could one day earn plans like these their own approval.
+clean; no Tier 0, no new direction, no visual call and no budget raise. Record it before asking, every time a plan
+is locked: `node .claude/loop.mjs shadow --would yes|no --why "<why>" --risk "<risk>"` (up to three risks: what could
+make the owner refuse or change the plan). With no loop run open, add `--item <list id>`; then
+`node .claude/loop.mjs next` prints the act to quote in the owner's pop-up, and after their answer
+`node .claude/loop.mjs done design --evidence "<the plan>"` locks it. The plan step is not done without the line. A
+plan counts toward the owner's bar only when the owner refused or changed it over a risk the line named; a plain Yes
+scores nothing. The owner still says yes to every design: the line only builds the record that could one day earn
+plans like these their own approval.
 
 **Done when:** the owner has approved the design (in chat or the doc), and the doc's calls you made alone are
 listed for them.

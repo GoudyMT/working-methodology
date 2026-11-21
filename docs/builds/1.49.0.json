@@ -1,0 +1,899 @@
+{
+ "version": "1.49.0",
+ "date": "2026-11-21",
+ "level": "minor",
+ "area": "Safety",
+ "title": "feat: safe program starts, owner push yes and fewer false holds",
+ "headline": "Every program the installed kit starts by name now starts from node's own folder; an owner push past the bound needs the owner's yes; reviewers read rules from the merge base; and harmless reads the guards held now pass.",
+ "alignment": "v1.49.0 is build 23a of the v2.0 plan: K250 first, then K209, K212 to K215, K211, R7.1 with K224, K217, K243, K244, K218, K210, K207, K208, K204, K251, K226 to K229, K241, K242, K252, K154 and K186, each reproduced on the released 1.48.0 or proven by a failing test first.",
+ "items": [
+  {
+   "id": "K250",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "On Windows the guard start script left the launcher no git, so a project with git's worktree config on had every tool call held; the launcher now gets Git for Windows' own folder, never the session's PATH.",
+   "evidence": "user/kit-tools/kit-start.sh",
+   "where": "Worktree config on Windows",
+   "before": "Every call held",
+   "after": "Runs",
+   "test": "tests/guards-outside.test.mjs::the guard start script lets the launcher find git, never a git planted on the session PATH (K250)"
+  },
+  {
+   "id": "K250-MAC",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "On a Mac or Linux machine whose git sits in /usr/local/bin or /opt/homebrew/bin, the guard start script finds it, after the system folders.",
+   "evidence": "user/kit-tools/kit-start.sh",
+   "test": "tests/guards-outside.test.mjs::the guard start script gives the launcher the system folders, then the Mac and Linux git folders"
+  },
+  {
+   "id": "K212",
+   "kind": "security",
+   "reach": "projects",
+   "text": "One safe-spawn helper starts every installed kit launch (git, gh, ps) from node's own folder, with a time limit, so a git.exe or gh.exe left in a project never runs.",
+   "evidence": "project/.claude/safe-spawn.cjs",
+   "where": "Programs the kit starts",
+   "before": "Found by bare name",
+   "after": "From node's own folder",
+   "test": "tests/safe-spawn.test.mjs::the helper starts every program from node's own folder, hidden, with a time limit, and git on the folder it names"
+  },
+  {
+   "id": "K212-COPIES",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The three installed copies of the safe-spawn helper are kept the same bytes.",
+   "evidence": "project/.claude/safe-spawn.cjs",
+   "test": "tests/safe-spawn.test.mjs::the three installed copies of the safe-spawn helper are the same bytes"
+  },
+  {
+   "id": "K212-REPORT",
+   "kind": "security",
+   "reach": "projects",
+   "text": "kit-report runs gh from node's own folder.",
+   "evidence": "project/.claude/kit-report.mjs",
+   "test": "tests/safe-spawn.test.mjs::kit-report runs gh from node's own folder, never a gh left in the project"
+  },
+  {
+   "id": "K213",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The report scrub runs git from node's own folder.",
+   "evidence": "project/.claude/report-scrub.mjs",
+   "test": "tests/safe-spawn.test.mjs::the report scrub reads git from node's own folder, never a git left in the project"
+  },
+  {
+   "id": "K214",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Both installed copies of visuals run git from node's own folder.",
+   "evidence": "project/.claude/visuals.mjs",
+   "test": "tests/safe-spawn.test.mjs::both installed copies of visuals run git from node's own folder, never a git left in the project"
+  },
+  {
+   "id": "K212-CHECK",
+   "kind": "added",
+   "reach": "kit",
+   "text": "A spawn check in CI fails on any bare-name launch in an installed kit file that does not start from node's own folder, with no list of exceptions.",
+   "evidence": "scripts/spawn-check.mjs",
+   "where": "Bare-name launches",
+   "before": "45, unchecked",
+   "after": "0, checked in CI",
+   "test": "tests/spawn-check.test.mjs::the kit's own installed files hold no bare-name launch outside node's own folder"
+  },
+  {
+   "id": "K212-SCAN",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check names each bare-name launch with no safe folder, in every form a kit file writes one.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the check names each bare-name launch with no safe folder, in every form a kit file writes one"
+  },
+  {
+   "id": "K212-PASS",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check passes a launch from node's own folder, a full path, the helper, and text that only names a call.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the check passes a launch from node's own folder, a full path, the helper, and text that only names a call"
+  },
+  {
+   "id": "K212-MASK",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check reads code only, blanking comments and the inside of literals and keeping every line.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the mask keeps every offset and line, and blanks only comments and the inside of literals"
+  },
+  {
+   "id": "K212-CLI",
+   "kind": "added",
+   "reach": "kit",
+   "text": "The spawn check scans project/ and user/, names each file and line, and fails until none is left.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the command scans project/ and user/ of a kit root, names each file and line, and fails until none is left"
+  },
+  {
+   "id": "K212-ENV",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The kit's own git runs no program the repo or the session's settings name (an external diff, a textconv or clean filter, an index hook), and a read fetches nothing.",
+   "evidence": "project/.claude/safe-spawn.cjs",
+   "test": "tests/safe-spawn.test.mjs::a git read through the helper runs no program the repo or the environment names, where plain git does"
+  },
+  {
+   "id": "K212-RENAME",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "The spawn check follows child_process under any name, a renamed call and a program held in a const, and reads a cwd only at the top of the options.",
+   "evidence": "scripts/spawn-check.mjs",
+   "test": "tests/spawn-check.test.mjs::the check follows child_process under another name, a renamed call, a program held in a name, and a nested cwd"
+  },
+  {
+   "id": "K215",
+   "kind": "security",
+   "reach": "projects",
+   "text": "A push marked as the owner's (`KIT_OWNER_PUSH`) needs the owner: they type the ref's name at their own terminal, or in a session give a pop-up yes for that push and remote, fresh for ten minutes.",
+   "evidence": "project/.githooks/pre-push",
+   "where": "Owner push marker",
+   "before": "Any shell could set it",
+   "after": "Typed ref or pop-up yes",
+   "test": "tests/guards-hold.test.mjs::a script a Claude session writes and runs cannot clear its markers and push main as the owner"
+  },
+  {
+   "id": "K211",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The state decide command reads and deletes its from file only inside the project.",
+   "evidence": "project/.claude/state.mjs",
+   "test": "tests/state.test.mjs::decide --from refuses a file outside the project and keeps it; a file inside is recorded and removed"
+  },
+  {
+   "id": "K211-LINK",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The decide command refuses a from file reached through a junction.",
+   "evidence": "project/.claude/state.mjs",
+   "test": "tests/state.test.mjs::decide --from refuses a file reached through a junction and keeps it"
+  },
+  {
+   "id": "K211-ONCE",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "`decide --from` takes only a .json file of its own, refuses the same decision twice, and takes over a lock left by a stopped run.",
+   "evidence": "project/.claude/state.mjs",
+   "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock"
+  },
+  {
+   "id": "K224",
+   "kind": "security",
+   "reach": "projects",
+   "text": "One yes-record test is shared by the owner-yes reader and the use check; when the pop-up record changes shape, the refusal names why (the canary), on a push too.",
+   "evidence": "project/.claude/owner-yes.cjs",
+   "test": "tests/guards-hold.test.mjs::a Yes whose pop-up record changed shape is still refused, and the refusal names the changed record"
+  },
+  {
+   "id": "K224-USE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The use check reads the pop-up record with the guards' own yes-record test.",
+   "evidence": "project/.claude/use-check.mjs",
+   "test": "tests/use-check.test.mjs::the use check reads the pop-up record with the same yes-record test the guards use"
+  },
+  {
+   "id": "K217",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Tool writes to .mcp.json need the owner's yes, as a settings write does.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "where": "Tool writes to .mcp.json",
+   "before": "Not held",
+   "after": "Need the owner's yes",
+   "test": "tests/owner-proof.test.mjs::a tool write to .mcp.json takes the owner's yes, as a settings write does"
+  },
+  {
+   "id": "K217-MCP",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Writes to `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "where": "MCP servers and plugins",
+   "before": "Not held",
+   "after": "Need the owner's yes",
+   "test": "tests/owner-proof.test.mjs::claude mcp add, --mcp-config, .claude.json and an agent file take the owner's yes; listing and reading run"
+  },
+  {
+   "id": "K217-BASE",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The settings check names an API base URL and an apiKeyHelper.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "test": "tests/launcher-verify.test.mjs::a settings file that sets ANTHROPIC_BASE_URL or an apiKeyHelper is named as a settings fault"
+  },
+  {
+   "id": "K217-KEYS",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The launcher names a settings file that reroutes the model, trusts another certificate, exports telemetry, names a git program or runs a command as a fault.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "test": "tests/launcher-verify.test.mjs::a settings file that reroutes the model, trusts another certificate or runs a command is named as a fault"
+  },
+  {
+   "id": "K243",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The commit-msg hook refuses a commit whose author or committer names a code tool or its maker's domain, however it is spelled, names each repair, and passes a person the owner lists in `kit.allowedIdent`.",
+   "evidence": "project/.githooks/commit-msg",
+   "where": "Commit author",
+   "before": "Not checked",
+   "after": "A tool name is refused",
+   "test": "tests/author-check.test.mjs::the commit-msg hook refuses a commit by an AI author or committer, and passes a person"
+  },
+  {
+   "id": "K243-INSTALL",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Install wires the hooks path, so the author check runs in an installed project.",
+   "evidence": "scripts/kit.mjs",
+   "test": "tests/author-check.test.mjs::install wires the hooks path, so a commit by an AI author is refused in an installed project"
+  },
+  {
+   "id": "K244",
+   "kind": "security",
+   "reach": "kit",
+   "text": "CI's branch and commit name step also checks each PR commit's author and committer.",
+   "evidence": ".github/workflows/ci.yml",
+   "test": "tests/ci-commit-names.test.mjs::CI refuses a PR commit whose author or committer names an AI tool, and passes a person"
+  },
+  {
+   "id": "K244-BASE",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "With no author check in the base copy, CI runs the PR copy for it and says so.",
+   "evidence": ".github/workflows/ci.yml",
+   "test": "tests/ci-commit-names.test.mjs::with no author check in the base copy, CI runs the PR copy for it and says so"
+  },
+  {
+   "id": "K218",
+   "kind": "security",
+   "reach": "projects",
+   "text": "The sweep's reviewers and its canary read the rules block from the merge base, so a branch cannot change the rules its own reviewers check.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "where": "Sweep reviewers",
+   "before": "Rules read from the branch",
+   "after": "Rules from the merge base",
+   "test": "tests/kit-sweep.test.mjs::K218: a branch that edits the rules block does not change the rules its own reviewers read, or the canary"
+  },
+  {
+   "id": "K218-COPY",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Where the base holds the rules, an untracked index or rules file cannot name the block, and the base copy and its phrase are kept in the git folder.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+   "test": "tests/kit-sweep.test.mjs::K218: an untracked rule index or a rewritten copy cannot change the rules reviewers read, or the canary"
+  },
+  {
+   "id": "K241",
+   "kind": "security",
+   "reach": "projects",
+   "text": "Nested and side-by-side brace groups are expanded as bash expands them, so a guarded file named through them is still held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "where": "Nested brace groups",
+   "before": "Could name a guard file",
+   "after": "Expanded as bash does",
+   "test": "tests/guards-hold.test.mjs::a brace group holding a literal {x} is expanded as bash does, so a guarded file it names is still held"
+  },
+  {
+   "id": "K209",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "A self-found list row can go done or closed only with a recorded repro and a measured label; list shows it as SUSPECT until then.",
+   "evidence": "project/.claude/list-data.mjs",
+   "where": "Self-found rows",
+   "before": "Done on a claim",
+   "after": "Need a recorded repro",
+   "test": "tests/list.test.mjs::a self-found row is done or closed only with a repro file and a measured label, and list shows it SUSPECT until then"
+  },
+  {
+   "id": "K210-STEP",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "The plan step needs its self-approval line first, and the streak counts only plans refused over a risk the verdict named.",
+   "evidence": "project/.claude/loop.mjs",
+   "test": "tests/loop.test.mjs::the plan step needs its self-approval line first, and the streak counts only plans refused over a risk the verdict named"
+  },
+  {
+   "id": "K210",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "The plan shadow counts agreement only when its verdict named the risk the owner refused over.",
+   "evidence": "project/.claude/loop.mjs",
+   "test": "tests/loop.test.mjs::K210: an always-yes verdict never reaches the shadow bar; a named risk the owner refused is what counts"
+  },
+  {
+   "id": "K210-LOCK",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "A plan locked with no loop run open records its verdict and is scored from the owner's answers.",
+   "evidence": "project/.claude/loop.mjs",
+   "test": "tests/loop.test.mjs::K210: a plan locked with no loop run open records its verdict and is scored from the owner's answers"
+  },
+  {
+   "id": "K210-CAP",
+   "kind": "added",
+   "reach": "projects",
+   "text": "An optional ci-fix cap halts a loop after that many red CI rounds and resets on green.",
+   "evidence": "project/.claude/loop.mjs",
+   "test": "tests/loop.test.mjs::K210: ci-fix rounds halt at limits.ciFix when it is set, and a green CI resets the count"
+  },
+  {
+   "id": "K210-DROP",
+   "kind": "added",
+   "reach": "projects",
+   "text": "loop drop ends a plan whose lock will not come, on the owner's Yes, unscored.",
+   "evidence": "project/.claude/loop.mjs",
+   "test": "tests/loop.test.mjs::a plan whose lock will not come is dropped on the owner's Yes, unscored, and a new verdict records"
+  },
+  {
+   "id": "K207-F1",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The brainstorm sheet refuses a second \"What I thought:\" line inside an answer, naming the question.",
+   "evidence": "user/skills/brainstorm/sheet.mjs",
+   "test": "tests/kit-rules.test.mjs::K207 F1: a \"What I thought:\" line inside an answer is refused, naming the question, not filed in the wrong box"
+  },
+  {
+   "id": "K207-F2",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The brainstorm sheet names an empty sealed or sent line as the cause.",
+   "evidence": "user/skills/brainstorm/sheet.mjs",
+   "test": "tests/kit-rules.test.mjs::K207 F2: an empty sealed: or sent: line is refused with its cause named"
+  },
+  {
+   "id": "K208",
+   "kind": "added",
+   "reach": "projects",
+   "text": "The closeout lists each owner answer no decision row quotes, and fails until each is recorded or marked not a decision.",
+   "evidence": "user/skills/closeout/answers.mjs",
+   "test": "tests/closeout-answers.test.mjs::the closeout names each pop-up answer no decision row quotes, and passes once each is recorded or marked"
+  },
+  {
+   "id": "K208-QUIET",
+   "kind": "added",
+   "reach": "projects",
+   "text": "An answer recorded with state.mjs decide is not named, and a session with no answers passes.",
+   "evidence": "user/skills/closeout/answers.mjs",
+   "test": "tests/closeout-answers.test.mjs::an answer recorded with state.mjs decide is not named, and a session with no answers passes silent"
+  },
+  {
+   "id": "K208-ONCE",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The closeout's answer scan lists a decision asked with a code span, counts each answer once, and reads the project from a subfolder.",
+   "evidence": "user/skills/closeout/answers.mjs",
+   "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder"
+  },
+  {
+   "id": "K227",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "A quoted ${VAR} path in a read is no longer held as a possible delete.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "where": "Plain reads beside a cd",
+   "before": "Held as writes",
+   "after": "Pass",
+   "test": "tests/guards-hold.test.mjs::a quoted ${VAR} path in a read runs, and a program or delete through ${VAR} is still refused"
+  },
+  {
+   "id": "K226",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "A quoted pattern beside a folder glob reads as a read.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::a quoted pattern beside a folder glob reads, and a quoted or dotted name of a guard file is still refused"
+  },
+  {
+   "id": "K228",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "A bracket inside quotes after a cd is text, not a group, so the cd is followed.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::a bracket inside quotes after a cd keeps the folder, and a real group or a cd into the guards is still refused"
+  },
+  {
+   "id": "K229",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "Plain rg, find, echo, date and npm ls read as readers in their safe forms, so a relative script after a cd passes (K186).",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::rg, find, echo, date and npm ls read as plain readers, and their writing or running forms are still refused"
+  },
+  {
+   "id": "K229-NPM",
+   "kind": "security",
+   "reach": "projects",
+   "text": "npm ls reads as a plain read only with its display options; a config, a script or a shortened option keeps the strict reading.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::npm ls reads as plain only with its display options; a config, a script or a shortened option is refused"
+  },
+  {
+   "id": "K252",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "A program piped into a reader after a cd keeps the folder, so the reads after it are no longer held.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::a program piped into a reader after a cd keeps the folder, and a writer taking the pipe is still refused"
+  },
+  {
+   "id": "K154",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "A wildcard in inline node code that can reach no file is read as text; code that lists, writes or runs is still read strictly.",
+   "evidence": "project/.claude/owner-proof.cjs",
+   "test": "tests/guards-hold.test.mjs::a wildcard in inline node code that reaches no file is text, and code that lists or writes files is still held"
+  },
+  {
+   "id": "K242",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "One wildcard over many folders (du -sh node_modules/*) is no longer held for the folder count.",
+   "evidence": "user/kit-tools/kit-launch.cjs",
+   "test": "tests/guards-outside.test.mjs::one wildcard over many folders runs; a project among them, or a later wildcard read from them, still holds"
+  },
+  {
+   "id": "K251",
+   "kind": "fixed",
+   "reach": "kit",
+   "text": "The link test skips where Windows gives no symlink rights, instead of failing.",
+   "evidence": "tests/run-records-kept.test.mjs",
+   "test": "tests/run-records-kept.test.mjs::filling a probe user layer never writes through a link to a file outside it"
+  }
+ ],
+ "verification": [
+  "Worktree config on Windows: the kit's own test fails at 1.48.0 on the owner's PC and passes here; a new test fails on the 1.48.0 start script and on a session-PATH version, and passes here.",
+  "A throwaway install of this branch (worktree config on, 70 folders): plain reads, the K154 and K252 shapes and git status run through the installed chain; a guard write, a globbing write and a push to main are held.",
+  "The spawn check reports 0 unsafe bare-name launches, down from 45; both guard self-checks pass (779 and 301 cases)."
+ ],
+ "decisions": [
+  {
+   "decision": "The launcher gets Git for Windows' own folder, not the session's PATH",
+   "why": "A session PATH could hold a planted git."
+  },
+  {
+   "decision": "A wildcard in inline node code is text only where the code can reach no file",
+   "why": "The owner's pick (2026-11-21)."
+  },
+  {
+   "decision": "An owner push marker needs a pop-up yes per ref",
+   "why": "The owner's pick (2026-11-21)."
+  },
+  {
+   "decision": "A minor release",
+   "why": "New holds and checks reach every project."
+  },
+  {
+   "decision": "The K229 test reads `find -delete` from `.claude`",
+   "why": "Its first case held only by its pipe."
+  },
+  {
+   "decision": "A short closeout answer needs its own row",
+   "why": "decide records no words_from below three words."
+  },
+  {
+   "decision": "Four sweep findings closed with no change",
+   "why": "The sweep report gives each reason."
+  },
+  {
+   "decision": "R1 ships as hardening",
+   "why": "125 probes found no difference."
+  },
+  {
+   "decision": "The owner push rule line is reworded in build 23b",
+   "why": "The owner's pick (2026-11-21): a rewording needs a paid recall run, and the hook's refusal already names the typed ref."
+  },
+  {
+   "decision": "CI-fix rounds halt the loop at 5",
+   "why": "The owner's pick (2026-11-21): past 5, something is not aligned."
+  }
+ ],
+ "upgrading": "Run install user, then install project: the guard start script, the launcher, the commit-msg and pre-push hooks, owner-proof, owner-yes, the safe-spawn helper copies, name-check, state.mjs, loop.mjs and the closeout and brainstorm skills change. The owner's own push now asks for the ref's name at their terminal (or a pop-up yes in a session); a person whose name matches a code tool commits once listed with `git config --add kit.allowedIdent \"<name> <email>\"`.",
+ "limits": "Inline code can still build a path from pieces no guard reads; the narrow K154 reading trusts only code with no file, list or run call. A rules file the base does not hold is read from the main checkout, as before. The owner's typed ref is read from their terminal: a tool that can type into that terminal could answer it. The author check knows eight code tools and five maker domains; another name passes, and the hook is skipped where name-check.mjs is missing or the owner commits with `--no-verify`. The kit's git reads take attributes from the empty tree (git 2.40 or later; an older git ignores it), so line-ending attributes fall to core.autocrlf there; a clean filter named in the repo's own info/attributes still runs on a status, its program set only in git config, which no tool writes. The closeout reads only this session's transcript: a card answered in a project thread is not seen, and two answers with the same words need a row each. A flag or subcommand built at run time beyond a plain expansion is not read.",
+ "tests": {
+  "before": 1036,
+  "after": 1092,
+  "flips": "declared tests at origin/main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "8f4dd3c",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched beyond the closeout scan, which prints no session id; nothing new leaves the machine"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched: no license or content source changed"
+   },
+   {
+    "name": "Code security",
+    "result": "Owner push, author check, the kit git helper, MCP and plugin holds, launcher settings faults and the spawn check fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Closeout answers, decide, plan drop and eleven test gaps fixed; four findings shown not real or needing no change"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 4,
+   "medium": 23,
+   "low": 28
+  },
+  "fixes": [
+   {
+    "id": "G1",
+    "severity": "high",
+    "security": true,
+    "text": "With no session, the owner's own push asks for the ref's name at their terminal, never sending the owner to `--no-verify`",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "U1",
+    "severity": "high",
+    "security": true,
+    "text": "The owner's own push from a terminal with no session works without `--no-verify`; the rule line is reworded in build 23b",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "S1",
+    "severity": "high",
+    "security": true,
+    "text": "MCP server and plugin changes, the flags that load them, and the folders a session loads tools from need the owner's yes",
+    "commit": "5e833c9",
+    "test": "tests/owner-proof.test.mjs::claude mcp add, --mcp-config, .claude.json and an agent file take the owner's yes; listing and reading run"
+   },
+   {
+    "id": "F1",
+    "severity": "high",
+    "security": true,
+    "text": "A diff program the session's settings or the repo name never runs inside the kit's own git",
+    "commit": "73af74d",
+    "test": "tests/safe-spawn.test.mjs::a git read through the helper runs no program the repo or the environment names, where plain git does"
+   },
+   {
+    "id": "D1",
+    "severity": "medium",
+    "text": "`decide --from` refuses the decisions file, its lock and every tracking file",
+    "commit": "0d85e49",
+    "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock",
+    "reason": "the older decide tests read paths outside the project; these cases need their own project, file and lock"
+   },
+   {
+    "id": "T2",
+    "severity": "medium",
+    "text": "The ci-fix cap test pins the owner's setting instead of reading it back",
+    "commit": "65fd55d",
+    "test": "tests/loop.test.mjs::the counted stops halt at the bounds file's limits, per unit, and a halt holds every step until the owner resumes"
+   },
+   {
+    "id": "T3",
+    "severity": "medium",
+    "security": true,
+    "text": "find's other writing and running actions are refused beside a cd, each tested",
+    "commit": "5e833c9",
+    "test": "tests/guards-hold.test.mjs::find with an action that writes a file or asks to run a program is still refused beside a cd"
+   },
+   {
+    "id": "G2",
+    "severity": "medium",
+    "text": "The closeout lists a decision asked with a code span; only an exact Yes or No to one act is skipped",
+    "commit": "3956d0e",
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
+   },
+   {
+    "id": "G3",
+    "severity": "medium",
+    "security": true,
+    "text": "A refused push names the canary when the pop-up record changed shape",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "G4",
+    "severity": "medium",
+    "security": true,
+    "text": "The author check reads eight tools and five maker domains however they are spelled",
+    "commit": "e80fcd8",
+    "test": "tests/author-check.test.mjs::the author check reads a tool name however it is spelled, names each repair, and passes an allowed person"
+   },
+   {
+    "id": "G5",
+    "severity": "medium",
+    "security": true,
+    "text": "The author refusal names `--reset-author`, `--author`, the GIT_AUTHOR variables and the allow list",
+    "commit": "e80fcd8",
+    "test": "tests/author-check.test.mjs::the author check reads a tool name however it is spelled, names each repair, and passes an allowed person"
+   },
+   {
+    "id": "V1",
+    "severity": "medium",
+    "security": true,
+    "text": "The helper test proves no repo or settings program runs, and fetches are off only on reads",
+    "commit": "73af74d",
+    "test": "tests/safe-spawn.test.mjs::a git read through the helper runs no program the repo or the environment names, where plain git does"
+   },
+   {
+    "id": "V2",
+    "severity": "medium",
+    "security": true,
+    "text": "The spawn check follows child_process under any name, a renamed call and a held program, and reads only a top-level cwd",
+    "commit": "f98e915",
+    "test": "tests/spawn-check.test.mjs::the check follows child_process under another name, a renamed call, a program held in a name, and a nested cwd"
+   },
+   {
+    "id": "N1",
+    "severity": "medium",
+    "text": "The closeout repair line says a short answer records with `--unchecked`, one row per answer",
+    "commit": "3956d0e",
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
+   },
+   {
+    "id": "N2",
+    "severity": "medium",
+    "text": "One decision row quotes one answer, so a short row no longer stands for every same answer",
+    "commit": "3956d0e",
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
+   },
+   {
+    "id": "S2",
+    "severity": "medium",
+    "security": true,
+    "text": "The launcher names every reroute, trust, telemetry, git-program and command setting as a fault",
+    "commit": "ced1c36",
+    "test": "tests/launcher-verify.test.mjs::a settings file that reroutes the model, trusts another certificate or runs a command is named as a fault"
+   },
+   {
+    "id": "U2",
+    "severity": "medium",
+    "security": true,
+    "text": "A person the owner lists in kit.allowedIdent commits under that exact identity",
+    "commit": "e80fcd8",
+    "test": "tests/author-check.test.mjs::the author check reads a tool name however it is spelled, names each repair, and passes an allowed person"
+   },
+   {
+    "id": "U3",
+    "severity": "medium",
+    "security": true,
+    "text": "A replayed tool author's refusal names `--reset-author`",
+    "commit": "e80fcd8",
+    "test": "tests/author-check.test.mjs::the author check reads a tool name however it is spelled, names each repair, and passes an allowed person"
+   },
+   {
+    "id": "U4",
+    "severity": "medium",
+    "security": true,
+    "text": "The owner's push yes is spent, and the push stopped, when its log cannot be written",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "P1",
+    "severity": "medium",
+    "security": true,
+    "text": "The owner's push stops when its log cannot be written, so its yes is never reused",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "P2",
+    "severity": "medium",
+    "security": true,
+    "text": "An owner push yes counts only for its remote and its repo",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "P3",
+    "severity": "medium",
+    "security": true,
+    "text": "An owner push yes counts for ten minutes in the pre-push hook",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "F2",
+    "severity": "medium",
+    "security": true,
+    "text": "The secret scan and first-push diffs run no diff program the repo names",
+    "commit": "73af74d",
+    "test": "tests/safe-spawn.test.mjs::a git read through the helper runs no program the repo or the environment names, where plain git does"
+   },
+   {
+    "id": "F3",
+    "severity": "medium",
+    "security": true,
+    "text": "The clean-tree status runs no clean filter and no index hook",
+    "commit": "73af74d",
+    "test": "tests/safe-spawn.test.mjs::a git read through the helper runs no program the repo or the environment names, where plain git does"
+   },
+   {
+    "id": "D3",
+    "severity": "low",
+    "security": true,
+    "text": "The push lock names its owner and is taken over only when stale and its push is gone",
+    "commit": "b0c37b8",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "D4",
+    "severity": "low",
+    "text": "decide refuses the same decision twice and takes over a lock left by a stopped run",
+    "commit": "0d85e49",
+    "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock",
+    "reason": "the older decide tests read paths outside the project; these cases need their own project, file and lock"
+   },
+   {
+    "id": "D5",
+    "severity": "low",
+    "text": "A row holding a longer answer quotes one answer only",
+    "commit": "3956d0e",
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
+   },
+   {
+    "id": "D7",
+    "severity": "low",
+    "text": "loop drop ends a plan whose lock will not come, on the owner's Yes",
+    "commit": "65fd55d",
+    "test": "tests/loop.test.mjs::a plan whose lock will not come is dropped on the owner's Yes, unscored, and a new verdict records",
+    "reason": "the drop command is new, and no older test runs it"
+   },
+   {
+    "id": "T4",
+    "severity": "low",
+    "text": "The closeout pass line count is checked exactly",
+    "commit": "3956d0e",
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
+   },
+   {
+    "id": "T6",
+    "severity": "low",
+    "text": "The risk matcher is tested between its two ends",
+    "commit": "65fd55d",
+    "test": "tests/loop.test.mjs::a refusal matches a named risk only when two of its words, and half of them, are in the answer",
+    "reason": "the older shadow test runs whole loop runs; these cases need plans with no run open"
+   },
+   {
+    "id": "T7",
+    "severity": "low",
+    "security": true,
+    "text": "A second push on a spent yes is checked by its exit and the remote's ref",
+    "commit": "5e833c9",
+    "test": "tests/guards-hold.test.mjs::a script a Claude session writes and runs cannot clear its markers and push main as the owner"
+   },
+   {
+    "id": "G6",
+    "severity": "low",
+    "text": "The brainstorm sheet's repeated-thought refusal names the repair plainly",
+    "commit": "ed6db34",
+    "test": "tests/kit-rules.test.mjs::K207 F1: a \"What I thought:\" line inside an answer is refused, naming the question, not filed in the wrong box",
+    "reason": "the K207 test is itself new in this build and holds the refusal text"
+   },
+   {
+    "id": "V3",
+    "severity": "low",
+    "text": "The mask tests division and a quote inside a regex",
+    "commit": "f98e915",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "V4",
+    "severity": "low",
+    "text": "The command test covers .js files, node_modules and `--dirs`",
+    "commit": "f98e915",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "V6",
+    "severity": "low",
+    "security": true,
+    "text": "The scrub test runs from the project, where a planted git would be found",
+    "commit": "73af74d",
+    "test": "tests/safe-spawn.test.mjs::the report scrub reads git from node's own folder, never a git left in the project"
+   },
+   {
+    "id": "N4",
+    "severity": "low",
+    "text": "The closeout skill names the not-checked pass",
+    "commit": "3956d0e",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "N5",
+    "severity": "low",
+    "text": "The answer scan reads the project from a subfolder and names .kit as a file",
+    "commit": "3956d0e",
+    "test": "tests/closeout-answers.test.mjs::a decision asked with a code span and each repeat of a short answer are named until recorded, from any subfolder",
+    "reason": "one new test holds every answer scan case the sweep found, so the two older tests keep their own cases"
+   },
+   {
+    "id": "S3",
+    "severity": "low",
+    "text": "decide reads and removes only the file it opened",
+    "commit": "0d85e49",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "U6",
+    "severity": "low",
+    "security": true,
+    "text": "The commit-msg hook names a refused author and a refused message together",
+    "commit": "e80fcd8",
+    "test": "tests/author-check.test.mjs::the author check reads a tool name however it is spelled, names each repair, and passes an allowed person"
+   },
+   {
+    "id": "P4",
+    "severity": "low",
+    "security": true,
+    "text": "The author check reads a tool name glued to a word, a digit or a lookalike letter",
+    "commit": "e80fcd8",
+    "test": "tests/author-check.test.mjs::the author check reads a tool name however it is spelled, names each repair, and passes an allowed person"
+   },
+   {
+    "id": "P5",
+    "severity": "low",
+    "security": true,
+    "text": "CI checks a merge commit's author too",
+    "commit": "e80fcd8",
+    "test": "tests/ci-commit-names.test.mjs::CI checks who a merge commit in the PR is by, as it checks every other commit"
+   },
+   {
+    "id": "P6",
+    "severity": "low",
+    "security": true,
+    "text": "A yes record counts only with the source user or user_temporary",
+    "commit": "122adc2",
+    "test": "tests/guards-hold.test.mjs::the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock"
+   },
+   {
+    "id": "R2",
+    "severity": "low",
+    "security": true,
+    "text": "npm ls reads as plain only with its display options",
+    "commit": "5e833c9",
+    "test": "tests/guards-hold.test.mjs::npm ls reads as plain only with its display options; a config, a script or a shortened option is refused"
+   },
+   {
+    "id": "F4",
+    "severity": "low",
+    "security": true,
+    "text": "The spawn check follows an alias, a renamed call, a held program and reads only a top-level cwd",
+    "commit": "f98e915",
+    "test": "tests/spawn-check.test.mjs::the check follows child_process under another name, a renamed call, a program held in a name, and a nested cwd"
+   },
+   {
+    "id": "F5",
+    "severity": "low",
+    "security": true,
+    "text": "The guard start script finds a Mac or Linux git after the system folders",
+    "commit": "627b6e0",
+    "test": "tests/guards-outside.test.mjs::the guard start script gives the launcher the system folders, then the Mac and Linux git folders"
+   }
+  ]
+ }
+}

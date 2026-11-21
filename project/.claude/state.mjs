@@ -539,18 +539,49 @@ function proven(d) {
 
 /** Record one decision, under a lock so two sessions never take the same id; the row is appended, never rewritten. */
 function decide(fromFile, unchecked) {
+	// K211 (build 23a): the input is resolved once, through inside(), and that one path is read and later removed: a ../
+	// path, an absolute path or a link on the way would otherwise read and delete a file outside the project.
+	const src = inside(fromFile);
+	if (!src) return `${clean(fromFile)} is not a plain file inside this project; put the decision file in the project and name it from there`;
+	// D1 (the build 23a sweep): the file is removed once recorded, so it must be a .json file of its own, never the
+	// decisions file, its lock or a tracking file (decide --from _Decisions.jsonl deleted every decision).
+	const rel = path.relative(ROOT, src);
+	const kept = [...TRACKING, DECISIONS, `${DECISIONS}.lock`].map((f) => f.toLowerCase());
+	if (!/\.json$/i.test(src) || kept.includes(rel.toLowerCase())) return `${clean(fromFile)} is not a decision file: name a .json file of its own (it is removed once recorded), never a tracking file or ${DECISIONS}`;
+	// S3 (the build 23a sweep): the file is opened once and read through that handle, and it must still be the plain
+	// file inside() checked, so a swap to a link between the check and the read reads nothing outside.
 	let input;
-	try { input = JSON.parse(fs.readFileSync(path.resolve(ROOT, fromFile), 'utf8')); } catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
+	let opened;
+	try {
+		const fdIn = fs.openSync(src, 'r');
+		try {
+			opened = fs.fstatSync(fdIn);
+			const named = fs.lstatSync(src);
+			if (!opened.isFile() || opened.nlink !== 1 || named.ino !== opened.ino || named.dev !== opened.dev || !realUnder(src)) return `${clean(fromFile)} is not a plain file inside this project; put the decision file in the project and name it from there`;
+			input = JSON.parse(fs.readFileSync(fdIn, 'utf8'));
+		} finally { fs.closeSync(fdIn); }
+	} catch { return `${clean(fromFile)} could not be read as JSON { "decision", "words", "why", "supersedes"? }`; }
 	const { decision, words, why, supersedes = null } = input || {};
 	if (![decision, words, why].every((v) => typeof v === 'string' && clean(v))) return 'A decision needs "decision", "words" (the owner\'s own words) and "why" (the reason).';
 	const from = ownerSaid(words, process.env.CLAUDE_CODE_SESSION_ID);
 	if (!from && !unchecked) return 'The words (at least three whole words) were not found word for word in the owner\'s messages or pop-up answers in this session\'s transcript. Quote the owner exactly, or record them with --unchecked, marked as the session recorded them.';
 	const lock = file(`${DECISIONS}.lock`);
+	// D4 (the build 23a sweep): a lock older than ten minutes is left by a run that stopped, and is taken over.
+	const takeLock = () => fs.openSync(lock, 'wx');
 	let fd;
-	try { fd = fs.openSync(lock, 'wx'); } catch { return `${DECISIONS} is being written by another session (${DECISIONS}.lock); try again, or remove the lock if no session is running`; }
+	try { fd = takeLock(); } catch {
+		let stale = false;
+		try { stale = Date.now() - fs.statSync(lock).mtimeMs > 10 * 60 * 1000; } catch { /* gone: try again */ stale = true; }
+		try { if (stale) { fs.rmSync(lock, { force: true }); fd = takeLock(); } } catch { /* another session took it */ }
+		if (fd === undefined) return `${DECISIONS} is being written by another session (${DECISIONS}.lock); try again, or remove the lock if no session is running (a lock older than ten minutes is taken over)`;
+	}
 	try {
 		const dec = loadDecisions();
 		if (dec.why) return dec.why;
+		// D4: a run that stopped between the row and the file's removal leaves the file; the same decision again is
+		// that one, not a new row.
+		const last = dec.rows[dec.rows.length - 1];
+		if (last && last.decision === clean(decision) && last.words === clean(words) && last.why === clean(why) && (last.supersedes ?? null) === supersedes) return `This decision is already recorded as ${last.id}; remove ${clean(fromFile)} by hand.`;
 		if (supersedes !== null && !dec.rows.some((d) => d.id === supersedes)) return `${clean(supersedes)} is not a decision on record, so it cannot be superseded.`;
 		if (supersedes !== null && dec.rows.some((d) => d.supersedes === supersedes)) return `${clean(supersedes)} is already superseded; supersede the newest decision in its line.`;
 		const d = { id: `D-${dec.rows.length + 1}`, date: today(), decision: clean(decision), words: clean(words), words_from: from, why: clean(why), supersedes };
@@ -560,7 +591,11 @@ function decide(fromFile, unchecked) {
 		try { st = fs.lstatSync(file(DECISIONS)); } catch { /* new */ }
 		if (st && (st.isSymbolicLink() || !st.isFile() || st.nlink > 1)) return `${DECISIONS} is a link or not a plain file, which state.mjs never writes through`;
 		fs.appendFileSync(file(DECISIONS), row);
-		try { fs.rmSync(path.resolve(ROOT, fromFile)); } catch { /* the owner's file to remove */ }
+		// Checked again right before the delete: still a plain file with one name, and still under the real project.
+		try {
+			const now = fs.lstatSync(src);
+			if (now.isFile() && now.nlink === 1 && now.ino === opened.ino && now.dev === opened.dev && realUnder(src)) fs.rmSync(src);
+		} catch { /* the owner's file to remove */ }
 		console.log(`${d.id} recorded${from ? '' : ' (words not checked)'}`);
 		return null;
 	} finally {
@@ -706,7 +741,8 @@ function main(argv) {
 /**
  * TC1 (build 20): done needs proof, on every path that writes a row (item set and item add; the review of this fix).
  * The row names its verify result, a file in the project, which holds the release check's RELEASE COMPLETE line for
- * the release the row ships in; a tag set alone is refused. Closed (shown not real) needs none.
+ * the release the row ships in; a tag set alone is refused. Closed (shown not real) needs none, except on a self-found
+ * row (K209): it is done or closed only with a verify file that is not empty and measured throwaway, ci or real-use.
  *
  * Args:
  *     row: the row as it would be written
@@ -721,14 +757,21 @@ function doneProof(row, was, named) {
 	// The build 20 sweep: a link or a junction on the way leads outside the project, so the file is read only through
 	// inside(), as an import is.
 	if ((named || (row.tag === 'done' && row.verify)) && !inside(String(row.verify))) return `${id}: the verify result must be a plain file in this project`;
-	if (row.tag !== 'done' || (was && was.tag === 'done')) return null;
-	if (!row.verify) return `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
-	// The release the row ships in: a version anywhere in its at (1.46.0, v1.46.0, "build 20 (1.46.0)"). A row with no
-	// version (a project that ships no releases) needs only its verify file.
-	const m = String(row.at || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
-	if (!m) return null;
+	// K209 (build 23a): a row the kit found on itself is suspect until it is reproduced, so closing it (shown not real,
+	// or fixed) needs its proof too, and its measured label must name a real measurement, not an estimate or a report.
+	const self = row.origin === 'self';
+	const closing = self && row.tag === 'closed' && !(was && was.tag === 'closed');
+	if (!closing && (row.tag !== 'done' || (was && was.tag === 'done'))) return null;
+	if (!row.verify) return closing ? `${id}: a self-found row closes only with its proof: item set ${id} verify <file showing it is not real, or fixed>` : `${id}: done needs its verify result: item set ${id} verify <result file>, a file holding the release check's RELEASE COMPLETE line`;
+	if (self && !list.PROVEN.includes(row.measured)) return `${id}: a self-found row needs measured ${list.PROVEN.join(', ')} before it is ${row.tag} (now ${clean(String(row.measured ?? 'none'))}): item set ${id} measured <label>`;
 	let text = '';
 	try { text = fs.readFileSync(inside(String(row.verify)), 'utf8'); } catch { return `${id}: its verify result ${clean(row.verify)} cannot be read`; }
+	if (!text.trim()) return `${id}: its verify result ${clean(row.verify)} is empty`;
+	if (closing) return null;
+	// The release the row ships in: a version anywhere in its at (1.46.0, v1.46.0, "build 20 (1.46.0)"). A row with no
+	// version (a project that ships no releases) needs only its verify file, not empty.
+	const m = String(row.at || '').match(/\bv?(\d+\.\d+\.\d+)\b/);
+	if (!m) return null;
 	const line = new RegExp(`RELEASE COMPLETE: every step of v?${m[1].replace(/\./g, '\\.')} `);
 	if (!line.test(text)) return `${id}: its verify result ${clean(row.verify)} has no "RELEASE COMPLETE: every step of v${m[1]}" line: run the release check and keep its output there`;
 	// The release check also logs each complete run in the git folder, which no tool writes: a typed line is not one.

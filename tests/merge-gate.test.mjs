@@ -75,6 +75,11 @@ function setup() {
 		fs.mkdirSync(path.join(config, 'skills', s), { recursive: true });
 		fs.copyFileSync(path.join(KIT, 'user/skills', s, 'audit.mjs'), path.join(config, 'skills', s, 'audit.mjs'));
 	}
+	// The release-notes audit starts git through the helper install lays beside the PR audits (build 23).
+	if (fs.existsSync(path.join(KIT, 'user/kit-tools/audits/safe-spawn.cjs'))) {
+		fs.mkdirSync(path.join(config, 'kit-tools', 'audits'), { recursive: true });
+		fs.copyFileSync(path.join(KIT, 'user/kit-tools/audits/safe-spawn.cjs'), path.join(config, 'kit-tools', 'audits', 'safe-spawn.cjs'));
+	}
 	const state = {
 		pr: { number: 7, state: 'OPEN', isDraft: false, isCrossRepository: false, headRefName: 'feat/subtract', headRefOid: sha, baseRefName: 'main', title: TITLE, body: BODY, url: 'https://github.com/o/r/pull/7' },
 		repo: { full_name: 'o/r', html_url: 'https://github.com/o/r', allow_auto_merge: true, delete_branch_on_merge: true },

@@ -17,7 +17,7 @@ const cfg = kitTemp.makeTemp('cfg-');
 // The PR-text guard reads the copy install user keeps in the Claude folder (user/kit-tools/audits).
 fs.mkdirSync(path.join(cfg, 'kit-tools', 'audits'), { recursive: true });
 for (const f of fs.readdirSync(path.resolve('user/kit-tools/audits'))) fs.copyFileSync(path.resolve('user/kit-tools/audits', f), path.join(cfg, 'kit-tools', 'audits', f));
-const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs'];
+const AUDIT_FILES = ['pr-body-audit.mjs', 'pr-body-audit-lean.mjs', 'canary-phrase.mjs', 'version-bump-check.mjs', 'no-attribution.mjs', 'name-check.mjs', 'visuals.mjs', 'safe-spawn.cjs'].filter((f) => f !== 'safe-spawn.cjs' || fs.existsSync(path.resolve('project/.claude', f))); // the helper is missing only on a base from before build 23
 const GOOD_BODY = ['## Grants: a clean grant row', '', 'Adds one grant row, so a green PR here merges itself.', '', '**Changes**',
 	'- The settings grant merge on green, read from main.', '', '**Gates**', '- [x] The grant counts only once it is on main.',
 	'- [x] Settings only; CI green on the head.', '- [x] Triage tier review: privacy, supply chain, legal, and code security; no secrets or account information.', '', '**Notes** - Settings only.', ''].join('\n');
@@ -497,7 +497,8 @@ const SID = '11111111-2222-3333-4444-555555555555';
 const tdir = path.join(cfg, 'projects', 'C--proj');
 fs.mkdirSync(tdir, { recursive: true });
 const TRANSCRIPT = path.join(tdir, `${SID}.jsonl`);
-function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT, ask = null }) {
+// record: the answer's permissionDecision field as Claude Code writes it (null leaves it out); field: its name (R7.1).
+function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_temporary', filled = false, minutesAgo = 1, then = [], beside = [], tried = /^(Edit|Write|MultiEdit) /.test(act) ? null : { tool: 'Bash', input: { command: act } }, file = TRANSCRIPT, ask = null, record = { decision: 'accept', source }, field = 'permissionDecision', sidechain = false }) {
 	const at = new Date(Date.now() - minutesAgo * 60000).toISOString();
 	const question = ask || `May I run \`${act}\`?`;
 	// Each pop-up its own id, as Claude Code gives it: a spent tap is kept by that id.
@@ -509,13 +510,19 @@ function popUp({ act, answer = 'Yes', labels = ['Yes', 'No'], source = 'user_tem
 		...(tried ? [{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: 'toolu_tried', name: tried.tool, input: tried.input }] } }] : []),
 		// An act sent in the same message as the pop-up is written before the answer, as Claude Code writes it.
 		{ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: askId, name: 'AskUserQuestion', input }, ...beside.map((command, k) => ({ type: 'tool_use', id: `toolu_beside${k}`, name: 'Bash', input: { command } }))] } },
-		{ type: 'user', isSidechain: false, timestamp: at, permissionDecision: { decision: 'accept', source }, toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: askId, content: 'answered' }] } },
+		{ type: 'user', isSidechain: sidechain, timestamp: at, ...(record === null ? {} : { [field]: record }), toolUseResult: { questions: input.questions, answers: { [question]: answer } }, message: { content: [{ type: 'tool_result', tool_use_id: askId, content: 'answered' }] } },
 		...then.map((command, k) => ({ type: 'assistant', isSidechain: false, timestamp: at, message: { content: [{ type: 'tool_use', id: `toolu_run${k}`, name: 'Bash', input: { command } }] } })),
 	];
 	fs.mkdirSync(path.dirname(file), { recursive: true });
 	fs.writeFileSync(file, lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 }
 const withYes = (tool_name, tool_input, extra = {}) => decide(tool_name, tool_input, { transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: 'toolu_now', ...extra });
+// K215 (build 23a): the owner's own push (KIT_OWNER_PUSH) runs on the owner's pop-up yes too. A fresh yes to `act`, in
+// the transcript folder of a repo, and the env the pre-push hook reads it with.
+function ownerTap(repo, act, { minutesAgo = 0, source = 'user_temporary' } = {}) {
+	popUp({ act, minutesAgo, source, file: path.join(cfg, 'projects', fs.realpathSync.native(repo).replace(/[^A-Za-z0-9]/g, '-'), `${SID}.jsonl`) });
+	return { CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: SID };
+}
 
 // why: guards rule:outward-acts
 test('a held command runs once on the owner\'s own pop-up yes for that exact command', () => {
@@ -621,6 +628,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	fs.mkdirSync(path.join(dir, '.githooks'));
 	fs.mkdirSync(path.join(dir, '.claude'));
 	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(dir, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'one\n');
 	g('add', '.');
@@ -657,7 +665,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	// The build 21 sweep: the first branch pushed to an empty remote becomes its default, so it waits for the owner; the
 	// owner's own push (KIT_OWNER_PUSH, which the guard never lets a tool set) passes the bound.
 	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`).stderr, /no branch yet/);
-	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s first push');
+	// K215 (build 23a): the marker alone is no owner; with the owner's pop-up yes to that push it goes.
+	assert.match(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1', CLAUDE_CODE_SESSION_ID: SID, CLAUDE_CONFIG_DIR: kitTemp.makeTemp('no-yes-') }).stderr, /KIT_OWNER_PUSH counts only beside/);
+	assert.equal(pushNew(`refs/heads/feat/z ${main} refs/heads/feat/z ${Z}`, { ...bare0, KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/z') }).status, 0, 'the owner\x27s first push');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /owner-hand refs\/heads\/feat\/z/);
 	// A name built at run time could set the owner's marker past the guard, so it counts only with no AI marker.
 	assert.match(pushNew(`refs/heads/main ${main} refs/heads/main ${Z}`, { KIT_OWNER_PUSH: '1' }).stderr, /this shell is an AI's/);
@@ -706,7 +716,9 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	assert.notEqual(r.status, 0, 'a secret in a pushed commit');
 	assert.match(r.stdout + r.stderr, /github token in b\.md/);
 	assert.doesNotMatch(r.stdout + r.stderr, /Zx9Qk2Lm/, 'the value is never printed');
-	assert.notEqual(push(`refs/heads/feat/x ${head} refs/heads/feat/x ${Z}`, { KIT_OWNER_PUSH: '1' }).status, 0, 'the owner\x27s push is scanned too');
+	const own = push(`refs/heads/feat/x ${head} refs/heads/feat/x ${Z}`, { CLAUDECODE: '', KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/x') });
+	assert.notEqual(own.status, 0, 'the owner\x27s push is scanned too');
+	assert.match(own.stdout + own.stderr, /github token in b\.md/, 'the owner\x27s push reached the scan');
 	assert.match(fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8'), /auto refs\/heads\/feat\/x/);
 	// The 1.25.0 sweep: a decoy remote-tracking ref does not hide the commits from the scan.
 	g('update-ref', 'refs/remotes/origin/decoy', head);
@@ -863,6 +875,52 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 		assert.equal(ownerYes(call), null, 'a yes dated after now');
 	} finally {
 		if (before === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = before;
+	}
+});
+
+// R7.1 (build 23a): every owner's yes rests on one field of the pop-up record that Claude Code does not document
+// (permissionDecision: decision "accept", source "user..."). If that shape changes (a phone answer, a renamed field, a
+// new value), the reader still refuses, but the refusal read as if the owner had not answered and asking again could
+// never help. The refusal now names the changed record (the canary); it never grants, and stays quiet on a No, on a
+// pop-up Claude answered itself and on a subagent's answer. Cases R1 to R9 from proof-sweep narrowing/R7.1.
+// why: guards rule:outward-acts (a changed pop-up record must name itself, never fail as a silent no)
+test('a Yes whose pop-up record changed shape is still refused, and the refusal names the changed record', () => {
+	const act = 'git push origin main';
+	const reason = () => {
+		const r = spawnSync(process.execPath, [HOOKS[0]], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: act }, cwd: proj, transcript_path: TRANSCRIPT, session_id: SID, tool_use_id: `toolu_r71_${Math.random().toString(36).slice(2)}` }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_PROJECT_DIR: proj } });
+		assert.equal(r.status, 0, r.stderr);
+		const h = r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
+		return { decision: h.permissionDecision || 'allow', text: String(h.permissionDecisionReason || '') };
+	};
+	const CANARY = /Canary \(R7\.1\)/;
+	popUp({ act });
+	let r = reason();
+	assert.equal(r.decision, 'allow', 'R1 today\'s record shape is a yes');
+	assert.doesNotMatch(r.text, CANARY);
+	const changed = [
+		['R2 field missing', { record: null }],
+		['R3 field renamed', { field: 'permission_decision' }],
+		['R4 value accepted', { record: { decision: 'accepted', source: 'user' } }],
+		['R5 source mobile', { record: { decision: 'accept', source: 'mobile' } }],
+		['R9 decision reject', { record: { decision: 'reject', source: 'user' } }],
+	];
+	for (const [name, shape] of changed) {
+		popUp({ act, ...shape });
+		r = reason();
+		assert.equal(r.decision, 'deny', `${name}: a changed record granted a yes`);
+		assert.match(r.text, CANARY, `${name}: the refusal does not name the changed record`);
+		assert.match(r.text, /asking again will not help/, name);
+	}
+	const quiet = [
+		['R6 answer No', { record: null, answer: 'No' }],
+		['R7 Claude filled the pop-up', { record: null, filled: true }],
+		['R8 subagent answer', { record: null, sidechain: true }],
+	];
+	for (const [name, shape] of quiet) {
+		popUp({ act, ...shape });
+		r = reason();
+		assert.equal(r.decision, 'deny', name);
+		assert.doesNotMatch(r.text, CANARY, `${name}: the canary spoke for an answer that is no person's Yes`);
 	}
 });
 
@@ -1445,7 +1503,8 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	// K163 (build 21): the hook scans every pusher's push, so the scan sits beside it as install puts it.
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(dir, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
@@ -1453,7 +1512,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
 	g('update-ref', 'refs/remotes/origin/decoy', 'HEAD');
 	const head = g('rev-parse', 'HEAD').stdout.trim();
-	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_OWNER_PUSH: '1' } });
+	const r = spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { cwd: dir, encoding: 'utf8', input: `refs/heads/feat/x ${head} refs/heads/feat/x ${'0'.repeat(40)}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_OWNER_PUSH: '1', ...ownerTap(dir, 'git push origin feat/x') } });
 	assert.notEqual(r.status, 0, 'the first push went out past a fake remote ref');
 	assert.match(r.stderr, /First push blocked/);
 	assert.equal(fs.existsSync(path.join(dir, '.git', 'kit-first-push-done')), false);
@@ -1597,4 +1656,229 @@ test('three read-only shapes pass, and their write twins stay held (K187, K196)'
 	for (const c of [`Get-ChildItem -Filter "Name='a'" | Remove-Item`, `Get-CimInstance Win32_Process -Filter "Name='x'"; Copy-Item x .claude/guard.cjs`,
 		`foreach ($i in 'a','b') { node .claude/state.mjs item $i --json | Out-File .claude/guard.cjs }`, `foreach ($i in 'a') { node x.js $i-- .claude/guard.cjs }`]) assert.equal(ps(c), 'deny', c);
 	for (const c of ['git -C . grep -n A -- .claude > .claude/guard.cjs', 'git -C . -c core.pager=x grep -n A -- .claude', 'git -C . checkout -- .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+});
+
+// K215 (build 23a, flag F3): the pre-push hook takes KIT_OWNER_PUSH=1 as the owner's own push whenever the shell has
+// neither AI marker. The guard refuses a command that clears the markers or sets the owner's marker, but a Claude
+// session can write a script with the Write tool and run it with Bash: both calls pass the guard, and the script's own
+// shell clears CLAUDECODE and AI_AGENT, sets KIT_OWNER_PUSH=1 and pushes main past the bound.
+// why: guards rule:outward-acts (a Claude session must not pass the owner's own push bound)
+test('a script a Claude session writes and runs cannot clear its markers and push main as the owner', () => {
+	const dir = kitTemp.makeTemp('k215-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', '-c', 'commit.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, '.githooks'));
+	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
+	g('add', '.');
+	g('commit', '-qm', 'one');
+	const bare = kitTemp.makeTemp('k215-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+	g('push', '-q', '--no-verify', bare, 'main');
+	const before = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	g('config', 'core.hooksPath', '.githooks');
+	fs.writeFileSync(path.join(dir, 'b.md'), 'b\n');
+	g('add', '.');
+	g('commit', '-qm', 'two');
+	// The two tool calls, as the guard sees them: neither is held.
+	const script = path.join(dir, 'p.sh');
+	const body = `unset CLAUDECODE AI_AGENT\nKIT_OWNER_PUSH=1 git push -q ${bare} main\n`;
+	assert.equal(decide('Write', { file_path: script, content: body }), 'allow');
+	assert.equal(decide('Bash', { command: 'sh p.sh' }), 'allow');
+	fs.writeFileSync(script, body);
+	// Run as the Bash tool runs it: a shell with the AI markers set.
+	spawnSync('sh', ['p.sh'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '1', AI_AGENT: 'claude-code', KIT_PUSH_APPROVED: '' } });
+	const after = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	assert.equal(after, before, 'a script the session wrote pushed main as the owner; push log: ' + (fs.existsSync(path.join(dir, '.git', 'kit-push.log')) ? fs.readFileSync(path.join(dir, '.git', 'kit-push.log'), 'utf8').trim() : 'none'));
+	// The owner's own push still goes, on the owner's pop-up yes to it, and that yes is spent by the push.
+	g('remote', 'add', 'origin', bare);
+	const owner = (env) => spawnSync('git', ['push', '-q', 'origin', 'main'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', KIT_OWNER_PUSH: '1', ...env } });
+	const tap = ownerTap(dir, 'git push origin main');
+	const first = owner(tap);
+	assert.equal(first.status, 0, first.stderr);
+	assert.notEqual(spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), before, 'the owner\x27s push on a yes');
+	fs.writeFileSync(path.join(dir, 'c.md'), 'c\n');
+	g('add', '.');
+	g('commit', '-qm', 'three');
+	const pushed = spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	const twice = owner(tap);
+	assert.notEqual(twice.status, 0, 'one yes pushed twice');
+	assert.match(twice.stderr, /KIT_OWNER_PUSH counts only beside/);
+	assert.equal(spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim(), pushed, 'the remote moved on a spent yes');
+});
+
+// The build 23a sweep of K215: the owner's own terminal had no session, so every owner push was refused and the
+// refusal sent the owner to --no-verify, which skips every check; a yes was bound to no remote and no age, a log the
+// owner's push could not write left its yes unspent, and a lock left by a killed push held every later one.
+// why: guards rule:outward-acts (the owner's own push past the bound: typed in their terminal, or one fresh yes to that remote)
+test('the owner push asks at the terminal with no session, and a yes is bound to its remote, age, log and lock', () => {
+	const dir = kitTemp.makeTemp('k215b-');
+	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', '-c', 'commit.gpgsign=false', ...a], { cwd: dir, encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, '.githooks'));
+	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
+	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
+	fs.mkdirSync(path.join(dir, '.claude'));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
+	const bare = kitTemp.makeTemp('k215b-remote-');
+	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
+	let n = 0;
+	const commit = () => { fs.writeFileSync(path.join(dir, `f${++n}.md`), `${n}\n`); g('add', '.'); g('commit', '-qm', `c${n}`); };
+	commit();
+	g('push', '-q', '--no-verify', bare, 'main');
+	g('remote', 'add', 'origin', bare);
+	g('config', 'core.hooksPath', '.githooks');
+	const head = () => spawnSync('git', ['-C', bare, 'rev-parse', 'main'], { encoding: 'utf8' }).stdout.trim();
+	const owner = (env = {}) => spawnSync('git', ['push', '-q', 'origin', 'main'], { cwd: dir, encoding: 'utf8', env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', CLAUDE_CODE_SESSION_ID: '', KIT_OWNER_PUSH: '1', ...env } });
+	// With no session and no terminal (a tool's shell), the push is held, and the refusal never sends the owner to
+	// --no-verify, which skips the checks.
+	commit();
+	let was = head();
+	const none = owner();
+	assert.notEqual(none.status, 0, 'no session and no terminal');
+	assert.equal(head(), was);
+	assert.match(none.stderr, /type the ref's name at their own terminal/); // pin: 2 (the owner's next step at a refused push)
+	assert.doesNotMatch(none.stderr, /no-verify/);
+	// A yes to push another remote is no yes for origin.
+	const other = owner(ownerTap(dir, 'git push backup main'));
+	assert.notEqual(other.status, 0, 'a yes to another remote');
+	assert.equal(head(), was);
+	// A yes older than 10 minutes is no yes for the owner's own push.
+	assert.notEqual(owner(ownerTap(dir, 'git push origin main', { minutesAgo: 15 })).status, 0, 'a yes 15 minutes old');
+	assert.equal(head(), was);
+	// A record whose source only starts with user is no person's tap; the refusal names the canary.
+	const odd = owner(ownerTap(dir, 'git push origin main', { source: 'userSettings' }));
+	assert.notEqual(odd.status, 0, 'a source that only starts with user');
+	assert.match(odd.stderr, /Canary \(R7\.1\)/);
+	// A lock left by a push that was killed more than 10 minutes ago is taken over; a fresh one still holds.
+	const lock = path.join(dir, '.git', 'kit-push.lock');
+	fs.mkdirSync(lock);
+	assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/); // pin: 2 (the owner waits)
+	const old = new Date(Date.now() - 20 * 60000);
+	// An old lock whose push is still running (a slow push) is not taken (the commit security review of 122adc2).
+	if (process.platform !== 'win32') {
+		// This test's own process is running, so a lock naming it is a push still under way (Git Bash on Windows numbers
+		// its processes apart from Windows, so this part runs on Linux and macOS).
+		fs.writeFileSync(path.join(lock, 'owner'), `${process.pid} slowpush\n`);
+		fs.utimesSync(lock, old, old);
+		assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/, 'a slow push keeps its lock'); // pin: 2 (the owner waits)
+		fs.writeFileSync(path.join(lock, 'owner'), '999999999 gone\n');
+	}
+	fs.utimesSync(lock, old, old);
+	const taken = owner(ownerTap(dir, 'git push origin main'));
+	assert.equal(taken.status, 0, taken.stderr);
+	assert.notEqual(head(), was, 'the push went past the old lock');
+	// A log the push cannot write does not spend the yes, so the push does not go (POSIX file modes only).
+	if (process.platform !== 'win32' && process.getuid && process.getuid() !== 0) {
+		commit();
+		was = head();
+		fs.chmodSync(path.join(dir, '.git', 'kit-push.log'), 0o444);
+		const unlogged = owner(ownerTap(dir, 'git push origin main'));
+		fs.chmodSync(path.join(dir, '.git', 'kit-push.log'), 0o644);
+		assert.notEqual(unlogged.status, 0, 'a push the log cannot record');
+		assert.match(unlogged.stderr, /cannot be written/);
+		assert.equal(head(), was);
+	}
+	// In the owner's own terminal (a real one, made by script on Linux), the typed ref name is the yes.
+	const pty = spawnSync('script', ['--version'], { encoding: 'utf8' });
+	if (process.platform === 'linux' && pty.status === 0) {
+		const typed = (word) => spawnSync('script', ['-qec', 'git push -q origin main', '/dev/null'], { cwd: dir, encoding: 'utf8', input: `${word}\n`, env: { ...process.env, CLAUDECODE: '', AI_AGENT: '', KIT_PUSH_APPROVED: '', CLAUDE_CODE_SESSION_ID: '', KIT_OWNER_PUSH: '1' }, timeout: 20000 });
+		commit();
+		was = head();
+		typed('mian');
+		assert.equal(head(), was, 'a mistyped name');
+		const ok = typed('main');
+		assert.notEqual(head(), was, `the typed name: ${ok.stdout}${ok.stderr}`);
+	}
+});
+
+// Lane a6 (build 23a): false refusals the CM5 fuzz found on v1.47.0 (proof-sweep evidence/CM5/false-refusal.md),
+// each a harmless read the guards refused. Each fix is narrow, and the dangerous commands beside each shape are
+// still refused.
+fs.mkdirSync(path.join(proj, 'src', 'app'), { recursive: true });
+fs.mkdirSync(path.join(proj, 'tests', 'dir'), { recursive: true });
+
+// K227 (S2): a quoted ${VAR} word was read as a program held in a variable, with no sign of a delete.
+// why: catches a quoted ${VAR} path in a read refused as a possible delete
+test('a quoted ${VAR} path in a read runs, and a program or delete through ${VAR} is still refused', () => {
+	for (const c of ['ls "${TMPDIR}/n.txt"', 'cat "${HOME}/notes.txt"', `node -e 'console.log(require("fs").readFileSync("\${TMPDIR}/a.txt","utf8"))'`]) assert.equal(bash(c), 'allow', c);
+	for (const c of ['${G} -rf x', '"${G}" -rf x', "bash -c '${G} -rf x'", '${G:-rm} -rf x', '${G} --recursive --force x', 'rm -rf "${TMPDIR}/x"', 'rm -rf "${HOME}"', 'eval "${G} -rf x"', '$G -rf x']) assert.notEqual(bash(c), 'allow', c);
+});
+
+// K226 (S6): a quoted word anywhere made the guard read every wildcard as able to match a dot name, so
+// src/**/*.ts could be .claude and a plain grep was refused.
+// why: catches a quoted grep pattern beside a folder glob refused as a guard write
+test('a quoted pattern beside a folder glob reads, and a quoted or dotted name of a guard file is still refused', () => {
+	for (const c of ["grep -rn 'foo' src/**/*.ts", "grep 'foo' src/*/a.ts", 'cd "src" && ls src/**/*.ts', "grep -n 'a b' src/*.ts src/*/*.ts"]) assert.equal(bash(c), 'allow', c);
+	for (const c of ["echo x > '.claude/guard.cjs'", "cp x '.claude/'*.cjs", "echo x > src/'.'*/guard.cjs", "sed -i s/a/b/ \".claude\"/*.cjs", "cp 'x' .claude/*", "echo 'y' > .c*/guard.cjs", "bash -O dotglob -c 'echo x > src/../*/guard.cjs'", "shopt -s dotglob; echo 'x' > */guard.cjs", "cd '.claude' && echo x > guard.cjs"]) assert.equal(bash(c), 'deny', c);
+});
+
+// K228 (S4): a bracket inside quotes ("(a.js)", node -e '...(...)') counted as a group, so a cd before it was not
+// followed and a .js word was read as a guard file.
+// why: catches a quoted bracket after a cd refused as a guard write
+test('a bracket inside quotes after a cd keeps the folder, and a real group or a cd into the guards is still refused', () => {
+	for (const c of ['cd /tmp && echo "(a.js)"', `cd src && node -e 'console.log(require("fs").readFileSync("a.js","utf8"))'`]) assert.equal(bash(c), 'allow', c);
+	for (const c of ['cd src && (cd ../.claude; echo x > guard.cjs)', 'cd src && { cd ../.claude; echo x > guard.cjs; }', 'cd .claude && echo "(x)" > guard.cjs', `cd .claude && node -e 'require("fs").writeFileSync("guard.cjs","x")'`, 'cd src && echo "$(cd ../.claude; echo x > guard.cjs)"', 'cd src && (cd ..; echo "(x)") && echo x > ../.claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+});
+
+// K229 (S3, S3b, S5, S8; K186's shape): rg, find, echo, date and npm ls were not plain readers, so beside a cd the
+// guard could not follow, a pipe after a cd, or a script, a harmless read was refused. Each counts only in a form
+// that writes nothing and runs no other program with the words given.
+// why: catches harmless rg, find, echo, date and npm ls reads refused beside a cd or script
+test('rg, find, echo, date and npm ls read as plain readers, and their writing or running forms are still refused', () => {
+	for (const c of ['cd src; echo a.js', 'cd src; rg foo a.js', 'cd src; find . -name x.js', 'cd tests && find dir -name *.md | head', 'cd src; node ./x.mjs; npm ls', 'cd src; date | head *.md', 'cd src; rg -n foo *.js | head']) assert.equal(bash(c), 'allow', c);
+	assert.equal(decide('PowerShell', { command: 'ls src/**/*.ts; npm ls' }), 'allow');
+	for (const c of ['cd src; find . -name x.js -delete', "cd src; find . -name x.js -exec sh -c 'x' \;", 'cd src; find . -name x.js -execdir rm {} +', 'cd src; find . -name x.js -fprint ../.claude/guard.cjs', 'cd src; rg --pre ./w.sh foo a.js', 'cd src; rg --pre=./w.sh foo a.js', 'cd src; echo x > a.js', 'cd $D; echo x > guard.cjs', 'cd src; echo x > ../.claude/guard.cjs', 'cd src; node ./x.mjs; npm install', 'cd src; node ./x.mjs; npm run build', 'cd src; node ./x.mjs; npm ls --global; npm exec x', 'cd src; date -s 2020-01-01 | head *.mjs', 'cd .claude && find . -name x -delete | head', 'cd tests && find dir -name *.md | xargs rm', 'export RIPGREP_CONFIG_PATH=./c; cd src; rg foo a.js', 'cd src; RIPGREP_CONFIG_PATH=./c rg foo a.js', 'cd src; npm_config_script_shell=./x npm ls; node ./x.mjs']) assert.equal(bash(c), 'deny', c);
+});
+
+// K252 (build 23a, held live on 1.48.0): a pipe after a cd counted only when every stage read, so a program piped
+// into a reader (cd x && node kit.mjs install user 2>&1 | tail -40) lost the folder and every later word was held. A
+// stage that sends its output on runs in a shell of its own and cannot move the folder; only a stage that takes the
+// pipe must read, as a file list piped into a writer still names files no word shows.
+// why: catches a program piped into a reader after a cd held as a write to a protected file
+test('a program piped into a reader after a cd keeps the folder, and a writer taking the pipe is still refused', () => {
+	for (const c of ['cd src && node ./x.mjs status 2>&1 | tail -40; echo "EXIT=$?"', 'cd src && node x.mjs | head; ls a.js', 'cd src && npm test 2>&1 | grep fail; cat a.js']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['cd .claude && ls | xargs -n1 cp /dev/null', 'cd src && node x.mjs 2>&1 | tee ../.claude/guard.cjs', 'cd src && node x.mjs > ../.claude/guard.cjs | tail', 'cd src && node x.mjs | tail; echo x > ../.claude/guard.cjs', 'cd .claude && node x.mjs | tail; echo x > guard.cjs', 'cd $D && node x.mjs | tail; echo x > guard.cjs', 'cd src && node x.mjs 2>../.claude/guard.cjs | tail; ls', 'cd src && node x.mjs | sh; ls']) assert.equal(bash(c), 'deny', c);
+});
+
+// K154 (build 23a, the owner's pick 2026-11-21: narrow it): a quoted wildcard inside node -e code ('*', /\*\*/) was
+// read as a file name that could be .claude, so a print was held. Code that can reach no file (no require, import,
+// process, constructor, bracket access or a file, list or run call) cannot use a wildcard, so its wildcards are text;
+// a plain name in it, and any wildcard in code that can reach files, is still read.
+// why: catches harmless inline node code with a quoted wildcard held as a write to a protected file
+test('a wildcard in inline node code that reaches no file is text, and code that lists or writes files is still held', () => {
+	for (const c of [`node -e "console.log(/\\*\\*/.test('a**b'))"`, `node -e "console.log('*/*')"`, `node -e "console.log('*')"`, `node -p "'a*b'.split('*').length"`, `cd src && node -e "console.log('*/*')"`]) assert.equal(bash(c), 'allow', c);
+	for (const c of [`node -e "require('fs').globSync('*/*').forEach((f) => require('fs').writeFileSync(f, ''))"`, `node -e "for (const f of require('fs').readdirSync('.')) require('fs').rmSync(f + '/*')"`, `node -e "import('fs').then((m) => m.writeFileSync('*/guard.cjs', ''))"`, `node -e "process.mainModule.require('fs').writeFileSync('.claude/*', '')"`, `node -e "[]['con'+'structor']('x')('*')"`, `node -e "console.log('.claude/guard.cjs')" > .claude/guard.cjs`, `node -e "x('.claude/guard.cjs')"`, `node -e "console.log('*')" > .claude/guard.cjs`, `node -e "console.log('*')"; echo x > .claude/guard.cjs`, `node -e "console.log('$(tee .clau*/guard.cjs </dev/null)')"`, `node -e "console.log('\${X:=*}')"; echo x > $X/guard.cjs`, `node -e "console.log('$(cp x */guard.cjs)')"`]) assert.equal(bash(c), 'deny', c);
+});
+
+// T3 (the build 23a sweep): find's other writing and running actions (-fprintf, -fls, -fprint0, -ok, -okdir, and
+// -exec closed by a quoted ';') were in the list but in no test, so dropping one from it passed every test.
+// why: guards rule:outward-acts (a find that writes or runs beside a cd is no plain read)
+// planted: {"file":"project/.claude/owner-proof.cjs","was":"fprint|fprint0|fprintf|fls)$/;","to":"fprint)$/;"}
+test('find with an action that writes a file or asks to run a program is still refused beside a cd', () => {
+	for (const c of ['cd src; find . -name x -fprintf ../.claude/guard.cjs %p', 'cd src; find . -name x -fls ../.claude/guard.cjs', 'cd src; find . -name x -fprint0 ../.claude/guard.cjs', 'cd src; find . -name x -ok rm {} \\;', 'cd src; find . -name x -okdir rm {} \\;', "cd src; find . -name x -exec rm {} ';'"]) assert.equal(bash(c), 'deny', c);
+});
+
+// R2 (the build 23a sweep): npm ls was plain unless an option was on a short deny list, but npm takes an option by
+// any start of its name (--userconf is --userconfig) and some options run code (--onload-script). It is plain now only
+// with the options that change what it shows.
+// why: catches npm ls loading a script or another config beside a cd, read as a plain read
+test('npm ls reads as plain only with its display options; a config, a script or a shortened option is refused', () => {
+	for (const c of ['cd src; node ./x.mjs; npm ls --all --depth=2 --json', 'cd src; node ./x.mjs; npm ls -g', 'cd src; node ./x.mjs; npm ls --omit dev react']) assert.equal(bash(c), 'allow', c);
+	for (const c of ['cd src; node ./x.mjs; npm ls --onload-script=./x.js', 'cd src; node ./x.mjs; npm ls --userconf ./c', 'cd src; node ./x.mjs; npm ls --globalconf=./c', 'cd src; node ./x.mjs; npm ls --registry=http://x']) assert.equal(bash(c), 'deny', c);
+});
+
+// K241 (build 23a): bash leaves a brace group with no comma as text ({x}), so a group holding one ({{x},de}) still
+// expands. The reader skipped any group with a brace inside, so tee .clau{{x},de}/guard.cjs (which bash reads as
+// .clau{x}/guard.cjs and .claude/guard.cjs) wrote a guard file past every guard (reproduced on a throwaway copy).
+// Groups side by side did not multiply either ({.,x}{claude,y} is .claude .y xclaude xy), with the same result.
+// why: guards rule:outward-acts (a nested brace must not hide a guarded file from the guards)
+test('a brace group holding a literal {x} is expanded as bash does, so a guarded file it names is still held', () => {
+	for (const c of ['tee .clau{{x},de}/guard.cjs < x', 'cp guard.cjs .clau{{x},de}/', 'tee .claude/gu{ard,{x}}.cjs < x', 'tee {{x},.claude}/owner-proof.cjs < x', 'tee .clau{{{x}},de}/guard.cjs < x', 'tee .claude/settings{{x},.json} < x', 'tee {.,x}{claude,y}/guard.cjs < x', 'tee {.,x}{c,y}laude/settings.json < x', 'tee .claude/gu{a,x}{rd,y}.cjs < x', 'tee .c{l..l}{a,x}ude/guard.cjs < x', 'rm -rf {.,x}{claude,y}', 'tee .clau{{x},d{e,f}}/guard.cjs < x']) assert.notEqual(bash(c), 'allow', c);
+	// Literal braces and plain groups still read as before.
+	for (const c of ['echo {x}', 'ls src/{app,lib}', 'find . -name x -print', 'echo a{b,c}d', 'echo ${HOME}/x', 'cat src/{a,b}{1..2}.txt', 'cat .claude/{guard,owner-proof}.cjs']) assert.equal(bash(c), 'allow', c);
 });

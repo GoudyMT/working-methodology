@@ -12,9 +12,10 @@
 // lead's review still stand behind it.
 const fs = require('fs');
 const path = require('path');
-const { spawnSync } = require('child_process');
+const safeSpawn = require('./safe-spawn.cjs');
 
-const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, ...a], { encoding: 'utf8' });
+// git from node's own folder, never the project (build 23).
+const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
 // around the phrase (bold, a quote, a heading) and hyphens inside it then compare the same; the space padding
 // keeps a word boundary on both sides.
@@ -22,12 +23,26 @@ const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/g
 
 // The phrase lives in the file the agent is sent to: the one the rule index names for rule:agent-team-adapter
 // (a project may fill its adapter in its own module), else the kit's agent-teams module. It is read from the main
-// checkout, so an agent in a worktree (where the notes may be untracked) finds it.
+// checkout, so an agent in a worktree (where the notes may be untracked) finds it, unless a sweep recorded its base copy.
 function findPhrase(cwd) {
 	const common = git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir');
 	if (common.status !== 0) return null;
 	const commonDir = common.stdout.trim();
 	const root = path.dirname(commonDir);
+	// K218: during a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
+	// branch cannot swap the phrase its own reviewers are checked against. That copy is read while HEAD is the commit
+	// it was written for.
+	try {
+		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
+		const head = git(cwd, 'rev-parse', 'HEAD');
+		// The build 23a commit security review: the phrase approve.mjs recorded is used, not the copy read again, so a
+		// copy rewritten after the approval cannot swap it.
+		if (rec && typeof rec.phrase === 'string' && words(rec.phrase).trim() && head.status === 0 && rec.head === head.stdout.trim()) return { phrase: rec.phrase, commonDir };
+		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
+			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
+			if (m && words(m[1]).trim()) return { phrase: m[1], commonDir };
+		}
+	} catch { /* no sweep record, or its copy is gone: read the main checkout */ }
 	let file = 'standards/agent-teams.md';
 	const index = path.join(root, 'standards', 'INDEX.md');
 	if (fs.existsSync(index)) {

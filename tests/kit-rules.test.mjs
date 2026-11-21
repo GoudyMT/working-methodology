@@ -1161,6 +1161,29 @@ test('the sheet parser refuses what it cannot read, and says why', async () => {
   for (const [name, text, why] of bad) assert.throws(() => parseSheet(text), why, name);
 });
 
+// K207 F1 (I24, reproduced 2026-11-21): a line starting "What I thought: " typed inside an answer ended the answer, and
+// the rest of it was filed as the owner's thought. Two such lines in one question cannot be told apart, so the sheet is
+// refused and the question named, never guessed at.
+// why: guards rule:collaborative-design-locks
+test('K207 F1: a "What I thought:" line inside an answer is refused, naming the question, not filed in the wrong box', async () => {
+  const { parseSheet } = await sheetTools();
+  assert.throws(() => parseSheet(answerQ3('My plan.\nWhat I thought: is this a label?\nmore')), /Q3 has more than one "What I thought:" line, so the sheet cannot tell where the answer ends/);
+  assert.throws(() => parseSheet(answerQ3('My plan.\nWhat I thought:\nmore')), /Q3 has more than one "What I thought:" line/);
+  // A line that only mentions the label, not at its start, stays the owner's words.
+  assert.equal(parseSheet(answerQ3('My plan. What I thought: later')).questions[2].answer, 'My plan. What I thought: later');
+});
+
+// K207 F2 (I24, reproduced 2026-11-21): an empty "sealed:" line, the shape the format page draws, was refused as "a
+// line the sheet's top does not have", which hid the cause. The refusal now names it and says what to do.
+// why: guards rule:collaborative-design-locks
+test('K207 F2: an empty sealed: or sent: line is refused with its cause named', async () => {
+  const { parseSheet } = await sheetTools();
+  assert.throws(() => parseSheet(SHEET.replace('asked by: Claude\n', 'asked by: Claude\nsealed:\n')), /"sealed:" is empty: leave the line out, the seal command writes it/);
+  assert.throws(() => parseSheet(SHEET.replace('asked by: Claude\n', 'asked by: Claude\nsealed:   \n')), /"sealed:" is empty/);
+  assert.throws(() => parseSheet(SHEET.replace('asked by: Claude\n', 'asked by: Claude\nsent:\n')), /"sent:" is empty: leave the line out, the page export writes it/);
+  assert.equal(parseSheet(SHEET).sealed, '', 'a sheet with no sealed: line still reads');
+});
+
 // why: guards rule:collaborative-design-locks
 test('a sealed sheet refuses a note on the asker\'s lines, a lost or moved question, and words filed as the closing box', async () => {
   const { parseSheet, sealOf, renderSheet } = await sheetTools();

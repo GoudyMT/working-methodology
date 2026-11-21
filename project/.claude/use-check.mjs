@@ -29,6 +29,9 @@ const toPosix = (p) => p.split(path.sep).join('/');
 // The Claude config folder: status passes it in; otherwise the one Claude Code uses.
 const HOME = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 // The launcher install user put in the Claude config folder (V3, 1.25.1): its own reading of its wiring and its records.
+// The guards' own test of a pop-up record (R7.1, K224), from the owner-yes.cjs beside this check; null if it is missing
+// or older than the test, so the check fails rather than reads the record its own way.
+const yesRecord = () => { try { const f = createRequire(import.meta.url)('./owner-yes.cjs').YES_RECORD; return typeof f === 'function' ? f : null; } catch { return null; } };
 const launcher = () => { try { return createRequire(import.meta.url)(path.join(HOME, 'kit-tools', 'kit-launch.cjs')); } catch { return null; } };
 // Where install keeps this project's guard record and hook shims, named as the launcher names it.
 const guardDir = () => { const L = launcher(); return L ? path.join(HOME, 'kit-guard', L.recordName(dir)) : path.join(HOME, 'kit-guard', '-'); };
@@ -86,9 +89,11 @@ const PARTS = [
 					let e = null;
 					try { e = JSON.parse(lines[i]); } catch { continue; }
 					if (!e || e.type !== 'user' || !e.toolUseResult || !e.toolUseResult.answers) continue;
-					return e.permissionDecision && e.permissionDecision.decision
-						? [true, 'the newest pop-up answer carries permissionDecision, the field the guards read the owner\'s yes from']
-						: [false, 'the newest pop-up answer has no permissionDecision, so the guards cannot read the owner\'s yes from it: report this to the kit'];
+					const ok = yesRecord();
+					if (!ok) return [false, '.claude/owner-yes.cjs is missing or older than this check, so the permissionDecision record cannot be read the guards\' way: run kit.mjs install project'];
+					return ok(e)
+						? [true, 'the newest pop-up answer carries permissionDecision as the guards read the owner\'s yes from it (decision accept, source user)']
+						: [false, `the newest pop-up answer's permissionDecision is ${JSON.stringify(e.permissionDecision ?? null).slice(0, 80)}, not {decision: "accept", source: "user..."}, so the guards cannot read the owner's yes from it: report this to the kit`];
 				}
 			}
 			return [null, 'no pop-up answer in this project\'s sessions yet'];

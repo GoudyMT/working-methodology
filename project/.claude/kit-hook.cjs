@@ -51,7 +51,8 @@ function loopMode() {
 		const { spawnSync } = require('child_process');
 		const sid = String(INPUT.session_id || '');
 		if (MODE !== 'pre-compact' && /^[0-9a-f-]{36}$/i.test(sid)) {
-			const git = spawnSync('git', ['-C', PROJECT, 'rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 3000 });
+			// git from node's own folder, never the project (build 23).
+			const git = require('./safe-spawn.cjs').gitRead(PROJECT, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8', timeout: 3000 });
 			if (git.status === 0) fs.writeFileSync(path.join(git.stdout.trim(), 'kit-loop-session'), sid);
 		}
 		const args = MODE === 'prompt' ? ['prompt', '--text', String(INPUT.prompt || '').trim() === 'begin loop workflow' ? 'begin loop workflow' : 'another message']

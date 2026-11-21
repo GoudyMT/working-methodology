@@ -31,6 +31,8 @@ marked as yours to decide, or named as one only data can settle. If the work gro
 ## Steps
 
 1. **Read first.** Read what the project already records about the idea. A question the records answer is not asked.
+   If the topic is new to you or the owner, learn it first: find what someone doing this well must decide, so the
+   questions cover what the owner would not know to ask.
 2. **Build the unknowns ledger** from the ground in [references/question-craft.md](references/question-craft.md). A new
    project covers all of that ground. A feature covers what its size needs.
 3. **Write the questions.** Fit them to this work; there is no fixed script. Each one carries why it matters, options

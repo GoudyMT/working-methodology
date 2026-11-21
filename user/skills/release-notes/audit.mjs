@@ -6,7 +6,7 @@
 // Exit 0 = clean; 1 = faults, one per line.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
+import safeSpawn from '../../kit-tools/audits/safe-spawn.cjs';
 
 const [file, version] = process.argv.slice(2);
 if (!file || !version) {
@@ -58,7 +58,8 @@ each(/\b\d[\d,]* (?:tests?|mutants?|findings?)\b|\b(?:fixed|closed|resolved) \d[
 // The agents' confirmation phrase never goes out (rule:agent-canary). It is read from the project's main checkout,
 // from the file the rule index names for rule:agent-team-adapter, the way the project's own
 // .claude/canary-phrase.mjs reads it; this skill is user level, so it keeps its own copy.
-const common = spawnSync('git', ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+// git reads the folder this runs in, from node's own folder (build 23).
+const common = safeSpawn.gitRead(process.cwd(), ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
 if (common.status === 0) {
   const root = path.dirname(common.stdout.trim());
   const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
@@ -122,7 +123,7 @@ const uncommented = (text) => { let t = String(text), was; do { was = t; t = t.r
 // Any heading named Visuals, or a Visuals fold, is checked, so a wrong level or form is named, never skipped.
 if (/^#{1,6}[ \t]*Visuals[ \t]*$|<summary>\s*Visuals:/im.test(text)) {
   const { checkSection, repoOf } = await import(new URL('../../kit-tools/audits/visuals.mjs', import.meta.url).href);
-  const origin = spawnSync('git', ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
+  const origin = safeSpawn.gitRead(process.cwd(), ['remote', 'get-url', 'origin'], { encoding: 'utf8' });
   faults.push(...checkSection(text.replace(/\r\n/g, '\n'), '##', { repo: repoOf(origin.stdout) }));
 } else if (/->|\||\bto\b/.test(text)) {
   // K149: notes that claim a measured number moved carry the section too.

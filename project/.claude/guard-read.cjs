@@ -38,9 +38,11 @@ function plainText(text, tool) {
 	if (/powershell/i.test(String(tool))) return s;
 	// A group's prefix is read whole (it starts after a space, a brace, a quote or the text's start): a prefix that may
 	// start anywhere made each read scan a long run of signs again from every place in it (the 1.23.0 sweep).
-	const brace = /(?<![^\s{}'"])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s{}'"]*)/;
+	// K241 (build 23a): the suffix runs on over later groups, so groups side by side multiply as bash reads them
+	// ({.,x}{claude,y} is .claude .y xclaude xy); inside an outer group it stops at that group's brace (side below).
+	const brace = /(?<![^\s{}'"])([^\s{}'"]*)\{([^\s{}]*,[^\s{}]*)\}([^\s'"]*)/;
 	// A sequence group ({r..r}m, {1..3}, {a..e..2}) is a brace expansion too (the 1.23.0 sweep).
-	const sequence = /(?<![^\s{}'"])([^\s{}'"]*)\{([A-Za-z]|-?\d+)\.\.([A-Za-z]|-?\d+)(?:\.\.(-?\d+))?\}([^\s{}'"]*)/;
+	const sequence = /(?<![^\s{}'"])([^\s{}'"]*)\{([A-Za-z]|-?\d+)\.\.([A-Za-z]|-?\d+)(?:\.\.(-?\d+))?\}([^\s'"]*)/;
 	// Every group is expanded: a fixed count let decoy groups hide a later one (the 1.23.0 mutation check, M27). Each
 	// pass removes one group, so it ends; the size cap stops a nested blow-up, and what is left asks (below).
 	// Each pass scans the whole text, so the passes are bounded too: a hook that runs past its timeout blocks.
@@ -57,17 +59,40 @@ function plainText(text, tool) {
 		const j = c.includes(',') ? c.indexOf(',') : c.length;
 		return a.slice(0, i) + items.map((x) => a.slice(i) + x + c.slice(0, j)).join(',') + c.slice(j);
 	};
+	// K241 (build 23a): bash leaves a group with no comma and no sequence as text ({x}, {}, ${P}), and the group around
+	// one still expands ({{x},de} is {x} de). Such text groups are set aside first, innermost out, as two signs no shell
+	// text holds, so the groups around them read as plain groups; they are put back after.
+	const OPEN = '\u0001';
+	const CLOSE = '\u0002';
+	const textGroup = /\{([^\s{},]*)\}/g;
+	const isSeq = (b) => /^([A-Za-z]|-?\d+)\.\.([A-Za-z]|-?\d+)(\.\.-?\d+)?$/.test(b);
+	if (!s.includes(OPEN) && !s.includes(CLOSE)) {
+		for (let pass = 0; pass < MAX_GROUPS; pass++) {
+			const next = s.replace(textGroup, (m, b) => (isSeq(b) ? m : OPEN + b + CLOSE));
+			if (next === s) break;
+			s = next;
+		}
+	}
+	// Inside an outer group the suffix stops at the first brace; the rest of the text is left as it was.
+	const side = (items, a, c, offset) => {
+		if (!inGroup(offset)) return wrap(items, a, c, offset);
+		const k = c.search(/[{}]/);
+		return k < 0 ? wrap(items, a, c, offset) : wrap(items, a, c.slice(0, k), offset) + c.slice(k);
+	};
 	for (let pass = 0; pass < MAX_GROUPS && (brace.test(s) || sequence.test(s)) && s.length < MAX_PLAIN; pass++) {
-		if (sequence.test(s)) {
+		// The leftmost group first, of either kind, so a group's suffix carries the groups after it ({a,b}{1..2}).
+		const atSeq = s.search(sequence);
+		const atBrace = s.search(brace);
+		if (atSeq >= 0 && (atBrace < 0 || atSeq < atBrace)) {
 			s = s.replace(sequence, (m, a, from, to, step, c, offset) => {
 				const items = seqItems(from, to, step);
-				return items ? wrap(items, a, c, offset) : m.replace('..', '\u0000');
+				return items ? side(items, a, c, offset) : m.replace('..', '\u0000');
 			});
-		} else s = s.replace(brace, (m, a, b, c, offset) => wrap(b.split(','), a, c, offset));
+		} else s = s.replace(brace, (m, a, b, c, offset) => side(b.split(','), a, c, offset));
 	}
 	// Past the cap the rest is unread: a word the guards always ask on stands in for it.
 	if (brace.test(s) || sequence.test(s) || s.includes('\u0000')) s = s.split('\u0000').join('..') + ' ; git push ; rm -rf /';
-	return s;
+	return s.split(OPEN).join('{').split(CLOSE).join('}');
 }
 
 // The words of a sequence group, or null when it is not one bash expands or holds too many to read.
