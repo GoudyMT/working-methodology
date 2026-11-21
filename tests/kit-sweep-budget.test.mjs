@@ -435,7 +435,7 @@ test('the call-cap hook stops a reviewer before a call would take it past its to
   fs.writeFileSync(path.join(repo, 't', 'subagents', 'agent-r8.jsonl'), `${JSON.stringify({ message: { role: 'user', content: 'Sweep: abc role 1\nCall cap: 15' } })}\n`);
   assert.equal(runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', cwd: repo, transcript_path: path.join(repo, 't.jsonl'), agent_id: 'r8', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } }).stdout, '');
   // pin: 1 (the sweep outcome reads the cause into its pause reason)
-  assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"agent":"r8","cause":"no Dollar ceiling line in the brief"/);
+  assert.match(fs.readFileSync(path.join(repo, '.git', 'kit-guard-open.log'), 'utf8'), /"agent":"r8","cause":"no ceiling \(Dollar or Token\) line in the brief"/);
 });
 
 // K182 (build 22): the ceiling counts list-price dollars, so a re-read of the context (a twentieth of the input price)

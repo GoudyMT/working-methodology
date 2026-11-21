@@ -187,16 +187,22 @@ function meter(input) {
 		if (!m) continue;
 		if (brief && m.role === 'user') {
 			brief = false;
-			const text = JSON.stringify(m.content);
+			// The brief's own text, with its line breaks: its JSON has none, so a ceiling line could not be told from a
+			// ceiling the role's question quotes.
+			const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b && typeof b.text === 'string' ? b.text : '')).join('\n') : JSON.stringify(m.content);
 			const x = text.match(/Call cap: (\d+)/);
 			if (x) cap = Number(x[1]);
-			const t = text.match(/Token ceiling: (\d+)/);
+			// A ceiling line starts with its label (as the sweep guard reads it); a brief with no line that starts so
+			// (one written on a single line) is read wherever the words are.
+			const own = /^(?:Token|Dollar) ceiling:/m.test(text);
+			const at = (re, flags = '') => text.match(new RegExp(`${own ? '^' : ''}${re}`, own ? `m${flags}` : flags));
+			const t = at('Token ceiling: (\\d+)');
 			if (t) ceiling = Number(t[1]);
 			// K182 (build 22): a brief from approve.mjs 1.48.0 on carries its ceiling in list-price dollars.
-			const d = text.match(/Dollar ceiling: \$(\d+(?:\.\d+)?)/);
+			const d = at('Dollar ceiling: \\$(\\d+(?:\\.\\d+)?)');
 			if (d) { ceiling = Number(d[1]); inDollars = true; }
 			// The commit security review: two ceiling lines could be read either way, so neither is.
-			twoCeilings = (text.match(/(Token|Dollar) ceiling:/g) || []).length > 1;
+			twoCeilings = (at('(Token|Dollar) ceiling:', 'g') || []).length > 1;
 		}
 		if (m.role === 'assistant' && m.usage && m.id) {
 			calls.set(m.id, { ...m.usage, model: m.model });
@@ -208,7 +214,7 @@ function meter(input) {
 	// call still waiting on its answer is this one, so it is left out and the count is always the calls before it.
 	// The build 20 sweep: a brief with no cap or no ceiling line is a meter that cannot stop the reviewer, so it is logged
 	// as a fail-open and the sweep's outcome names the role.
-	if (cap === null || ceiling === null) logOpen(input, `no ${cap === null ? 'Call cap' : 'Dollar ceiling'} line in the brief`);
+	if (cap === null || ceiling === null) logOpen(input, `no ${cap === null ? 'Call cap' : 'ceiling (Dollar or Token)'} line in the brief`);
 	if (open.has(String(input.tool_use_id || ''))) calls.delete(open.get(String(input.tool_use_id)));
 	else if ([...open.values()].includes([...calls.keys()].pop())) calls.delete([...calls.keys()].pop());
 	// The transcript holds the calls before this one, and this one is spent already: refused, it still counts, and the
