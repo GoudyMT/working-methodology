@@ -506,8 +506,19 @@ function findDelete(text, ctx, state, depth) {
 		const opener = words[at] ?? '';
 		const after = words.slice(at + 1);
 		const deleteSign = textDeletes || after.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
-		if (/^\$[\w:\\]*$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
-		if (opener === '$' && words.length === 1 && segment.end === '{') return 'a program held in a variable';
+		// A quoted "${G}" reaches here whole: read as $G is ("${G}" -rf x).
+		if (/^\$([\w:\\]*|\{[^{}]*\})$/.test(opener) && opener !== '$' && after.length > 0 && !NOT_RUN_AFTER.test(after[0]) && deleteSign) return 'a program held in a variable';
+		// The tokenizer splits an unquoted ${G} into "$" {, the name }, and the words after it. K227 (build 23a): it held
+		// every such ${...} with no sign of a delete, so a quoted path ("${TMPDIR}/n.txt", read again as a nested command)
+		// was refused as a delete. It now takes the rule $G takes, reading the words after the closing brace; a brace it
+		// cannot close (a ${...} inside one) still holds.
+		if (opener === '$' && words.length === 1 && segment.end === '{') {
+			const name = segments[s + 1];
+			if (!name || name.end !== '}' || name.some((w) => /[${}]/.test(w.value))) return 'a program held in a variable';
+			const rest = (segments[s + 2] || []).filter((w) => !w.redirect).map((w) => w.value);
+			const braceDeletes = textDeletes || rest.some((w) => /^(-[rf]{1,2}|-+recurse|-+force|-+delete|\/s)$/i.test(w));
+			if (rest.length > 0 && !NOT_RUN_AFTER.test(rest[0]) && braceDeletes) return 'a program held in a variable';
+		}
 		// A shell expands a wildcard in a program's path: /usr/bin/r[m].
 		if (/[\\/]/.test(opener) && WILDCARD.test(opener) && !plain[0].quoted && words.length > 1 && !(ctx.pattern && depth > 0)) return 'a program named by a wildcard';
 		const skip = new Set();
