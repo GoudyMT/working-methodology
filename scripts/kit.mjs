@@ -1757,6 +1757,16 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     lines.push(use.text.split('\n')[0]);
     if (use.code !== 0) gaps.push('the use check fails (run kit.mjs install project, or opt the part out in .kit/parts.json)');
   }
+  // CM6 (b): the 1.34.0 promise, state drift in status. The kit's own copy of the state check, run in the project.
+  const stateScript = path.join(kit, 'project', '.claude', 'state.mjs');
+  if (projectDir && fs.existsSync(path.join(projectDir, '_State.json')) && fs.existsSync(stateScript)) {
+    // The Claude folder this status reads, as the use check is given it: the state check compares the installed kit too.
+    const r = spawnSync(process.execPath, [stateScript, 'check'], { cwd: projectDir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', ...(home ? { KIT_CLAUDE_HOME: path.resolve(home), CLAUDE_CONFIG_DIR: path.resolve(home) } : {}) } });
+    if (r.status !== 0) {
+      lines.push(`State: the views differ from _State.json (${String(r.stdout || r.stderr).trim().split('\n')[0].slice(0, 200)}); run node .claude/state.mjs render`);
+      gaps.push('the tracking views differ from _State.json');
+    }
+  }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
   return { current, text: lines.join('\n') };

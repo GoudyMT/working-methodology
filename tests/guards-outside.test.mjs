@@ -1887,3 +1887,23 @@ test('a folder list gone or changed since install holds every call until the own
 	const after = spawnSync(process.execPath, [path.join(fresh.home, 'kit-tools', 'kit-launch.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'Bash', tool_input: { command: 'git status' }, cwd: fresh.proj, session_id: 's1' }), encoding: 'utf8', env: { ...ENV, CLAUDE_PROJECT_DIR: fresh.proj, CLAUDE_CONFIG_DIR: fresh.home } });
 	assert.equal(after.stdout, '', 'recorded by a plain install');
 });
+
+// CM6 (b), K170 (the S1 replay, reproduced on 1.47.0: status has no state line): the 1.34.0 plan and changelog said
+// kit.mjs status reports drift between _State.json and the views generated from it. A set with no render now makes
+// status name the drift and the command that clears it.
+// why: catches a project whose next action in _State.json no longer matches its views while status says current
+test('status names drift between _State.json and its views, and a render clears it (CM6)', () => {
+	const { home, proj } = setup();
+	const state = (...a) => spawnSync(process.execPath, [path.join(KIT, 'project', '.claude', 'state.mjs'), ...a], { cwd: proj, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '' } });
+	assert.ok(fs.existsSync(path.join(proj, '_State.json')), 'install leaves a state file');
+	// An install from the kit source leaves the template's kit placeholder; the project records its kit first.
+	const env = { ...process.env, CLAUDE_CODE_SESSION_ID: '', CLAUDE_CONFIG_DIR: home };
+	for (const a of [['set', 'kit', fs.readFileSync(path.join(KIT, 'VERSION'), 'utf8').trim()], ['render']]) assert.equal(spawnSync(process.execPath, [path.join(KIT, 'project', '.claude', 'state.mjs'), ...a], { cwd: proj, encoding: 'utf8', env }).status, 0, a.join(' '));
+	assert.doesNotMatch(status(home, proj).text, /^State:/m);
+	assert.equal(state('set', 'next', 'ship the export').status, 0);
+	const drift = status(home, proj);
+	assert.equal(drift.current, false, drift.text);
+	assert.match(drift.text, /^State: .*_State\.json.*state\.mjs render/m);
+	assert.equal(state('render').status, 0);
+	assert.doesNotMatch(status(home, proj).text, /^State:/m);
+});
