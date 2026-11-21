@@ -512,6 +512,42 @@ test('a role\'s dollar ceiling comes from its own call cap, and a median-paced r
   assert.equal(approvalLog(cold.dir).pop().ceilingUnit, 'tokens');
 });
 
+// K182 (Max's pick 2026-11-21): a role that reads the diff for its own lens gets one reviewer per slice of a large diff,
+// so each reviewer stays the size of a small build; the cross-file lenses (security, blast radius) keep the whole diff,
+// and a role whose contract names its files is left as it is.
+// why: catches a big build handed whole to the same few reviewers, each cost growing with the square of the diff
+test('a large diff is split into file slices for the diff-reading roles, one reviewer each', () => {
+  const lines = (n) => Array.from({ length: n }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n';
+  const dir = sweepRepo({ 'src/a.ts': lines(300), 'src/b.ts': lines(300), 'src/c.ts': lines(300) });
+  // Test value and the novel lens name the three changed files (test value with a rule beside them); the security roles
+  // are cross-file lenses and keep what they were given.
+  const contract = featureContract();
+  contract.roles[0].context = ['src/a.ts', 'src/b.ts', 'src/c.ts'];
+  contract.roles[3].context = ['src/c.ts', 'src/a.ts', 'src/b.ts', 'rule:test-value'];
+  contract.roles[4].context = ['src/a.ts', 'src/b.ts', 'src/c.ts'];
+  const r = approveRun(contract, dir);
+  assert.equal(r.status, 0, r.stdout);
+  const d = approvalLog(dir).pop();
+  // Test value and the novel lens each split into a with b (600 lines), then c.
+  assert.equal(d.agents, 7);
+  assert.deepEqual(d.roleOf, [0, 1, 2, 3, 3, 4, 4]);
+  const brief = (n) => read(path.join(dir, 'sweeps', fs.readdirSync(path.join(dir, 'sweeps')).find((f) => f.endsWith(`-brief-${n}.md`))));
+  assert.match(brief(4), /part 1 of 2 of the diff/);
+  // (A context entry's ":..." tail is a line range or rule, not part of the path, so the rule reads as "rule".)
+  assert.match(brief(4), /-- "src\/a\.ts" "src\/b\.ts" "rule"$/m);
+  assert.match(brief(5), /part 2 of 2 of the diff/);
+  assert.match(brief(5), /-- "src\/c\.ts" "rule"$/m);
+  assert.match(brief(7), /-- "src\/c\.ts"$/m);
+  assert.doesNotMatch(brief(1), /part \d of/);
+  assert.match(brief(1), /-- "src\/a\.ts" "src\/b\.ts" "src\/c\.ts"$/m);
+  // The guard starts reviewer 5 with the test-value question, the contract role it serves.
+  const tv = JSON.parse(read(r.f)).roles[3].question;
+  assert.equal(sweepGuard(dir, { raw: true, tool_input: { subagent_type: 'reviewer', prompt: `review. Call cap: ${d.calls[4]}. Sweep: ${d.hash} role 5. Token ceiling: ${d.ceilings[4]}. ${tv}` } }).permissionDecision, 'allow');
+  // A small diff is not split.
+  const small = approveRun(featureContract());
+  assert.equal(approvalLog(small.dir).pop().agents, 5);
+});
+
 // K182: at the outcome, a dollar ceiling is held to the role's own dollars (K151's hold, in the unit the brief carried),
 // and the whole sweep's dollars to its roles x the p95 a past role spent.
 // why: catches a role run past its dollar ceiling unseen, and a sweep whose total spend no check reads

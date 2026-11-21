@@ -571,6 +571,43 @@ function triage(title, reasons, numbers) {
 	return toPosix(f);
 }
 
+// K182 (build 22; Max's pick 2026-11-21, "All of it, run the trial"): a reviewer's cost grows with the square of what it
+// reads (each call re-reads it all), and builds grew about 4x while the roles stayed fixed. A role that reads the diff
+// for its own lens gets one reviewer per slice of the diff, so each reviewer stays the size of a small build and the
+// sweep grows in a line with the change. The cross-file lenses keep what they were given: blast radius and the
+// security angles. The changed files a role's context names (every changed file when it names none) are what it
+// slices. SLICE_LINES is a start value, not a measured
+// one: the control-vs-split trial and the outcome log set it.
+const WHOLE_DIFF = ['security', 'blast-radius', 'privacy', 'supply-chain', 'data-loss', 'triage'];
+const SLICE_LINES = 600;
+function splitRoles(roles, facts) {
+	const files = facts ? git('diff', '--numstat', '--text', '--no-renames', `${facts.base}...HEAD`).stdout.split('\n').filter(Boolean).map((l) => l.split('\t'))
+		.filter((p) => p[2] && !sweepOwned(p[2])).map(([a, d, file]) => ({ file, n: (Number(a) || 0) + (Number(d) || 0) })).sort((x, y) => x.file.localeCompare(y.file)) : [];
+	const lines = new Map(files.map((x) => [x.file, x.n]));
+	// Files in path order, a group closed when the next file would take it past SLICE_LINES; a larger file is a group alone.
+	const slices = (names) => {
+		const groups = [];
+		let cur = [];
+		let size = 0;
+		for (const f of names) { const n = lines.get(f); if (cur.length && size + n > SLICE_LINES) { groups.push(cur); cur = []; size = 0; } cur.push(f); size += n; }
+		if (cur.length) groups.push(cur);
+		return groups;
+	};
+	const out = [];
+	const roleOf = [];
+	roles.forEach((r, i) => {
+		// A role reads the changed files its context names (the whole diff when it names none); its other context entries
+		// (a rule, an unchanged file) go with every slice.
+		const context = Array.isArray(r.context) ? r.context.map(String) : [];
+		const own = context.length ? context.filter((x) => lines.has(x)).sort() : [...lines.keys()];
+		const rest = context.filter((x) => !lines.has(x));
+		const groups = WHOLE_DIFF.includes(r.kind) ? [] : slices(own);
+		if (groups.length < 2) { out.push(r); roleOf.push(i); return; }
+		groups.forEach((g, k) => { out.push({ ...r, context: [...g, ...rest], part: `${k + 1} of ${groups.length}` }); roleOf.push(i); });
+	});
+	return { roles: out, roleOf: out.length > roles.length ? roleOf : null };
+}
+
 function decide() {
 	const raw = fs.readFileSync(contractFile, 'utf8');
 	const c = JSON.parse(raw);
@@ -609,10 +646,17 @@ function decide() {
 	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
-	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, budgets, c.roles || []);
+	const split = splitRoles(c.roles || [], facts);
+	const runRoles = split.roles;
+	const runBudgets = split.roleOf ? split.roleOf.map((i) => budgets[i]) : budgets;
+	const runTotal = runBudgets.reduce((t, b) => t + (Number(b) || 0), 0);
+	if (split.roleOf && cap && runRoles.length > cap.maxAgents) why.push(`${runRoles.length} reviewers once the diff is split, over the project's ${c.tier} cap of ${cap.maxAgents}`);
+	if (split.roleOf && cap && runTotal > cap.maxTotalBudget) why.push(`total budget ${runTotal} once the diff is split, over the project's ${c.tier} cap of ${cap.maxTotalBudget}`);
+	const run = { ...c, roles: runRoles };
+	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, runBudgets, runRoles);
 	// K182: the reviewer count and the dollars, said before the owner's yes and in the start notice.
-	const spendLine = ceilingUnit === 'dollars' ? `${(c.roles || []).length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: (c.roles || []).length, budget: total, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: (c.roles || []).map((r) => r.calls), budgets, ceilings, ceilingFrom, ceilingUnit, patches: facts ? branchPatches(facts.base) : [], models: (c.roles || []).map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
+	const spendLine = ceilingUnit === 'dollars' ? `${runRoles.length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -631,7 +675,7 @@ function decide() {
 		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		const f = triage(`${c.tier} sweep sent to the owner`, why, [
 			`${entry.agents} roles, budget ${entry.budget.toLocaleString('en-US')}${extras === undefined ? ', no floor counted (this tier always goes to the owner)' : `, ${extras} beyond the floor (cap ${cap.maxExtras})`}`,
-			...(c.roles || []).map((r, i) => `role ${i + 1}: ${r.role || r.kind} (${r.kind}, ${roleModel(r)})${budgets[i] === undefined ? '' : `, ${r.calls} calls, budget ${budgets[i]}`}${r.callsReason ? ` (${r.callsReason})` : ''}`),
+			...runRoles.map((r, i) => `role ${i + 1}: ${r.role || r.kind}${r.part ? ` (part ${r.part} of the diff)` : ''} (${r.kind}, ${roleModel(r)})${runBudgets[i] === undefined ? '' : `, ${r.calls} calls, budget ${runBudgets[i]}`}${r.callsReason ? ` (${r.callsReason})` : ''}`),
 			...(spendLine ? [`spend: ${spendLine}`] : []),
 			...(now.paused ? [`paused since ${String(now.pausedAt || '').slice(0, 10)}: ${now.paused}`] : []),
 		]);
@@ -640,8 +684,8 @@ function decide() {
 		return 1;
 	}
 	console.log(`APPROVED - ${c.tier} sweep, ${entry.agents} agents, budget ${entry.budget}, inside the rules. Logged to ${LOG}.`);
-	console.log(notice(c, need, extras, cap, first, budgets, total, facts, entry.hash, ceilings, ceilingFrom, ceilingUnit, spendLine));
-	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(c, entry.hash, ceilings, facts, ceilingUnit).join(', ')}`);
+	console.log(notice(run, need, extras, cap, first, runBudgets, runTotal, facts, entry.hash, ceilings, ceilingFrom, ceilingUnit, spendLine));
+	console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(run, entry.hash, ceilings, facts, ceilingUnit).join(', ')}`);
 	for (const l of carryLine) console.log(l);
 	return 0;
 }
@@ -721,7 +765,7 @@ function writeBriefs(c, hash, ceilings, facts, unit = 'tokens') {
 			`Call cap: ${r.calls}. A call is one message from you, however many tools it runs, so run independent reads together in one message. ${hooked ? 'A hook counts your calls and refuses tools at the end of the cap; when it does, hand in your report at once, with what you did not get to as \'not checked\'.' : 'No hook counts them here, so count your own calls.'} The cap's last two calls are for the report.`,
 			ceilingLine(unit, ceilings[i]),
 			'',
-			`Role: ${r.role || r.kind} (${r.kind})`,
+			`Role: ${r.role || r.kind} (${r.kind})${r.part ? `, part ${r.part} of the diff: read the files named below; other reviewers of this role have the rest` : ''}`,
 			`Question: ${r.question || ''}`,
 			`Repository: ${toPosix(top)}, at ${head} (base ${facts.baseName}). Read the change with: git -C "${toPosix(top)}" diff ${base}...${head}${files ? ` -- ${files}` : ''}`,
 			'Read more by line range as you need; never a whole file over 40 KB.',
@@ -900,10 +944,10 @@ function ownerYes() {
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
 	// The ask's ceilings travel with the yes: the reviewers' guard reads the clearing line, and a yes without them
 	// started reviewers with no ceiling at all (the 1.23.0 sweep).
-	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings, ...(last.ceilingUnit ? { ceilingUnit: last.ceilingUnit } : {}) } : {}), ...proof });
+	write({ kind: 'owner-yes', contract: contractFile, hash: last.hash, head, agents: last.agents, calls: last.calls, ...(Array.isArray(last.ceilings) ? { ceilings: last.ceilings, ...(last.ceilingUnit ? { ceilingUnit: last.ceilingUnit } : {}) } : {}), ...(Array.isArray(last.roleOf) ? { roleOf: last.roleOf } : {}), ...proof });
 	console.log(`The owner's yes is logged; the reviewers may start. ${sweepLine(last.hash)}`);
 	const facts = diffFacts();
-	if (facts && Array.isArray(last.ceilings)) console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs(JSON.parse(raw), last.hash, last.ceilings, facts, last.ceilingUnit).join(', ')}`);
+	if (facts && Array.isArray(last.ceilings)) console.log(`Briefs, one per role; pass each as that reviewer's prompt, as written: ${writeBriefs({ ...JSON.parse(raw), roles: splitRoles(JSON.parse(raw).roles || [], facts).roles }, last.hash, last.ceilings, facts, last.ceilingUnit).join(', ')}`);
 	return 0;
 }
 
@@ -1194,6 +1238,8 @@ function outcome() {
 	}
 	let roles = [];
 	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* labels only */ }
+	// K182: a split role's reviewers each serve the contract role the decision maps them to.
+	if (Array.isArray(decision.roleOf)) roles = decision.roleOf.map((i) => roles[i]);
 	// T6 (build 11): when every role handed back a report in its shape, the findings are counted from the reports, and a
 	// typed count that differs is refused; the ledger is written either way, so the count can be read back.
 	const ledgers = read.roles.filter((x) => !isLost(x.agent)).map((x) => x.ledger);

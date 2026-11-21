@@ -160,7 +160,8 @@ function check(input) {
 		const same = ceilingLines === 1 && ceiling && (dollarsLine ?Math.abs(Number(ceiling[1]) - Number(ceilings[n])) < 0.005 : Number(ceiling[1]) === ceilings[n]);
 		if (Array.isArray(ceilings) && !same) return deny(`A reviewer's brief carries its role's ceiling, as the line "${dollarsLine ? 'Dollar ceiling: $<x>' : 'Token ceiling: <n>'}", from the cleared contract (role ${n + 1}: ${want}): the start notice has it.`);
 		// The slot is for this role's review of this checkout: a brief carries its question, and runs where it was cleared.
-		const question = String((JSON.parse(raw).roles?.[n] || {}).question || '');
+		// K182: a split role's reviewers each carry the question of the contract role the decision maps them to.
+		const question = String((JSON.parse(raw).roles?.[Array.isArray(e.roleOf) ? e.roleOf[n] : n] || {}).question || '');
 		if (question && !prompt.includes(question)) return deny(`A reviewer's brief carries its role's question as the contract wrote it. Role ${n + 1}: "${question}"`);
 		// A lead in another checkout may run a worktree's sweep, so long as the brief sends the reviewer there.
 		if (headOf(input.cwd || process.cwd()) !== e.head) {
