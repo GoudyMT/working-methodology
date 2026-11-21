@@ -63,6 +63,9 @@ test('K176 a grant is spent on first use: the same act again is held (replay ref
 test('K176 a grant older than an hour, or dated ahead of the clock, is refused', () => {
 	const home = granted();
 	const { lift, FRESH_MS } = grantLib();
+	// The pop-up yes's own limit: one hour, held here so a longer window is a test change, not a quiet one.
+	assert.equal(FRESH_MS, 60 * 60 * 1000);
+	assert.equal(decision(lift(held(), call(), granted(), Date.now() + FRESH_MS - 60 * 1000)), 'allow', 'inside the hour');
 	assert.equal(decision(lift(held(), call(), home, Date.now() + FRESH_MS + 1000)), 'deny', 'expired');
 	const ahead = granted();
 	assert.equal(decision(lift(held(), call(), ahead, Date.now() - 60 * 1000)), 'deny', 'a grant from the future');
@@ -169,10 +172,12 @@ test('K176 two calls racing for one grant: exactly one is let through', async ()
 // why: guards rule:outward-acts
 test('K176 grant.mjs refuses a bad session id, a card id that is no name, an empty act, and a session granting itself', () => {
 	const home = newHome();
-	assert.notEqual(grant(home, { session: '../../x' }).status, 0);
-	assert.notEqual(grant(home, { card: '../evil' }).status, 0);
-	assert.notEqual(grant(home, { act: '   ' }).status, 0);
-	assert.notEqual(grant(home, { env: { CLAUDE_CODE_SESSION_ID: SESSION } }).status, 0, 'a worker cannot grant itself');
+	// The build 23b sweep: each is held to its refusal, so a crash (also not 0) no longer passes.
+	const refused = (opts, why, name) => { const r = grant(home, opts); assert.equal(r.status, 1, name); assert.match(r.stderr, why, name); };
+	refused({ session: '../../x' }, /^Refused: the session id is not a session id/, 'session');
+	refused({ card: '../evil' }, /^Refused: the card id holds a sign/, 'card');
+	refused({ act: '   ' }, /^Refused: the act is empty/, 'act');
+	refused({ env: { CLAUDE_CODE_SESSION_ID: SESSION } }, /^Refused: a session cannot grant itself/, 'a worker cannot grant itself');
 	assert.equal(fs.existsSync(path.join(home, 'kit-grants')) && fs.readdirSync(path.join(home, 'kit-grants')).length, false);
 	// The act is matched as the guard reads it: runs of spaces read as one, ends trimmed.
 	const h2 = granted({ act: `  ${ACT.replace(/ /g, '   ')} ` });
