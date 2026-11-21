@@ -1702,3 +1702,17 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	g('commit', '-qm', 'three');
 	assert.match(owner(tap).stderr, /KIT_OWNER_PUSH counts only beside/, 'one yes pushed twice');
 });
+
+// Lane a6 (build 23a): false refusals the CM5 fuzz found on v1.47.0 (proof-sweep evidence/CM5/false-refusal.md),
+// each a harmless read the guards refused. Each fix is narrow, and the dangerous commands beside each shape are
+// still refused.
+fs.mkdirSync(path.join(proj, 'src', 'app'), { recursive: true });
+fs.mkdirSync(path.join(proj, 'tests', 'dir'), { recursive: true });
+
+// K227 (S2): a quoted ${VAR} word was read as a program held in a variable, with no sign of a delete.
+// why: catches a quoted ${VAR} path in a read refused as a possible delete
+test('a quoted ${VAR} path in a read runs, and a program or delete through ${VAR} is still refused', () => {
+	for (const c of ['ls "${TMPDIR}/n.txt"', 'cat "${HOME}/notes.txt"', `node -e 'console.log(require("fs").readFileSync("\${TMPDIR}/a.txt","utf8"))'`]) assert.equal(bash(c), 'allow', c);
+	for (const c of ['${G} -rf x', '"${G}" -rf x', "bash -c '${G} -rf x'", '${G:-rm} -rf x', '${G} --recursive --force x', 'rm -rf "${TMPDIR}/x"', 'rm -rf "${HOME}"', 'eval "${G} -rf x"', '$G -rf x']) assert.notEqual(bash(c), 'allow', c);
+});
+
