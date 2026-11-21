@@ -13,6 +13,11 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 import { GOOD_ENTRY, HEX6, RECALL, g, gateFacts, gateRepo, makeKit, makeTemp, probeParts, read, recallTools, recorder, released, ruleFiles, scratch, status, words } from './kit-helpers.mjs';
 
+// K198 (1.48.0): the lines the fixed gate reads beside a gate line - two blind scorers, and no question worse than the
+// same-day release - and a record that passes the gate command's floor of 14.
+const K198_LINES = 'scorers: 2\nworse: none';
+const PASS_GATE = `${K198_LINES}\ngate: a median 14 baseline 9 brief v1 keys v4 control 0`;
+
 // why: guards rule:instruments-and-evals
 test('recall v3 is v2 plus three questions, and v2 stays as it was released', async () => {
   const { versionText, currentVersion, questions, questionCount } = await recallTools();
@@ -261,11 +266,11 @@ test('recall gate fails a median under the keys\' pass bar, and the owner\'s mar
   assert.equal(checkGate(gateFacts(line(12))).ok, true);
   const accepted = checkGate(gateFacts(line(11, ' owner-accepted')));
   assert.equal(accepted.ok, false);
-  assert.match(accepted.detail, /pass bar of 12/);
-  // A moved ruler is the owner's to accept, but only a score at the bar can use that.
+  assert.match(accepted.detail, /override is gone/);
+  // K198: the marker passes nothing, a moved ruler at the bar included.
   const moved = { was: { keys: 1 } };
   assert.equal(checkGate(gateFacts({ ...moved, ...line(11, ' owner-accepted') })).ok, false);
-  assert.equal(checkGate(gateFacts({ ...moved, ...line(12, ' owner-accepted') })).ok, true);
+  assert.equal(checkGate(gateFacts({ ...moved, ...line(12, ' owner-accepted') })).ok, false);
 });
 
 // why: guards rule:instruments-and-evals
@@ -294,7 +299,7 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   git('tag', 'base');
   put(KEYS, 'Current version: v4\n\n' + version(4, 9) + version(3, 5));
   const gate = (median) => {
-    put(SCORES, '# Scores\n\ngate: a median ' + median + ' baseline 1 brief v1 keys v4 control 0 owner-accepted\n');
+    put(SCORES, `# Scores\n\n${K198_LINES}\ngate: a median ${median} baseline 1 brief v1 keys v4 control 0\n`);
     git('add', '.');
     git('commit', '-qm', 'median ' + median);
     return spawnSync('node', [path.join(dir, 'scripts/recall.mjs'), 'gate', 'base', 'HEAD'], { encoding: 'utf8', cwd: dir });
@@ -302,8 +307,11 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   const between = gate(7);
   assert.equal(between.status, 1, between.stdout + between.stderr);
   assert.match(between.stdout, /pass bar of 9/);
-  const atBar = gate(9);
-  assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
+  // Over the head's bar, the PR still moved its ruler, and since K198 no marker passes that.
+  const atBar = gate(14);
+  assert.equal(atBar.status, 1, atBar.stdout + atBar.stderr);
+  assert.doesNotMatch(atBar.stdout, /pass bar/);
+  assert.match(atBar.stdout, /changes the ruler/);
 });
 
 // why: guards rule:instruments-and-evals
@@ -318,12 +326,17 @@ test('recall gate fails rule text with no gate line, or a line it cannot read', 
 });
 
 // why: guards rule:ci-gate
-test('an owner-accepted marker passes a lower median and says so, but never an old ruler', async () => {
+// K198 (Max's fixed gate, 2026-11-20): there is no owner override; a miss is fixed, never accepted.
+test('an owner-accepted marker passes nothing: a miss is fixed, not accepted (K198)', async () => {
   const { checkGate } = await recallTools();
   const r = checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v2 owner-accepted'] }));
-  assert.equal(r.ok, true);
-  assert.match(r.detail, /owner accepted/);
-  assert.equal(checkGate(gateFacts({ added: ['gate: a median 7 baseline 8 brief v1 keys v1 owner-accepted'] })).ok, false);
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /owner-accept override is gone/);
+  assert.equal(checkGate(gateFacts({ added: ['gate: a median 9 baseline 8 brief v1 keys v2 owner-accepted'] })).ok, false, 'not even on a passing line');
+  assert.equal(checkGate(gateFacts({ added: [GOOD_ENTRY, 'behaviour: a median 9 baseline 8 suite v2 control 0 owner-accepted'] })).ok, false, 'nor on a behaviour line');
+  // A recorded line that only shows removed and added back (a file with no final newline) is history, not the PR's own.
+  const old = 'gate: kit-1.17.0 median 8 baseline 8 brief v1 keys v2 owner-accepted';
+  assert.equal(checkGate(gateFacts({ added: [old, GOOD_ENTRY], removed: [old] })).ok, true);
 });
 
 // why: guards rule:instruments-and-evals
@@ -341,27 +354,30 @@ test('recall gate reads the last gate line added, so a failed run can be followe
   assert.equal(checkGate(gateFacts({ added: [...failedFirst].reverse() })).ok, false);
 });
 
+// The owner's pick, 2026-11-21: the same-day release score is no longer held against the last one recorded (that check
+// had no way out once K198 took the marker away); the floor of 14 is what stops a typed-low line.
+// renamed from: a typed baseline cannot fall under the last one recorded on the same ruler
 // why: guards rule:ci-gate
-test('a typed baseline cannot fall under the last one recorded on the same ruler, unless the owner accepts it', async () => {
+test('a typed-low gate line fails on the floor, not on the last recorded baseline', async () => {
   const { checkGate } = await recallTools();
-  const low = { added: ['gate: a median 0 baseline 0 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } };
+  const low = { added: ['scorers: 2', 'worse: none', 'gate: a median 0 baseline 0 brief v1 keys v2'], was: { brief: 1, keys: 2 }, floor: 14 };
   const r = checkGate(gateFacts(low));
   assert.equal(r.ok, false);
-  assert.match(r.detail, /baseline 0 is under the last recorded baseline 9/);
-  assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 0 baseline 0 brief v1 keys v2 owner-accepted'] })).ok, true);
-  assert.equal(checkGate(gateFacts({ ...low, added: ['gate: a median 9 baseline 9 brief v1 keys v2'] })).ok, true);
+  assert.match(r.detail, /median 0 is under the floor of 14/);
+  assert.doesNotMatch(r.detail, /last recorded baseline/);
+  assert.equal(checkGate(gateFacts({ ...low, added: ['scorers: 2', 'worse: none', 'gate: a median 0 baseline 0 brief v1 keys v2 owner-accepted'] })).ok, false);
+  assert.equal(checkGate(gateFacts({ ...low, added: ['scorers: 2', 'worse: none', 'gate: a median 14 baseline 9 brief v1 keys v2'] })).ok, true);
 });
 
 // why: guards rule:ci-gate
-test('a PR that moves the ruler it is graded on needs the owner\'s marker', async () => {
+test('a PR that moves the ruler it is graded on fails, and no marker passes it (K198)', async () => {
   const { checkGate } = await recallTools();
   const moved = { was: { brief: 1, keys: 1, baseline: 9 } };
   const r = checkGate(gateFacts(moved));
   assert.equal(r.ok, false);
-  assert.match(r.detail, /changes the ruler.*owner-accepted/);
-  const accepted = checkGate(gateFacts({ ...moved, added: [GOOD_ENTRY + ' owner-accepted'] }));
-  assert.equal(accepted.ok, true);
-  assert.match(accepted.detail, /owner accepted/);
+  assert.match(r.detail, /changes the ruler/);
+  assert.doesNotMatch(r.detail, /owner/);
+  assert.equal(checkGate(gateFacts({ ...moved, added: [GOOD_ENTRY + ' owner-accepted'] })).ok, false);
   assert.equal(checkGate(gateFacts({ was: { brief: 0, keys: 2, baseline: null } })).ok, false);
   const edited = checkGate(gateFacts({ was: { brief: 1, keys: 2, baseline: null, edited: true } }));
   assert.equal(edited.ok, false);
@@ -384,8 +400,9 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.equal(checkGate(gateFacts({ changed: ['scripts/recall.mjs'], added: [] })).ok, false);
   const removed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [], removed: [GOOD_ENTRY] }));
   assert.equal(removed.ok, false);
-  assert.match(removed.detail, /removes a recorded gate line.*owner-accepted/);
-  assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY + ' owner-accepted'], removed: [GOOD_ENTRY] })).ok, true);
+  assert.match(removed.detail, /removes a recorded gate line/);
+  assert.doesNotMatch(removed.detail, /owner/);
+  assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY + ' owner-accepted'], removed: [GOOD_ENTRY] })).ok, false);
   assert.equal(checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], removed: [GOOD_ENTRY] })).ok, false);
   // The 1.24.0 build (the owner's pick B): a file with no newline at its end shows its last line removed and added
   // back unchanged when an entry is appended. That line is still recorded, so beside the PR's own new line it is no
@@ -395,9 +412,9 @@ test('recall gate leaves a PR alone only when it touches no rule text, no ruler 
   assert.equal(kept.ok, true, kept.detail);
   assert.match(kept.detail, /^kit-1\.19\.0: median 9/);
   assert.equal(checkGate(gateFacts({ added: [GOOD_ENTRY.replace('median 8', 'median 9'), next], removed: [GOOD_ENTRY] })).ok, false, 'a changed line is a drop');
-  const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2, baseline: 9 } }));
+  const typed = checkGate(gateFacts({ changed: ['docs/evals/results/recall-scores.md'], added: ['scorers: 2', 'worse: none', 'gate: o median 1 baseline 1 brief v1 keys v2'], was: { brief: 1, keys: 2 }, floor: 14 }));
   assert.equal(typed.ok, false);
-  assert.match(typed.detail, /under the last recorded baseline 9/);
+  assert.match(typed.detail, /under the floor of 14/);
 });
 
 // S22-1, E31: the suite runs on Linux and the Windows-only tests on Windows; the required check (kit-tests) passes
@@ -462,7 +479,7 @@ test('a PR runs the reached tests and the security set, or every test; main save
 
 // why: guards rule:instruments-and-evals
 test('CI runs the recall gate on the PR\'s real diff', async () => {
-  const { passBar, currentVersion } = await recallTools();
+  const { passBar, currentVersion, FLOOR } = await recallTools();
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
   const bar = passBar(keysText, currentVersion(keysText));
   const step = read(path.resolve('.github/workflows/ci.yml')).split('- name: Rule changes carry a passing recall score')[1].split('- name:')[0];
@@ -494,7 +511,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   assert.equal(noScore.status, 1, noScore.stdout + noScore.stderr);
   const keys = read(path.resolve('docs/evals/recall-questions.md')).match(/^Current version: v(\d+)$/m)[1];
   const brief = read(path.resolve('docs/evals/recall-scorer-brief.md')).match(/^Current version: v(\d+)$/m)[1];
-  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\ngate: new median ${bar} baseline 8 brief v${brief} keys v${keys} control 0\nscored: ${headSha()}\n`);
+  put('docs/evals/results/recall-scores.md', `# Scores\n\ngate: old median 1 baseline 9 brief v1 keys v1\n\n## New\n\n${K198_LINES}\ngate: new median ${FLOOR} baseline 8 brief v${brief} keys v${keys} control 0\nscored: ${headSha()}\n`);
   git('commit', '-qam', 'scores');
   const scored = gate();
   assert.equal(scored.status, 0, scored.stdout + scored.stderr);
@@ -504,7 +521,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   git('commit', '-qam', 'typed down');
   const typed = spawnSync('node', [RECALL, 'gate', 'base2', 'HEAD'], { encoding: 'utf8', cwd: dir });
   assert.equal(typed.status, 1, typed.stdout + typed.stderr);
-  assert.match(typed.stdout, /under the last recorded baseline 8/);
+  assert.match(typed.stdout, /under the floor of 14/);
   // The last baseline on the ruler counts, not the first.
   const scores = 'docs/evals/results/recall-scores.md';
   const now = `brief v${brief} keys v${keys} control 0`;
@@ -519,18 +536,15 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
-  const second = round('two-baselines', `gate: a median 9 baseline 8 ${now}\ngate: b median 9 baseline 9 ${now}`, `gate: c median ${bar} baseline 8 ${now}`);
-  assert.equal(second.status, 1, second.stdout);
-  assert.match(second.stdout, /last recorded baseline 9/);
-  // The real command reads the bar from the current keys; a median under it fails, marker or not.
+  // The real command reads the bar from the current keys; a median under it fails, and no marker passes anything (K198).
   const floor = `gate: a median ${bar} baseline 6 ${now}`;
   const under = round('under-bar', floor, `gate: weak median ${bar - 1} baseline 6 ${now}`);
   assert.equal(under.status, 1, under.stdout);
   assert.match(under.stdout, /under the pass bar/);
   const marked = round('under-bar-marked', floor, `gate: weak median ${bar - 1} baseline 6 ${now} owner-accepted`);
   assert.equal(marked.status, 1, marked.stdout);
-  assert.match(marked.stdout, /under the pass bar/);
-  const atBar = round('at-bar', floor, `gate: fine median ${bar} baseline 6 ${now}`);
+  assert.match(marked.stdout, /override is gone/);
+  const atBar = round('at-bar', floor, `${K198_LINES}\ngate: fine median ${FLOOR} baseline 6 ${now}`);
   assert.equal(atBar.status, 0, atBar.stdout + atBar.stderr);
   // The base's ruler reaches the check: an older version, then the same version with its text edited.
   const onRuler = (name, body, rel = 'docs/evals/recall-questions.md') => {
@@ -542,7 +556,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
     put(rel, read(path.resolve(rel)));
     put('rules/core.md', name + '\n');
     git('commit', '-qam', name);
-    put(scores, read(path.join(dir, scores)) + `\ngate: ${name} median ${bar} baseline 9 ${now}\nscored: ${headSha()}\n`);
+    put(scores, read(path.join(dir, scores)) + `\n${K198_LINES}\ngate: ${name} median ${FLOOR} baseline 9 ${now}\nscored: ${headSha()}\n`);
     git('commit', '-qam', 'scores of ' + name);
     return spawnSync('node', [RECALL, 'gate', name + '-base', 'HEAD'], { encoding: 'utf8', cwd: dir });
   };
@@ -614,8 +628,9 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
 test('the rules say where approve.mjs lives, what its absence means, and that the PR body carries the sweep summary', () => {
   for (const f of ['rules/agent-teams.md', 'rules/reviews-and-findings.md']) {
     const text = read(path.resolve(f));
-    // 1.33.0: the PowerShell tool never runs a $HOME path unasked, so the rules give it the full path.
-    assert.match(text, /`~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs`[^\n]*PowerShell: full path/, f);
+    // K206 (build 22): a fixed ~/.claude path sent a session on another Claude folder to the wrong copy, so the rules name
+    // the tool and the start-up line names this session's full command (the PowerShell spelling included).
+    assert.match(text, /`approve\.mjs` \(its command.*"Kit tools this session"\)/, f);
     // pin: 2 (the lead's order when the tool is missing)
   assert.match(text, /not there, the kit's user layer is not installed: say so; the owner says yes/, f);
   }
@@ -916,8 +931,9 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.deepEqual(forgot, [asks[0].opts.cwd], 'its guard record is forgotten');
   assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
   assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
-  assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' } }), /KIT_CLAUDE_HOME/);
-  assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }) }), /no/);
+  // A saved label is never written over (the build 22 sweep), so the failing runs below take new labels.
+  assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' }, label: 'recall-cand-10' }), /KIT_CLAUDE_HOME/);
+  assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }), label: 'recall-cand-11' }), /no/);
   assert.deepEqual(fs.readdirSync(path.join(osHome, 'kit-probes')), [], 'a failed run cleans up too');
 });
 
@@ -987,7 +1003,7 @@ test('a recall run forgets its probe\'s guard record, and only that one', async 
 // why: guards rule:instruments-and-evals
 test('recall gate (K116): rule text changed after the scored commit, or no scored commit, is refused', () => {
   const ok = gateRepo();
-  ok.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0');
+  ok.record(PASS_GATE);
   assert.equal(ok.gate().status, 0, ok.gate().stdout);
   // A later rule edit is unscored.
   ok.put('rules/core.md', 'edited after the run\n');
@@ -1012,10 +1028,10 @@ test('recall gate (K116): rule text changed after the scored commit, or no score
   off.put('docs/evals/results/recall-scores.md', read(path.join(off.dir, 'docs/evals/results/recall-scores.md')) + `scored: ${other}\n`);
   off.git('commit', '-qam', 'not on the branch');
   assert.match(off.gate().stdout, new RegExp(`rule text changed.*the scored commit ${other.slice(0, 7)}: rules/core\\.md`), other);
-  // The owner may accept it, as any other fault.
+  // K198: no marker passes it.
   const accepted = gateRepo();
-  accepted.record('gate: a median 12 baseline 9 brief v1 keys v4 control 0 owner-accepted', () => {}, false);
-  assert.equal(accepted.gate().status, 0, accepted.gate().stdout);
+  accepted.record(`${PASS_GATE} owner-accepted`, () => {}, false);
+  assert.equal(accepted.gate().status, 1, accepted.gate().stdout);
 });
 
 // The build 16 sweep: a rule file under a case-changed folder (Rules/, NOTE.MD) or with a tab in its name was not
@@ -1040,7 +1056,9 @@ test('recall gate (T10): a rule change needs a behaviour line on the current sui
   const line = 'gate: a median 12 baseline 9 brief v1 keys v4 control 0';
   const run = (behave) => { const r = gateRepo({ suite }); r.record(behave ? `${line}\n${behave}` : line); return r.gate(); };
   assert.match(run(null).stdout, /records no behaviour line/);
-  assert.equal(run('behaviour: a median 12 baseline 11 suite v2 control 3').status, 0);
+  const pass = gateRepo({ suite });
+  pass.record(`${PASS_GATE}\nbehaviour: a median 14 baseline 11 suite v2 control 3\nbehaviour worse: none`);
+  assert.equal(pass.gate().status, 0, pass.gate().stdout);
   const under = run('behaviour: a median 9 baseline 8 suite v2 control 3');
   assert.equal(under.status, 1);
   assert.match(under.stdout, /under the suite's pass bar of 10/);
@@ -1091,7 +1109,7 @@ test('recall gate (S18-5): a scores file over 1 MiB on the base still sets the f
   r.record('gate: a median 10 baseline 9 brief v1 keys v4 control 0');
   const out = r.gate();
   assert.equal(out.status, 1, out.stdout + out.stderr);
-  assert.match(out.stdout, /under the last recorded baseline 10/);
+  assert.match(out.stdout, /under the floor of 14/);
 });
 
 // why: guards rule:instruments-and-evals
@@ -1123,13 +1141,13 @@ test('recall gate (S18-7): a gate line on keys v4 or later names its control, an
 });
 
 // why: guards rule:ci-gate
-test('recall gate (S18-6): the owner may correct an old-ruler line in a PR that changes no rule text', async () => {
+test('recall gate (S18-6, K198): an old-ruler line cannot be corrected under a marker, since no marker passes', async () => {
   const { checkGate } = await recallTools();
   const old = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v1 owner-accepted';
   const fix = checkGate({ changed: ['docs/evals/results/recall-scores.md'], added: [old], removed: [old.replace('median 8', 'median 9')], brief: 1, keys: 2 });
-  assert.equal(fix.ok, true, fix.detail);
-  assert.match(fix.detail, /correction/);
-  // Unmarked, or beside a rule change, it still fails.
+  assert.equal(fix.ok, false, fix.detail);
+  assert.doesNotMatch(fix.detail, /correction/);
+  // Unmarked, or beside a rule change, it fails too.
   assert.equal(checkGate({ changed: ['docs/evals/results/recall-scores.md'], added: [old.replace(' owner-accepted', '')], brief: 1, keys: 2 }).ok, false);
   assert.equal(checkGate({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [old], brief: 1, keys: 2 }).ok, false);
 });
@@ -1208,87 +1226,219 @@ test('recall (R2): a run on a throwaway layer records the real global layer it a
   assert.equal(same.global, undefined);
 });
 
-// 1.20.0 carry-over B8: the blind and score tools live in the repo, take the question count from the current keys,
-// and print a gate line the gate can read, control included.
+// 1.20.0 carry-over B8, K198 (1.48.0): the blind and score tools live in the repo, take the question count from the
+// current keys, read two blind scorers, and print the lines the gate reads: scorers, worse, control and the gate line.
 // why: guards rule:instruments-and-evals
-test('recall-score blinds runs without a side marker and scores them into a gate line the gate reads', async () => {
+test('recall-score blinds runs without a side marker and scores two scorers into the lines the gate reads', async () => {
   const { blind, score, scrub } = await import('../scripts/recall-score.mjs');
-  const { checkGate } = await recallTools();
+  const { checkGate, FLOOR } = await recallTools();
+  assert.equal(FLOOR, 14, 'K198: the floor');
   const dir = makeTemp('rscore-');
   const keysText = read(path.resolve('docs/evals/recall-questions.md'));
   const n = (await recallTools()).questionCount(keysText, (await recallTools()).currentVersion(keysText));
   const run = (name, extra) => {
-    const body = ['# Recall run: ' + name, 'User kit: 1.21.0 (unreleased abc1234)', '', ...Array.from({ length: n }, (_, i) => `## ${i + 1}. q\n\nKey: k\n\nAnswer:\n\n> answer ${extra} at kit-probes/abc123/pdef456\n\nScore: _\n`)].join('\n');
+    const body = ['# Recall run: ' + name, '', 'When: 2026-11-20T10:00:00.000Z', 'User kit: 1.21.0 (unreleased abc1234)', '', ...Array.from({ length: n }, (_, i) => `## ${i + 1}. q\n\nKey: k\n\nAnswer:\n\n> answer ${extra} at kit-probes/abc123/pdef456\n\nScore: _\n`)].join('\n');
     fs.writeFileSync(path.join(dir, name + '.md'), body);
     return path.join(dir, name + '.md');
   };
-  const runs = ['cand-1', 'cand-2', 'cand-3', 'base-1', 'base-2', 'base-3', 'control-1'].map((r) => run(r, 'v1.20.0 commit 8ef3733'));
+  const names = [...[1, 2, 3, 4, 5].map((i) => `cand-${i}`), ...[1, 2, 3, 4, 5].map((i) => `base-${i}`), 'control-1'];
+  const runs = names.map((r) => run(r, 'v1.20.0 commit 8ef3733'));
   const out = path.join(dir, 'blind');
   const { map } = blind(out, runs, () => 0);
   for (const f of fs.readdirSync(path.join(out, 'scorer'))) {
     const text = read(path.join(out, 'scorer', f));
-    assert.doesNotMatch(text, /cand|base-|control|1\.2[01]\.0|8ef3733|kit-probes|unreleased/, f);
+    assert.doesNotMatch(text, /cand|base-|control|1\.2[01]\.0|8ef3733|kit-probes|unreleased|When:/, f);
   }
+  assert.equal(JSON.parse(read(path.join(out, 'sealed-map.json'))).when[Object.keys(map)[0]], '2026-11-20T10:00:00.000Z', 'the sealed map keeps each run\'s time, for the same-day check');
   assert.equal(scrub('see 1a2b3c4 and the word deadbeef0 and 1234567'), 'see <commit> and the word <commit> and 1234567');
-  const totals = { 'cand-1': n, 'cand-2': n - 1, 'cand-3': n, 'base-1': n - 3, 'base-2': n - 2, 'base-3': n - 3, 'control-1': 0 };
+  const totals = Object.fromEntries(names.map((r) => [r, r.startsWith('cand') ? n : r.startsWith('base') ? n - 1 : 0]));
   const lines = Object.entries(map).flatMap(([id, r]) => Array.from({ length: n }, (_, i) => `${id} Q${i + 1}: ${i < totals[r] ? 1 : 0}`));
-  fs.writeFileSync(path.join(dir, 'scores.txt'), lines.join('\n'));
-  const r = score(path.join(dir, 'scores.txt'), path.join(out, 'sealed-map.json'), 'kit-x');
+  fs.writeFileSync(path.join(dir, 'a.txt'), lines.join('\n'));
+  fs.writeFileSync(path.join(dir, 'b.txt'), lines.join('\n'));
+  const r = score([path.join(dir, 'a.txt'), path.join(dir, 'b.txt')], path.join(out, 'sealed-map.json'), 'kit-x');
   const keys = (await recallTools()).currentVersion(keysText);
-  assert.match(r.line, new RegExp(`^gate: kit-x median ${n} baseline ${n - 3} brief v\\d+ keys v${keys}$`));
-  assert.equal(r.controlLine, 'control: 0');
-  assert.equal(checkGate({ changed: ['rules/core.md'], added: [r.controlLine, r.line], brief: Number(r.line.match(/brief v(\d+)/)[1]), keys, bar: n - 1 }).ok, true);
+  assert.match(r.line, new RegExp(`^gate: kit-x median ${n} baseline ${n - 1} brief v\\d+ keys v${keys}$`));
+  assert.deepEqual(r.lines.slice(0, 3), ['scorers: 2', 'worse: none', 'control: 0']);
+  assert.equal(r.lines[3], r.line);
+  assert.equal(r.pass, n >= FLOOR);
+  assert.equal(checkGate({ changed: ['rules/core.md'], added: r.lines, brief: Number(r.line.match(/brief v(\d+)/)[1]), keys, bar: n - 1, floor: n }).ok, true);
   fs.writeFileSync(path.join(dir, 'short.txt'), lines.slice(1).join('\n'));
-  assert.throws(() => score(path.join(dir, 'short.txt'), path.join(out, 'sealed-map.json'), 'kit-x'), /expected \d+ scores/);
+  assert.throws(() => score([path.join(dir, 'short.txt'), path.join(dir, 'b.txt')], path.join(out, 'sealed-map.json'), 'kit-x'), /expected \d+ scores/);
+  assert.throws(() => score([path.join(dir, 'a.txt')], path.join(out, 'sealed-map.json'), 'kit-x'), /two blind scorers/);
 });
 
-// The owner's decision 7 (1.21.0): the bar stays at 12, and a median of 3 exactly on it is too close to call on 3 runs.
-// The tool holds the gate line until 2 more runs are in, and the median of 5 decides.
+// K198 (Max's picks, 2026-11-20): 5 runs a side, flat; the two scorers averaged with no rounding up, so a run is 14 only
+// when both give 14; a question is worse when its marks over both scorers and all runs sum under the release's; the
+// release arm is measured the same day.
+const scoreSets = (arms, n = 14) => {
+  // arms: { 'cand-1': [[scorer A misses], [scorer B misses]], ... }: the questions each scorer marked 0.
+  const map = {};
+  const sets = [{}, {}];
+  Object.entries(arms).forEach(([run, misses], i) => {
+    const id = `R${String(i + 1).padStart(2, '0')}`;
+    map[id] = run;
+    sets.forEach((s, k) => { s[id] = Object.fromEntries(Array.from({ length: n }, (_, q) => [q + 1, misses[k].includes(q + 1) ? 0 : 1])); });
+  });
+  return { map, sets };
+};
+const fiveEach = (cand, base = Array(5).fill([[], []])) => ({
+  ...Object.fromEntries(cand.map((m, i) => [`cand-${i + 1}`, m])),
+  ...Object.fromEntries(base.map((m, i) => [`base-${i + 1}`, m])),
+  'control-1': [[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14], [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14]],
+});
+const sameDay = (map, iso = '2026-11-20T10:00:00.000Z') => Object.fromEntries(Object.keys(map).map((id) => [id, iso]));
+
 // why: guards rule:ci-gate
-test('a candidate median of 3 on the bar waits for 2 more runs, and the median of 5 decides', async () => {
-  const { score } = await import('../scripts/recall-score.mjs');
-  const keysText = read(path.resolve('docs/evals/recall-questions.md'));
-  const { questionCount, passBar, currentVersion } = await recallTools();
-  const keys = currentVersion(keysText);
-  const n = questionCount(keysText, keys);
-  const bar = passBar(keysText, keys);
-  // The owner raised the bar with the question count (keys v6: 13 of 14); it never falls under that.
-  assert.equal(bar, 13, 'the bar stays at 13');
-  const b = bar;
+test('recall-score (K198): two scorers are averaged with no rounding up, against the floor of 14', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
+  const { summarize } = await import('../scripts/recall-score.mjs');
+  const { FLOOR } = await recallTools();
+  assert.equal(FLOOR, 14);
+  const clean = [[], []];
+  const split = [[3], []];
+  const sum = (cand, base) => { const { map, sets } = scoreSets(fiveEach(cand, base)); return summarize(sets, map, 14, { when: sameDay(map) }); };
+  const all = sum(Array(5).fill(clean));
+  assert.equal(all.candMedian, 14);
+  assert.equal(all.pass, true);
+  // Three runs where one scorer took a point: those runs are 13.5, so the median is 13.5, under 14.
+  const half = sum([clean, split, split, split, clean]);
+  assert.equal(half.candMedian, 13.5);
+  assert.equal(half.pass, false);
+  // Two such runs of five: the median is still 14.
+  assert.equal(sum([clean, split, clean, split, clean]).candMedian, 14);
+  // A baseline of 13.5 is not rounded down for the candidate to clear.
+  assert.equal(sum(Array(5).fill(clean), Array(5).fill(split)).baseMedian, 13.5);
+});
+
+// why: guards rule:ci-gate
+test('recall-score (K198): a gate needs 5 candidate and 5 release runs, all measured the same day', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
+  const { summarize } = await import('../scripts/recall-score.mjs');
+  const clean = [[], []];
+  const four = { ...fiveEach(Array(5).fill(clean)) };
+  delete four['cand-5'];
+  const a = scoreSets(four);
+  assert.throws(() => summarize(a.sets, a.map, 14, { when: sameDay(a.map) }), /5 candidate runs and 5 release runs/);
+  const b = scoreSets(fiveEach(Array(5).fill(clean)));
+  const when = sameDay(b.map);
+  const baseId = Object.keys(b.map).find((id) => b.map[id] === 'base-3');
+  assert.throws(() => summarize(b.sets, b.map, 14, { when: { ...when, [baseId]: '2026-11-18T10:00:00.000Z' } }), /same day/);
+  const missing = { ...when };
+  delete missing[baseId];
+  assert.throws(() => summarize(b.sets, b.map, 14, { when: missing }), /same day/);
+  assert.equal(summarize(b.sets, b.map, 14, { when: { ...when, [baseId]: '2026-11-20T23:00:00.000Z' } }).pass, true, 'within a day passes');
+});
+
+// why: guards rule:ci-gate
+test('recall-score (K198): a question is worse when its marks over both scorers and all runs sum under the release', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
+  const { summarize } = await import('../scripts/recall-score.mjs');
+  const clean = [[], []];
+  const run = (cand, base) => { const { map, sets } = scoreSets(fiveEach(cand, base)); return summarize(sets, map, 14, { when: sameDay(map) }); };
+  // One scorer docks Q4 once on the candidate: 9 of 10 against the release's 10 of 10. Seen twice (the owner's pick,
+  // 2026-11-21): one look names it lower and passes nothing until it is asked again (tests/gate-seen-twice.test.mjs).
+  const once = run([[[4], []], clean, clean, clean, clean]);
+  assert.deepEqual(once.lower, [4]);
+  assert.equal(once.pending, true);
+  assert.equal(once.pass, false, 'a median of 14 with a lower question does not pass on one look');
+  // The same miss on the release too: nothing lower.
+  assert.deepEqual(run([[[4], []], clean, clean, clean, clean], [[[], [4]], clean, clean, clean, clean]).lower, []);
+  // Better than the release is never lower.
+  assert.deepEqual(run(Array(5).fill(clean), [[[7], [7]], clean, clean, clean, clean]).lower, []);
+});
+
+// why: guards rule:ci-gate
+test('recall-score (K198): score prints the four lines, and a miss exits 1 saying it is fixed, not merged', () => {
+  const dir = makeTemp('rk198-');
+  const clean = [[], []];
   const files = (cand) => {
-    const dir = makeTemp('rtie-');
-    const totals = { ...Object.fromEntries(cand.map((t, i) => [`cand-${i + 1}`, t])), 'base-1': b, 'control-1': 5 };
-    const map = Object.fromEntries(Object.keys(totals).map((run, i) => [`R${String(i + 1).padStart(2, '0')}`, run]));
-    const lines = Object.entries(map).flatMap(([id, run]) => Array.from({ length: n }, (_, q) => `${id} Q${q + 1}: ${q < totals[run] ? 1 : 0}`));
-    fs.writeFileSync(path.join(dir, 'scores.txt'), lines.join('\n'));
-    fs.writeFileSync(path.join(dir, 'map.json'), JSON.stringify({ map }));
-    return [path.join(dir, 'scores.txt'), path.join(dir, 'map.json')];
+    const { map, sets } = scoreSets(fiveEach(cand));
+    const write = (s, f) => fs.writeFileSync(path.join(dir, f), Object.entries(s).flatMap(([id, q]) => Object.entries(q).map(([k, v]) => `${id} Q${k}: ${v}`)).join('\n'));
+    write(sets[0], 'a.txt'); write(sets[1], 'b.txt');
+    fs.writeFileSync(path.join(dir, 'map.json'), JSON.stringify({ map, when: sameDay(map) }));
+    return [path.join(dir, 'a.txt'), path.join(dir, 'b.txt'), path.join(dir, 'map.json')];
   };
-  const run = (cand) => score(...files(cand), 'kit-x');
-  assert.match(run([b + 1, b, b + 1]).line, new RegExp(`median ${b + 1} `), 'over the bar: 3 runs are enough');
-  assert.match(run([b - 1, b - 1, b]).line, new RegExp(`median ${b - 1} `), 'under the bar: 3 runs fail it, and more runs are not a second chance');
-  for (const tie of [[b, b, b + 1], [b - 1, b, b], [b, b, b]]) {
-    const r = run(tie);
-    assert.equal(r.line, null, `no gate line on ${tie}`);
-    assert.equal(r.more, 2);
-  }
-  assert.match(run([b, b, b + 1, b - 1, b]).line, new RegExp(`median ${b} `), 'the median of 5 holds the bar');
-  assert.match(run([b, b, b - 1, b - 1, b - 1]).line, new RegExp(`median ${b - 1} `), 'the median of 5 can fail it');
-  assert.throws(() => run([b - 1, b - 1, b, b + 1, b + 1]), /first 3 runs reached the bar/, 'runs added to a miss do not count');
-  assert.throws(() => run([b + 1, b + 1, b + 1, b + 1]), /3 runs, or 5/);
-  assert.throws(() => run([b + 1]), /3 runs, or 5/);
-  const held = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b, b, b + 1]), 'kit-x'], { encoding: 'utf8' });
-  assert.equal(held.status, 1, held.stdout + held.stderr);
-  assert.doesNotMatch(held.stdout, /^gate:/m);
-  assert.match(held.stdout, new RegExp(`on the bar of ${b}[\\s\\S]*cand-4 and cand-5`));
-  const over = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b, b + 1, b + 1]), 'kit-x'], { encoding: 'utf8' });
-  assert.equal(over.status, 0, 'a median over the bar gives its gate line and asks for no more runs');
-  assert.match(over.stdout, /^gate: kit-x median/m);
-  assert.doesNotMatch(over.stdout, /no gate line yet|extra runs/);
-  const under = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files([b - 1, b - 1, b]), 'kit-x'], { encoding: 'utf8' });
-  assert.match(under.stdout, new RegExp(`median of ${b - 1} is under the bar of ${b}: by decision 7 extra runs do not count`), 'under the bar, no extra run is offered');
-  assert.doesNotMatch(under.stdout, /no gate line yet|cand-4/);
-  assert.match(keysText.split('<!-- recall v')[0], /A median of 3 exactly on the bar runs 2 more, and the median of those 5 decides/); // pin: 3 (released recall keys)
+  const cli = (cand) => spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...files(cand), 'kit-x'], { encoding: 'utf8' });
+  const good = cli(Array(5).fill(clean));
+  assert.equal(good.status, 0, good.stdout + good.stderr);
+  // pin: 1 (the gate reads these lines)
+  assert.match(good.stdout, /^scorers: 2\nworse: none\ncontrol: 0\ngate: kit-x median 14 baseline 14 /m);
+  const miss = cli([[[2], [2]], [[2], [2]], [[2], [2]], clean, clean]);
+  assert.equal(miss.status, 1);
+  assert.match(miss.stdout, /^gate: kit-x median 13 /m);
+  assert.match(miss.stdout, /under the floor of 14[\s\S]*fix the cause/);
+  assert.doesNotMatch(miss.stdout, /cand-4|extra runs|owner/);
+});
+
+// K200 (the K181 calibration): a paired tally with no release arm was scored by hand.
+// why: catches a paired run with no base arm that the score tool refused
+test('recall-score (K200): runs with no release arm are tallied side by side with no gate line', () => {
+  const dir = makeTemp('rk200-');
+  const clean = [[], []];
+  const arms = { ...Object.fromEntries([1, 2, 3, 4, 5].map((i) => [`pc-${i}`, clean])), ...Object.fromEntries([1, 2, 3, 4, 5].map((i) => [`cloud-${i}`, i === 1 ? [[9], [9]] : clean])) };
+  const { map, sets } = scoreSets(arms);
+  sets.forEach((s, k) => fs.writeFileSync(path.join(dir, `s${k}.txt`), Object.entries(s).flatMap(([id, q]) => Object.entries(q).map(([x, v]) => `${id} Q${x}: ${v}`)).join('\n')));
+  fs.writeFileSync(path.join(dir, 'map.json'), JSON.stringify({ map }));
+  const r = spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', path.join(dir, 's0.txt'), path.join(dir, 's1.txt'), path.join(dir, 'map.json'), 'k181'], { encoding: 'utf8' });
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  assert.match(r.stdout, /^\| Q \| pc \| cloud \|$/m);
+  assert.match(r.stdout, /^\| 9 \| 1, 1, 1, 1, 1 \| 0, 1, 1, 1, 1 \|$/m);
+  assert.match(r.stdout, /pc median 14, cloud median 14/);
+  assert.doesNotMatch(r.stdout, /^gate:/m);
+  assert.match(r.stdout, /no gate line: a gate needs cand, base/);
+});
+
+// K199 (the K181 calibration): Windows and Linux paths told the scorer which machine wrote a run; 16 were cleared by hand.
+// why: catches a run's OS path that tells a blind scorer its side
+test('recall-score (K199): the blind step writes every OS path one way, so no path tells a side', async () => {
+  const { scrub, blind } = await import('../scripts/recall-score.mjs');
+  // Home folders are built here, so the repo's own personal-path scrub finds none in this file.
+  const [U, H] = ['Us' + 'ers', 'ho' + 'me'];
+  const win = scrub(`Read C:\\${U}\\owner\\.claude\\skills\\pre-pr-sweep\\approve.mjs then .claude\\guard.cjs and scripts\\recall.mjs`);
+  const lin = scrub(`Read /${H}/runner/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs`);
+  assert.equal(win, lin);
+  // pin: 1 (the blind set a scorer reads)
+  assert.equal(win, 'Read ~/.claude/skills/pre-pr-sweep/approve.mjs then .claude/guard.cjs and scripts/recall.mjs');
+  for (const home of [`/${U}/owner/`, `C:/${U}/owner/`, `/c/${U}/owner/`, '$HOME/', '$env:USERPROFILE\\', '%USERPROFILE%\\', '/root/']) assert.equal(scrub(`${home}.claude/x.md`), '~/.claude/x.md', home);
+  assert.equal(scrub('D:\\work\\repo\\a.md'), '/work/repo/a.md');
+  assert.equal(scrub('a regex like (\\d+) or [a\\d] stays'), 'a regex like (\\d+) or [a\\d] stays');
+  // A path the scrub missed still stops the blinding.
+  const dir = makeTemp('k199-');
+  const f = path.join(dir, 'cand-1.md');
+  fs.writeFileSync(f, '# Recall run\n\n## 1. q\n\nKey: k\n\nAnswer:\n\n> see \\\\server\\share\\Users\\x\n');
+  assert.throws(() => blind(path.join(dir, 'out'), [f]), /still names a side/);
+});
+
+// K198: the fixed gate in CI. The gate command holds every graded PR to a median of 14 on both suites, two blind
+// scorers, and no question or scenario worse than the same-day release; nothing passes a miss.
+// why: guards rule:ci-gate
+test('recall gate (K198): the floor of 14, two scorers and no worse question or scenario, with no override', async () => {
+  const { checkGate } = await recallTools();
+  const facts = (added, extra = {}) => checkGate({ changed: ['rules/core.md'], added, brief: 1, keys: 4, bar: 9, floor: 14, ...extra });
+  const gate = (m) => `gate: a median ${m} baseline 9 brief v1 keys v4 control 0`;
+  assert.equal(facts(['scorers: 2', 'worse: none', gate(14)]).ok, true);
+  assert.match(facts(['scorers: 2', 'worse: none', gate(13)]).detail, /median 13 is under the floor of 14/);
+  assert.match(facts(['worse: none', gate(14)]).detail, /two blind scorers: add "scorers: 2"/);
+  assert.match(facts(['scorers: 1', 'worse: none', gate(14)]).detail, /two blind scorers/);
+  assert.match(facts(['scorers: 2', gate(14)]).detail, /add the "worse:" line/);
+  assert.match(facts(['scorers: 2', 'worse: 4, 9', gate(14)]).detail, /questions 4, 9 do worse than the same-day release/);
+  const behave = { behaviour: { suite: 2, bar: 11 } };
+  const b = (m, worse = 'behaviour worse: none') => facts(['scorers: 2', 'worse: none', gate(14), `behaviour: a median ${m} baseline 12 suite v2 control 3`, ...(worse ? [worse] : [])], behave);
+  assert.equal(b(14).ok, true);
+  assert.match(b(13).detail, /behaviour median 13 is under the floor of 14/);
+  assert.match(b(14, null).detail, /add the "behaviour worse:" line/);
+  assert.match(b(14, 'behaviour worse: 13-closeout').detail, /scenarios 13-closeout do worse/);
+  // Without the floor (an older base's call) the lines are not asked for.
+  assert.equal(checkGate({ changed: ['rules/core.md'], added: [gate(10)], brief: 1, keys: 4, bar: 9 }).ok, true);
+  // The gate command applies the floor itself.
+  const r = gateRepo();
+  r.record(`${K198_LINES}\n${gate(13)}`);
+  const low = r.gate();
+  assert.equal(low.status, 1, low.stdout);
+  assert.match(low.stdout, /under the floor of 14/);
+  const ok = gateRepo();
+  ok.record(PASS_GATE);
+  assert.equal(ok.gate().status, 0, ok.gate().stdout);
 });
 
 // The 1.21.0 sweep's D1: CI runs the base branch's gate, whose parser may not know a new field, so the control sits on
@@ -1369,12 +1519,15 @@ test('recall-score (T2): a notice line goes and is logged, a Key line stays, and
 
 // why: guards rule:instruments-and-evals
 test('recall-score (T2): the table keeps its columns and "worse" names only what the candidate lost', async () => {
+  assert.equal((await import('../scripts/recall-score.mjs')).RUNS, 5, 'K198: 5 runs a side');
   const { summarize } = await import('../scripts/recall-score.mjs');
-  const map = { R01: 'cand-1', R02: 'base-1', R03: 'control-1' };
-  const r = summarize({ R01: { 1: 1, 2: 0 }, R02: { 1: 0, 2: 1 }, R03: { 1: 0, 2: 0 } }, map, 2);
-  assert.deepEqual(r.worse, [2]);
-  assert.ok(r.table.includes('| 1 | 1 | 0 | 0 |'), r.table.join('\n'));
-  assert.ok(r.table.includes('| 2 | 0 | 1 | 0 |'), r.table.join('\n'));
+  const clean = [[], []];
+  const { map, sets } = scoreSets(fiveEach([[[2], [2]], clean, clean, clean, clean], [[[1], [1]], clean, clean, clean, clean]));
+  const r = summarize(sets, map, 14, { when: sameDay(map) });
+  // Seen twice (the owner's pick, 2026-11-21): one look names what the candidate lost as lower.
+  assert.deepEqual(r.lower, [2]);
+  assert.ok(r.table.includes('| 1 | 1, 1, 1, 1, 1 | 0, 1, 1, 1, 1 | 0 |'), r.table.join('\n'));
+  assert.ok(r.table.includes('| 2 | 0, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |'), r.table.join('\n'));
 });
 
 // Carry 25: a second config folder can point the sessions somewhere other than the layer the gate checked.
@@ -1387,6 +1540,24 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
   assert.doesNotThrow(() => checkSessionHome(home, run(JSON.stringify({ configDirectory: home }))));
   assert.throws(() => checkSessionHome(home, run('not json')), /cannot read/);
   assert.throws(() => checkSessionHome(home, () => ({ status: 1, stdout: '', stderr: 'nope' })), /cannot read/);
+});
+
+// The 2026-11-21 paired run: the release arm ran on the real Claude folder, so ~/.claude/skills/pre-pr-sweep/approve.mjs
+// was its own copy, while the branch arm on a throwaway reached the release's copy through the same ~ path. Every arm
+// of a gate run now runs on its own throwaway Claude folder; a released real folder is refused before any session.
+// why: guards rule:instruments-and-evals
+test('a recall run refuses a Claude folder that is not a throwaway under kit-probes, before any session', async () => {
+  const { checkGateHome } = await recallTools();
+  assert.equal(typeof checkGateHome, 'function');
+  const real = makeTemp('realhome-');
+  fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.47.0', release: true, files: {} }));
+  const r = spawnSync(process.execPath, [RECALL, 'base-1'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: real, CLAUDE_CONFIG_DIR: real } });
+  assert.equal(r.status, 1, r.stdout + r.stderr);
+  assert.match(r.stderr, /is not a throwaway Claude folder under .*kit-probes/);
+  assert.doesNotMatch(r.stdout, /answered/);
+  const probe = path.join(os.homedir(), 'kit-probes', 'abcdef', 'home');
+  assert.doesNotThrow(() => checkGateHome(probe, os.homedir()));
+  assert.throws(() => checkGateHome(path.join(os.homedir(), '.claude'), os.homedir()), /not a throwaway/);
 });
 
 // K137 (build 18, the 1.43.0 recall rounds): a run was made on rule text over its size cap, then trimmed, then run

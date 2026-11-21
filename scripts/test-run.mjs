@@ -4,7 +4,7 @@
 //   node scripts/test-run.mjs --changed [files...]  only the tests that reach what changed since the map's commit
 //   node scripts/test-run.mjs --map [files...]      every test, recording the coverage map (needs a clean tree)
 //   --always <file>    with --changed: this file's tests run whatever the change reaches (CI's security set), once
-//   --pick             with --changed: print the tests it would run, one per line, and run none (a builder's pick)
+//   --pick             --changed's pick: print the tests it would run, one per line, and run none (a builder's pick)
 //                      Over half the suite reached, --changed runs every test and says so.
 //   --shards <n>                                     processes to split the tests over (default: CPUs, at most 8)
 //   --slice <i>/<n>                                  run only slice i (from 0) of n: CI splits the suite over n jobs,
@@ -43,7 +43,8 @@ function parseArgs(args) {
 	for (let i = 0; i < args.length; i++) {
 		if (args[i] === '--shards') { o.shards = Math.max(1, Number(args[++i]) || 1); o.shardsGiven = true; }
 		else if (args[i] === '--always') o.always.push(path.resolve(args[++i] || ''));
-		else if (args[i] === '--pick') o.pick = true;
+		// K170 (the S1 replay of 1.40.0): --pick alone is the same pick, never the whole suite.
+		else if (args[i] === '--pick') { o.pick = true; o.changed = true; }
 		// The build 17 sweep: a list of test keys (as KIT_ONLY reads them) given by name, since the runner takes KIT_ONLY
 		// out of its shards' environment.
 		else if (args[i] === '--only') o.only = path.resolve(args[++i] || '');
@@ -296,8 +297,8 @@ export async function main(argv) {
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
 	// K150 (build 20): a full run, or --changed, which widens to every test the change reaches, is CI's job; on the owner's
 	// machine it costs minutes and finds what CI finds (K59 was a notice, and build 19 reran about 170 tests anyway). It
-	// runs here only with --owner-yes, given after the owner's pop-up yes. A map needs every test; --changed --pick runs
-	// none (--pick alone runs the whole suite, the build 20 sweep).
+	// runs here only with --owner-yes, given after the owner's pop-up yes. A map needs every test; --pick runs
+	// none (it implies --changed, K170).
 	if ((o.changed || !o.files.length) && !o.map && !(o.pick && o.changed) && !process.env.CI) {
 		if (!o.ownerYes) {
 			process.stderr.write('test-run: refused: a full or --changed run is CI\'s job. Run only the tests you changed (node --test <file>); CI runs the rest after you push. With the owner\'s pop-up yes: add --owner-yes.\n');

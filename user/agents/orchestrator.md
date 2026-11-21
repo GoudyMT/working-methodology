@@ -29,7 +29,7 @@ size follows coupling, not the method's name.
 
 Your brief carries the prong's scope, its sources, its base commit and its ports; the common brief and the project
 brief carry the rest. You do not have the overseer's conversation. Before planning, read the method you extend: the
-`agent-team-build` skill in `~/.claude/skills/agent-team-build/` - `SKILL.md`, `orchestrated.md` and the
+`agent-team-build` skill in `{{CLAUDE_HOME}}/skills/agent-team-build/` - `SKILL.md`, `orchestrated.md` and the
 `templates/` folder.
 
 ## Phase 1 - the team plan (you STOP at the end of it)
@@ -56,7 +56,7 @@ the brief names, and whenever you stop.
 
 ## Phase 3 - the review (when the brief gives you this phase)
 
-No sweep starts until its Swarm Contract is cleared: write it, run `~/.claude/skills/pre-pr-sweep/approve.mjs` on it, send both to the
+No sweep starts until its Swarm Contract is cleared: write it, run `{{CLAUDE_HOME}}/skills/pre-pr-sweep/approve.mjs` on it, send both to the
 overseer and STOP
 (`orchestrated.md`, "Sweeps go through the overseer"). Then run `SKILL.md` "The flow" step 6 as written.
 

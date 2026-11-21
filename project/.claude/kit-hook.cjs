@@ -93,7 +93,14 @@ async function main() {
 		const text = lib.sessionStartReport(ctx);
 		if (text) emit(text);
 	} else if (MODE === 'prompt') {
-		const text = lib.promptCheckReport(ctx);
+		// K191: the closeout cue rides the same message; a kit too old to have it says nothing.
+		const prompt = String(INPUT.prompt || '');
+		// A cue that cannot be recorded (git's folder read-only, say) is dropped alone; the rest of the reply still goes.
+		let cue = '';
+		try { cue = typeof lib.closeoutCue === 'function' ? lib.closeoutCue({ ...ctx, prompt }) : ''; } catch { cue = ''; }
+		// K192: the rule a message names, in the rule's own words.
+		const rules = typeof lib.ruleCues === 'function' ? lib.ruleCues({ kit, prompt }) : '';
+		const text = [lib.promptCheckReport(ctx), cue, rules].filter(Boolean).join('\n');
 		if (text) emit(text);
 	} else if (MODE === 'pre-compact') {
 		emit(`${packet}\n${lib.preCompactReport(ctx)}`);

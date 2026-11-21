@@ -1123,3 +1123,43 @@ control: 0
 gate: b21-1.47.0 median 13 baseline 13 brief v2 keys v12 owner-accepted
 behaviour: b21-1.47.0 median 13 baseline 12 suite v2 control 5
 scored: bf6c9a03edef0ef5feee8750232f1100f12f39c6
+
+## Recall v12 - 1.48.0, fixed score gate, rule cues and own-folder kit tools (2026-11-21)
+
+Candidate: the branch frozen at 02d3478 in a clone, installed (user and project layer) into its own throwaway Claude folder. Baseline: five runs of the released 1.47.0, each on its own throwaway Claude folder, run the same day (2026-11-21, 01:23Z to 02:35Z; the candidate runs 08:43Z to 09:07Z). Control: a no-kit run. Opus 5.5 at medium, brief v2, keys v12. The rule text this build changes: rules name a kit tool instead of a ~/.claude path (K206), and rules/cues.json puts a rule's own words in front of a message on its topic (K192).
+
+Scored under the fixed gate (K198, the owner's picks 2026-11-20 and 2026-11-21): two fresh blind scorers read all eleven runs together, a run's score is their average with no rounding up, the floor is 14, and a question that sums lower than the release is asked again alone before it can count as worse.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 0.5 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 0, 1, 0 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 0, 0, 0, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 0, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 0, 1, 0, 1 | 0 |
+| Total | 14, 14, 14, 14, 13.5 | 12, 12, 12, 13, 13 | 0 |
+
+- **Scored: five-run median 14 of 14, same-day baseline 12, control 0.** At the floor of 14. Totals 69.5 against 62.
+- **Asked again (seen twice):** Q2 summed lower on the first look, 9 of 10 against 10 of 10 (one mark by one scorer). Asked alone in 5 new sessions a side the same day and marked by two new blind scorers, it was 10 of 10 against 10 of 10, so no question is worse.
+- **The first final run was voided by a measuring fault, not a rule:** at 07bdb9d the candidate scored 13.5 with Q9 lower, because the blind step deleted every answer line holding "current build", which in three candidate and two release runs was Q9's own line. The blind step was fixed test-first (02d3478, the owner's yes) and five new candidate runs were made; the release runs stand.
+- **Three runs stopped and were run again:** two on an error the first track's log cut off, and one at question 8 on the session's 8-turn limit; no answer from a stopped run was scored.
+- **Behaviour (suite v2, floor 14):** the branch 13, 14, 14, 14, 14 (runs on 07bdb9d, which differs from 02d3478 only in the blind step's file and its test, which behaviour runs do not use); the released 1.47.0 runs 14, 14, 13, 13, 14 the same day; control 5. No scenario worse.
+- **Owner-accepted (2026-11-21, pop-up: "Yes, add owner-accepted"):** CI runs the released 1.47.0's gate for this PR, which holds the same-day release score (12) against its last recorded one (13). The owner dropped that check from 1.48.0 (pop-up 2026-11-21, "Drop it from 1.48.0") and gave this one tap for this PR only; 1.48.0's own gate refuses the marker.
+
+scorers: 2
+asked again: 2 (9 of 10 against 10, then 10 of 10 against 10)
+worse: none
+control: 0
+gate: b22-1.48.0 median 14 baseline 12 brief v2 keys v12 owner-accepted
+behaviour: b22-1.48.0 median 14 baseline 14 suite v2 control 5
+behaviour worse: none
+scored: 02d3478c9a53c22f8d461df824b9c8a8be03bbbb

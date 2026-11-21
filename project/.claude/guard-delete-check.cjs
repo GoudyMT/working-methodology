@@ -955,7 +955,8 @@ try {
 	// A link to a folder deep inside the project: PowerShell reads ".." as written, so inner\..\..\x is outside.
 	fs.mkdirSync(path.join(real, 'proj', 'a', 'b'), { recursive: true });
 	fs.symlinkSync(path.join(real, 'proj', 'a', 'b'), path.join(real, 'proj', 'inner'), 'junction');
-	check('[junction] Remove-Item inner\\..\\..\\x (outside as written, inside through the link)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\..\\x' } }, true, where);
+	// Backslash paths read as written are Windows'; elsewhere (CI's Linux mutation measure, K193) this case is not run.
+	if (process.platform === 'win32') check('[junction] Remove-Item inner\\..\\..\\x (outside as written, inside through the link)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\..\\x' } }, true, where);
 	check('[junction] Remove-Item inner\\..\\x (inside both ways)', { ...viaLink, tool_input: { command: 'Remove-Item inner\\..\\x' } }, false, where);
 	// Links on the way to a session folder: what counts is where the path lands, read after them.
 	const temp = path.join(real, 'temp');

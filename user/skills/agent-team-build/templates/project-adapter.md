@@ -1,7 +1,7 @@
 ## Agent-Team Build: Project Adapter
 
-> The portable playbook is the `agent-team-build` skill (`~/.claude/skills/agent-team-build/`) with the
-> `builder`, `checker`, `orchestrator` and `scanner` roles (`~/.claude/agents/`). This section is the only
+> The portable playbook is the `agent-team-build` skill (the Claude folder's `skills/agent-team-build/`) with the
+> `builder`, `checker`, `orchestrator` and `scanner` roles (its `agents/`). This section is the only
 > project-specific part. Fill every field with the user; a blank field is a question, never a guess.
 
 1. **Adopted:** <date, by whom>. **Scoreboard lives in:** <the project's lessons file>

@@ -51,7 +51,7 @@ function previousTag() {
 // The hook command install wrote for every tool call, run the way Claude Code runs it.
 function launcher(home, proj, transcript) {
 	const settings = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'));
-	const entry = (settings.hooks.PreToolUse || []).flatMap((h) => h.hooks || []).find((h) => /kit-launch\.cjs['"]?\s*$/.test(h.command));
+	const entry = (settings.hooks.PreToolUse || []).flatMap((h) => h.hooks || []).find((h) => /kit-launch\.cjs/.test(h.command)); // R7.2: the start script runs it, with a fallback after
 	if (!entry) return null;
 	// at: the folder the call runs in (the project unless named); bare: no CLAUDE_PROJECT_DIR, as a hook may be called.
 	return (tool, command, { at = proj, bare = false } = {}) => {

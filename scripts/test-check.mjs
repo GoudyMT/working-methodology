@@ -163,11 +163,16 @@ function run(dir, keys, env, left) {
 				// The build 19 sweep: only the loader's own line counts (ERR_MODULE_NOT_FOUND ... imported from), on one line, as
 				// path characters, so a test file cannot print markup or a forged line into the step summary through it; the
 				// copy's folder is taken off as written and as the file system resolves it.
-				const miss = `${out}\n${r.stderr || ''}`.match(/ERR_MODULE_NOT_FOUND\]?:? Cannot find (module|package) '([\w./\\@~:+-]+)' imported from /);
+				// K170 (the S1 replay of 1.45.0): a require() the base cannot satisfy is the loader's own line too, followed by
+				// its require stack.
+				const miss = `${out}\n${r.stderr || ''}`.match(/ERR_MODULE_NOT_FOUND\]?:? Cannot find (module|package) '([\w./\\@~:+-]+)' imported from /)
+					|| `${out}\n${r.stderr || ''}`.match(/Error: Cannot find (module) '([\w./\\@~:+-]+)'\r?\n[#\s]*Require stack:/);
 				if (miss) {
 					let real = dir;
 					try { real = fs.realpathSync.native(dir); } catch { /* as given */ }
-					const name = [dir, real].reduce((s, d) => s.replace(new RegExp(`^${slash(d).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'i'), ''), slash(miss[2]));
+					let name = [dir, real].reduce((s, d) => s.replace(new RegExp(`^${slash(d).replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/`, 'i'), ''), slash(miss[2]));
+					// A require() names the module as the file wrote it; a relative one is named from the repo, as an import is.
+					if (/^\.\.?\//.test(name)) name = path.posix.normalize(path.posix.join(path.posix.dirname(slash(f)), name));
 					red.why.set(f, miss[1] === 'package' ? `the package ${name}` : name);
 				}
 			}

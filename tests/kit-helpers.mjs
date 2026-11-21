@@ -807,8 +807,7 @@ export function crashedSweep() {
 // that reads the recorded median instead of only seeing that the scores file changed.
 export const recallTools = () => import('../scripts/recall.mjs');
 export const RECALL = path.resolve('scripts/recall.mjs');
-export const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';
-export const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
+export const GOOD_ENTRY = 'gate: kit-1.18.0 median 8 baseline 8 brief v1 keys v2';export const gateFacts = (over = {}) => ({ changed: ['rules/core.md', 'docs/evals/results/recall-scores.md'], added: [GOOD_ENTRY], brief: 1, keys: 2, ...over });
 
 // Recall probes: the runner makes its own throwaway folder, so no folder name or label can reach the result.
 export const HEX6 = '[0-9a-f]{6}';

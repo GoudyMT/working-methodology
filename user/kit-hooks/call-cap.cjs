@@ -18,6 +18,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+const { dollars, reportDollars } = require('./prices.cjs');
 
 const LARGE_READ = 40 * 1024;
 const IDLE_MS = 5 * 60 * 1000;
@@ -174,6 +175,8 @@ function meter(input) {
 	const calls = new Map();
 	let cap = null;
 	let ceiling = null;
+	let inDollars = false;
+	let twoCeilings = false;
 	// Only the brief, the first user message, sets them: a later one is a tool's answer and may hold any text (F37).
 	let brief = true;
 	const open = new Map();
@@ -184,14 +187,25 @@ function meter(input) {
 		if (!m) continue;
 		if (brief && m.role === 'user') {
 			brief = false;
-			const text = JSON.stringify(m.content);
+			// The brief's own text, with its line breaks: its JSON has none, so a ceiling line could not be told from a
+			// ceiling the role's question quotes.
+			const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b && typeof b.text === 'string' ? b.text : '')).join('\n') : JSON.stringify(m.content);
 			const x = text.match(/Call cap: (\d+)/);
 			if (x) cap = Number(x[1]);
-			const t = text.match(/Token ceiling: (\d+)/);
+			// A ceiling line starts with its label (as the sweep guard reads it); a brief with no line that starts so
+			// (one written on a single line) is read wherever the words are.
+			const own = /^(?:Token|Dollar) ceiling:/m.test(text);
+			const at = (re, flags = '') => text.match(new RegExp(`${own ? '^' : ''}${re}`, own ? `m${flags}` : flags));
+			const t = at('Token ceiling: (\\d+)');
 			if (t) ceiling = Number(t[1]);
+			// K182 (build 22): a brief from approve.mjs 1.48.0 on carries its ceiling in list-price dollars.
+			const d = at('Dollar ceiling: \\$(\\d+(?:\\.\\d+)?)');
+			if (d) { ceiling = Number(d[1]); inDollars = true; }
+			// The commit security review: two ceiling lines could be read either way, so neither is.
+			twoCeilings = (at('(Token|Dollar) ceiling:', 'g') || []).length > 1;
 		}
 		if (m.role === 'assistant' && m.usage && m.id) {
-			calls.set(m.id, m.usage);
+			calls.set(m.id, { ...m.usage, model: m.model });
 			for (const b of Array.isArray(m.content) ? m.content : []) if (b && b.type === 'tool_use') open.set(b.id, m.id);
 		}
 		if (m.role === 'user' && Array.isArray(m.content)) for (const b of m.content) if (b && b.type === 'tool_result') open.delete(b.tool_use_id);
@@ -200,7 +214,7 @@ function meter(input) {
 	// call still waiting on its answer is this one, so it is left out and the count is always the calls before it.
 	// The build 20 sweep: a brief with no cap or no ceiling line is a meter that cannot stop the reviewer, so it is logged
 	// as a fail-open and the sweep's outcome names the role.
-	if (cap === null || ceiling === null) logOpen(input, `no ${cap === null ? 'Call cap' : 'Token ceiling'} line in the brief`);
+	if (cap === null || ceiling === null) logOpen(input, `no ${cap === null ? 'Call cap' : 'ceiling (Dollar or Token)'} line in the brief`);
 	if (open.has(String(input.tool_use_id || ''))) calls.delete(open.get(String(input.tool_use_id)));
 	else if ([...open.values()].includes([...calls.keys()].pop())) calls.delete([...calls.keys()].pop());
 	// The transcript holds the calls before this one, and this one is spent already: refused, it still counts, and the
@@ -210,7 +224,21 @@ function meter(input) {
 	// The token ceiling (M22 C): every call re-reads the context, so the next call costs about what the last one did.
 	// Allowed, this call is followed by one more and the report; refused, by the report alone. The reviewer is stopped
 	// while all three still fit, so its report lands under the ceiling.
+	if (twoCeilings) return deny('Your brief carries more than one ceiling line, so no ceiling can be read from it. Only your hand-back still works: hand in your report now, and tell the lead the brief was not the one approve.mjs wrote.');
 	if (ceiling === null) return;
+	// K182: in dollars, each call at its own model's list price (an unknown model at the dearest), and the report's room
+	// as 5,000 output tokens at the last call's model.
+	if (inDollars) {
+		const spend = [...calls.values()].map((u) => dollars(u, u.model));
+		const used = spend.reduce((t, x) => t + x, 0);
+		const last = spend.length ? spend[spend.length - 1] : 0;
+		const prev = spend.length > 1 ? spend[spend.length - 2] : last;
+		const model = calls.size ? [...calls.values()].pop().model : '';
+		const reserve = 3 * last + 6 * Math.max(0, last - prev) + reportDollars(model);
+		const usd = (x) => `$${x.toFixed(2)}`;
+		if (used + reserve >= ceiling) return deny(`Dollar ceiling reached (${usd(used)} of ${usd(ceiling)}): more work would take your report past it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
+		return;
+	}
 	const size = (u) => ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens', 'output_tokens'].reduce((t, k) => t + (Number(u[k]) || 0), 0);
 	const used = [...calls.values()].reduce((t, u) => t + size(u), 0);
 	const sizes = [...calls.values()].map(size);

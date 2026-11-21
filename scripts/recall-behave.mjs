@@ -12,12 +12,14 @@
 //
 // Usage: node scripts/recall-behave.mjs <label> [kit folder]    (the kit folder defaults to this one)
 //        node scripts/recall-behave.mjs <label> --no-kit        (the control)
+//        node scripts/recall-behave.mjs <label> [kit folder] --just <id,...>   (a second look: those scenarios alone)
+//        node scripts/recall-behave.mjs line <label> <cand> -- <base> -- <control> [-- <cand again> -- <base again>]
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkUserLayer, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
+import { checkUserLayer, checkGateHome, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = path.join(KIT, 'docs', 'evals', 'behaviour-scenarios.json');
@@ -33,6 +35,17 @@ const MAX_TURNS = '12';
 export const ALLOWED = 'Read,Grep,Glob,Skill';
 const SHELLS = /^(Bash|PowerShell)$/;
 const EDITS = /^(Edit|Write|MultiEdit|NotebookEdit)$/;
+
+/**
+ * Seen twice (the owner's pick, 2026-11-21): the scenarios a second look runs, alone. Every scenario when none are
+ * named; a name the suite lacks is refused before any session starts.
+ */
+export function pickScenarios(scenarios, just) {
+	if (!just) return scenarios;
+	const missing = [...just].find((id) => !scenarios.some((x) => x.id === id));
+	if (missing) throw new Error(`--just: no scenario ${missing} in the suite`);
+	return scenarios.filter((x) => just.has(x.id));
+}
 
 /** The suite: its version, pass bar and scenarios. */
 export function suiteVersion(file = SUITE) {
@@ -178,10 +191,38 @@ export function seed(dir, files = {}, run, merged = false) {
  * S22-A5: a candidate's user layer is measured, not the released one in the Claude folder: its skills and agent files
  * are copied into the probe's .claude folder, which a session reads beside the Claude folder's.
  */
-export function copyUserLayer(kitDir, dir) {
+export function copyUserLayer(kitDir, dir, home) {
 	for (const part of ['skills', 'agents']) {
 		const from = path.join(kitDir, 'user', part);
 		if (fs.existsSync(from)) fs.cpSync(from, path.join(dir, '.claude', part), { recursive: true });
+	}
+	// K206: the text names kit files as {{CLAUDE_HOME}}/..., which install fills; filled here with the arm's own folder.
+	if (!home) return;
+	const own = path.resolve(home).split(path.sep).join('/');
+	const fill = (d) => {
+		for (const e of fs.readdirSync(d, { withFileTypes: true })) {
+			const p = path.join(d, e.name);
+			if (e.isDirectory()) fill(p);
+			// A real file only: a link copied from the kit points outside the probe, and is never written through.
+			else if (e.isFile() && e.name.endsWith('.md')) { const t = fs.readFileSync(p, 'utf8'); if (t.includes('{{CLAUDE_HOME}}')) fs.writeFileSync(p, t.replaceAll('{{CLAUDE_HOME}}', own)); }
+		}
+	};
+	for (const part of ['skills', 'agents']) if (fs.existsSync(path.join(dir, '.claude', part))) fill(path.join(dir, '.claude', part));
+}
+
+/**
+ * K195 (reproduced on 1.47.0): a session run with project settings only never loads the Claude folder's skills, so a
+ * release arm had no kit skills while the candidate's were copied in. The release arm gets the skills and agents its
+ * install record lists, copied the same way, and nothing the kit did not install.
+ */
+export function releasedUserLayer(home, dir) {
+	const files = JSON.parse(fs.readFileSync(path.join(home, 'kit-install.json'), 'utf8')).files || {};
+	for (const rel of Object.keys(files).filter((k) => /^(skills|agents)\//.test(k))) {
+		const to = path.resolve(dir, '.claude', rel);
+		const inside = path.relative(path.join(dir, '.claude'), to);
+		if (inside.startsWith('..') || path.isAbsolute(inside) || path.relative(home, path.resolve(home, rel)).startsWith('..')) throw new Error(`an install record path outside the Claude folder: ${rel}`);
+		fs.mkdirSync(path.dirname(to), { recursive: true });
+		fs.copyFileSync(path.join(home, rel), to);
 	}
 }
 
@@ -215,7 +256,9 @@ export function reusable(out, marker, ids) {
  * reuses nothing clears the label's old records before it writes its marker, so a crash never leaves another run's
  * records under this run's marker for a resume to take.
  */
-export function startRun(out, marker, ids, { only = null, resume = false, name = '' } = {}) {
+export function startRun(out, marker, ids, { only = null, resume = false, name = '', just = null } = {}) {
+	// The build 22 sweep: a second look under a label that holds runs would delete them; it takes a new label.
+	if (just && ['run.json', 'result.json'].some((f) => fs.existsSync(path.join(out, f)))) throw new Error(`--just: ${name} already holds saved runs; a second look takes a new label (cand-<x>-<n>, base-<x>-<n>)`);
 	const saved = reusable(out, marker, ids);
 	if (only) {
 		const missing = ids.filter((id) => !only.has(id) && !saved.includes(id));
@@ -234,22 +277,60 @@ const median = (xs) => { const s = [...xs].sort((a, b) => a - b); return s.lengt
  * The gate line from saved runs: the candidate's median, the released baseline's median and the control's, read from
  * each run's result.json, never typed (the wording gate's numbers are typed, which is how S18-6 slipped).
  */
-export function behaviourLine({ label, cand, base, control }) {
+// K198 (Max's picks, 2026-11-20): 5 candidate and 5 release runs, flat, the release measured the same day; a second
+// line names each scenario the candidate passed in fewer runs than the release, for the gate's no-worse check.
+// Seen twice (the owner's pick, 2026-11-21; recall-score.mjs says why): such a scenario is run again alone (--just), 5
+// runs a side the same day, and is worse only when it passes in fewer runs again. One look prints "behaviour lower
+// once" and no worse line, so the gate cannot pass on it.
+const RUNS = 5;
+const DAY_MS = 24 * 60 * 60 * 1000;
+export function behaviourLine({ label, cand, base, control, candAgain = null, baseAgain = null }) {
 	const read = (d) => JSON.parse(fs.readFileSync(path.join(d, 'result.json'), 'utf8'));
 	const [c, b, k] = [cand.map(read), base.map(read), control.map(read)];
 	const suites = new Set([...c, ...b, ...k].map((r) => r.suite));
 	if (suites.size !== 1) throw new Error(`runs on more than one suite version: ${[...suites].join(', ')}`);
 	if (!c.length || !b.length || !k.length) throw new Error('a line needs candidate, baseline and control runs');
 	if (b.some((r) => !r.released) || k.some((r) => !r.noKit)) throw new Error('a baseline run is on a released kit, and the control on none');
-	return `behaviour: ${label} median ${median(c.map((r) => r.total))} baseline ${median(b.map((r) => r.total))} suite v${[...suites][0]} control ${median(k.map((r) => r.total))}`;
+	if (c.length !== RUNS || b.length !== RUNS) throw new Error(`a gate is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${c.length} and ${b.length}`);
+	// The build 22 sweep: a --just run asked some scenarios alone, so it is a second look, never a first.
+	if ([...c, ...b, ...k].some((r) => r.just)) throw new Error('a first look runs the whole suite: a --just run is a second look only');
+	const timeOf = (runs) => runs.map((r) => Date.parse(r.when ?? ''));
+	const sameDay = (times) => { if (times.some(Number.isNaN) || Math.max(...times) - Math.min(...times) > DAY_MS) throw new Error('the release arm must be measured the same day as the candidate: every candidate and release run needs its time, within a day of the others'); };
+	sameDay(timeOf([...c, ...b]));
+	const passes = (runs, id) => runs.filter((r) => r.rows.some((x) => x.id === id && x.passed)).length;
+	const ids = [...new Set([...c, ...b].flatMap((r) => r.rows.map((x) => x.id)))];
+	const lower = ids.filter((id) => passes(c, id) < passes(b, id));
+	const head = `behaviour: ${label} median ${median(c.map((r) => r.total))} baseline ${median(b.map((r) => r.total))} suite v${[...suites][0]} control ${median(k.map((r) => r.total))}`;
+	const again = candAgain || baseAgain;
+	if (!again) return lower.length ? `${head}\nbehaviour lower once: ${lower.join(', ')}` : `${head}\nbehaviour worse: none`;
+	if (!lower.length) throw new Error('nothing passed in fewer runs than the release on the first look, so no second look is owed: write the line from the first look alone');
+	const [c2, b2] = [(candAgain || []).map(read), (baseAgain || []).map(read)];
+	if (c2.length !== RUNS || b2.length !== RUNS) throw new Error(`a second look is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${c2.length} and ${b2.length}`);
+	if ([...c2, ...b2].some((r) => r.suite !== [...suites][0])) throw new Error('a second look runs on the first look\'s suite version');
+	if (b2.some((r) => !r.released) || c2.some((r) => r.released || r.noKit)) throw new Error('a second look\'s release runs are on a released kit, and its candidate runs on the candidate');
+	for (const id of lower) if ([...c2, ...b2].some((r) => !r.rows.some((x) => x.id === id))) throw new Error(`a second look runs every lower scenario again; a run has no ${id} (recall-behave.mjs --just ${lower.join(',')})`);
+	// New sessions of the lower scenarios alone: each run saved as a --just run of exactly those.
+	const want = [...lower].sort().join(',');
+	if ([...c2, ...b2].some((r) => !Array.isArray(r.just) || [...r.just].sort().join(',') !== want)) throw new Error(`a second look is new runs of the lower scenarios alone: run each side with recall-behave.mjs <label> [kit folder] --just ${lower.join(',')}`);
+	sameDay(timeOf([...c, ...b, ...c2, ...b2]));
+	const asked = lower.map((id) => `${id} (${passes(c, id)} of ${RUNS} against ${passes(b, id)}, then ${passes(c2, id)} of ${RUNS} against ${passes(b2, id)})`);
+	const worse = lower.filter((id) => passes(c2, id) < passes(b2, id));
+	return `${head}\nbehaviour asked again: ${asked.join('; ')}\nbehaviour worse: ${worse.join(', ') || 'none'}`;
 }
 
 async function main(argv) {
 	if (argv[0] === 'line') {
 		// line <label> <candidate run folders> -- <baseline run folders> -- <control run folder>
+		//   [-- <candidate second-look folders> -- <baseline second-look folders>]
 		const [label, ...rest] = argv.slice(1);
 		const parts = rest.join('\0').split('\0--\0').map((p) => p.split('\0').filter(Boolean));
-		console.log(behaviourLine({ label, cand: parts[0] || [], base: parts[1] || [], control: parts[2] || [] }));
+		const out = behaviourLine({ label, cand: parts[0] || [], base: parts[1] || [], control: parts[2] || [], candAgain: parts[3] || null, baseAgain: parts[4] || null });
+		console.log(out);
+		const once = out.match(/^behaviour lower once: (.+)$/m);
+		if (once) {
+			console.log(`\nNo worse line yet: one look cannot tell a break from an unlucky run. Run ${once[1]} again alone, today, 5 new runs a side (recall-behave.mjs <label> [kit folder] --just ${once[1].replace(/, /g, ',')}), then write the line again with both looks: line <label> <cand> -- <base> -- <control> -- <cand again> -- <base again>.`);
+			process.exitCode = 1;
+		}
 		return;
 	}
 	// --only <id,...>: run only those scenarios again; every other one is graded again, under the current checks, from the
@@ -257,6 +338,11 @@ async function main(argv) {
 	// --resume: after a crash, the scenarios this label already saved on the same commit are graded from their records.
 	const resume = argv.includes('--resume');
 	argv = argv.filter((a) => a !== '--resume');
+	// --just <id,...>: a second look (seen twice) runs only those scenarios, each in a fresh session, and saves only them.
+	const justAt = argv.indexOf('--just');
+	const just = justAt >= 0 ? new Set(String(argv[justAt + 1] || '').split(',').filter(Boolean)) : null;
+	if (justAt >= 0) argv = [...argv.slice(0, justAt), ...argv.slice(justAt + 2)];
+	if (just && (!just.size || argv.includes('--only') || resume)) throw new Error('--just names one or more scenarios, and goes alone: not with --only or --resume');
 	const at = argv.indexOf('--only');
 	const only = at >= 0 ? new Set(String(argv[at + 1] || '').split(',').filter(Boolean)) : null;
 	if (at >= 0) argv = [...argv.slice(0, at), ...argv.slice(at + 2)];
@@ -264,6 +350,8 @@ async function main(argv) {
 	refuseOverCap(kitDir, noKit);
 	const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 	checkUserLayer(home);
+	// Every arm on its own throwaway Claude folder (the 2026-11-21 paired run; see recall.mjs checkGateHome).
+	checkGateHome(home);
 	checkHome(process.env);
 	const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
 	checkSessionHome(home, run);
@@ -271,13 +359,14 @@ async function main(argv) {
 	const kit = path.resolve(kitDir || KIT);
 	const released = !noKit && !kitTools.releaseState(kit).problems.length;
 	const suite = suiteVersion();
+	suite.scenarios = pickScenarios(suite.scenarios, just);
 	const out = path.join(OUT_DIR, `${name}.behave`);
 	fs.mkdirSync(out, { recursive: true });
 	const rows = [];
 	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
 	const head = run('git', ['rev-parse', 'HEAD'], { cwd: kit }).stdout.trim();
 	const marker = { head, suite: suite.version, released, noKit: !!noKit };
-	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name });
+	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name, just });
 	if (resume) console.log(`--resume: ${reuse.size} scenario(s) saved on ${head.slice(0, 7)} are graded from their records`);
 	for (const s of suite.scenarios) {
 		if ((only && !only.has(s.id)) || reuse.has(s.id)) {
@@ -295,7 +384,8 @@ async function main(argv) {
 		const dir = probePath(os.homedir());
 		try {
 			setupProbe({ dir, kitDir: kit, noKit, released, run });
-			if (!noKit && !released) copyUserLayer(kit, dir);
+			if (!noKit && !released) copyUserLayer(kit, dir, home);
+				else if (!noKit) releasedUserLayer(home, dir);
 			readOnlyProbe(dir);
 			seed(dir, s.files, run, s.merged === true);
 			const r = runScenario({ s, dir, home, run });
@@ -310,7 +400,7 @@ async function main(argv) {
 	const total = rows.filter((r) => r.passed).length;
 	const cost = rows.reduce((n, r) => n + r.cost, 0);
 	if (before && only && (before.released !== released || before.noKit !== noKit)) throw new Error(`--only: ${name} was run on another kit side; start a new label`);
-	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, total, cost, rows }, null, 1));
+	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, total, cost, rows, when: new Date().toISOString(), ...(just ? { just: [...just] } : {}) }, null, 1));
 	console.log(`${name}: ${total} of ${rows.length} on suite v${suite.version}, $${cost.toFixed(2)}`);
 }
 

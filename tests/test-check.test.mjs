@@ -210,6 +210,8 @@ test('the test check reads tests made in a loop, and still names a changed file 
 	sh(dir, 'commit', '-qm', 'the old file reads c');
 	const r2 = spawnSync(process.execPath, [CHECK, base2], { cwd: dir, encoding: 'utf8' });
 	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs: .*could not load/);
+	// K170 (the S1 replay of 1.45.0): a module a require() could not find is named too, not only an ESM import.
+	assert.match(r2.stdout, /A1 tests\/old\.test\.mjs:.*cannot load this: it lacks src\/c\.cjs/, r2.stdout);
 });
 
 // K148 (build 19): PR 55 changed test files to import a helper module main did not have yet, so main's copy of the

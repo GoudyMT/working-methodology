@@ -1582,3 +1582,19 @@ test('the path reader holds what its planted-bug sweep let through, and passes t
 	assert.equal(ask('cd "$D"; cat gk/config', { from: path.join(own, 'src') }), 'allow');
 	assert.equal(ask('Get-ChildItem src/no*.txt -Recurse | Remove-Item', { tool: 'PowerShell' }), 'allow');
 });
+
+// K187 and K196 (reproduced 2026-11-20 on a 1.47.0 throwaway install; K186, K188 and a third K196 shape passed there and
+// were closed on that evidence): three read-only shapes were held with a reason that did not fit. A WMI or CIM -Filter
+// is a query, not a file filter; a loop body may pass an option (--json) after its variable; git -C <folder> runs the
+// same read in another folder. Each write twin stays held.
+// why: catches a read-only process list, a looped kit-script read and a git -C read held as guard writes
+test('three read-only shapes pass, and their write twins stay held (K187, K196)', () => {
+	const ps = (command) => decide('PowerShell', { command });
+	assert.equal(ps(`Get-CimInstance Win32_Process -Filter "Name='node.exe'" | Select-Object ProcessId,CommandLine`), 'allow');
+	assert.equal(ps(`gwmi Win32_Process -Filter "Name = 'claude.exe'"`), 'allow');
+	assert.equal(ps(`foreach ($i in 'K158','K159') { node .claude/state.mjs item $i --json | Out-String }`), 'allow');
+	assert.equal(bash(`git -C ${proj.split(path.sep).join('/')} grep -n -e A HEAD -- scripts project/.claude | cut -c1-220 | head`), 'allow');
+	for (const c of [`Get-ChildItem -Filter "Name='a'" | Remove-Item`, `Get-CimInstance Win32_Process -Filter "Name='x'"; Copy-Item x .claude/guard.cjs`,
+		`foreach ($i in 'a','b') { node .claude/state.mjs item $i --json | Out-File .claude/guard.cjs }`, `foreach ($i in 'a') { node x.js $i-- .claude/guard.cjs }`]) assert.equal(ps(c), 'deny', c);
+	for (const c of ['git -C . grep -n A -- .claude > .claude/guard.cjs', 'git -C . -c core.pager=x grep -n A -- .claude', 'git -C . checkout -- .claude/guard.cjs']) assert.equal(bash(c), 'deny', c);
+});

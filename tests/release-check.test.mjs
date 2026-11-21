@@ -293,6 +293,7 @@ test('ci-wait prints one line as each run ends, green or red, and exits on the s
 });
 
 // why: guards the owner's ask of 2026-11-15: confirm each release step and report each CI run (K65, K66)
+// planted: {"file":"project/.claude/ci-wait.mjs","was":"if (left <= 0) { log(`CI: gave up after ${max} min; still running: ${open.map((x) => one(x.name)).join(', ') || 'none read'}`); return { code: 2 }; }","to":"if (left <= 0) { log(`CI: gave up after ${max} min; still running: ${open.map((x) => one(x.name)).join(', ') && 'none read'}`); return { code: 2 }; }"}
 test('ci-wait says once at ten minutes that a run is still going, and keeps to its limit', async () => {
 	const long = Array.from({ length: 40 }, () => [run('in_progress', '')]);
 	const p = polls([...long, [run('completed', 'success')]]);
@@ -302,7 +303,8 @@ test('ci-wait says once at ten minutes that a run is still going, and keeps to i
 	assert.equal(Number(mid[0].split(' ')[0]), 600000, 'said at ten minutes, not before or later');
 	const q = polls([[run('in_progress', '')]]);
 	assert.equal((await ciWait({ commit: 'abc1234', every: 600, max: 5 }, q.deps)).code, 2);
-	assert.match(q.lines.at(-1), /gave up after 5 min/);
+	// K189 (the K160 slips): the give-up line names the run still going.
+	assert.match(q.lines.at(-1), /gave up after 5 min; still running: CI$/);
 	assert.equal(q.at(), 300000, 'a long poll interval does not carry it past --max');
 	const none = polls([[]]);
 	assert.equal((await ciWait({ commit: 'abc1234', every: 60 }, none.deps)).code, 2);

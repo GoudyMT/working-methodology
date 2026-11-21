@@ -1207,6 +1207,94 @@ test('the hook script speaks at a message only when there is news', async () => 
   assert.match(out.systemMessage, /was released while this session ran/);
 });
 
+// K191 (behaviour scenario 13 passed about 13 of 24 runs): after the merge and the release, starting the closeout was
+// left to the session noticing. The prompt hook now cues it from the repo's state (a release tag at HEAD), once per
+// release, so the step no longer rests on a coin flip.
+// why: catches a merged and released PR whose closeout the session never starts
+test('the prompt hook cues the closeout once per release, from a release tag at HEAD (K191)', async () => {
+  const kitTools = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitTools.closeoutCue, 'function', 'K191: the closeout cue');
+  // It quotes the rule word for word, never a paraphrase a session echoes back as the rule.
+  assert.ok(read(path.resolve('rules/tracking-and-handoff.md')).includes(kitTools.CLOSEOUT_RULE), 'the cue quotes rule:compact-ritual');
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  copyKitCli(kit);
+  const git = (...a) => assert.equal(spawnSync('git', ['-C', proj, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+  git('init', '-q', '-b', 'main');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'feat: x');
+  const run = (prompt, session = '11111111-2222-3333-4444-555555555555') => spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: JSON.stringify({ prompt, session_id: session }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  const cue = (r) => (r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.additionalContext : '');
+  // No tag and no such words: silent.
+  assert.equal(run('fix the greeting').stdout, '');
+  // The owner's words alone are no cue (the paired rerun of 2026-11-21, Max's pick): sessions handed the rule's
+  // conditions on those words checked them in a folder that could not show them, and said they were stopping; recall
+  // Q13 fell to 3 of 5 against the release's 5 of 5. The repo's own release tag is the cue.
+  assert.equal(run('My PR merged and its release is out.').stdout, '');
+  // A release tag at HEAD cues it on any message, once for that tag.
+  git('tag', 'v1.1.0');
+  const tagged = cue(run('what next?'));
+  assert.match(tagged, /v1\.1\.0/);
+  assert.match(tagged, /start the closeout skill now/);
+  assert.equal(run('anything else?').stdout, '');
+  assert.match(tagged, /starts on its own once.*PR is merged/);
+  // The cues-off arm on a newest release not yet cued, so the switch is the only reason for '' (a tag already cued
+  // answers '' with or without it).
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'feat: next');
+  git('tag', 'v1.2.0');
+  assert.equal(kitTools.closeoutCue({ projectDir: proj, session: 'off-arm', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
+  assert.match(kitTools.closeoutCue({ projectDir: proj, session: 'off-arm', env: {} }), /v1\.2\.0/, 'the same tag cues with the switch on');
+  git('tag', 'not-a-release');
+  git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'chore: y');
+  git('tag', 'nightly');
+  assert.equal(run('and now?', '77777777-2222-3333-4444-555555555555').stdout, '', 'a tag that is not a release is no cue');
+});
+
+// K192 (the owner's pick, 2026-11-20): recall Q4, Q7 and Q9 missed one part of their rule at scorer-noise level. The
+// prompt hook cues the rule's own words when a message names its topic; each cue quotes its source word for word.
+// why: catches a message on a push, a swarm or a later idea that reaches the session with no rule in front of it
+test('the prompt hook cues a rule in its own words when a message names its topic (K192)', async () => {
+  const kitTools = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitTools.ruleCues, 'function', 'K192: the rule cues');
+  const data = JSON.parse(read(path.resolve('rules/cues.json')));
+  const index = read(path.resolve('project/standards/INDEX.md'));
+  for (const c of data.cues) {
+    const src = read(path.resolve(c.source));
+    for (const q of c.quotes) assert.ok(src.includes(q), `${c.rule}: not word for word in ${c.source}: ${q}`);
+    // Paired run 2 (2026-11-21): a cue naming ~/.claude sent sessions in a throwaway Claude folder to the owner's real
+    // one (behaviour scenario 7), so no cue quotes a fixed Claude folder path.
+    for (const q of c.quotes) assert.doesNotMatch(q, /~\/\.claude|%USERPROFILE%|\$HOME\/\.claude/, `${c.rule}: a cue names a fixed Claude folder: ${q}`);
+    assert.match(index, new RegExp(`^\\| ${c.rule} \\| `, 'm'), `${c.rule} is a rule id`);
+  }
+  const cue = (prompt) => kitTools.ruleCues({ kit: path.resolve('.'), prompt });
+  // The three recall questions, and the words real work uses.
+  // pin: 4 (each cue quotes its rule's owner-set words, and a test elsewhere holds them to the source)
+  assert.match(cue('My branch is ready. Can I push it and open the PR?'), /^rule:outward-acts \(AGENTS\.md\): .*names both acts and all four limits: never main, never a tag, never a force, never a delete/m);
+  assert.match(cue('I want to run five review agents at once. What do I do first?'), /^rule:swarm-contract \(standards\/agent-teams\.md\): .*STOP: no agent runs until the contract is approved.*ASK: show the table/m);
+  assert.match(cue('While building I noticed an unrelated idea for later. Where does it go?'), /^rule:parking-lot \(standards\/reviews-and-findings\.md\): .*Parking Lot.*all gates green/m);
+  assert.match(cue('fan out three subagents over src/'), /rule:swarm-contract/);
+  // The paired run of 2026-11-21: Q10's sweep, and a merged PR that names no push or PR opening.
+  assert.match(cue('The feature is done and green. What review is required before its PR?'), /^rule:pre-pr-deep-sweep \(the kit's CLAUDE\.md template\): .*agents actually running/m);
+  assert.equal(cue('My PR merged and its release is out. What happens next?'), '', 'a merged PR is no push');
+  // The Q6 check of 2026-11-21: one agent's findings are no swarm, so the swarm contract is no cue for them.
+  assert.equal(cue('A review agent reported 9 findings. How do I handle them?'), '', 'one review agent is no swarm');
+  assert.equal(kitTools.ruleCues({ kit: path.resolve('.'), prompt: 'Push the branch.', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
+  for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?']) assert.equal(cue(quiet), '', quiet);
+  // Through the hook, beside the kit check.
+  const { kit, home, proj } = caseKit();
+  fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));
+  fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
+  copyKitCli(kit);
+  fs.mkdirSync(path.join(kit, 'rules'), { recursive: true });
+  fs.copyFileSync(path.resolve('rules/cues.json'), path.join(kit, 'rules', 'cues.json'));
+  const r = spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: JSON.stringify({ prompt: 'Push the branch and open its PR.' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  assert.match(JSON.parse(r.stdout).hookSpecificOutput.additionalContext, /rule:outward-acts/);
+  // A kit with no cues file says nothing more.
+  fs.rmSync(path.join(kit, 'rules', 'cues.json'));
+  const none = spawnSync(process.execPath, [path.resolve('project/.claude/kit-hook.cjs'), 'prompt'], { cwd: proj, input: JSON.stringify({ prompt: 'Push the branch.' }), encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: home, CLAUDE_PROJECT_DIR: proj } });
+  assert.equal(none.stdout, '');
+});
+
 // why: guards rule:outward-acts
 test('the load guard refuses a busy CPU and names what is using it', async () => {
   const { createRequire } = await import('node:module');

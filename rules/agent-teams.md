@@ -19,7 +19,7 @@ tags:
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `~/.claude/skills/pre-pr-sweep/approve.mjs` (PowerShell: full path; or your Claude config folder), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
+Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line "Kit tools this session"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -63,7 +63,7 @@ Each agent role gets only the tools its job needs and starts with the rules that
 | reviewer | Reviews one sweep role or dimension; never edits | Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch | Edit, Write, Agent | anti-hallucination, enumerate-before-you-count |
 | orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
 
-The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in `~/.claude/agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
+The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in the Claude folder's `agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
 
 ### Agent Canary {#agent-canary}
 

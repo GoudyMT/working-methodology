@@ -741,7 +741,8 @@ function loopBodies(command, tool) {
 	// $'f', f\=), so a body with any setter word, a backslash or ANSI quoting keeps the strict reading whatever it names.
 	if (/\\|\$['"]|(^|[\s;&|!])(read|mapfile|readarray|declare|typeset|local|export|readonly|let|getopts|printf|unset|set|eval|source|set-variable|new-variable|sv|nv|clear-variable|remove-variable)(?![\w-])|\[ref\]/i.test(body)) return null;
 	const flags = tool === 'PowerShell' ? 'i' : '';
-	const reads = body.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)(?!\\s*(?:[-+*/%]?=(?!=)|\\+\\+|--|\\[))`, `g${flags}`), ' ');
+	// K196: an option after the variable ($i --json) is a word, not the -- that lowers it.
+	const reads = body.replace(new RegExp(`\\$\\{${name}\\}|\\$${name}(?!\\w)(?!\\s*(?:[-+*/%]?=(?!=)|\\+\\+|--(?![A-Za-z])|\\[))`, `g${flags}`), ' ');
 	if (new RegExp(`(^|[^\\w$-])${name}(?![\\w-])|\\$${name}(?!\\w)`, flags).test(reads)) return null;
 	return list.map((w) => before + body.trim().replace(use, () => w) + after);
 }
@@ -957,7 +958,8 @@ function shellWritesFrom(command, tool, start, names) {
 		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
-			|| (onPath && p === 'git' && GIT_READS.has(w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
+			// K196: git -C <folder> runs the same read from that folder.
+			|| (onPath && p === 'git' && GIT_READS.has(w[1] === '-C' ? w[3] : w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};
 	const substituted = /[`]|\$\(|<\(/.test(text);
@@ -1012,7 +1014,10 @@ function shellWritesFrom(command, tool, start, names) {
 		// recursive listing with no filter, or with -Exclude, reaches every file (the review of this rule).
 		// Any program in a shell that is not bash: a list of the commands that take these parameters has no end (a call
 		// operator, a wrapper, another cmdlet), so none is kept.
-		const lister = tool !== 'Bash';
+		// K187 (reproduced on 1.47.0): a WMI or CIM cmdlet's -Filter is a query over objects, never a file filter, and it
+		// lists no file; by its plain name only, so a path or a call operator keeps the strict reading.
+		const wql = /^(get-ciminstance|gcim|get-wmiobject|gwmi)$/i.test(all[0] || '');
+		const lister = tool !== 'Bash' && !wql;
 		const option = (w) => /^-[a-z]/i.test(w);
 		// -Depth recurses too, with no -Recurse beside it.
 		const recursive = all.some((w) => /^-(r(e(c(u(r(s(e)?)?)?)?)?)?|s|de\w*)(:|$)/i.test(w));
@@ -1075,9 +1080,11 @@ function shellWritesFrom(command, tool, start, names) {
 		// Never with a bracket in the command: a PowerShell argument in brackets runs as code, and a path it joins from
 		// pieces ('.cl'+'aude/...') is no word the reader sees (the 1.36.1 sweep).
 		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
-		// Only the subcommand right after git (no global option, which can move git or run a program), no option that runs
+		// Only the subcommand right after git (no global option, which can run a program), no option that runs
 		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'git' && GIT_READS.has(all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
+		// K196 (reproduced on 1.47.0): -C <folder> only moves where the read runs, and these subcommands write no file
+		// wherever they run, so it is the one global option read past.
+		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'git' && GIT_READS.has(all[1] === '-C' ? all[3] : all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
 		return true;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.

@@ -66,7 +66,13 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	assert.match(also.stdout, /2 flips, 2 caught, 0 survived/);
 	// The copy is a clone of its own: what runs in it reaches none of the repo's config, refs or hooks (the 1.23.0
 	// sweep: a worktree shares them).
-	const reach = check(dir, ['src/a.cjs', '--also', 'git config kit.probe reached && git branch probe-reached && exit 1']);
+	// K193: an outside check that fails with no flip made would catch every flip, so it is run once on the clean copy
+	// first, and a failure there stops the run, named, before any flip counts.
+	const noisy = check(dir, ['src/a.cjs', '--also', 'exit 1']);
+	assert.equal(noisy.status, 2, noisy.stdout + noisy.stderr);
+	assert.match(noisy.stderr, /--also "exit 1" fails with no flip made/);
+	assert.doesNotMatch(noisy.stdout, /caught src/);
+	const reach = check(dir, ['src/a.cjs', '--also', `git config kit.probe reached && git branch -f probe-reached && node -e "process.exit(require('fs').readFileSync('src/a.cjs','utf8').includes('x <= 10') ? 1 : 0)"`]);
 	assert.equal(reach.status, 0, reach.stdout + reach.stderr);
 	assert.equal(spawnSync('git', ['-C', dir, 'config', 'kit.probe'], { encoding: 'utf8' }).stdout.trim(), '', 'the repo\'s config is untouched');
 	assert.doesNotMatch(sh(dir, 'branch', '--list'), /probe-reached/, 'the repo\'s refs are untouched');
@@ -75,7 +81,7 @@ test('the mutation check names a flip no test catches, passes one a test catches
 	const seen = path.join(kitTemp.makeTemp('seen-'), 'home.txt');
 	const write = `node -e "require('fs').appendFileSync(${JSON.stringify(seen).replace(/"/g, '\'')}, [process.env.KIT_CLAUDE_HOME, process.env.CLAUDE_CONFIG_DIR].join('|') + '\\n')"`;
 	const { KIT_CLAUDE_HOME: _k, CLAUDE_CONFIG_DIR: _c, ...bare } = process.env;
-	spawnSync(process.execPath, [CHECK, 'src/a.cjs', '--also', `${write} && exit 1`], { cwd: dir, encoding: 'utf8', env: bare });
+	spawnSync(process.execPath, [CHECK, 'src/a.cjs', '--also', `${write} && node -e "process.exit(require('fs').readFileSync('src/a.cjs','utf8').includes('x <= 10') ? 1 : 0)"`], { cwd: dir, encoding: 'utf8', env: bare });
 	const homes = fs.readFileSync(seen, 'utf8').trim().split('\n');
 	for (const line of homes) {
 		const [kit, config] = line.split('|');

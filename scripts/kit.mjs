@@ -15,7 +15,7 @@ import zlib from 'node:zlib';
 import { fileURLToPath } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import launch from '../user/kit-tools/kit-launch.cjs';
-import { mergeOnGreen, renderMergeOnGreen } from './merge-on-green.mjs';
+import { mergeOnGreen, renderMergeOnGreen, homeSpelling } from './merge-on-green.mjs';
 import { retiredHits, retiredList, hitLine } from '../project/.claude/retired-check.mjs';
 import { waiting as reportWaiting, unheard as reportUnheard, intakeHere as reportIntakeHere } from '../project/.claude/kit-report.mjs';
 
@@ -602,6 +602,17 @@ function guardFaults(home, projectDir) {
   let user = null;
   try { user = JSON.parse(fs.readFileSync(path.join(home, 'settings.json'), 'utf8').replace(/^\uFEFF/, '')); } catch { /* none */ }
   if (!launch.launcherWired(user, path.join(home, 'kit-tools', 'kit-launch.cjs'), homeNode(home))) faults.push('the guard launcher is not wired whole in the Claude config folder settings.json (run kit.mjs install user)');
+  // R7.2: the start script every call runs through, held to the hash install user recorded for it.
+  // A record with no entry for it is a fault, not a pass (the commit security review).
+  let want = null;
+  let recorded = false;
+  try { want = (JSON.parse(fs.readFileSync(path.join(home, STAMP_USER), 'utf8')).files || {})['kit-tools/kit-start.sh'] || null; recorded = true; } catch { /* no record: install user is reported elsewhere */ }
+  if (recorded && !want) faults.push('kit-tools/kit-start.sh has no install record (run kit.mjs install user)');
+  if (want) {
+    let now = null;
+    try { now = crypto.createHash('sha256').update(fs.readFileSync(path.join(home, 'kit-tools', 'kit-start.sh'), 'utf8')).digest('hex'); } catch { /* gone */ }
+    if (now !== want) faults.push(`kit-tools/kit-start.sh changed outside install${now ? '' : ' (missing)'} (run kit.mjs install user)`);
+  }
   return faults;
 }
 
@@ -1513,8 +1524,18 @@ function doubleRunLines(projectDir) {
  * Returns:
  *     the message text (one or more lines)
  */
-export function sessionStartReport({ kit, home, projectDir, source, session, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
+// K206: the rules name a kit tool, not a folder; this line names where this session's copy is. A plugin's root wins, as
+// its tools live there. Said again after a compact, since session start runs again then.
+export function kitToolsLine(dir) {
+  const { full, tilde } = homeSpelling(dir);
+  const tool = (p) => `node ${tilde}/${p}`;
+  const ps = tilde === full ? '' : ` (PowerShell: the full paths, ${full}/skills/pre-pr-sweep/approve.mjs and ${full}/kit-tools/merge-gate.mjs)`;
+  return `Kit tools this session: sweep approval ${tool('skills/pre-pr-sweep/approve.mjs')}; merge gate ${tool('kit-tools/merge-gate.mjs')}${ps}. Run these copies, not another Claude folder's.`;
+}
+
+export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
   const lines = [];
+  lines.push(kitToolsLine(env.CLAUDE_PLUGIN_ROOT || home));
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
   const channel = stableChannelLine(home);
@@ -1757,6 +1778,16 @@ export function status({ kit, home, projectDir, ahead = remoteKitAhead, protecti
     lines.push(use.text.split('\n')[0]);
     if (use.code !== 0) gaps.push('the use check fails (run kit.mjs install project, or opt the part out in .kit/parts.json)');
   }
+  // CM6 (b): the 1.34.0 promise, state drift in status. The kit's own copy of the state check, run in the project.
+  const stateScript = path.join(kit, 'project', '.claude', 'state.mjs');
+  if (projectDir && fs.existsSync(path.join(projectDir, '_State.json')) && fs.existsSync(stateScript)) {
+    // The Claude folder this status reads, as the use check is given it: the state check compares the installed kit too.
+    const r = spawnSync(process.execPath, [stateScript, 'check'], { cwd: projectDir, encoding: 'utf8', env: { ...process.env, CLAUDE_CODE_SESSION_ID: '', ...(home ? { KIT_CLAUDE_HOME: path.resolve(home), CLAUDE_CONFIG_DIR: path.resolve(home) } : {}) } });
+    if (r.status !== 0) {
+      lines.push(`State: the views differ from _State.json (${String(r.stdout || r.stderr).trim().split('\n')[0].slice(0, 200)}); run node .claude/state.mjs render`);
+      gaps.push('the tracking views differ from _State.json');
+    }
+  }
   const current = gaps.length === 0;
   lines.push(current ? `Current: everything matches kit ${version}.` : `Not current: ${gaps.join('; ')}.`);
   return { current, text: lines.join('\n') };
@@ -1911,6 +1942,71 @@ export function promptCheckReport({ kit, projectDir }) {
 }
 
 /**
+ * K191 (behaviour scenario 13 passed about 13 of 24 runs): the closeout after a merge and release rested on the
+ * session noticing. The prompt hook cues it from the repo's state: HEAD is on the newest release tag, and the cue
+ * is given once per release tag. The owner's own words that the PR merged are no cue (the 2026-11-21 rerun). The cue
+ * is recorded in git's own folder, so no tracked file changes.
+ *
+ * Args:
+ *     ctx: { projectDir, prompt, session }
+ *
+ * Returns:
+ *     the cue, or '' when there is none or it was already given
+ */
+// The rule's own words (rules/tracking-and-handoff.md, rule:compact-ritual), quoted so the cue never says less than
+// the rule (the 2026-11-21 paired run: a paraphrase, "once the check has passed, start", was echoed back as the rule).
+export const CLOSEOUT_RULE = 'it also starts on its own once the thread\'s PR is merged, its Post-Merge Check has passed, its release, if one is planned, is out, and this thread has no other work open';
+export function closeoutCue({ projectDir, prompt = '', session = '', env = process.env }) {
+  if (env.KIT_RULE_CUES === 'off') return '';
+  // The project's own config could name a program for git to run; NO_PROGRAMS turns those off, as everywhere here.
+  const git = (...a) => spawnSync('git', ['-C', projectDir, ...NO_PROGRAMS, ...a], { encoding: 'utf8', cwd: SAFE_CWD, timeout: 3000 });
+  const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
+  if (common.status !== 0) return '';
+  const releases = (...a) => (git(...a).stdout || '').split('\n').map((t) => t.trim()).filter((t) => /^v?\d+\.\d+\.\d+$/.test(t));
+  const num = (t) => t.replace(/^v/, '');
+  const here = releases('tag', '--points-at', 'HEAD');
+  // Only the repo's own release tag (the paired rerun of 2026-11-21, Max's pick): a cue on the owner's words sent
+  // sessions to check the rule's conditions where nothing could show them, and they stopped instead of starting.
+  if (!here.length) return '';
+  // And only the newest one: a checkout of an old release to look at it is no release that just went out.
+  const newest = releases('tag', '--list').reduce((a, b) => (semverAbove(num(b), num(a)) ? b : a));
+  const tag = here.find((t) => !semverAbove(num(newest), num(t)));
+  if (!tag) return '';
+  const key = `tag ${tag}`;
+  const file = path.join(common.stdout.trim(), 'kit-closeout-cue');
+  const given = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n') : [];
+  if (given.includes(key)) return '';
+  fs.appendFileSync(file, `${key}\n`);
+  const why = `HEAD is the release ${tag}`;
+  return `Closeout cue: ${why}. rule:compact-ritual: the Closeout "${CLOSEOUT_RULE}". When those hold, start the closeout skill now.`;
+}
+
+const CUE_TEXT_MAX = 2000;
+/**
+ * K192 (the owner's pick, 2026-11-20): when a message names a topic in the kit's rules/cues.json, the rule's own
+ * words, quoted from its source, go in front of the session. A kit with no cues file, or a bad one, says nothing.
+ *
+ * Args:
+ *     ctx: { kit, prompt }
+ *
+ * Returns:
+ *     one line per matching rule, or ''
+ */
+export function ruleCues({ kit, prompt = '', env = process.env }) {
+  // The paired run's cues-off recall arm (the owner, 2026-11-21) sets KIT_RULE_CUES=off; cues are help, never a guard.
+  if (env.KIT_RULE_CUES === 'off') return '';
+  let data;
+  try { data = JSON.parse(fs.readFileSync(path.join(kit, 'rules', 'cues.json'), 'utf8')); } catch { return ''; }
+  // A cue's regexes scan sentence by sentence; on a pasted log with no full stop each scan runs to the end, so only a
+  // message's opening is read (a topic is named there, and a long paste is no question about a rule).
+  const text = String(prompt).slice(0, CUE_TEXT_MAX);
+  return (data.cues || [])
+    .filter((c) => { try { return new RegExp(c.when, 'i').test(text); } catch { return false; } })
+    .map((c) => `rule:${c.rule} (${c.home}): ${c.quotes.join(' ... ')}`)
+    .join('\n');
+}
+
+/**
  * What is waiting for the kit before a compact: fold-back in report mode for this project and
  * ~/.claude. It never changes a file outside the kit's reports/ folder; the owner sorts each item.
  */
@@ -2028,6 +2124,35 @@ export function sourceHooks(kit) {
   if (now === '.githooks') return 'present';
   if (now) return `core.hooksPath is ${now}: left alone`;
   return spawnSync('git', ['-C', kit, 'config', 'core.hooksPath', '.githooks']).status === 0 ? 'set' : 'not a git repository';
+}
+
+// K206 P4: instruction text names a kit tool, not a folder; a fixed home path sends a session on another Claude folder
+// (a throwaway, a probe, a plugin) to the wrong copy. The folder alone may still be named as the default place.
+const FIXED_HOME = /(?:~|\$HOME|\$\{HOME\}|\$env:USERPROFILE|%USERPROFILE%)[/\\]\.claude(?:[/\\][\w*.]|\))/;
+export function fixedHomePaths({ kit }) {
+  const files = [];
+  const walk = (rel, keep) => {
+    let names = [];
+    try { names = fs.readdirSync(path.join(kit, rel), { withFileTypes: true }); } catch { return; }
+    for (const d of names) {
+      const r = `${rel}/${d.name}`;
+      if (d.isDirectory()) walk(r, keep);
+      else if (keep(d.name)) files.push(r);
+    }
+  };
+  const md = (n) => n.endsWith('.md');
+  walk('rules', md);
+  walk('user/agents', md);
+  walk('user/skills', md);
+  walk('project/.githooks', () => true);
+  if (fs.existsSync(path.join(kit, 'user/CLAUDE.md'))) files.push('user/CLAUDE.md');
+  const hits = [];
+  for (const file of files.sort()) {
+    fs.readFileSync(path.join(kit, file), 'utf8').split(/\r?\n/).forEach((text, i) => {
+      if (FIXED_HOME.test(text)) hits.push({ file, line: i + 1, text: text.trim().slice(0, 160) });
+    });
+  }
+  return hits;
 }
 
 export function build({ kit }) {
@@ -2449,6 +2574,12 @@ function main(argv) {
     if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
   } else if (cmd === 'build') {
     const tree = checkRoot(kit);
+    const fixed = fixedHomePaths({ kit: tree });
+    if (fixed.length) {
+      console.error(`build: ${fixed.length} line(s) name a file under a fixed ~/.claude path; name the tool and point to the start-up line ("Kit tools this session") instead (K206):`);
+      for (const h of fixed) console.error(`  ${h.file}:${h.line}: ${h.text}`);
+      process.exit(1);
+    }
     const out = build({ kit: tree });
     for (const [rel, text] of out) {
       fs.mkdirSync(path.dirname(path.join(tree, rel)), { recursive: true });

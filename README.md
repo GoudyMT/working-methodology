@@ -60,6 +60,7 @@ The full map, with the three places a rule can live and the skills by situation:
 | `NEW-PROJECT.md` | - | Entry point for a project that starts from nothing. |
 | `EXISTING-PROJECT.md` | - | Entry point for a project that already exists: orient, map, find gaps, then adopt. |
 | `THIRD-PARTY.md` | - | The plugins and skills the kit uses, their makers and licenses, and how to restore them. |
+| `LICENSE`, `NOTICE` | - | The kit's own license, Apache-2.0, and its notice. |
 | `vendor-index.json` | - | What the credited backup of each third-party plugin and skill holds; the copies live in a private repo the config's `vendor.dir` names. |
 | `scripts/kit.mjs` | - | The one tool: install, fold-back, bump, snapshot, restore, scrub, build, measure, find, and the hook reports. Tests in `tests/`. |
 | `docs/` | - | The plan record, the recall and lookup tests, and the 1.0.0 migration record (ledger, IDs, reworded lines). |

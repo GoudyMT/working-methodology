@@ -27,9 +27,15 @@ const posix = (p) => String(p).split(path.sep).join('/');
  * Returns:
  *     { bash: [3 rules], powershell: [3 rules] }
  */
-export function allowLines(home, userHome = os.homedir()) {
+// K206: one spelling for a Claude folder, shared by the allow rules and the session-start line, so the two never drift:
+// ~/.claude for the default folder (bash expands it), the full forward-slash path otherwise and for PowerShell.
+export function homeSpelling(home, userHome = os.homedir()) {
 	const full = posix(path.resolve(home));
-	const tilde = path.resolve(home).toLowerCase() === path.resolve(userHome, '.claude').toLowerCase() ? '~/.claude' : full;
+	return { full, tilde: path.resolve(home).toLowerCase() === path.resolve(userHome, '.claude').toLowerCase() ? '~/.claude' : full };
+}
+
+export function allowLines(home, userHome = os.homedir()) {
+	const { full, tilde } = homeSpelling(home, userHome);
 	return {
 		bash: ACTS.map((a) => `Bash(node ${tilde}/kit-tools/merge-gate.mjs ${a} *)`),
 		powershell: ACTS.map((a) => `PowerShell(node ${full}/kit-tools/merge-gate.mjs ${a} *)`),

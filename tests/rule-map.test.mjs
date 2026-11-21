@@ -32,6 +32,8 @@ test('the rule map lists what holds each rule, names the rules nothing holds, an
 	assert.deepEqual(map.rules['test-value'].scripts, ['scripts/test-check.mjs']);
 	assert.deepEqual(map.prose, ['plain-words']);
 	assert.match(r.stdout, /3 rules: 2 held by code, 1 by prose only/);
+	// K170 (the S1 replay of 1.40.0): the plan said it prints the rules no script names; only the count was printed.
+	assert.match(r.stdout, /^Prose only: plain-words$/m, r.stdout);
 	assert.equal(run('check').status, 0);
 	put(dir, 'scripts/plain.mjs', '// rule:plain-words\n');
 	git('add', 'scripts/plain.mjs');

@@ -16,7 +16,7 @@ If the owner typed something after /teacher-sync, it narrows the run: $ARGUMENTS
 
 ## The rules
 
-They live in `~/.claude/skills/teacher/templates/main-session-side.md`, with the marker forms. Read that file first,
+They live in `{{CLAUDE_HOME}}/skills/teacher/templates/main-session-side.md`, with the marker forms. Read that file first,
 every run, and follow it. They are not copied here, so they cannot drift.
 
 ## Step 1 - Find the files

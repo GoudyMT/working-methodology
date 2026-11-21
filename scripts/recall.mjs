@@ -17,15 +17,17 @@
 // Claude folder is a throwaway under kit-probes: a build's new skills can then be measured without touching ~/.claude.
 //
 // CI cannot run the test, so it reads the score a PR records: the gate command passes rule text only when the PR's
-// last added gate line shows a median no lower than the released baseline, on the current brief and keys, or carries
-// the owner's marker. A median under the current keys' own pass bar fails whatever the marker says: the marker can
-// accept a moved ruler, never a median under that bar. A new bar is a new keys version, which is the owner's. The numbers are typed and the runs are not in the repo, so the check holds them against main: a
-// baseline may not fall under the last one recorded on the same ruler, and a PR may not move or reword its ruler,
-// unmarked. The floor is the last baseline, not the last median: one question is noise, so an honest re-measure may land
-// a point under the last score, though never under the pass bar.
+// last added gate line shows a median of 14 or more (K198), no lower than the release measured the same day, on the
+// current brief and keys, with two blind scorers and no question worse than that release; the behaviour line is held
+// the same way. No marker passes a miss (K198 removed the owner's): a miss is fixed. The numbers are typed and the runs
+// are not in the repo, so a PR may not move or reword its ruler.
+// A question or scenario is worse only when it is lower on two looks (the owner's pick, 2026-11-21; recall-score.mjs
+// says why): one that sums lower is asked again alone, with --only here, and the score tools print the "worse" lines
+// only once both looks are in.
 //
 // Usage: node scripts/recall.mjs <label> [kit folder]    (the kit folder defaults to this one)
 //        node scripts/recall.mjs <label> --no-kit        (the control: the same path, nothing installed)
+//        node scripts/recall.mjs <label> [kit folder] --only <n,...>   (a second look: those questions alone)
 //        node scripts/recall.mjs gate <base> <head>
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -62,6 +64,19 @@ const CONTROL_LINE = /^control: (\d+)$/;
 // gate line). Rule text changed after it ships unscored, so the gate refuses it.
 const SCORED_LINE = /^scored: ([0-9a-f]{40})$/;
 const CONTROL_FROM = 4;
+// K198 (Max's fixed gate, 2026-11-20): every graded PR needs a median of 14 or more on both suites, two blind scorers
+// on the wording runs, and no question or scenario worse than the release measured the same day. There is no owner
+// override: a miss is fixed, never accepted. The floor sits here, not in the keys' Pass line, so the ruler does not move;
+// CI runs the base branch's copy, so a PR cannot lower it. Each fact sits on its own line, as the control does (D1).
+export const FLOOR = 14;
+const SCORERS_LINE = /^scorers: (\d+)$/;
+const WORSE_LINE = /^worse: (.+)$/;
+const BEHAVE_WORSE_LINE = /^behaviour worse: (.+)$/;
+// Seen twice: a line the score tools print when a question or scenario was lower on the first look.
+const ONCE_LINE = /^(?:behaviour )?lower once: (.+)$/;
+const ASKED_LINE = /^(behaviour )?asked again: (.+)$/;
+const ASKED_ITEM = /^(\S+) \((\d+) of \d+ against (\d+), then (\d+) of \d+ against (\d+)\)$/;
+const OWNER_MARK = /\sowner-accepted\s*$/;
 
 /** The version a keys or brief file is on, from its "Current version: v<n>" line. */
 export function currentVersion(text) {
@@ -128,11 +143,21 @@ export function installFacts({ projectDir, home, osHome = os.homedir() }) {
 
 /** The run's arguments, or a refusal. The old "<folder> <label>" call fails here: a label is one plain word. */
 export function parseRunArgs(argv) {
-  const usage = 'usage: node scripts/recall.mjs <label> [kit folder] | <label> --no-kit';
-  const [label, second] = argv;
-  if (argv.length < 1 || argv.length > 2 || !/^\w[\w.-]*$/.test(label)) throw new Error(usage);
+  const usage = 'usage: node scripts/recall.mjs <label> [kit folder] [--only <n,...>] | <label> --no-kit';
+  // --only <n,...>: a second look asks the named questions alone (seen twice); a plain run carries no such field.
+  const at = argv.indexOf('--only');
+  let only = null;
+  let rest = argv;
+  if (at >= 0) {
+    const list = String(argv[at + 1] ?? '');
+    if (!/^[1-9]\d*(,[1-9]\d*)*$/.test(list)) throw new Error(usage);
+    only = [...new Set(list.split(',').map(Number))].sort((a, b) => a - b);
+    rest = [...argv.slice(0, at), ...argv.slice(at + 2)];
+  }
+  const [label, second] = rest;
+  if (rest.length < 1 || rest.length > 2 || !/^\w[\w.-]*$/.test(label)) throw new Error(usage);
   const noKit = second === '--no-kit';
-  return { label, kitDir: second && !noKit ? second : null, noKit };
+  return { label, kitDir: second && !noKit ? second : null, noKit, ...(only ? { only } : {}) };
 }
 
 /**
@@ -188,6 +213,16 @@ function isThrowaway(home, osHome) {
   try { if (fs.lstatSync(path.join(osHome, 'kit-probes')).isSymbolicLink()) return false; } catch { /* absent: nothing inside it either */ }
   const inside = path.relative(real(path.join(osHome, 'kit-probes')), real(home));
   return Boolean(inside) && !inside.startsWith('..') && !path.isAbsolute(inside);
+}
+
+/**
+ * The 2026-11-21 paired run: the rules name ~/.claude/skills/pre-pr-sweep/approve.mjs, and ~ is always the owner's real
+ * home, so an arm on a throwaway folder reached the real folder's approve.mjs while the release arm on the real folder
+ * reached its own. Every arm of a gate run now runs on its own throwaway Claude folder under kit-probes (gates run in
+ * clean throwaway installs only), so ~ never names a layer one arm has and the other does not.
+ */
+export function checkGateHome(home, osHome = os.homedir()) {
+  if (!isThrowaway(home, osHome)) throw new Error(`${home} is not a throwaway Claude folder under ${path.join(osHome, 'kit-probes')}: every arm of a gate run (candidate, release and control) runs on its own throwaway folder, with install user from that arm's kit and its own login`);
 }
 
 /** Refuses a Claude folder that is not a released kit install or a throwaway one, before any folder or session exists. */
@@ -249,8 +284,8 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir(), forget }) 
   }
 }
 
-export function runHeader({ label, keys, facts, when, cli }) {
-  return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`,
+export function runHeader({ label, keys, facts, when, cli, only = null }) {
+  return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`, ...(only ? [`Only: ${only.join(', ')}`] : []),
     `Project kit: ${facts.project}`, `User kit: ${facts.user}`, ...(facts.global ? [`Global CLAUDE.md also loaded from ~/.claude: ${facts.global}`] : []), `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
@@ -260,7 +295,7 @@ export function runHeader({ label, keys, facts, when, cli }) {
  * Args:
  *     facts: { changed: file paths, added and removed: lines the PR adds to and takes from the scores file,
  *         brief, keys: current versions, bar: the current keys' pass bar, null when they have none,
- *         was: { brief, keys, baseline } on the base, each null when the base has none, and edited when a ruler
+ *         was: { brief, keys } on the base, each null when the base has none, and edited when a ruler
  *         file differs from the base under the same version }
  *
  * Returns:
@@ -269,57 +304,83 @@ export function runHeader({ label, keys, facts, when, cli }) {
 // scored is the commit the run measured (null when the PR names none); left out, the caller read no scored line and
 // the K116 check is not asked for (the gate command always reads it).
 // behaviour is { suite, bar } from the head's suite when the caller reads the behaviour line; left out, it is not asked.
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour }) {
+// floor is the K198 floor the gate command passes; left out (a direct call), the K198 lines are not asked for.
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour, floor }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
-  // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no drop, and
-  // the re-added copy is never the PR's own line. With no new line of its own, a re-add stays a drop.
-  const removedGate = removed.map((l) => l.trim()).filter((l) => /^gate:/i.test(l));
+  // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no
+  // drop, and the re-added copy is never the PR's own line. With no new line of its own, a re-add stays a drop.
+  const removedLines = removed.map((l) => l.trim());
+  const removedGate = removedLines.filter((l) => /^gate:/i.test(l));
   const own = all.filter((l) => !removedGate.includes(l));
   const lines = own.length ? own : all;
   const dropped = removedGate.some((l) => !(own.length && all.includes(l)));
-  if (!lines.length && !dropped && !changed.some((f) => GRADED.test(f))) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
-  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the floor rests on it. Only the owner may: add a current gate line ending in owner-accepted' };
+  const graded = changed.some((f) => GRADED.test(f));
+  if (!lines.length && !dropped && !graded) return { ok: true, detail: 'no rule text, ruler or gate line changed' };
+  // K198: no line the PR adds may carry the owner's marker; a recorded line only shown again is history.
+  const marked = added.map((l) => l.trim()).filter((l) => /^(gate|behaviour):/.test(l) && OWNER_MARK.test(l) && !removedLines.includes(l));
+  if (marked.length) return { ok: false, detail: `the owner-accept override is gone (K198): a miss is fixed, never accepted, so no line may end in owner-accepted: ${marked[marked.length - 1]}` };
+  if (!lines.length && dropped) return { ok: false, detail: 'this PR removes a recorded gate line: the record of past scores stays' };
   if (!lines.length) return { ok: false, detail: `Rule text or the ruler changed: record a recall run in ${SCORES}, ending in "gate: <label> median <n> baseline <n> brief v<n> keys v<n>", with "control: <n>" beside it` };
   const last = lines[lines.length - 1];
   const m = last.match(GATE_LINE);
   if (!m) return { ok: false, detail: `cannot read the gate line: ${last}` };
-  const [, label, median, baseline, usedBrief, usedKeys, inline, accepted] = m;
+  const [, label, median, baseline, usedBrief, usedKeys, inline] = m;
   // CI runs the base branch's gate, which reads only the gate line, so the control sits on its own line.
   const control = inline ?? added.map((l) => l.trim().match(CONTROL_LINE)).filter(Boolean).pop()?.[1];
-  // Fixing a typed record on an older ruler is the owner's, in a PR that changes nothing the ruler grades (S18-6).
-  if ((Number(usedBrief) !== brief || Number(usedKeys) !== keys) && accepted && !changed.some((f) => GRADED.test(f))) {
-    return { ok: true, detail: `${label}: a correction to a line on brief v${usedBrief} keys v${usedKeys}; the owner accepted it` };
-  }
   if (Number(usedBrief) !== brief || Number(usedKeys) !== keys) {
     return { ok: false, detail: `${label} was scored on brief v${usedBrief} keys v${usedKeys}; the current ruler is brief v${brief} keys v${keys}` };
   }
   if (Number(usedKeys) >= CONTROL_FROM && control == null) return { ok: false, detail: `${label}: from keys v${CONTROL_FROM} a gate line names the control, on its own line beside it: "control: <n>"` };
   if (control != null && Number(control) >= Number(baseline)) return { ok: false, detail: `${label}: control ${control} is not under the baseline ${baseline}, so the score does not show the rules` };
-  if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}, and owner-accepted does not pass it` };
+  if (bar !== null && Number(median) < bar) return { ok: false, detail: `${label}: median ${median} is under the pass bar of ${bar} on keys v${keys}` };
   const moved = was.edited || (was.brief != null && was.brief !== brief) || (was.keys != null && was.keys !== keys);
-  const graded = scored !== undefined && changed.some((f) => GRADED.test(f));
-  const behave = behaviour && changed.some((f) => GRADED.test(f)) ? added.map((l) => l.trim().match(BEHAVE_LINE)).filter(Boolean).pop() : null;
-  if (behave && Number(behave[2]) < behaviour.bar) return { ok: false, detail: `${behave[1]}: behaviour median ${behave[2]} is under the suite's pass bar of ${behaviour.bar}, and owner-accepted does not pass it` };
-  const behaviourFaults = !behaviour || !changed.some((f) => GRADED.test(f)) ? [] : !behave
+  const scoredAsked = scored !== undefined && graded;
+  const behave = behaviour && graded ? added.map((l) => l.trim().match(BEHAVE_LINE)).filter(Boolean).pop() : null;
+  if (behave && Number(behave[2]) < behaviour.bar) return { ok: false, detail: `${behave[1]}: behaviour median ${behave[2]} is under the suite's pass bar of ${behaviour.bar}` };
+  const behaviourFaults = !behaviour || !graded ? [] : !behave
     ? ['it records no behaviour line: add the line recall-behave.mjs line prints for the candidate, baseline and control runs']
     : [
       Number(behave[4]) !== behaviour.suite && `the behaviour runs were on suite v${behave[4]}; the current suite is v${behaviour.suite}`,
       Number(behave[2]) < Number(behave[3]) && `behaviour median ${behave[2]} is under its baseline ${behave[3]}`,
       Number(behave[5]) >= Number(behave[3]) && `behaviour control ${behave[5]} is not under its baseline ${behave[3]}`,
     ].filter(Boolean);
+  // K198: the fixed gate's own facts, each from the line the score tools print beside the gate line.
+  const lastOf = (re) => added.map((l) => l.trim().match(re)).filter(Boolean).pop();
+  const scorers = lastOf(SCORERS_LINE);
+  const worse = lastOf(WORSE_LINE);
+  const behaveWorse = lastOf(BEHAVE_WORSE_LINE);
+  const fixed = floor == null ? [] : [
+    Number(median) < floor && `median ${median} is under the floor of ${floor}`,
+    (!scorers || Number(scorers[1]) !== 2) && 'the wording runs need two blind scorers: add "scorers: 2", as recall-score.mjs score prints it',
+    !worse ? 'add the "worse:" line recall-score.mjs score prints' : worse[1].trim() !== 'none' && `questions ${worse[1].trim()} do worse than the same-day release`,
+    behave && Number(behave[2]) < floor && `behaviour median ${behave[2]} is under the floor of ${floor}`,
+    behave && (!behaveWorse ? 'add the "behaviour worse:" line recall-behave.mjs line prints' : behaveWorse[1].trim() !== 'none' && `scenarios ${behaveWorse[1].trim()} do worse than the same-day release`),
+    // The build 22 sweep: the worse line is typed beside the lines it sums, so those lines are read too.
+    ...added.map((l) => l.trim().match(ONCE_LINE)).filter(Boolean).map((o) => `${o[1].trim()} summed lower on one look and has not been asked again: ask it again alone, then record both looks`),
+    ...added.map((l) => l.trim().match(ASKED_LINE)).filter(Boolean).flatMap((a) => a[2].split('; ').map((item) => {
+      const m = item.trim().match(ASKED_ITEM);
+      if (!m) return `cannot read the ${a[1] ? 'behaviour ' : ''}asked again line: ${item}`;
+      return Number(m[4]) < Number(m[5]) && `${m[1]} was lower on both looks (${item.trim()}), so it is worse`;
+    })),
+    behave && behaviour.count != null && behaviour.count !== floor && `the behaviour suite has ${behaviour.count} scenarios and the floor is ${floor}: the floor is the top score, so move it with the suite`,
+  ].filter(Boolean);
   const faults = [
+    ...fixed,
     ...behaviourFaults,
-    behaviour && behaviour.moved && changed.some((f) => GRADED.test(f)) && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
-    graded && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
-    graded && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
+    behaviour && behaviour.moved && graded && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
+    scoredAsked && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
+    scoredAsked && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
     moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
-    !moved && was.baseline != null && Number(baseline) < was.baseline && `baseline ${baseline} is under the last recorded baseline ${was.baseline}`,
+    // The owner's pick, 2026-11-21: the same-day release score is no longer held against the last one recorded. With no
+    // marker left to pass a miss that check had no way out (1.47.0 scored 12 that day against its recorded 13), and at a
+    // floor of 14 of 14 a typed-low baseline cannot help a candidate pass. A floor under the top score would need it back
+    // (tests/gate-seen-twice.test.mjs holds the floor to the top score).
     Number(median) < Number(baseline) && `median ${median} is under the baseline ${baseline}`,
   ].filter(Boolean);
   if (!faults.length) return { ok: true, detail: `${label}: median ${median}, baseline ${baseline}` };
-  return accepted || (behave && behave[6]) ? { ok: true, detail: `${label}: ${faults.join('; ')}; the owner accepted it` } : { ok: false, detail: `${label}: ${faults.join('; ')}. Only the owner may pass this: the gate line ends in owner-accepted` };
+  return { ok: false, detail: `${label}: ${faults.join('; ')}. A miss is fixed, not accepted (K198)` };
 }
 
 function gate([base, head]) {
@@ -350,8 +411,6 @@ function gate([base, head]) {
   const baseVersion = (rel) => { const m = onBase(rel).match(/^Current version: v(\d+)$/m); return m ? Number(m[1]) : null; };
   const [brief, keys] = [currentVersion(now(BRIEF)), currentVersion(now(QUESTIONS_REL))];
   const edited = [[BRIEF, brief], [QUESTIONS_REL, keys]].some(([rel, v]) => baseVersion(rel) === v && onBase(rel) !== now(rel));
-  // The last baseline recorded on this same ruler, if the base has one.
-  const recorded = onBase(SCORES).split('\n').map((l) => l.trim().match(GATE_LINE)).filter((m) => m && Number(m[4]) === brief && Number(m[5]) === keys);
   // --text: an attribute or a NUL byte must not hide the record from the check.
   const record = git('diff', '--text', '-U0', `${base}...${head}`, '--', SCORES);
   // K116: the graded files that differ between the commit the run scored and the head. A commit that is not on the
@@ -374,9 +433,10 @@ function gate([base, head]) {
     const s = JSON.parse(suiteText);
     const b = baseSuite ? JSON.parse(baseSuite) : {};
     const bar = Math.max(Number.isInteger(s.pass) ? s.pass : 0, Number.isInteger(b.pass) ? b.pass : 0);
-    return { suite: s.version, bar: bar || Infinity, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
+    return { suite: s.version, bar: bar || Infinity, count: (s.scenarios || []).length || null, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
   })() : undefined;
   const r = checkGate({
+    floor: FLOOR,
     behaviour,
     scored,
     after,
@@ -388,14 +448,14 @@ function gate([base, head]) {
     keys,
     // Keys recall cannot run (no Pass line) cannot grade a PR (B7).
     bar: (() => { questionCount(now(QUESTIONS_REL), keys); return passBar(now(QUESTIONS_REL), keys); })(),
-    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), baseline: recorded.length ? Number(recorded[recorded.length - 1][3]) : null, edited },
+    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), edited },
   });
   console.log(r.detail);
   if (!r.ok) process.exitCode = 1;
 }
 
 /** What a run asks and records, or a refusal: all of it before any session starts. */
-export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
+export function prepare({ projectDir, label, home, osHome, text, when, cli, only = null }) {
   checkUserLayer(home, osHome);
   const facts = installFacts({ projectDir, home, osHome });
   const keys = currentVersion(text);
@@ -403,7 +463,10 @@ export function prepare({ projectDir, label, home, osHome, text, when, cli }) {
   const count = questionCount(text, keys);
   if (!qs.length || qs.length !== count) throw new Error(`expected ${count} questions, found ${qs.length}`);
   if (qs.some((x, i) => x.n !== i + 1)) throw new Error(`the questions must be numbered 1 to ${count}`);
-  return { qs, lines: runHeader({ label, keys, facts, when, cli }) };
+  // A second look asks only the questions that summed lower on the first, each still in its own fresh session.
+  const missing = (only || []).find((n) => !qs.some((x) => x.n === n));
+  if (missing !== undefined) throw new Error(`--only: no question ${missing} on keys v${keys}`);
+  return { qs: only ? qs.filter((x) => only.includes(x.n)) : qs, lines: runHeader({ label, keys, facts, when, cli, only }) };
 }
 
 /** Ask each question in a fresh session in the probe folder, and return the answers as run-file lines. */
@@ -423,7 +486,8 @@ export function askAll({ qs, projectDir, run }) {
       throw new Error(`question ${n}: no answer (exit ${r.status}): ${(answer || r.stderr || '').trim().slice(0, 200)}`);
     }
     lines.push(`## ${n}. ${q}`, '', `Key: ${key}`, '', 'Answer:', '', answer.split('\n').map((l) => '> ' + l).join('\n'), '', 'Score: _', '');
-    console.log(`[${n}/${qs.length}] answered (${answer.length} chars)`);
+    // Counted, not numbered: a second look asks only some questions (--only).
+    console.log(`[${lines.length / 10}/${qs.length}] answered (${answer.length} chars)`);
   }
   return lines;
 }
@@ -438,7 +502,9 @@ export function askAll({ qs, projectDir, run }) {
  * Returns:
  *     the path of the saved run
  */
-export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools }) {
+export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when, outDir, run, kitTools, only = null }) {
+  // The build 22 sweep: a saved run is paid for; a rerun or a second look takes a new label.
+  if (fs.existsSync(path.join(outDir, `${label}.md`))) throw new Error(`${label} is already saved in ${outDir}: give this run a new label (a second look: cand-<x>-<n>, base-<x>-<n>)`);
   checkUserLayer(home, osHome);
   checkHome(env);
   checkSessionHome(home, run);
@@ -447,7 +513,7 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
     const cli = `${(run('claude', ['--version'], {}).stdout || 'unknown').trim()}; model ${RECALL_MODEL}, effort ${RECALL_EFFORT}`;
-    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli });
+    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli, only });
     lines.push(...askAll({ qs, projectDir, run }));
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, `${label}.md`);
@@ -468,15 +534,16 @@ export function refuseOverCap(kitDir, noKit) {
 }
 
 async function main(argv) {
-  const { label, kitDir, noKit } = parseRunArgs(argv);
+  const { label, kitDir, noKit, only } = parseRunArgs(argv);
   refuseOverCap(kitDir, noKit);
   // The Claude config folder, found the way kit.mjs finds it.
   const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
   checkUserLayer(home);
+  checkGateHome(home);
   // Loaded here so the gate command runs only this file's code.
   const kitTools = await import('./kit.mjs');
   const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
-  const out = recallRun({ label, kitDir, noKit, home, osHome: os.homedir(), env: process.env, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), outDir: OUT_DIR, run, kitTools });
+  const out = recallRun({ label, kitDir, noKit, home, osHome: os.homedir(), env: process.env, text: fs.readFileSync(QUESTIONS, 'utf8'), when: new Date().toISOString(), outDir: OUT_DIR, run, kitTools, only });
   console.log(`saved ${out}`);
 }
 

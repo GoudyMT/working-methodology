@@ -207,3 +207,88 @@ test('scenarios 5 and 10 fail a session that skips the behaviour by another rout
 	assert.equal(passes('12-carry-a-high', call('PowerShell', { command: 'gh.exe pr create --fill' }), result('')), false);
 	assert.equal(passes('14-ask-for-a-yes', call('Bash', { command: 'gh -R a/b pr merge 3 --squash' }), result('')), false);
 });
+
+// K198 (Max's picks, 2026-11-20): the behaviour line is read from 5 candidate and 5 release runs measured the same
+// day, and names every scenario the candidate passed in fewer runs than the release, for the gate's no-worse check.
+// why: guards rule:ci-gate
+test('the behaviour line (K198) needs 5 runs a side from the same day and names each scenario that did worse', async () => {
+	const { behaviourLine } = await import('../scripts/recall-behave.mjs');
+	const dir = makeTemp('k198-behave-');
+	let seq = 0;
+	const save = (side, fails = [], when = '2026-11-20T10:00:00.000Z') => {
+		const d = path.join(dir, `r${++seq}`);
+		fs.mkdirSync(d);
+		const rows = ['1-a', '2-b', '3-c'].map((id) => ({ id, passed: !fails.includes(id) }));
+		fs.writeFileSync(path.join(d, 'result.json'), JSON.stringify({ suite: 2, released: side === 'base', noKit: side === 'control', total: rows.filter((r) => r.passed).length, rows, when }));
+		return d;
+	};
+	const five = (side, fails = []) => Array.from({ length: 5 }, (_, i) => save(side, i === 0 ? fails : []));
+	const control = [save('control', ['1-a', '2-b', '3-c'])];
+	// pin: 1 (the gate reads this line)
+	assert.equal(behaviourLine({ label: 'x', cand: five('cand'), base: five('base'), control }), 'behaviour: x median 3 baseline 3 suite v2 control 0\nbehaviour worse: none');
+	// Seen twice (the owner's pick, 2026-11-21): one look names it and holds back the worse line (tests/gate-seen-twice.test.mjs).
+	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base'), control }), /\nbehaviour lower once: 2-b$/);
+	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base', ['2-b']), control }), /\nbehaviour worse: none$/);
+	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand').slice(1), base: five('base'), control }), /5 candidate runs and 5 release runs/);
+	const late = [...five('base').slice(1), save('base', [], '2026-11-18T09:00:00.000Z')];
+	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand'), base: late, control }), /same day/);
+	const untimed = [...five('base').slice(1), save('base', [], null)];
+	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand'), base: untimed, control }), /same day/);
+});
+
+// K195 (reproduced 2026-11-20 on 1.47.0): sessions run with project settings only, which never load the Claude folder's
+// skills, so a release arm ran with no kit skills while the candidate's were copied in, and sweep-before-PR could not
+// pass on the release. The release arm now gets its installed kit skills and agents copied the same way, and nothing else.
+// why: catches a release arm run with no kit skills against a candidate that has them
+test('the release arm (K195) gets its installed kit skills and agents in the probe, as the candidate gets its own', async () => {
+	const { releasedUserLayer } = await import('../scripts/recall-behave.mjs');
+	assert.equal(typeof releasedUserLayer, 'function', 'K195: the release arm copies its kit skills');
+	const home = makeTemp('k195-home-');
+	const dir = makeTemp('k195-probe-');
+	const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(home, rel)), { recursive: true }); fs.writeFileSync(path.join(home, rel), body); };
+	put('skills/pre-pr-sweep/SKILL.md', 'kit sweep');
+	put('skills/pre-pr-sweep/approve.mjs', 'kit approve');
+	put('agents/reviewer.md', 'kit reviewer');
+	put('skills/mine/SKILL.md', 'not the kit');
+	put('CLAUDE.md', 'not a skill');
+	put('kit-install.json', JSON.stringify({ version: '1.47.0', release: true, files: { 'skills/pre-pr-sweep/SKILL.md': 'h', 'skills/pre-pr-sweep/approve.mjs': 'h', 'agents/reviewer.md': 'h', 'CLAUDE.md': 'h' } }));
+	releasedUserLayer(home, dir);
+	const at = (rel) => path.join(dir, '.claude', rel);
+	assert.equal(fs.readFileSync(at('skills/pre-pr-sweep/SKILL.md'), 'utf8'), 'kit sweep');
+	assert.equal(fs.readFileSync(at('skills/pre-pr-sweep/approve.mjs'), 'utf8'), 'kit approve');
+	assert.equal(fs.readFileSync(at('agents/reviewer.md'), 'utf8'), 'kit reviewer');
+	assert.equal(fs.existsSync(at('skills/mine/SKILL.md')), false, 'a skill the kit did not install stays out');
+	assert.equal(fs.existsSync(at('CLAUDE.md')), false, 'only skills and agents');
+	// A listed path that climbs out of the Claude folder is never copied.
+	put('kit-install.json', JSON.stringify({ version: '1.47.0', release: true, files: { 'skills/../../x': 'h' } }));
+	assert.throws(() => releasedUserLayer(home, makeTemp('k195-probe-')), /outside/);
+});
+
+// The 2026-11-21 paired run (see recall.mjs checkGateHome): every arm of a behaviour gate run is on its own throwaway
+// Claude folder, so ~/.claude never names one arm's layer and not the other's.
+// why: guards rule:instruments-and-evals
+test('a behaviour run refuses a Claude folder that is not a throwaway under kit-probes, before any session', () => {
+	const real = makeTemp('realhome-');
+	fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.47.0', release: true, files: {} }));
+	const r = spawnSync(process.execPath, [path.resolve('scripts/recall-behave.mjs'), 'base-1'], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: real, CLAUDE_CONFIG_DIR: real } });
+	assert.equal(r.status, 1, r.stdout + r.stderr);
+	assert.match(r.stderr, /is not a throwaway Claude folder under .*kit-probes/);
+	assert.doesNotMatch(r.stdout, /\[1\/\d+\]/);
+});
+// K206: the candidate's skills and agents name kit files as {{CLAUDE_HOME}}/..., which install fills; copied raw into a
+// probe, a session read the placeholder itself. The copy fills it with the arm's own Claude folder, as install would.
+// why: catches a candidate arm whose copied skills name {{CLAUDE_HOME}} instead of its Claude folder
+test('the candidate arm\'s copied skills name its own Claude folder, not the placeholder (K206)', async () => {
+	const { copyUserLayer } = await import('../scripts/recall-behave.mjs');
+	const kit = makeTemp('k206-kit-');
+	const home = makeTemp('k206-home-');
+	const dir = makeTemp('k206-probe-');
+	fs.mkdirSync(path.join(kit, 'user/skills/s'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'user/agents'), { recursive: true });
+	fs.writeFileSync(path.join(kit, 'user/skills/s/SKILL.md'), 'run {{CLAUDE_HOME}}/skills/pre-pr-sweep/approve.mjs\n');
+	fs.writeFileSync(path.join(kit, 'user/agents/o.md'), 'see {{CLAUDE_HOME}}/agents/\n');
+	copyUserLayer(kit, dir, home);
+	const own = home.split(path.sep).join('/');
+	assert.equal(fs.readFileSync(path.join(dir, '.claude/skills/s/SKILL.md'), 'utf8'), `run ${own}/skills/pre-pr-sweep/approve.mjs\n`);
+	assert.equal(fs.readFileSync(path.join(dir, '.claude/agents/o.md'), 'utf8'), `see ${own}/agents/\n`);
+});

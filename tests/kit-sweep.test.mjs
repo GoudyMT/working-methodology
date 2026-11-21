@@ -546,12 +546,20 @@ test('the size band refuses only a measured size past what is allowed, never a m
   assert.equal(count.status, 1, 'a count past its raise');
 });
 
-// why: catches a break at project/.claude/size-band.mjs:79 that no other test catches
+// why: guards rule:size-budgets
+// planted: {"file":"project/.claude/size-band.mjs","was":"if (!Number.isInteger(size) || size < 0) { refusals.push(`${line}: no measured size`); continue; }","to":"if (!Number.isInteger(size) && size < 0) { refusals.push(`${line}: no measured size`); continue; }"}
+// planted: {"file":"project/.claude/size-band.mjs","was":"for (const line of Object.keys(next)) if (next[line] !== limits[line]) console.log(`    ${line}: ${unit(line, limits[line])} -> ${unit(line, next[line])} (measured ${unit(line, measured[line])})`);","to":"for (const line of Object.keys(next)) if (next[line] === limits[line]) console.log(`    ${line}: ${unit(line, limits[line])} -> ${unit(line, next[line])} (measured ${unit(line, measured[line])})`);"}
 test('the size band end check lowers padding and fails a line over its limit', () => {
   const limits = { page: 106050, lazy: 16040, files: 82 };
   const r = bandRun('final', { band, measured: { page: 103000, lazy: 16000, files: 81 }, limits });
   assert.equal(r.status, 0, r.stdout);
   assert.deepEqual(r.out.limits, { page: 103300, lazy: 16040, files: 81 }, 'lowered to size + margin; the unlisted line kept');
+  // K189 (the K160 slips): only a line that moved is listed, and a limit with no measured size is refused.
+  assert.match(r.stdout, /page: /);
+  assert.doesNotMatch(r.stdout, /^\s+lazy: /m, r.stdout);
+  const unmeasured = bandRun('final', { band, measured: { page: 103000, files: 81 }, limits });
+  assert.equal(unmeasured.status, 1, unmeasured.stdout);
+  assert.match(unmeasured.stdout, /lazy: no measured size/);
   assert.equal(bandRun('final', { band, measured: { page: 106100, lazy: 16000, files: 81 }, limits }).status, 1);
 });
 
@@ -1125,4 +1133,30 @@ test('the floor reads the diff the way git wrote it: hunk text, nested docs code
   const body = Array.from({ length: 25 }, (_, i) => `assert.equal(f(${i}), ${i});`).join('\n') + '\n';
   const emptied = approveRun(one, changed({ 'tests/g.test.mjs': body }, { 'tests/g.test.mjs': 'x\n', 'tests/dead.test.mjs': `if (false) {\n${body}}\n` }));
   assert.equal(emptied.status, 1, `lines taken out of a test that stays are a changed test: ${emptied.stdout}`);
+});
+
+// CM6 (c), K170 (the S1 replay, reproduced on 1.47.0): the build 18 plan says shipped scripts and skills are fix work
+// and only tests, docs, records and maps are triage, yet a one-line edit to a shipped script or a SKILL.md outside the
+// gate files was approved as triage.
+// why: catches a shipped script or skill change swept at the triage floor
+test('a one-line change to a shipped script or a skill is fix work, not triage (CM6)', () => {
+  const one = { tier: 'triage', modifiers: [], roles: [role('triage', 'Any secret or personal data in the diff?')] };
+  const edit = (f, base, next) => {
+    const dir = makeTemp('approve-');
+    g(dir, 'init', '-q', '-b', 'main');
+    fs.mkdirSync(path.dirname(path.join(dir, f)), { recursive: true });
+    fs.writeFileSync(path.join(dir, f), base);
+    commitAll(dir, 'base', true);
+    g(dir, 'checkout', '-q', '-b', 'fix/x');
+    fs.writeFileSync(path.join(dir, f), next);
+    commitAll(dir, 'change', true);
+    fs.mkdirSync(path.join(dir, 'sweeps'));
+    return approveRun(one, dir);
+  };
+  for (const f of ['scripts/mutation-check.mjs', 'src/app.py', 'user/skills/tdd/SKILL.md']) {
+    const r = edit(f, 'a\n', 'b\n');
+    assert.equal(r.status, 1, `${f}: ${r.stdout}`);
+    assert.match(r.stdout, /shipped code or a skill .* is fix work, not triage/, f);
+  }
+  for (const f of ['docs/guide.md', 'README.md', 'tests/a.test.mjs']) assert.equal(edit(f, 'a\n', 'b\n').status, 0, f);
 });

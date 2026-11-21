@@ -213,3 +213,25 @@ test('a project hears which release closed its report, once', () => {
 	assert.ok(problems({ reports: ['R-1'] }).some((p) => /reports is not a list/.test(p)));
 	assert.ok(!problems({ reports: [id] }).some((p) => /reports is not a list/.test(p)));
 });
+
+// K197 (reproduced 2026-11-20 on a 1.47.0 throwaway install): a project installed with no test folder set keeps the
+// real Claude folder, so a test or probe session run with CLAUDE_CONFIG_DIR on a throwaway folder still wrote its
+// reports to the owner's real inbox. A send whose session runs on another Claude folder than the project's now keeps
+// nothing and says why.
+// why: catches a throwaway run whose report lands in the owner's real inbox
+test('send keeps nothing when the session runs on another Claude folder than the project was installed for (K197)', () => {
+	const { projectDir, home } = setup();
+	const other = kitTemp.makeTemp('report-other-');
+	for (const env of [{ CLAUDE_CONFIG_DIR: other }, { KIT_CLAUDE_HOME: other }]) {
+		const r = send(ARGS, { home, projectDir, env });
+		assert.equal(r.code, 1, JSON.stringify(env));
+		assert.match(r.out.join('\n'), /another Claude folder[\s\S]*nothing was kept or sent/);
+		assert.equal(fs.existsSync(path.join(home, 'kit-reports', 'inbox')), false);
+	}
+	// The same folder, spelled another way, is no mismatch.
+	assert.equal(send(ARGS, { home, projectDir, env: { CLAUDE_CONFIG_DIR: home + path.sep } }).code, 0);
+	// The command line hands the session's own variables in.
+	const cli = spawnSync(process.execPath, [path.resolve('project/.claude/kit-report.mjs'), 'send', ...ARGS], { cwd: projectDir, encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: home, KIT_CLAUDE_HOME: other } });
+	assert.equal(cli.status, 1, cli.stdout + cli.stderr);
+	assert.match(cli.stdout, /another Claude folder/);
+});

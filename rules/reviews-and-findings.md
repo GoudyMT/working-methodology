@@ -68,7 +68,7 @@ Every sweep has a tier, set at plan approval (the lead proposes, the owner may c
 
 ### Sweep Auto-Approval {#sweep-auto-approval}
 
-A feature, fix or triage sweep's Swarm Contract is approved by `~/.claude/skills/pre-pr-sweep/approve.mjs` (PowerShell: full path; or your Claude config folder), never an agent: same contract, same answer. If not there, the kit's user layer is not installed: say so; the owner says yes. It runs first; only an ASK goes to the owner (their pop-up tap, logged with `--owner-yes`); hooks hold reviewers until it clears the contract. FIX THE CONTRACT is Claude's slip; fix it and run it again. First push and launch gate always ask. When it pauses (it says why), only the owner resumes it. Why: a routine sweep need not wait.
+A feature, fix or triage sweep's Swarm Contract is approved by `approve.mjs` (its command is in the start-up line "Kit tools this session"), never an agent: same contract, same answer. If not there, the kit's user layer is not installed: say so; the owner says yes. It runs first; only an ASK goes to the owner (their pop-up tap, logged with `--owner-yes`); hooks hold reviewers until it clears the contract. FIX THE CONTRACT is Claude's slip; fix it and run it again. First push and launch gate always ask. When it pauses (it says why), only the owner resumes it. Why: a routine sweep need not wait.
 
 ### Pre-PR Deep Sweep {#pre-pr-deep-sweep}
 

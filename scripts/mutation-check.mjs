@@ -166,6 +166,15 @@ export async function main(argv) {
 			process.stdout.write(every.length ? `mutation check: no flip in this slice (${every.length} in the whole run)\n` : `mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
 			return 0;
 		}
+		// K193: an outside check that fails on the clean copy would catch every flip (the delete proof's Windows-only
+		// junction case on Linux), so each runs once with no flip made, and a failure there stops the run.
+		for (const cmd of o.also) {
+			const clean = spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } });
+			if (clean.status !== 0) {
+				process.stderr.write(`mutation-check: --also "${cmd}" fails with no flip made (exit ${clean.status}), so it would catch every flip: fix it or leave it out\n`);
+				return 2;
+			}
+		}
 		const done = new Set();
 		const everyTest = new Set(spots.flatMap((s) => s.tests));
 		for (const s of spots) {

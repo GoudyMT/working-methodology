@@ -1,0 +1,47 @@
+{
+  "about": "K192 (the owner's pick, 2026-11-20): rule cues. When a message names one of these topics, the prompt hook puts the rule's own words in front of the session, quoted word for word from the source file named, so a cue never says more or less than its rule. A test holds each quote to its source. Recall then partly measures the cue, so behaviour scenarios 4, 7, 9, 10 and 13 check the same rules by acts, and the paired run records a recall arm with the cues off (KIT_RULE_CUES=off) beside the gate's.",
+  "cues": [
+    {
+      "rule": "outward-acts",
+      "home": "AGENTS.md",
+      "source": "rules/core.md",
+      "when": "\\bgit push\\b|\\bpush(?:es|ed|ing)?(?: \\w+){0,2} (?:branch|origin|remote|main|commits?|PRs?|pull requests?)\\b|\\bpush(?:es|ed|ing)?\\b[^.?!]{0,40}\\b(?:to|into) (?:the |its )?(?:origin|remote|main|branch)\\b|\\bopen(?:s|ing)? (?:the |its |a |my )?(?:PR|pull request)\\b",
+      "quotes": [
+        "It has four limits, and an answer about pushing or a PR names both acts and all four limits: never main, never a tag, never a force, never a delete.",
+        "is the push and the PR that need no yes: `git push [-u] origin <feature branch>`, then opening that branch's PR (`gh pr create`, on that repo); do them, then tell the owner."
+      ]
+    },
+    {
+      "rule": "swarm-contract",
+      "home": "standards/agent-teams.md",
+      "source": "rules/agent-teams.md",
+      "when": "\\b(swarm|fan-?out|sub-?agents?|review agents|agents at once|(two|three|four|five|six|seven|eight|nine|ten|several|many|\\d+) (?!user )(\\w+ )?agents)\\b",
+      "quotes": [
+        "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract.",
+        "STOP: no agent runs until the contract is approved",
+        "run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons)."
+      ]
+    },
+    {
+      "rule": "parking-lot",
+      "home": "standards/reviews-and-findings.md",
+      "source": "rules/reviews-and-findings.md",
+      "when": "\\bparking lot\\b|\\bout of scope\\b|\\bideas?\\b[^.?!]*\\blater\\b|\\blater\\b[^.?!]*\\bideas?\\b",
+      "quotes": [
+        "**Capture:** one line under `## Parking Lot` at the top of the active plan",
+        "`build -> all gates green -> Parking Lot triage -> Pre-PR Deep Sweep"
+      ]
+    },
+    {
+      "rule": "pre-pr-deep-sweep",
+      "home": "the kit's CLAUDE.md template",
+      "source": "project/CLAUDE.md",
+      "when": "\\bsweep\\b|\\breview\\b[^.?!]*\\bbefore\\b[^.?!]*\\b(PRs?|pull requests?|merg\\w*)\\b",
+      "quotes": [
+        "No feature / sub-project PR opens for review or merges to `main` without a deep multi-agent sweep",
+        "an adversarial vulnerability swarm + the 6 Milestone-Sweep dimensions (incl. version-goal alignment) - under an approved Swarm Contract, with its report recorded and summarized in the PR.",
+        "Satisfied ONLY by the agents actually running this session + the report existing - NEVER by a self-review, a recalled prior sweep, or \"it looks fine\"."
+      ]
+    }
+  ]
+}

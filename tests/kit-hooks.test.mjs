@@ -601,8 +601,8 @@ test('the lean PR-body audit fails each real slip on its own row, and only that 
   const ROWS = ['no attribution block', 'title is type: subject, at most 72 with the squash suffix (smaller PR)', 'H1 is <Area>: <line>, no type prefix', 'H1 line carries the title subject',
     'H1 area does not repeat the subject', 'every line <= 110', '0 non-ASCII characters', 'no mechanism or AI words', 'no vault paths', 'framing summary before Changes',
     'Changes / Gates / Notes, in order', 'no Visuals section in a Lean body', 'every gate ticked', 'review names the dimensions', 'review names the sweep tier', 'no spaced dashes in prose',
-    'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change'];
-  const sub = (from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
+    'size: small body (<= 180 words, 18 lines, 3 changes, 3 gates)', 'no confirmation phrase', 'version bumped, or no user-facing change', 'small body fits the diff'];
+  const sub =(from, to) => { assert.ok(lean.includes(from), from); return lean.replace(from, to); };
   const NOTES = '**Notes** - Tooling only; the app does not change.';
   const words = lean.split(/\s+/).filter(Boolean).length;
   const lines = lean.split('\n').filter((l) => l.trim()).length;
@@ -885,22 +885,26 @@ test('the folder gate names a launcher node that is gone, and only that', () => 
   assert.equal(gate(localProject()).decision, 'block', 'settings with no hooks: a folder without the kit is still stopped');
 });
 
-// why: catches a break at project/.claude/project-map.mjs:25 that no other test catches
+// why: guards rule:visible-tracking
+// planted: {"file":"project/.claude/project-map.mjs","was":"if (!p.id || !p.name) faults.push(`part ${p.id || '?'}: needs an id and a name`);","to":"if (!p.id && !p.name) faults.push(`part ${p.id || '?'}: needs an id and a name`);"}
 test('the project map check passes a sound map and names every fault in a bad one', () => {
   assert.equal(mapRun(mapRepo(GOOD_MAP), ['check']).status, 0);
   const bad = { ...GOOD_MAP, goal: '',
-    parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/gone.ts'] }, GOOD_MAP.parts[1]],
+    // K189: a part with an id and no name is named too.
+    parts: [{ ...GOOD_MAP.parts[0], files: ['src/ask', 'src/gone.ts'] }, { ...GOOD_MAP.parts[1], name: '' }],
     links: [{ from: 'ask', to: 'nowhere', verb: 'calls' }, { from: 'ask', to: 'corpus', verb: '' }],
     progress: [{ item: 'Offline answers', state: 'done' }, { item: 'Citations', state: 'blocked-ish' }] };
   const r = mapRun(mapRepo(bad), ['check']);
   assert.equal(r.status, 1);
   for (const fault of [/goal is empty/, /part ask: src\/gone\.ts does not exist/, /link ask -> nowhere: unknown part nowhere/,
-    /link ask -> corpus: no verb/, /progress "Offline answers": done needs evidence/, /progress "Citations": state must be done, doing, next or blocked/]) {
+    /link ask -> corpus: no verb/, /part corpus: needs an id and a name/, /progress "Offline answers": done needs evidence/, /progress "Citations": state must be done, doing, next or blocked/]) {
     assert.match(r.stdout, fault);
   }
 });
 
 // why: guards rule:visible-tracking
+// planted: {"file":"project/.claude/project-map.mjs","was":"${(map.successBar || []).length ? `<h2>Success bar</h2><ul>${map.successBar.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}","to":"${(map.successBar && []).length ? `<h2>Success bar</h2><ul>${map.successBar.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}"}
+// planted: {"file":"project/.claude/project-map.mjs","was":"<table class=\"files\"><thead><tr><th>Part</th><th>Does</th><th>Files</th></tr></thead><tbody>${(map.parts || []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.does)}</td><td>${(p.files || []).map(esc).join('<br>')}</td></tr>`).join('')}</tbody></table>","to":"<table class=\"files\"><thead><tr><th>Part</th><th>Does</th><th>Files</th></tr></thead><tbody>${(map.parts && []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.does)}</td><td>${(p.files || []).map(esc).join('<br>')}</td></tr>`).join('')}</tbody></table>"}
 test('the project map renders one self-contained page with states as words, and refuses a map that fails its check', () => {
   const dir = mapRepo(GOOD_MAP);
   const out = path.join(dir, 'map.html');
@@ -912,6 +916,9 @@ test('the project map renders one self-contained page with states as words, and 
   assert.match(html, /Offline answers[\s\S]*?Done[\s\S]*?PR #12/);
   assert.match(html, /Ask[\s\S]*?searches[\s\S]*?Corpus/);
   assert.match(html, /1 of 3 done/);
+  // K189 (the K160 slips): the success bar and the parts table with each part's files are drawn.
+  assert.match(html, /<h2>Success bar<\/h2>[\s\S]*<li>Answers cite a public source<\/li>/);
+  assert.match(html, /<td>Ask<\/td>[\s\S]*<td>answers questions on the device<\/td>[\s\S]*<td>src\/ask<\/td>/);
   assert.doesNotMatch(html, /<script|https?:\/\//);
   fs.writeFileSync(path.join(dir, '.kit', 'project-map.json'), JSON.stringify({ ...GOOD_MAP, goal: '' }));
   assert.equal(mapRun(dir, ['render', out]).status, 1);
@@ -1298,4 +1305,34 @@ test('the first push check reads only the repository it runs in, whatever KIT_HO
   delete env.KIT_HOOK_PROJECT;
   const c = run(process.execPath, [path.join(decoy, '.claude', 'first-push-check.mjs'), '--staged'], { cwd: app, encoding: 'utf8', env });
   assert.notEqual(c.status, 0, 'a copy of the script in a decoy folder read that folder\'s settings');
+});
+
+// K184 (quoted from pr-body.yml and merge-gate.mjs on 1.47.0): the audit that judges a PR body was picked by whether
+// the body has a "### Summary" heading, so a feature PR written as a small body met only the small audit. What the diff
+// touches now may raise a small body to the full one, never lower it: an added source file, a CI, hook or guard file,
+// or more than 20 changed lines of code.
+// why: catches a feature PR that passes the PR body check with a small body
+test('a small PR body is refused when the diff is more than a small change (K184)', () => {
+	const dir = makeTemp('k184-');
+	const git = (...a) => assert.equal(spawnSync('git', ['-C', dir, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
+	const put = (rel, body) => { fs.mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true }); fs.writeFileSync(path.join(dir, rel), body); };
+	git('init', '-q', '-b', 'main');
+	put('src/a.mjs', Array.from({ length: 40 }, (_, i) => `export const v${i} = ${i};`).join('\n') + '\n');
+	put('README.md', '# x\n');
+	git('add', '.'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'base');
+	const fit = (change) => {
+		git('checkout', '-q', '-B', 'pr', 'main');
+		change();
+		git('add', '-A'); git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-qm', 'pr', '--allow-empty');
+		const f = path.join(dir, '..', `${path.basename(dir)}-body.md`);
+		fs.writeFileSync(f, '## Docs: x\n\nA small body.\n');
+		const r = spawnSync(process.execPath, [path.resolve('project/.claude/pr-body-audit-lean.mjs'), f, 'docs: x'], { encoding: 'utf8', cwd: dir, env: { ...process.env, PR_BASE: 'main' } });
+		return (r.stdout.split('\n').find((l) => /small body fits the diff/.test(l)) || '').trim();
+	};
+	assert.match(fit(() => put('README.md', '# y\n'.repeat(80))), /^PASS/, 'docs of any length');
+	assert.match(fit(() => put('src/a.mjs', read(path.join(dir, 'src/a.mjs')).replace('= 1;', '= 2;'))), /^PASS/, 'a one-line code change');
+	assert.match(fit(() => put('src/b.mjs', 'export const b = 1;\n')), /^FAIL.*added source file src\/b\.mjs/);
+	assert.match(fit(() => put('.github/workflows/ci.yml', 'on: push\n')), /^FAIL.*\.github\/workflows\/ci\.yml/);
+	assert.match(fit(() => put('src/a.mjs', read(path.join(dir, 'src/a.mjs')).replace(/= (\d+);/g, '= $1 + 1;'))), /^FAIL.*changed lines of code/);
+	assert.match(fit(() => put('tests/a.test.mjs', 'x\n'.repeat(90))), /^PASS/, 'tests are not the change the format follows');
 });

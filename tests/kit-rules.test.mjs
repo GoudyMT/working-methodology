@@ -451,6 +451,7 @@ test('session start after a compact names the orientation rule and where it live
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'startup' }), /post-compact-orientation/);
 });
 
+
 // K112 (1.42.0, the token proof: idle gaps over an hour were 86% of cache rebuild cost): one session carried many
 // tasks for days. A closeout marks its task closed in the resume packet; a session resumed after that is told to start
 // fresh, since a resumed session re-reads its whole old context. Nothing is said on a fresh start or with no mark.

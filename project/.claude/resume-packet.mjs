@@ -33,6 +33,9 @@ const MAX = 2048;
 const MAX_FILE = 1 << 20;
 // Always hashed, in this order; the plan the Resume Point names is added after them.
 const FILES = ['_Start Here.md', '_Active Plan.md', '_Working Memory.md', '_Loop Learnings.md', '_Session Log.md', '_Master Roadmap.md'];
+// CM6 (a): the state file, hashed when the project has one, so a state change with no view rendered is named.
+const STATE_FILE = '_State.json';
+const hasState = () => fs.existsSync(path.join(ROOT, STATE_FILE));
 // The same list rule 11's fallback names (rules/_parts/agents-head.md); AGENTS.md is not in it: it loads at start.
 export const FULL = '_Start Here.md, _Loop Learnings.md, _Working Memory.md, _Active Plan.md, the plan the Resume Point names';
 // A repo's own config must not run a program (fsmonitor, a protocol helper; a clean filter runs only under status,
@@ -174,7 +177,7 @@ export function sections() {
 		Plan: where.plans?.length ? where.plans.map((p) => `plan: ${p}`) : ['plan: none named'],
 	};
 	const plans = where.plans || [];
-	return { s, files: [...FILES, ...plans], plans, reads, lost, missing, resumeFrom: fromPlan ? '_Active Plan.md' : '_Working Memory.md' };
+	return { s, files: [...FILES, ...(hasState() ? [STATE_FILE] : []), ...plans], plans, reads, lost, missing, resumeFrom: fromPlan ? '_Active Plan.md' : '_Working Memory.md' };
 }
 // What each section is built from: a trimmed section names these files for a fresh read.
 const SOURCES = { 'Last session': ['_Working Memory.md'], 'Pending the owner': ['_Active Plan.md'], 'Carry-overs': ['_Active Plan.md'] };
@@ -295,7 +298,7 @@ function check() {
 	if (!saved) return full('The resume packet is not one this script wrote.');
 	// The saved list must be the fixed one, plus at most the files a Resume Point may name: a dropped or added line
 	// changes nothing checked.
-	const extra = [...saved.files.keys()].filter((f) => !FILES.includes(f));
+	const extra = [...saved.files.keys()].filter((f) => !FILES.includes(f) && f !== STATE_FILE);
 	if (FILES.some((f) => !saved.files.has(f)) || extra.length > MAX_NAMED) return full('The resume packet\'s file list is not the fixed one.');
 	const now = sections();
 	if (now.missing.length) return full(`The check cannot find: ${now.missing.join('; ')}.`);
@@ -308,6 +311,8 @@ function check() {
 		state[f] = h === null ? 'missing' : !saved.files.has(f) ? 'CHANGED' : h === saved.files.get(f) ? 'same' : 'CHANGED';
 		out.push(`${state[f]} ${f}`);
 	}
+	// A state file the packet hashed and that is gone now is named as missing.
+	if (saved.files.has(STATE_FILE) && !now.files.includes(STATE_FILE)) { state[STATE_FILE] = 'missing'; out.push(`missing ${STATE_FILE}`); }
 	const g = gitState();
 	for (const k of GIT_KEYS) out.push(`git ${k}: ${g[k] === saved.git[k] ? 'same' : `CHANGED (packet ${saved.git[k]}, now ${g[k]})`}`);
 	const readList = [];
@@ -318,6 +323,7 @@ function check() {
 	add('_Active Plan.md');
 	for (const p of now.plans) add(p);
 	for (const f of FILES) if (state[f] !== 'same') add(f);
+	if (state[STATE_FILE] !== undefined && state[STATE_FILE] !== 'same') add(STATE_FILE);
 	for (const k of cut) for (const f of k === 'Resume Point' ? [now.resumeFrom] : SOURCES[k] || []) add(f);
 	for (const f of now.reads) add(f);
 	try { save(STAMP, `${JSON.stringify({ checked: new Date().toISOString() })}\n`); } catch { /* the stamp is only the use check's trace */ }

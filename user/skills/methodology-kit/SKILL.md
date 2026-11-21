@@ -9,7 +9,7 @@ The kit is the owner's working methodology as one versioned folder: global rules
 standards, tracking-file skeletons, templates, tools and working-style memory. Every project starts from its
 latest version, and every improvement a project makes can flow back into it.
 
-**Find the kit:** `~/.claude/kit-install.json` holds `kitDir` (the folder) and `version`. If the file is missing,
+**Find the kit:** `{{CLAUDE_HOME}}/kit-install.json` holds `kitDir` (the folder) and `version`. If the file is missing,
 ask the owner where the kit lives. Read the kit's `README.md` before acting.
 
 Arguments: $ARGUMENTS
@@ -69,4 +69,4 @@ Arguments: $ARGUMENTS
   step 5b). When adopting a project that keeps its own standards, add the step there.
 - Never overwrite a file the owner changed; the tool skips it, and so do you, unless the owner says so.
 - Never push, publish or make the kit's repository public without the owner's explicit go.
-- Nothing personal leaves the owner's private files (`~/.claude/kit-owner-profile.md`, `scrub.local.json`); `kit.config.json` holds the first name only.
+- Nothing personal leaves the owner's private files (`{{CLAUDE_HOME}}/kit-owner-profile.md`, `scrub.local.json`); `kit.config.json` holds the first name only.

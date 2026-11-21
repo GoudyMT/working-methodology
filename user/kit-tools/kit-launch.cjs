@@ -833,12 +833,106 @@ function forgets(input, dir) {
 	return same(path.resolve(cwd, m[5] || m[6]), path.resolve(dir));
 }
 
+// K206 P3: the rules once named a fixed ~/.claude path, and ~ is always the real home, so a session on another Claude
+// folder (a throwaway, a probe, a plugin) ran that folder's kit tool, or none. Running a kit tool from a Claude folder
+// other than the one this launcher was installed into is held, with this session's own command; reading one is not.
+// A folder counts only when it holds a kit install, so the kit source's user/ tree and plain files pass.
+// The command is read as words (quotes, escaped spaces and the separators ; & | ( ) newline and a backtick), and only a
+// segment whose program is node counts: node's option words are skipped to find the script, a cd, pushd or Set-Location
+// moves the folder the next relative path is read from, ~ and the home variables of both shells are expanded, a leading
+// /c/ is read as C:/ on Windows, and the folders are compared by their real paths (a link or an 8.3 name is the same
+// folder). Shells that run a string (bash -c, powershell -Command, cmd /c, eval) are read the same way, inside it.
+// What it stops is a slip, not a determined workaround: a folder or script built at run time (X=O; node $X/...), a
+// wildcard, Start-Process or a script that spawns node are not read, as for every guard here.
+const KIT_TOOL = new RegExp('^(.+?)/(skills/[\\w.-]+/[\\w.-]+\\.[cm]js|kit-tools/[\\w./-]+|kit-hooks/[\\w./-]+)$', WIN ? 'i' : '');
+// The words of a shell command, in segments: a quoted piece joins the word it touches ("O"/x is one word).
+function shellSegments(command) {
+	const segs = [[]];
+	let word = null;
+	const end = () => { if (word !== null) segs[segs.length - 1].push(word); word = null; };
+	const cut = () => { end(); if (segs[segs.length - 1].length) segs.push([]); };
+	for (let i = 0; i < command.length; i++) {
+		const c = command[i];
+		if (c === '"') {
+			word = word ?? '';
+			for (i++; i < command.length && command[i] !== '"'; i++) {
+				if (command[i] === '\\' && '"\\$`'.includes(command[i + 1] ?? ' ')) i++;
+				word += command[i];
+			}
+		} else if (c === "'") {
+			word = word ?? '';
+			for (i++; i < command.length && command[i] !== "'"; i++) word += command[i];
+		} else if (c === '\\' && command[i + 1] === ' ') { word = (word ?? '') + ' '; i++; }
+		else if (c === ' ' || c === '\t' || c === '\r') end();
+		else if (c === '\n' || c === ';' || c === '&' || c === '|' || c === '(' || c === ')' || c === '`') cut();
+		else word = (word ?? '') + c;
+	}
+	end();
+	return segs.filter((s) => s.length);
+}
+// The script word node runs, after its option words; null when it runs a string or reads none.
+const NODE_VALUE_OPTIONS = new Set(['-r', '--require', '--import', '--loader', '--experimental-loader', '--env-file', '--input-type', '-C', '--conditions', '--title', '--disable-warning', '--watch-path', '--inspect-port']);
+function nodeScript(args) {
+	for (let k = 0; k < args.length; k++) {
+		const a = args[k];
+		if (['-e', '-p', '--eval', '--print'].includes(a)) return null;
+		if (NODE_VALUE_OPTIONS.has(a)) k++;
+		else if (!a.startsWith('-')) return a;
+	}
+	return null;
+}
+function otherHomeTool(input, home = HOME, userHome = require('os').homedir()) {
+	if (!input || !SHELLS.includes(input.tool_name)) return null;
+	const command = String((input.tool_input && input.tool_input.command) ?? '');
+	let cur = path.resolve(String(input.cwd || process.cwd()));
+	const user = posix(userHome);
+	const full = posix(path.resolve(home));
+	const spell = input.tool_name === 'Bash' && full.toLowerCase() === posix(path.resolve(userHome, '.claude')).toLowerCase() ? '~/.claude' : full;
+	// A word as a path from the folder in effect: home spelled any way, forward slashes, a Git Bash drive as C:/.
+	const at = (word) => {
+		let t = word.replace(/^(?:~|\$\{?(?:env:)?(?:HOME|USERPROFILE)\}?|%USERPROFILE%)(?=[/\\]|$)/i, user).replace(/\\/g, '/');
+		if (WIN) t = t.replace(/^\/([a-zA-Z])(?=\/|$)/, '$1:');
+		return posix(path.resolve(cur, t));
+	};
+	const check = (script) => {
+		const m = KIT_TOOL.exec(at(script));
+		if (!m || same(m[1], home) || !fs.existsSync(path.join(m[1], 'kit-install.json'))) return null;
+		return deny(`this runs ${m[2]} from another Claude folder (${m[1]}), not this session's own. Run this session's copy: node ${spell}/${m[2]} (the start-up line "Kit tools this session" names it). Reading it is fine (Read, grep, cat); only running it is held.`);
+	};
+	const walk = (text, depth) => {
+		for (const words of shellSegments(text)) {
+			let i = 0;
+			while (i < words.length && (/^[A-Za-z_]\w*=/.test(words[i]) || /^(?:env|exec|command|time|nohup|sudo)$/i.test(words[i]))) i++;
+			if (i >= words.length) continue;
+			const name = words[i].replace(/\\/g, '/').split('/').pop().toLowerCase().replace(/\.exe$/, '');
+			const args = words.slice(i + 1);
+			if (/^(?:cd|chdir|pushd|set-location|sl)$/.test(name)) {
+				for (let k = 0; k < args.length; k++) {
+					if (/^-(?:literal)?path$/i.test(args[k])) { if (args[k + 1] !== undefined) cur = at(args[k + 1]); break; }
+					if (!/^-|^\/d$/i.test(args[k])) { cur = at(args[k]); break; }
+				}
+			} else if (name === 'node' || name === 'nodejs') {
+				const script = nodeScript(args);
+				const hit = script && check(script);
+				if (hit) return hit;
+			} else if (depth < 4 && (name === 'eval' || /^(?:sh|bash|zsh|dash|ksh|pwsh|powershell|cmd)$/.test(name))) {
+				const flag = name === 'eval' ? -1 : args.findIndex((a) => /^-[a-z]*c$|^-command$|^\/[ck]$/i.test(a));
+				const rest = name === 'eval' ? args : flag < 0 ? [] : args.slice(flag + 1);
+				const hit = rest.length && walk(rest.length === 1 ? rest[0] : rest.join(' '), depth + 1);
+				if (hit) return hit;
+			}
+		}
+		return null;
+	};
+	return walk(command, 0);
+}
+
 function preToolUse(input) {
 	const here = projectCheck(input);
 	// Each other kit project the command names checks it too, with its own folder as the call's, and holds it as it would
 	// a call started there. The strictest answer wins: a refusal, then an ask, then the rest (as guard.cjs merges).
 	const mine = findProject(input);
-	const answers = [here];
+	const answers = [here, otherHomeTool(input)];
 	const named = namedProjects(input);
 	// One the reader cannot read for sure is held with its reason, never fanned out over every project (1.33.1).
 	if (named.unreadable && recordedProjects().some((d) => !(mine && !mine.ambiguous && same(mine.dir, d)))) {
@@ -903,8 +997,16 @@ const shellDir = (p) => (WIN && /^[A-Za-z]:/.test(p) ? `/${p[0].toLowerCase()}${
  *     nodePath: the node install user ran with (kit-install.json keeps it)
  *     mode: '' for PreToolUse, 'config-change' for ConfigChange
  */
+// R7.2: what the line answers when the start script itself cannot run (gone, or no sh): a deny that names the repair.
+const START_FALLBACK = JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'Held: the kit guard start script could not run, so no guard could check this call. Stop retrying and ask the owner to run kit.mjs status in the kit folder, then kit.mjs install user from the release copy.' } });
 function launchCommand(launcher, nodePath, mode = '') {
-	return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))}${mode ? ` ${mode}` : ''}`;
+	// ConfigChange runs the launcher directly: its block keeps the old settings, so a start failure there blocks safely.
+	if (mode) return `NODE_OPTIONS= ${shq(shellDir(nodePath))} ${shq(posix(launcher))} ${mode}`;
+	// R7.2 (the owner's pick, 2026-11-21): every tool call goes through kit-start.sh beside the launcher, which limits a
+	// slow start, retries once and names the cause; the printf answers if the script cannot run at all. /bin/sh by its
+	// full path (Git Bash on Windows has it too), so a sh planted first on the session's PATH cannot answer for the guards.
+	const start = posix(path.join(path.dirname(launcher), 'kit-start.sh'));
+	return `NODE_OPTIONS= /bin/sh ${shq(start)} ${shq(shellDir(nodePath))} ${shq(posix(launcher))} || printf '%s' ${shq(START_FALLBACK)}`;
 }
 
 /** The node install user recorded beside this launcher, or null. */
@@ -1024,4 +1126,4 @@ if (require.main === module) {
 	if (out) process.stdout.write(JSON.stringify(out));
 }
 
-module.exports = { gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
+module.exports = { otherHomeTool, gone, kitFingerprint, runGuard, verify, settingsProblem, oldGuardEntries, runsKitGuard, recordName, legacyRecordName, recordDir, findProject, isFix, launchCommand, launcherWired, installedNode, shellDir, shq, hooksPathNow };
