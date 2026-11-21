@@ -82,7 +82,7 @@ function fakeClaude(events) {
 	return { start, calls };
 }
 
-const cloud = { CLAUDE_CODE_REMOTE: 'true', PATH: '/usr/bin', HOME: '/home/u', LANG: 'C.UTF-8', TERM: 'xterm', ANTHROPIC_BASE_URL: 'https://api.example',
+const cloud = { CLAUDE_CODE_REMOTE: 'true', PATH: '/usr/bin', HOME: '/srv/lead', LANG: 'C.UTF-8', TERM: 'xterm', ANTHROPIC_BASE_URL: 'https://api.example',
 	CLAUDE_SESSION_INGRESS_TOKEN_FILE: '/run/tok', HTTPS_PROXY: 'http://proxy:1', NODE_EXTRA_CA_CERTS: '/ca.pem',
 	GH_TOKEN: 'secret-gh', AWS_SECRET_ACCESS_KEY: 'secret-aws', CLAUDE_CODE_SESSION_ID: 'lead', NODE_OPTIONS: '--require /evil.js', CLAUDE_CONFIG_DIR: '/lead/cfg' };
 
