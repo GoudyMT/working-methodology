@@ -1401,6 +1401,19 @@ test('the arrow rule bans none of the spellings it requires, and no instruction 
   assert.deepEqual(pinned, [], 'say "current" or tie it to the date in context, not a year range');
 });
 
+// The cloud build study (the owner's route, 2026-11-21): a push from the cloud kept the owner's identity, but a PR
+// opened or edited there gained a tool footer, so a cloud build pushes its branch only and the PC does the rest.
+// why: guards rule:where-work-runs
+test('the where-work-runs rule lets a cloud build push its own branch and keeps the PR on the owner\'s PC', () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const start = text.indexOf('{#where-work-runs}');
+  assert.ok(start > 0, 'rule:where-work-runs is in the agent-teams module');
+  const rule = text.slice(start, text.indexOf('\n#', start));
+  assert.match(rule, /cloud build thread may push its own feature branch/);
+  const pc = /([^.]*) stay on the owner's PC/.exec(rule)?.[1] || '';
+  for (const act of ['Kit installs', 'the PR', 'its body', 'release verification']) assert.ok(pc.includes(act), act);
+});
+
 // T12 + E24 C (build 23b): a cloud thread loads no repo hooks, so it takes only the fixed worker jobs. The rule, the
 // cloud refusals and the worker brief name one job list, so a session reading any of them sends the same work out.
 // why: guards the owner's fixed list of five cloud jobs, one list wherever it is read

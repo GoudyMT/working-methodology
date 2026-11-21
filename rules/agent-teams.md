@@ -54,7 +54,7 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 
 ### Where Work Runs {#where-work-runs}
 
-A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. Kit installs, sweeps and release verification stay on the owner's PC. A worker runs only through the kit's worker runner (`worker.mjs`), on the owner's own feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
+A cloud worker takes only the fixed jobs: tests, builds, gate checks, research, read-only review. A cloud build thread may push its own feature branch. Kit installs, sweeps, the PR, its body and release verification stay on the owner's PC. A worker runs only through `worker.mjs`, on the owner's feature branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
 
 ### Agent Role Table {#agent-role-table}
 
