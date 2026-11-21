@@ -262,3 +262,30 @@ test('the plugin launcher hands an owner\'s hold to owner-grant.cjs only for a m
   fs.writeFileSync(path.join(broken, 'owner-grant.cjs'), 'exports.lift = () => { throw new Error("x"); };');
   assert.equal(lib.liftOwnerHold(hold, { tool_name: 'Bash' }, broken), hold);
 });
+
+// K179: the marketplace file pins the plugin to the release tag and the plugin repo's commit (a git-subdir source, as
+// proven locally: a wrong sha refused the install), and a build is refused off a clean release.
+// why: catches a published plugin whose marketplace entry follows a moving branch, or a build from a changed folder
+test('build plugin writes the marketplace pinned to tag and commit, and refuses a folder off its release (K179)', () => {
+  const kit = path.join(makeTemp('plugin-rel-'), 'kit');
+  fs.mkdirSync(kit);
+  const tar = spawnSync('git', ['archive', '--format=tar', 'HEAD'], { encoding: 'buffer', maxBuffer: 64 * 1024 * 1024 });
+  spawnSync('tar', ['-x', '-C', kit], { input: tar.stdout });
+  const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', '-C', kit, ...a], { encoding: 'utf8' });
+  const version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+  g('init', '-q', '-b', 'main'); g('add', '-A'); g('commit', '-q', '-m', 'release'); g('tag', `v${version}`);
+  const commit = g('rev-parse', 'HEAD').stdout.trim();
+  const out = path.join(makeTemp('plugin-pub-'), 'plugins', 'kit');
+  const market = path.join(path.dirname(path.dirname(out)), '.claude-plugin', 'marketplace.json');
+  const cli = (...a) => spawnSync(process.execPath, [path.join(kit, 'scripts/kit.mjs'), 'build', 'plugin', '--out', out, ...a], { encoding: 'utf8', timeout: 60000, env: { ...process.env, CLAUDE_CODE_REMOTE: '' } });
+  const pluginSha = 'c'.repeat(40);
+  const r = cli('--marketplace', market, '--sha', pluginSha);
+  assert.equal(r.status, 0, r.stderr);
+  assert.deepEqual(JSON.parse(fs.readFileSync(market, 'utf8')).plugins[0].source, { source: 'git-subdir', url: 'https://github.com/GoudyMT/kit-plugin.git', path: 'plugins/kit', ref: `v${version}`, sha: pluginSha });
+  assert.deepEqual(JSON.parse(fs.readFileSync(path.join(out, 'kit-build.json'), 'utf8')), { name: 'kit', version, tag: `v${version}`, commit });
+  assert.match(cli('--marketplace', market, '--sha', 'main').stderr, /40 hex/);
+  fs.appendFileSync(path.join(kit, 'user/kit-hooks/canary.cjs'), '\n');
+  const dirty = cli();
+  assert.equal(dirty.status, 1);
+  assert.match(dirty.stderr, /build plugin refused: .*not a clean release/);
+});

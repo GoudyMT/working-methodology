@@ -315,3 +315,23 @@ test('ci-wait says once at ten minutes that a run is still going, and keeps to i
 	assert.equal((await ciWait({ commit: 'abc1234', every: 60 }, none.deps)).code, 2);
 	assert.match(none.lines.at(-1), /no CI run started/);
 });
+
+// K179 (build 23b): each release's plugin is published pinned to the tag and a commit, so the build must record which
+// kit commit it came from, and that record must be the tag's commit, or the plugin ships files the tag does not hold.
+// why: catches a published plugin built from another commit than the kit tag's
+test('a plugin build whose recorded tag or commit is not the kit tag\'s is missing (K179)', () => {
+	const t = setup();
+	const plugin = kitTemp.makeTemp('rc-plugin-');
+	const record = (o) => fs.writeFileSync(path.join(plugin, 'kit-build.json'), JSON.stringify({ name: 'kit', version: '1.1.0', ...o }));
+	record({ tag: 'v1.1.0', commit: t.merged });
+	const ok = releaseCheck({ ...t.opts, plugin }, t.deps);
+	assert.equal(ok.ok, true, t.lines.join('\n'));
+	assert.ok(t.lines.some((l) => /PASS plugin build pinned to v1\.1\.0/.test(l)), t.lines.join('\n'));
+	record({ tag: 'v1.1.0', commit: 'b'.repeat(40) });
+	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /plugin build pinned to v1\.1\.0: .*bbbbbbbbbbbb/);
+	record({ tag: 'v1.0.9', commit: t.merged });
+	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /records v1\.0\.9/);
+	fs.rmSync(path.join(plugin, 'kit-build.json'));
+	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /kit-build\.json/);
+	assert.equal(argsOf(['v1', '--pr', '5', '--plugin', 'p']).plugin, 'p');
+});

@@ -6,7 +6,8 @@
 //
 // Usage (from the project folder; the PR is the one whose merge is released):
 //   node .claude/release-check.mjs <tag> --pr <n> [--repo <owner/name>] [--copy <release copy>] [--installed <project>]
-//                                  [--result <RESULT.md>]
+//                                  [--result <RESULT.md>] [--plugin <plugin build>]
+//   --plugin      a plugin build (kit.mjs build plugin) whose kit-build.json must record the tag and its commit (K179)
 //   --result      a verify's result file, whose "Re-run: <what>: recorded <n>, re-run <n>" line must match (J1)
 //   --repo        the GitHub repo; by default the one the project's origin remote names
 //   --copy        a release copy whose HEAD must be the tag's commit (the kit's own flow)
@@ -90,7 +91,7 @@ function recordComplete(dir, tag) {
  * Returns:
  *     { ok, missing: [plain lines] }
  */
-export function releaseCheck({ tag, pr, project, repo, copy, installed, result }, deps = {}) {
+export function releaseCheck({ tag, pr, project, repo, copy, installed, result, plugin }, deps = {}) {
 	const gh = deps.gh || ((args) => run('gh', args));
 	const g = deps.git || git;
 	const log = deps.log || ((l) => process.stdout.write(`${l}\n`));
@@ -110,7 +111,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 	// release; a project with no record is not asked.
 	const ver = String(tag).replace(/^v/, '');
 	const recRoot = [copy, project].find((d) => d && fs.existsSync(path.join(d, 'docs', 'builds', `${ver}.json`)));
-	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0) + (recRoot ? 1 : 0);
+	const steps = 5 + (copy ? 1 : 0) + (installed ? 1 : 0) + (result ? 1 : 0) + (recRoot ? 1 : 0) + (plugin ? 1 : 0);
 	const missing = [];
 	let n = 0;
 	const step = (title, why) => {
@@ -189,6 +190,15 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 		const want = tag.replace(/^v/, '');
 		step(`installed kit ${want}`, v === want ? null : `the installed kit in ${installed} is ${v ? one(v) : 'not stamped'}, not ${want}`);
 	}
+	// K179 (build 23b): the published plugin is pinned to the tag, so the build it holds must record the tag's own commit.
+	if (plugin) {
+		let rec = null;
+		try { rec = JSON.parse(fs.readFileSync(path.join(plugin, 'kit-build.json'), 'utf8')); } catch { /* named below */ }
+		step(`plugin build pinned to ${tag}`, !rec ? `${plugin} has no readable kit-build.json (node scripts/kit.mjs build plugin writes it)`
+			: rec.tag !== tag ? `the plugin build records ${one(rec.tag)}, not ${tag}`
+				: !atTag ? `no tag ${tag} on GitHub to compare`
+					: rec.commit !== atTag.sha ? `the plugin build records commit ${one(rec.commit).slice(0, 12)}, not ${tag}'s ${atTag.sha.slice(0, 12)}: rebuild it from the release copy` : null);
+	}
 	// J1 (build 11): one number the result file recorded is run again before the item moves; a re-run that differs
 	// stops it. The line: "Re-run: <what>: recorded <n>, re-run <n>".
 	if (result) {
@@ -210,7 +220,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result }
 /** The arguments, or a reason they are not usable: a flag with no value, or one the check does not know, is refused. */
 export function argsOf(argv) {
 	const o = { tag: argv[0] };
-	const FLAGS = ['--pr', '--repo', '--copy', '--installed', '--result'];
+	const FLAGS = ['--pr', '--repo', '--copy', '--installed', '--result', '--plugin'];
 	for (let i = 1; i < argv.length; i++) {
 		if (!FLAGS.includes(argv[i])) return { why: `unknown argument ${one(argv[i])}` };
 		const v = argv[i + 1];
@@ -225,10 +235,10 @@ export function argsOf(argv) {
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
 	const o = argsOf(process.argv.slice(2));
 	if (o.why) {
-		process.stdout.write(`${o.why}\nusage: node .claude/release-check.mjs <tag> --pr <n> [--repo <owner/name>] [--copy <release copy>] [--installed <project>] [--result <RESULT.md>]\n`);
+		process.stdout.write(`${o.why}\nusage: node .claude/release-check.mjs <tag> --pr <n> [--repo <owner/name>] [--copy <release copy>] [--installed <project>] [--result <RESULT.md>] [--plugin <plugin build>]\n`);
 		process.exitCode = 2;
 	} else {
-		const r = releaseCheck({ tag: o.tag, pr: o.pr, repo: o.repo, project: process.cwd(), copy: o.copy && path.resolve(o.copy), installed: o.installed && path.resolve(o.installed), result: o.result && path.resolve(o.result) });
+		const r = releaseCheck({ tag: o.tag, pr: o.pr, repo: o.repo, project: process.cwd(), copy: o.copy && path.resolve(o.copy), installed: o.installed && path.resolve(o.installed), result: o.result && path.resolve(o.result), plugin: o.plugin && path.resolve(o.plugin) });
 		process.exitCode = r.ok ? 0 : 1;
 	}
 }
