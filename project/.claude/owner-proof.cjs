@@ -78,7 +78,7 @@ const DASH_UNSURE = 'Never by a tool: part of this command is more than the guar
 // definition, a substitution) may change what it runs, so it is held; on 1.46.1 this named the guard files instead.
 const BESIDE_REASON = 'Never by a tool: this names a protected file beside another command the guard cannot read as plain (a program it does not know, a definition, a substitution), which may change what the read runs. Run the read as a command of its own.';
 const GUARD_REASON = 'Never by a tool: the kit\'s guards, the git hooks and .git/config are protected files, written only by kit.mjs install; the report channel\'s kit-report.json and kit-scrub-words.json are the owner\'s, and kit-reports/ is written by kit-report.mjs. Read them, or ask the owner to reinstall the kit or change their own file.';
-const SETTINGS_REASON = 'a write to a settings file or the bounds file, which wire the guards and the loop';
+const SETTINGS_REASON = 'a write to a settings file, the bounds file or .mcp.json, which wire the guards, the loop and the MCP servers a session starts';
 
 // sed counts as a reader only as -n with one literal print of a line or a range (5p, 1,20p, 3,$p): any other
 // script may hold w, W, e or an s///w that writes a file or runs a program (the plan check's P3).
@@ -284,6 +284,9 @@ function settingsShape(p) {
 	for (let i = 0; i + 1 < p.length; i++) {
 		if (fits(p[i], '.claude') && p.length === i + 2 && (fits(p[i + 1], 'settings.json') || fits(p[i + 1], 'settings.local.json') || fits(p[i + 1], 'bounds.json'))) return true;
 	}
+	// K217 (build 23a): .mcp.json names the MCP servers Claude Code starts with a session, so a planted server runs code
+	// at the next start; it takes the same yes. Held in any folder, the safe side: a folder may be opened as a project.
+	if (p.length && fits(p[p.length - 1], '.mcp.json')) return true;
 	// The user's own settings when the Claude folder has another name (the 1.29.0 sweep).
 	const h = homeParts();
 	if (h.length && p.length === h.length + 1 && h.every((x, k) => p[k] === x) && (fits(p[p.length - 1], 'settings.json') || fits(p[p.length - 1], 'settings.local.json'))) return true;

@@ -97,12 +97,16 @@ function findProject(input, only = false) {
 	return null;
 }
 
-// The settings env keys that change how node, git or the guards start, or where they look. A settings env reaches
+// The settings env keys that change how node, git or the guards start, or where they look. K217 (build 23a): an API base
+// URL (ANTHROPIC_BASE_URL and its Bedrock, Vertex and Foundry kin) sends every prompt and the key to another host. A settings env reaches
 // every hook and every command Claude Code runs, so one of these in a project file is a hold.
 // The shell's own start-up variables are here too (the review of 670b3a2): an exported function, SHELLOPTS with PS4,
 // or BASH_ENV runs code in the shell line before node starts.
-const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_SSH\w*|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|HTTPS?_PROXY|ALL_PROXY|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*)$/i;
+const ENV_KEYS = /^(NODE_OPTIONS|NODE_PATH|PATH|PATHEXT|LD_PRELOAD|LD_LIBRARY_PATH|DYLD_INSERT_LIBRARIES|DYLD_LIBRARY_PATH|BASH_ENV|ENV|SHELLOPTS|BASHOPTS|PS4|PROMPT_COMMAND|BASH_XTRACEFD|IFS|CDPATH|GLOBIGNORE|BASH_FUNC_.*|GIT_CONFIG\w*|GIT_SSH\w*|GIT_PROXY_COMMAND|GIT_ASKPASS|SSH_ASKPASS|HTTPS?_PROXY|ALL_PROXY|GIT_DIR|GIT_WORK_TREE|GIT_COMMON_DIR|GIT_EXEC_PATH|CLAUDE_CONFIG_DIR|CLAUDE_PROJECT_DIR|KIT_\w*|ANTHROPIC_\w*BASE_URL)$/i;
 
+// K217 (build 23a): apiKeyHelper is a command Claude Code runs for the API key, so a settings file that sets one runs
+// code of its own choosing at every start.
+const HELPER = '"apiKeyHelper" runs a command of the settings file\'s choosing for the API key';
 /** Why a settings file's text would take the guards off, or ''. */
 function settingsProblem(text) {
 	const body = String(text).replace(/^\uFEFF/, '');
@@ -111,10 +115,12 @@ function settingsProblem(text) {
 	if (!s || typeof s !== 'object') {
 		// A file JSON.parse cannot read may still be one another reader takes (a comment, a stray comma): the safe side.
 		if (/"disableAllHooks"\s*:\s*true/.test(body)) return '"disableAllHooks": true turns off every hook, the kit guards with them';
+		if (/"apiKeyHelper"\s*:/.test(body)) return HELPER;
 		const named = [...body.matchAll(/"([^"]+)"\s*:/g)].map((m) => m[1]).filter((k) => k !== 'env' && ENV_KEYS.test(k));
 		return named.length ? `its env may set ${[...new Set(named)].join(', ')}, which changes how the guards start` : '';
 	}
 	if (s.disableAllHooks === true) return '"disableAllHooks": true turns off every hook, the kit guards with them';
+	if (Object.prototype.hasOwnProperty.call(s, 'apiKeyHelper')) return HELPER;
 	const env = s.env && typeof s.env === 'object' ? Object.keys(s.env).filter((k) => ENV_KEYS.test(k)) : [];
 	if (env.length) return `its env sets ${env.join(', ')}, which changes how the guards start or where they look`;
 	return '';
