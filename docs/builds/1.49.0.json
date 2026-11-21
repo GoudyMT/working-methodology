@@ -4,7 +4,7 @@
  "level": "minor",
  "area": "Safety",
  "title": "feat: safe program starts, owner push yes and fewer false holds",
- "headline": "Every program the installed kit starts by name now starts from node's own folder, so a git.exe or gh.exe left in a project never runs; an owner push past the bound needs the owner's pop-up yes; sweep reviewers read the rules from the merge base; on Windows the guard start script finds git again; and several harmless reads the guards held now pass.",
+ "headline": "Every program the installed kit starts by name now starts from node's own folder; an owner push past the bound needs the owner's yes; reviewers read rules from the merge base; and harmless reads the guards held now pass.",
  "alignment": "v1.49.0 is build 23a of the v2.0 plan: K250 first, then K209, K212 to K215, K211, R7.1 with K224, K217, K243, K244, K218, K210, K207, K208, K204, K251, K226 to K229, K241, K242, K252, K154 and K186, each reproduced on the released 1.48.0 or proven by a failing test first.",
  "items": [
   {
@@ -185,7 +185,7 @@
    "reach": "projects",
    "text": "Tool writes to `.mcp.json`, `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.",
    "evidence": "project/.claude/owner-proof.cjs",
-   "where": "MCP servers, plugins and agents",
+   "where": "MCP servers and plugins",
    "before": "Not held",
    "after": "Need the owner's yes",
    "test": "tests/owner-proof.test.mjs::claude mcp add, --mcp-config, .claude.json and an agent file take the owner's yes; listing and reading run"
@@ -461,20 +461,20 @@
    "why": "New holds, a new commit check and a new CI check reach every project."
   },
   {
-   "decision": "The K229 test reads `find -delete` from the `.claude` folder, not tests",
-   "why": "The first case held only because of its pipe; the same command without one ran on 1.48.0, so the case now names the folder the hold is for."
+   "decision": "The K229 test reads `find -delete` from the `.claude` folder",
+   "why": "Its first case held only because of its pipe."
   },
   {
    "decision": "A short closeout answer is quoted by its own row, one row per answer",
-   "why": "decide gives no words_from below three words, so matching short answers only by words_from would leave every one unrecordable."
+   "why": "decide records no words_from below three words."
   },
   {
    "decision": "Four sweep findings closed with no change",
-   "why": "D2: the yes is spent at the hook end; D6: the approval log lets one sweep run at a time; T5 and V5: the canary is quiet by construction on a good record, and github() always starts gh."
+   "why": "Each was shown not real or right as built; the sweep report gives each reason."
   },
   {
    "decision": "R1 ships as hardening with no test",
-   "why": "125 probe commands beside inert node code gave the same decision before and after; no input shows the wider strip mattered."
+   "why": "125 probe commands gave the same decision before and after."
   }
  ],
  "upgrading": "Run install user, then install project: the guard start script, the launcher, the commit-msg and pre-push hooks, owner-proof, owner-yes, the safe-spawn helper copies, name-check, state.mjs, loop.mjs and the closeout and brainstorm skills change. The owner's own push now asks for the ref's name at their terminal (or a pop-up yes in a session); a person whose name matches a code tool commits once listed with `git config --add kit.allowedIdent \"<name> <email>\"`.",
@@ -540,7 +540,7 @@
     "id": "S1",
     "severity": "high",
     "security": true,
-    "text": "`claude mcp` and `claude plugin` changes, the flags that load them, `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders need the owner's yes",
+    "text": "MCP server and plugin changes, the flags that load them, and the folders a session loads tools from need the owner's yes",
     "commit": "5e833c9",
     "test": "tests/owner-proof.test.mjs::claude mcp add, --mcp-config, .claude.json and an agent file take the owner's yes; listing and reading run"
    },

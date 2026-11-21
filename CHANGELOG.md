@@ -2,7 +2,7 @@
 
 ## 1.49.0 - 2026-11-21
 
-Every program the installed kit starts by name now starts from node's own folder, so a git.exe or gh.exe left in a project never runs; an owner push past the bound needs the owner's pop-up yes; sweep reviewers read the rules from the merge base; on Windows the guard start script finds git again; and several harmless reads the guards held now pass.
+Every program the installed kit starts by name now starts from node's own folder; an owner push past the bound needs the owner's yes; reviewers read rules from the merge base; and harmless reads the guards held now pass.
 
 ### Added
 - A spawn check in CI fails on any bare-name launch in an installed kit file that does not start from node's own folder, with no list of exceptions.
