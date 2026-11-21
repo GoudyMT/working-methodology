@@ -59,6 +59,8 @@ test('the check passes a launch from node\'s own folder, a full path, the helper
 });
 
 // why: catches a masked offset that moves a finding onto the wrong line of a long file
+// planted: {"file":"scripts/spawn-check.mjs","was":"if (/[(,=:[!&|?{};+\\-*%<>~^]/.test(last)) return true;","to":"if (/[(,=:[!&|?{};+\\-*%<>~^)]/.test(last)) return true;"}
+// planted: {"file":"scripts/spawn-check.mjs","was":"if (src[j] === '[') cls = true;","to":"if (src[j] === '[') cls = false;"}
 test('the mask keeps every offset and line, and blanks only comments and the inside of literals', () => {
 	const src = "a('x') // c\n/* d\ne */ b(/q/g, `t${1}`)\n";
 	const m = mask(src);
@@ -66,9 +68,19 @@ test('the mask keeps every offset and line, and blanks only comments and the ins
 	assert.equal(m.split('\n').length, src.split('\n').length);
 	assert.equal(m.slice(0, 6), "a(' ')");
 	assert.doesNotMatch(m, /c|d|e \*/);
+	// The build 23a sweep (V3): a slash after a value is division, a quote inside a regex starts no string, and a
+	// template is blanked through its ${...}; either slip would blank the code after it and hide a launch.
+	const div = 'const q = (a) / b / c;';
+	assert.equal(mask(div), div);
+	assert.deepEqual(programs("const r = /[/]'/; spawnSync('git', []);"), ['1 spawnSync(git)']);
+	assert.deepEqual(programs("const q = (a) / 2; spawnSync('git', []); const z = 1 / 2;"), ['1 spawnSync(git)']);
+	assert.equal(mask('const t = `a${b}c`;'), 'const t = `      `;');
 });
 
 // why: guards the owner's pick of 2026-11-21 (every launch in project/ and user/ is checked, with no list of known-bad sites)
+// planted: {"file":"scripts/spawn-check.mjs","was":"const EXTS = /\\.(mjs|cjs|js)$/;","to":"const EXTS = /\\.(mjs|cjs)$/;"}
+// planted: {"file":"scripts/spawn-check.mjs","was":"if (e.name !== 'node_modules') walk(p);","to":"walk(p);"}
+// planted: {"file":"scripts/spawn-check.mjs","was":"const at = args.indexOf('--dirs');","to":"const at = args.indexOf('--dir');"}
 test('the command scans project/ and user/ of a kit root, names each file and line, and fails until none is left', () => {
 	const root = kitTemp.makeTemp('spawn-check-');
 	const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
@@ -90,6 +102,15 @@ test('the command scans project/ and user/ of a kit root, names each file and li
 	assert.equal(ok.status, 0, ok.stdout);
 	assert.match(ok.stdout, /^0 unsafe bare-name launches\n$/);
 	assert.equal(spawnSync(process.execPath, [SCRIPT, path.join(root, 'nowhere')], { encoding: 'utf8' }).status, 2, 'a root with nothing to read is no pass');
+	// The build 23a sweep (V4): a .js file is read, a package folder is not, and --dirs picks the folders.
+	put('project/.claude/e.js', "spawnSync('git', ['status']);\n");
+	put('project/node_modules/x/f.js', "spawnSync('git', ['status']);\n");
+	put('scripts/g.mjs', "\nspawnSync('ps', []);\n");
+	assert.deepEqual(scan(root).map((f) => `${f.file}:${f.line}`), ['project/.claude/e.js:1']);
+	const only = spawnSync(process.execPath, [SCRIPT, root, '--dirs', 'scripts'], { encoding: 'utf8' });
+	assert.equal(only.status, 1, only.stdout + only.stderr);
+	assert.deepEqual(only.stdout.trim().split(/\r?\n/).slice(0, 2), ["scripts/d.mjs:1 spawnSync('git')", "scripts/g.mjs:2 spawnSync('ps')"]);
+	assert.equal(spawnSync(process.execPath, [SCRIPT, root, '--dirs', 'nowhere'], { encoding: 'utf8' }).status, 2);
 });
 
 // The build 23a sweep (V2, F4): child_process under another name, a call renamed as it is taken out, a program held in
@@ -114,38 +135,6 @@ test('the check follows child_process under another name, a renamed call, a prog
 		["// import * as proc from 'child_process'\nproc.spawnSync('git');", []],
 	];
 	for (const [src, want] of cases) assert.deepEqual(programs(src), want, src);
-});
-
-// The build 23a sweep (V3): the mask test showed comments and literals blanked, not that a slash after a value is
-// division or that a quote inside a regex starts no string; either slip blanks the code after it and hides a launch.
-// why: catches a mask that reads division as a regex or a quote in a regex as a string, and so hides a launch after it
-// planted: {"file":"scripts/spawn-check.mjs","was":"if (/[(,=:[!&|?{};+\\-*%<>~^]/.test(last)) return true;","to":"if (/[(,=:[!&|?{};+\\-*%<>~^)]/.test(last)) return true;"}
-// planted: {"file":"scripts/spawn-check.mjs","was":"if (src[j] === '[') cls = true;","to":"if (src[j] === '[') cls = false;"}
-test('the mask reads division as division and a quote inside a regex as part of it, so a launch after either is found', () => {
-	const div = 'const q = (a) / b / c;';
-	assert.equal(mask(div), div);
-	assert.deepEqual(programs("const r = /[/]'/; spawnSync('git', []);"), ['1 spawnSync(git)']);
-	assert.deepEqual(programs("const q = (a) / 2; spawnSync('git', []); const z = 1 / 2;"), ['1 spawnSync(git)']);
-	assert.equal(mask('const t = `a${b}c`;'), 'const t = `      `;');
-});
-
-// The build 23a sweep (V4): the command test had no .js file, no node_modules folder and no --dirs.
-// why: guards the owner's pick of 2026-11-21 (every installed .js file is read, a package folder is not, and --dirs picks the folders)
-// planted: {"file":"scripts/spawn-check.mjs","was":"const EXTS = /\\.(mjs|cjs|js)$/;","to":"const EXTS = /\\.(mjs|cjs)$/;"}
-// planted: {"file":"scripts/spawn-check.mjs","was":"if (e.name !== 'node_modules') walk(p);","to":"walk(p);"}
-// planted: {"file":"scripts/spawn-check.mjs","was":"const at = args.indexOf('--dirs');","to":"const at = args.indexOf('--dir');"}
-test('the command reads .js files, skips node_modules, and reads only the folders --dirs names', () => {
-	const root = kitTemp.makeTemp('spawn-check-dirs-');
-	const put = (rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
-	put('project/.claude/a.js', "spawnSync('git', ['status']);\n");
-	put('project/node_modules/x/b.js', "spawnSync('git', ['status']);\n");
-	put('user/c.cjs', "spawnSync('gh', ['api']);\n");
-	put('scripts/d.mjs', "\nspawnSync('ps', []);\n");
-	assert.deepEqual(scan(root).map((f) => `${f.file}:${f.line}`), ['project/.claude/a.js:1', 'user/c.cjs:1']);
-	const only = spawnSync(process.execPath, [SCRIPT, root, '--dirs', 'scripts'], { encoding: 'utf8' });
-	assert.equal(only.status, 1, only.stdout + only.stderr);
-	assert.deepEqual(only.stdout.trim().split(/\r?\n/).slice(0, 2), ["scripts/d.mjs:2 spawnSync('ps')", '1 unsafe bare-name launch: start each from node\'s own folder, through safe-spawn.cjs (or its options inline in a guard that must load alone)']);
-	assert.equal(spawnSync(process.execPath, [SCRIPT, root, '--dirs', 'nowhere'], { encoding: 'utf8' }).status, 2);
 });
 
 // why: guards the owner's pick of 2026-11-21 (the kit's own installed files hold no unsafe launch, with no list of exceptions)

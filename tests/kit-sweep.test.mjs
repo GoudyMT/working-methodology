@@ -722,6 +722,7 @@ test('C4: the guard starts each role once, by the sweep and role its brief names
 });
 
 // why: guards rule:outward-acts
+// planted: {"file":"user/kit-hooks/sweep-guard.cjs","was":"const headOf = (d) => { if (!heads.has(d)) heads.set(d,","to":"const headOf = (d) => { heads.set(d,"}
 test('C9f: the guard reads each folder\'s HEAD once, however long the log', () => {
   const dir = sweepRepo();
   // git's own trace counts its runs, on every system; a shim script would not run on Windows, the only CI system. The

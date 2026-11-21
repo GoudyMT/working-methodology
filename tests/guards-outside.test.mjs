@@ -1921,12 +1921,15 @@ test('a folder list gone or changed since install holds every call until the own
 // The build 23a sweep (F5): the start script gave the launcher /usr/bin and /bin only, so on a Mac or Linux machine whose
 // git sits in /usr/local/bin or /opt/homebrew/bin (Homebrew, a source build) the guards could not ask git anything, the
 // K250 symptom off Windows. Those folders now follow the system ones; Git for Windows keeps its own /cmd first.
-// why: catches guards that cannot find git on a Mac or Linux machine
+// why: guards rule:outward-acts (the guards must reach git on a Mac or Linux machine, never a git on the session PATH)
 test('the guard start script gives the launcher the system folders, then the Mac and Linux git folders', () => {
 	const fakes = kitTemp.makeTemp('start-path-');
 	const show = path.join(fakes, 'show.cjs');
 	fs.writeFileSync(show, "process.stdout.write(process.env.PATH);");
-	const start = path.resolve('user/kit-tools/kit-start.sh');
+	// A copy in a temp folder: the script keeps its miss count beside itself, never in the kit source.
+	const start = path.join(kitTemp.makeTemp('start-copy-'), 'kit-tools', 'kit-start.sh');
+	fs.mkdirSync(path.dirname(start));
+	fs.copyFileSync(path.resolve('user/kit-tools/kit-start.sh'), start);
 	const r = spawnSync(BASH, ['-c', `sh '${posix(start)}' '${posix(process.execPath)}' '${posix(show)}'`], { input: '{}', encoding: 'utf8', env: ENV, timeout: 30000 });
 	assert.equal(r.status, 0, r.stderr);
 	if (process.platform === 'win32') {
@@ -1934,7 +1937,7 @@ test('the guard start script gives the launcher the system folders, then the Mac
 		assert.match(r.stdout.split(';')[0], /[\\/]cmd$/i, r.stdout);
 		return;
 	}
-	assert.equal(r.stdout, '/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin');
+	assert.equal(r.stdout, '/usr/bin:/bin:/usr/local/bin:/opt/homebrew/bin'); // pin: 1 (the shell reads the PATH in order)
 });
 
 // Code blocking every call with only "exit 127" or "timed out". kit-start.sh runs it with a 4 second limit, retries a

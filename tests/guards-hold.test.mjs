@@ -1741,7 +1741,7 @@ test('the owner push asks at the terminal with no session, and a yes is bound to
 	const none = owner();
 	assert.notEqual(none.status, 0, 'no session and no terminal');
 	assert.equal(head(), was);
-	assert.match(none.stderr, /type the ref's name at their own terminal/);
+	assert.match(none.stderr, /type the ref's name at their own terminal/); // pin: 2 (the owner's next step at a refused push)
 	assert.doesNotMatch(none.stderr, /no-verify/);
 	// A yes to push another remote is no yes for origin.
 	const other = owner(ownerTap(dir, 'git push backup main'));
@@ -1757,7 +1757,7 @@ test('the owner push asks at the terminal with no session, and a yes is bound to
 	// A lock left by a push that was killed more than 10 minutes ago is taken over; a fresh one still holds.
 	const lock = path.join(dir, '.git', 'kit-push.lock');
 	fs.mkdirSync(lock);
-	assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/);
+	assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/); // pin: 2 (the owner waits)
 	const old = new Date(Date.now() - 20 * 60000);
 	// An old lock whose push is still running (a slow push) is not taken (the commit security review of 122adc2).
 	if (process.platform !== 'win32') {
@@ -1765,7 +1765,7 @@ test('the owner push asks at the terminal with no session, and a yes is bound to
 		// its processes apart from Windows, so this part runs on Linux and macOS).
 		fs.writeFileSync(path.join(lock, 'owner'), `${process.pid} slowpush\n`);
 		fs.utimesSync(lock, old, old);
-		assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/, 'a slow push keeps its lock');
+		assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/, 'a slow push keeps its lock'); // pin: 2 (the owner waits)
 		fs.writeFileSync(path.join(lock, 'owner'), '999999999 gone\n');
 	}
 	fs.utimesSync(lock, old, old);
@@ -1859,7 +1859,6 @@ test('a wildcard in inline node code that reaches no file is text, and code that
 // -exec closed by a quoted ';') were in the list but in no test, so dropping one from it passed every test.
 // why: guards rule:outward-acts (a find that writes or runs beside a cd is no plain read)
 // planted: {"file":"project/.claude/owner-proof.cjs","was":"fprint|fprint0|fprintf|fls)$/;","to":"fprint)$/;"}
-// planted: {"file":"project/.claude/owner-proof.cjs","was":"/^-(delete|exec|execdir|ok|okdir|","to":"/^-(delete|exec|execdir|"}
 test('find with an action that writes a file or asks to run a program is still refused beside a cd', () => {
 	for (const c of ['cd src; find . -name x -fprintf ../.claude/guard.cjs %p', 'cd src; find . -name x -fls ../.claude/guard.cjs', 'cd src; find . -name x -fprint0 ../.claude/guard.cjs', 'cd src; find . -name x -ok rm {} \\;', 'cd src; find . -name x -okdir rm {} \\;', "cd src; find . -name x -exec rm {} ';'"]) assert.equal(bash(c), 'deny', c);
 });

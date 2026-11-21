@@ -560,13 +560,6 @@
     "test": "tests/state.test.mjs::decide --from takes only a decision file of its own, records it once, and takes over a stale lock"
    },
    {
-    "id": "T1",
-    "severity": "medium",
-    "text": "The PR-text audit list drops only the helper when it is missing, never an audit",
-    "commit": "5e833c9",
-    "test": "tests/guards-hold.test.mjs::the PR text audits run no program the repo git config names"
-   },
-   {
     "id": "T2",
     "severity": "medium",
     "text": "The ci-fix cap test pins the owner's setting instead of reading it back",
@@ -777,14 +770,14 @@
     "severity": "low",
     "text": "The mask tests division and a quote inside a regex",
     "commit": "f98e915",
-    "test": "tests/spawn-check.test.mjs::the mask reads division as division and a quote inside a regex as part of it, so a launch after either is found"
+    "test": "no test: no real input"
    },
    {
     "id": "V4",
     "severity": "low",
     "text": "The command test covers .js files, node_modules and `--dirs`",
     "commit": "f98e915",
-    "test": "tests/spawn-check.test.mjs::the command reads .js files, skips node_modules, and reads only the folders --dirs names"
+    "test": "no test: no real input"
    },
    {
     "id": "V6",

@@ -147,6 +147,7 @@ test('the helper starts every program from node\'s own folder, hidden, with a ti
 // helper as the kit's checks do; none of them runs. A plain git, with the same repo and env, runs them (the control).
 // why: guards rule:outward-acts (no program a project or its settings name runs inside the kit's own git reads)
 test('a git read through the helper runs no program the repo or the environment names, where plain git does', () => {
+	assert.ok(fs.existsSync(path.resolve(COPIES[0])), 'the safe-spawn helper is missing');
 	const s = require(path.resolve(COPIES[0]));
 	const dir = kitTemp.makeTemp('git-programs-');
 	const marks = path.join(dir, 'marks');
