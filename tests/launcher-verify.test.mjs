@@ -166,6 +166,7 @@ test('a recorded folder whose parent cannot be listed is not gone', () => {
 // why: catches a session that runs approve.mjs or the merge gate from a Claude folder other than its own
 test('the launcher holds a kit tool run from another Claude folder, and names this session\'s own (K206)', () => {
 	const { home, L } = launcher();
+	assert.equal(typeof L.otherHomeTool, 'function', 'K206: the launcher checks which Claude folder a kit tool runs from');
 	const user = kitTemp.makeTemp('lv-user-');
 	const real = path.join(user, '.claude');
 	for (const d of [home, real]) { fs.mkdirSync(d, { recursive: true }); fs.writeFileSync(path.join(d, 'kit-install.json'), '{}'); }

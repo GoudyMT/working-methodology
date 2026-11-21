@@ -1538,7 +1538,7 @@ test('recall refuses when the CLI\'s own config folder is not the layer it check
 // The 2026-11-21 paired run: the release arm ran on the real Claude folder, so ~/.claude/skills/pre-pr-sweep/approve.mjs
 // was its own copy, while the branch arm on a throwaway reached the release's copy through the same ~ path. Every arm
 // of a gate run now runs on its own throwaway Claude folder; a released real folder is refused before any session.
-// why: catches a gate arm run on the owner's real Claude folder
+// why: guards rule:instruments-and-evals
 test('a recall run refuses a Claude folder that is not a throwaway under kit-probes, before any session', async () => {
   const { checkGateHome } = await recallTools();
   assert.equal(typeof checkGateHome, 'function');

@@ -265,7 +265,7 @@ test('the release arm (K195) gets its installed kit skills and agents in the pro
 
 // The 2026-11-21 paired run (see recall.mjs checkGateHome): every arm of a behaviour gate run is on its own throwaway
 // Claude folder, so ~/.claude never names one arm's layer and not the other's.
-// why: catches a behaviour gate arm run on the owner's real Claude folder
+// why: guards rule:instruments-and-evals
 test('a behaviour run refuses a Claude folder that is not a throwaway under kit-probes, before any session', () => {
 	const real = makeTemp('realhome-');
 	fs.writeFileSync(path.join(real, 'kit-install.json'), JSON.stringify({ version: '1.47.0', release: true, files: {} }));

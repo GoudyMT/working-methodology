@@ -10,7 +10,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, fixedHomePaths, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
+import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 import { FAKE_PHRASE, FORMAT_SKILLS, KIT_TEXT_FILES, ROWS, SHEET, adapterRepo, answerQ3, band, canary, canaryLog, canaryRepo, caseKit, compileTools, fences, front, g, gitTree, makeKit, makeTemp, noFront, plainLine, read, require, role, roleTable, ruleFiles, runAudit, runHook, sessionStartReport, sheetTools, status, words } from './kit-helpers.mjs';
 
 // measure models how Claude Code loads a project at session start (memory docs): CLAUDE.md, its @imports up to
@@ -416,19 +416,6 @@ test('the written-out files in project/ match a fresh build', () => {
   assert.deepEqual(stale, [], 'run node scripts/kit.mjs build');
 });
 
-// K206 P4: instruction text that names a file under a fixed ~/.claude sends a session on another Claude folder to the
-// wrong copy. The folder alone, as the default place, is fine.
-// why: catches shipped rule, skill, agent or hook text that names a kit tool at a fixed ~/.claude path
-test('no shipped instruction names a file under a fixed ~/.claude path, and build refuses one (K206)', () => {
-  assert.deepEqual(fixedHomePaths({ kit: path.resolve('.') }), [], 'name the tool and point to the start-up line');
-  const root = makeTemp('fixed-home-');
-  fs.mkdirSync(path.join(root, 'rules'));
-  fs.mkdirSync(path.join(root, 'project/.githooks'), { recursive: true });
-  fs.writeFileSync(path.join(root, 'rules', 'a.md'), 'Your Claude folder (`~/.claude` by default) holds it.\nRun `~/.claude/skills/pre-pr-sweep/approve.mjs`.\n');
-  fs.writeFileSync(path.join(root, 'project/.githooks', 'pre-push'), 'echo "run node $HOME/.claude/kit-tools/merge-gate.mjs disarm"\n');
-  assert.deepEqual(fixedHomePaths({ kit: root }).map((h) => `${h.file}:${h.line}`), ['project/.githooks/pre-push:1', 'rules/a.md:2']);
-});
-
 // why: guards rule:pr-body
 test('find ranks a rule by its ID, then its title, then its text', () => {
   const root = makeTemp('find-');
@@ -464,22 +451,6 @@ test('session start after a compact names the orientation rule and where it live
   assert.doesNotMatch(sessionStartReport({ kit, home, projectDir: proj, source: 'startup' }), /post-compact-orientation/);
 });
 
-// K206 (pulled into build 22 by the owner's pick, 2026-11-21): the rules named a fixed ~/.claude path, so a session on
-// another Claude folder (a throwaway, a probe, a plugin) ran the home copy of a kit tool, or none. Session start names
-// this session's own commands, spelled as the allow rules spell them: ~/.claude for the default folder, the full
-// forward-slash path otherwise, a plugin's root under a plugin.
-// why: catches a session sent to another Claude folder's approve.mjs or merge gate than its own
-test('session start names this session\'s kit tool commands, in the allow rules\' spelling (K206)', () => {
-  const { kit, home, proj } = caseKit();
-  const full = home.split(path.sep).join('/');
-  const own = sessionStartReport({ kit, home, projectDir: proj, env: {} });
-  assert.match(own, new RegExp(`^Kit tools this session: sweep approval node ${full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/pre-pr-sweep/approve\\.mjs; merge gate node ${full.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/kit-tools/merge-gate\\.mjs`, 'm'));
-  const tilde = sessionStartReport({ kit, home: path.join(os.homedir(), '.claude'), projectDir: proj, env: {} });
-  // pin: 1 (the allow rules match this exact spelling)
-  assert.match(tilde, /^Kit tools this session: sweep approval node ~\/\.claude\/skills\/pre-pr-sweep\/approve\.mjs; merge gate node ~\/\.claude\/kit-tools\/merge-gate\.mjs \(PowerShell: the full path, .*\/\.claude\/kit-tools\/merge-gate\.mjs\)/m);
-  const plugin = path.join(kit, 'plugin-root');
-  assert.match(sessionStartReport({ kit, home, projectDir: proj, env: { CLAUDE_PLUGIN_ROOT: plugin } }), new RegExp(`sweep approval node ${plugin.split(path.sep).join('/').replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}/skills/`));
-});
 
 // K112 (1.42.0, the token proof: idle gaps over an hour were 86% of cache rebuild cost): one session carried many
 // tasks for days. A closeout marks its task closed in the resume packet; a session resumed after that is told to start

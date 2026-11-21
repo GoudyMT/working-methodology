@@ -546,7 +546,9 @@ test('the size band refuses only a measured size past what is allowed, never a m
   assert.equal(count.status, 1, 'a count past its raise');
 });
 
-// why: catches a break at project/.claude/size-band.mjs:79 that no other test catches
+// why: guards rule:size-budgets
+// planted: {"file":"project/.claude/size-band.mjs","was":"if (!Number.isInteger(size) || size < 0) { refusals.push(`${line}: no measured size`); continue; }","to":"if (!Number.isInteger(size) && size < 0) { refusals.push(`${line}: no measured size`); continue; }"}
+// planted: {"file":"project/.claude/size-band.mjs","was":"for (const line of Object.keys(next)) if (next[line] !== limits[line]) console.log(`    ${line}: ${unit(line, limits[line])} -> ${unit(line, next[line])} (measured ${unit(line, measured[line])})`);","to":"for (const line of Object.keys(next)) if (next[line] === limits[line]) console.log(`    ${line}: ${unit(line, limits[line])} -> ${unit(line, next[line])} (measured ${unit(line, measured[line])})`);"}
 test('the size band end check lowers padding and fails a line over its limit', () => {
   const limits = { page: 106050, lazy: 16040, files: 82 };
   const r = bandRun('final', { band, measured: { page: 103000, lazy: 16000, files: 81 }, limits });

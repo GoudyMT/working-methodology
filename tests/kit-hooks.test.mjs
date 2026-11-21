@@ -885,7 +885,8 @@ test('the folder gate names a launcher node that is gone, and only that', () => 
   assert.equal(gate(localProject()).decision, 'block', 'settings with no hooks: a folder without the kit is still stopped');
 });
 
-// why: catches a break at project/.claude/project-map.mjs:25 that no other test catches
+// why: guards rule:visible-tracking
+// planted: {"file":"project/.claude/project-map.mjs","was":"if (!p.id || !p.name) faults.push(`part ${p.id || '?'}: needs an id and a name`);","to":"if (!p.id && !p.name) faults.push(`part ${p.id || '?'}: needs an id and a name`);"}
 test('the project map check passes a sound map and names every fault in a bad one', () => {
   assert.equal(mapRun(mapRepo(GOOD_MAP), ['check']).status, 0);
   const bad = { ...GOOD_MAP, goal: '',
@@ -902,6 +903,8 @@ test('the project map check passes a sound map and names every fault in a bad on
 });
 
 // why: guards rule:visible-tracking
+// planted: {"file":"project/.claude/project-map.mjs","was":"${(map.successBar || []).length ? `<h2>Success bar</h2><ul>${map.successBar.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}","to":"${(map.successBar && []).length ? `<h2>Success bar</h2><ul>${map.successBar.map((s) => `<li>${esc(s)}</li>`).join('')}</ul>` : ''}"}
+// planted: {"file":"project/.claude/project-map.mjs","was":"<table class=\"files\"><thead><tr><th>Part</th><th>Does</th><th>Files</th></tr></thead><tbody>${(map.parts || []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.does)}</td><td>${(p.files || []).map(esc).join('<br>')}</td></tr>`).join('')}</tbody></table>","to":"<table class=\"files\"><thead><tr><th>Part</th><th>Does</th><th>Files</th></tr></thead><tbody>${(map.parts && []).map((p) => `<tr><td>${esc(p.name)}</td><td>${esc(p.does)}</td><td>${(p.files || []).map(esc).join('<br>')}</td></tr>`).join('')}</tbody></table>"}
 test('the project map renders one self-contained page with states as words, and refuses a map that fails its check', () => {
   const dir = mapRepo(GOOD_MAP);
   const out = path.join(dir, 'map.html');
