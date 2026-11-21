@@ -2,33 +2,65 @@
 
 ## 1.49.0 - 2026-11-21
 
-Every program the installed kit starts by name now starts from node's own folder, so a git.exe or gh.exe left in a project never runs; owner pushes to main need the owner's pop-up yes; reviewers read the rules from the merge base; and several guard holds that cost clicks now let plain reads through.
+Every program the installed kit starts by name now starts from node's own folder, so a git.exe or gh.exe left in a project never runs; an owner push past the bound needs the owner's pop-up yes; sweep reviewers read the rules from the merge base; on Windows the guard start script finds git again; and several harmless reads the guards held now pass.
 
 ### Added
-- One safe-spawn helper starts every installed kit launch (git, gh, ps) from node's own folder, with a time limit and the current-folder lookup off; a spawn check in CI fails on any bare-name launch that does not use it, with no list of exceptions.
+- A spawn check in CI fails on any bare-name launch in an installed kit file that does not start from node's own folder, with no list of exceptions.
+- The spawn check names each bare-name launch with no safe folder, in every form a kit file writes one.
+- The spawn check passes a launch from node's own folder, a full path, the helper, and text that only names a call.
+- The spawn check reads code only, blanking comments and the inside of literals and keeping every line.
+- The spawn check scans project/ and user/, names each file and line, and fails until none is left.
+- An optional ci-fix cap halts a loop after that many red CI rounds and resets on green.
+- loop drop ends a plan whose lock will not come, on the owner's Yes, unscored.
 - The closeout lists each owner answer no decision row quotes, and fails until each is recorded or marked not a decision.
-- The commit-msg hook refuses a commit whose author or committer is named after a code tool.
+- An answer recorded with state.mjs decide is not named, and a session with no answers passes.
 
 ### Changed
-- A self-found list row can go done only with a recorded repro (a verify file and a throwaway, ci or real-use measure); `list` shows it as SUSPECT until then.
-- The plan shadow counts agreement only when its verdict named the risk the owner refused over, and it runs where plans are locked; an optional ci-fix cap halts a loop after that many red CI rounds and resets on green.
-- The brainstorm sheet refuses a second "What I thought:" line and names an empty sealed or sent line; step 1 carries the learn-first line; SOURCES.md records the product-brainstorming copy checked.
+- The spawn check follows child_process under any name, a renamed call and a program held in a const, and reads a cwd only at the top of the options.
+- With no author check in the base copy, CI runs the PR copy for it and says so.
+- A self-found list row can go done or closed only with a recorded repro and a measured label; list shows it as SUSPECT until then.
+- The plan step needs its self-approval line first, and the streak counts only plans refused over a risk the verdict named.
+- The plan shadow counts agreement only when its verdict named the risk the owner refused over.
+- A plan locked with no loop run open records its verdict and is scored from the owner's answers.
 
 ### Fixed
-- A quoted pattern beside a folder glob, a quoted ${VAR} in a read, a quoted bracket after cd, and plain rg, find, echo, date and npm ls reads are no longer held as guard writes or deletes.
-- One wildcard over many folders (du -sh node_modules/*) is no longer held for the folder count.
 - On Windows the guard start script left the launcher no git, so a project with git's worktree config on had every tool call held; the launcher now gets Git for Windows' own folder, never the session's PATH.
-- The word-check test plants a word in a nested folder.
+- On a Mac or Linux machine whose git sits in /usr/local/bin or /opt/homebrew/bin, the guard start script finds it, after the system folders.
+- `decide --from` takes only a .json file of its own, refuses the same decision twice, and takes over a lock left by a stopped run.
+- The brainstorm sheet refuses a second "What I thought:" line inside an answer, naming the question.
+- The brainstorm sheet names an empty sealed or sent line as the cause.
+- The closeout's answer scan lists a decision asked with a code span, counts each answer once, and reads the project from a subfolder.
+- A quoted ${VAR} path in a read is no longer held as a possible delete.
+- A quoted pattern beside a folder glob reads as a read.
+- A bracket inside quotes after a cd is text, not a group, so the cd is followed.
+- Plain rg, find, echo, date and npm ls read as readers in their safe forms, so a relative script after a cd passes (K186).
+- A program piped into a reader after a cd keeps the folder, so the reads after it are no longer held.
+- A wildcard in inline node code that can reach no file is read as text; code that lists, writes or runs is still read strictly.
+- One wildcard over many folders (du -sh node_modules/*) is no longer held for the folder count.
 - The link test skips where Windows gives no symlink rights, instead of failing.
 
 ### Security
-- gh in kit-report, git in report-scrub and visuals, and every other installed launch start from node's own folder (planted program lookup on Windows).
-- `state.mjs decide --from` reads and deletes only a file inside the project.
-- A push marked as the owner's (KIT_OWNER_PUSH) needs the owner's pop-up yes for each ref; a script that clears the agent markers can no longer push main.
-- One yes-record test is shared by the owner-yes reader and the use check, with a canary that refuses when the pop-up record changes shape.
-- Agent writes to .mcp.json need the owner's yes; the settings check names an API base URL and an apiKeyHelper.
+- One safe-spawn helper starts every installed kit launch (git, gh, ps) from node's own folder, with a time limit, so a git.exe or gh.exe left in a project never runs.
+- The three installed copies of the safe-spawn helper are kept the same bytes.
+- kit-report runs gh from node's own folder.
+- The report scrub runs git from node's own folder.
+- Both installed copies of visuals run git from node's own folder.
+- The kit's own git runs no program the repo or the session's settings name (an external diff, a textconv or clean filter, an index hook), and a read fetches nothing.
+- A push marked as the owner's (`KIT_OWNER_PUSH`) needs the owner: they type the ref's name at their own terminal, or in a session give a pop-up yes for that push and remote, fresh for ten minutes.
+- The state decide command reads and deletes its from file only inside the project.
+- The decide command refuses a from file reached through a junction.
+- One yes-record test is shared by the owner-yes reader and the use check; when the pop-up record changes shape, the refusal names why (the canary), on a push too.
+- The use check reads the pop-up record with the guards' own yes-record test.
+- Tool writes to `.mcp.json`, `.claude.json` and the `agents`, `skills`, `commands` and `plugins` folders, `claude mcp` and `claude plugin` changes, and the flags that load them need the owner's yes.
+- The settings check names an API base URL and an apiKeyHelper.
+- The launcher names a settings file that reroutes the model, trusts another certificate, exports telemetry, names a git program or runs a command as a fault.
+- The commit-msg hook refuses a commit whose author or committer names a code tool or its maker's domain, however it is spelled, names each repair, and passes a person the owner lists in `kit.allowedIdent`.
+- Install wires the hooks path, so the author check runs in an installed project.
+- CI's branch and commit name step also checks each PR commit's author and committer.
 - The sweep's reviewers and its canary read the rules block from the merge base, so a branch cannot change the rules its own reviewers check.
+- Where the base holds the rules, an untracked index or rules file cannot name the block, and the base copy and its phrase are kept in the git folder.
 - Nested and side-by-side brace groups are expanded as bash expands them, so a guarded file named through them is still held.
+- npm ls reads as a plain read only with its display options; a config, a script or a shortened option keeps the strict reading.
 
 ## 1.48.0 - 2026-11-21
 
