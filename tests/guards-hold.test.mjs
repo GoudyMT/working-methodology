@@ -1755,6 +1755,15 @@ test('the owner push asks at the terminal with no session, and a yes is bound to
 	fs.mkdirSync(lock);
 	assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/);
 	const old = new Date(Date.now() - 20 * 60000);
+	// An old lock whose push is still running (a slow push) is not taken (the commit security review of 122adc2).
+	if (process.platform !== 'win32') {
+		// This test's own process is running, so a lock naming it is a push still under way (Git Bash on Windows numbers
+		// its processes apart from Windows, so this part runs on Linux and macOS).
+		fs.writeFileSync(path.join(lock, 'owner'), `${process.pid} slowpush\n`);
+		fs.utimesSync(lock, old, old);
+		assert.match(owner(ownerTap(dir, 'git push origin main')).stderr, /another push on the owner's yes is running/, 'a slow push keeps its lock');
+		fs.writeFileSync(path.join(lock, 'owner'), '999999999 gone\n');
+	}
 	fs.utimesSync(lock, old, old);
 	const taken = owner(ownerTap(dir, 'git push origin main'));
 	assert.equal(taken.status, 0, taken.stderr);

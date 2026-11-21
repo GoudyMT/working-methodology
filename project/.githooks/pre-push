@@ -47,11 +47,28 @@ remote_default() {
 }
 # The lock two pushes on one yes would race for. A lock older than 10 minutes was left by a push that was killed (the
 # build 23a sweep: a closed terminal left it, and every later owner push waited on it), so it is taken over.
+# The lock names its owner (this hook's pid and a nonce): it is taken over only when older than 10 minutes and its
+# owner is no longer running, and only its owner removes it (the commit security review: a slow push kept its lock).
+lock_me="$$ $(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
 take_lock() {
-  if mkdir "$common/kit-push.lock" 2>/dev/null; then return 0; fi
-  if [ -n "$(find "$common/kit-push.lock" -maxdepth 0 -mmin +10 2>/dev/null)" ] && rmdir "$common/kit-push.lock" 2>/dev/null && mkdir "$common/kit-push.lock" 2>/dev/null; then return 0; fi
-  echo "Push blocked: another push on the owner's yes is running ($common/kit-push.lock). Wait for it; a lock older than 10 minutes is taken over." >&2
+  l="$common/kit-push.lock"
+  if mkdir "$l" 2>/dev/null; then printf '%s\n' "$lock_me" > "$l/owner"; return 0; fi
+  if [ -n "$(find "$l" -maxdepth 0 -mmin +10 2>/dev/null)" ]; then
+    pid=$(cut -d' ' -f1 "$l/owner" 2>/dev/null)
+    case "$pid" in ''|*[!0-9]*) pid="" ;; esac
+    if [ -z "$pid" ] || ! kill -0 "$pid" 2>/dev/null; then
+      if mv "$l" "$l.stale.$$" 2>/dev/null && mkdir "$l" 2>/dev/null; then
+        rm -rf "$l.stale.$$"
+        printf '%s\n' "$lock_me" > "$l/owner"
+        return 0
+      fi
+    fi
+  fi
+  echo "Push blocked: another push on the owner's yes is running ($common/kit-push.lock). Wait for it; a lock older than 10 minutes whose push is no longer running is taken over." >&2
   return 1
+}
+drop_lock() {
+  [ "$(cat "$common/kit-push.lock/owner" 2>/dev/null)" = "$lock_me" ] && rm -rf "$common/kit-push.lock"
 }
 # The push bound and the secret scan, for every pusher (K163).
 {
@@ -68,7 +85,7 @@ take_lock() {
     # line this push writes spends the yes.
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
     take_lock || exit 1
-    trap 'rmdir "$common/kit-push.lock" 2>/dev/null' EXIT
+    trap drop_lock EXIT
     while read -r lref lsha rref rsha; do
       [ -n "$rref" ] || continue
       kind=""
@@ -137,7 +154,7 @@ EOF
     # The build 21 sweep: two pushes on one yes, at once, both read the log before either wrote it. One push holds the
     # lock from the yes check to the log line that spends the yes.
     take_lock || exit 1
-    trap 'rmdir "$common/kit-push.lock" 2>/dev/null' EXIT
+    trap drop_lock EXIT
     default=$(remote_default "$1" "$2")
     # A new repo is one whose remote has no branch at all, asked of the remote itself: main on a remote that already
     # holds master is no first push (the 1.26.0 sweep, C19). A remote that cannot be asked is not taken as new.
