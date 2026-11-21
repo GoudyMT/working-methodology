@@ -79,7 +79,8 @@ test('only root test folders, test-named files and docs are exempt from the line
 	assert.equal(r.ok, true, r.detail);
 });
 
-// why: guards the small-body check's pass path: a short change to source still fits a small body
+// A short change to source still fits a small body (the check's pass path).
+// why: guards rule:pr-body
 test('a short source change with no gate file passes the small-body check', () => {
 	const dir = repo({ 'src/a.ts': lines(5) }, { 'src/a.ts': lines(8) });
 	assert.equal(lean(dir).ok, true);

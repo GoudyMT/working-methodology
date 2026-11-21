@@ -25,7 +25,8 @@ test('a --just run refuses a label that already holds saved runs', async () => {
   assert.doesNotThrow(() => startRun(fresh, marker, ['2-b'], { just: new Set(['2-b']), name: 'cand-x-1' }));
 });
 
-// why: catches a recall run, a second look above all, that writes over a saved run of the same label
+// A recall run, a second look above all, wrote over a saved run of the same label.
+// why: guards rule:instruments-and-evals
 test('a recall run refuses a label whose run is already saved, before any session', async () => {
   const { recallRun } = await import('../scripts/recall.mjs');
   const outDir = makeTemp('recall-label-');
@@ -79,7 +80,8 @@ test('the prompt hook keeps its rule cues when the closeout cue cannot be record
   fs.mkdirSync(path.join(kit, 'scripts'), { recursive: true });
   copyKitCli(kit);
   fs.mkdirSync(path.join(kit, 'rules'), { recursive: true });
-  fs.copyFileSync(path.resolve('rules/cues.json'), path.join(kit, 'rules', 'cues.json'));
+  // One cue of the kit's shape, written here so the test needs no file from the repo it runs against.
+  fs.writeFileSync(path.join(kit, 'rules', 'cues.json'), JSON.stringify({ cues: [{ rule: 'outward-acts', home: 'AGENTS.md', source: 'rules/core.md', when: '\\bpush\\b', quotes: ['the push bound'] }] }));
   const git = (...a) => assert.equal(spawnSync('git', ['-C', proj, ...a], { encoding: 'utf8' }).status, 0, a.join(' '));
   git('init', '-q', '-b', 'main');
   git('-c', 'user.name=t', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'feat: x');

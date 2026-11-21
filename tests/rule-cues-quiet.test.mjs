@@ -46,7 +46,8 @@ test('the sweep cue names the kit\'s CLAUDE.md template, not the project\'s own 
   assert.match(line, /^rule:pre-pr-deep-sweep \(the kit's CLAUDE\.md template\): /);
 });
 
-// why: catches a regex that runs quadratic on a large paste with no full stop, hanging every prompt
+// A pasted log with no full stop made each cue regex scan to the end of the text: quadratic, hanging every prompt.
+// why: guards rule:context-engineering
 test('a 200 KB prompt of repeated words returns fast with no cue', async () => {
   const kitTools = await import('../scripts/kit.mjs');
   assert.equal(typeof kitTools.ruleCues, 'function', 'the rule cues exist');

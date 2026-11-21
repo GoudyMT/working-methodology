@@ -122,7 +122,8 @@ test('the hold says reading is fine and names this session\'s copy, with a full 
 	assert.ok(!ps.includes('node ~/'), 'PowerShell 5.1 leaves ~ unexpanded');
 });
 
-// why: catches a fix to the guard start script shipping with no test, since it was not on the guarded list
+// A fix to the guard start script shipped with no test, since it was not on the guarded list.
+// why: guards rule:finding-pipeline
 test('the guard start script is a guarded file, so a fix to it owes a test', () => {
 	assert.equal(GUARDED.test('user/kit-tools/kit-start.sh'), true);
 	assert.equal(GUARDED.test('user/kit-tools/kit-launch.cjs'), true);

@@ -276,8 +276,9 @@ test('a second look refuses the first look runs and runs that did not ask the lo
     });
     return { files, mapFile: path.join(dir, out, 'sealed-map.json') };
   };
-  const first = look(firstRuns, 'first', (r, q) => r === 'cand-1' && q === 6);
-  const fresh = look(arms('x-', [6], 3), 'fresh');
+  let first;
+  let fresh;
+  assert.doesNotThrow(() => { first = look(firstRuns, 'first', (r, q) => r === 'cand-1' && q === 6); fresh = look(arms('x-', [6], 3), 'fresh'); }, 'seen twice: both looks are blinded');
   assert.doesNotThrow(() => score(first.files, first.mapFile, 'k', undefined, fresh), 'seen twice: new runs of the lower question alone are a second look');
   const reused = look(firstRuns.filter((f) => !/control/.test(f)), 'reused');
   assert.throws(() => score(first.files, first.mapFile, 'k', undefined, reused), /new sessions/);
