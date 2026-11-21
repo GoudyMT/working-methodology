@@ -1743,3 +1743,14 @@ test('rg, find, echo, date and npm ls read as plain readers, and their writing o
 	assert.equal(decide('PowerShell', { command: 'ls src/**/*.ts; npm ls' }), 'allow');
 	for (const c of ['cd src; find . -name x.js -delete', "cd src; find . -name x.js -exec sh -c 'x' \;", 'cd src; find . -name x.js -execdir rm {} +', 'cd src; find . -name x.js -fprint ../.claude/guard.cjs', 'cd src; rg --pre ./w.sh foo a.js', 'cd src; rg --pre=./w.sh foo a.js', 'cd src; echo x > a.js', 'cd $D; echo x > guard.cjs', 'cd src; echo x > ../.claude/guard.cjs', 'cd src; node ./x.mjs; npm install', 'cd src; node ./x.mjs; npm run build', 'cd src; node ./x.mjs; npm ls --global; npm exec x', 'cd src; date -s 2020-01-01 | head *.mjs', 'cd tests && find dir -name *.md -delete | head', 'cd tests && find dir -name *.md | xargs rm', 'export RIPGREP_CONFIG_PATH=./c; cd src; rg foo a.js', 'cd src; RIPGREP_CONFIG_PATH=./c rg foo a.js', 'cd src; npm_config_script_shell=./x npm ls; node ./x.mjs']) assert.equal(bash(c), 'deny', c);
 });
+
+// K241 (build 23a): bash leaves a brace group with no comma as text ({x}), so a group holding one ({{x},de}) still
+// expands. The reader skipped any group with a brace inside, so tee .clau{{x},de}/guard.cjs (which bash reads as
+// .clau{x}/guard.cjs and .claude/guard.cjs) wrote a guard file past every guard (reproduced on a throwaway copy).
+// Groups side by side did not multiply either ({.,x}{claude,y} is .claude .y xclaude xy), with the same result.
+// why: guards rule:outward-acts (a nested brace must not hide a guarded file from the guards)
+test('a brace group holding a literal {x} is expanded as bash does, so a guarded file it names is still held', () => {
+	for (const c of ['tee .clau{{x},de}/guard.cjs < x', 'cp guard.cjs .clau{{x},de}/', 'tee .claude/gu{ard,{x}}.cjs < x', 'tee {{x},.claude}/owner-proof.cjs < x', 'tee .clau{{{x}},de}/guard.cjs < x', 'tee .claude/settings{{x},.json} < x', 'tee {.,x}{claude,y}/guard.cjs < x', 'tee {.,x}{c,y}laude/settings.json < x', 'tee .claude/gu{a,x}{rd,y}.cjs < x', 'tee .c{l..l}{a,x}ude/guard.cjs < x', 'rm -rf {.,x}{claude,y}', 'tee .clau{{x},d{e,f}}/guard.cjs < x']) assert.notEqual(bash(c), 'allow', c);
+	// Literal braces and plain groups still read as before.
+	for (const c of ['echo {x}', 'ls src/{app,lib}', 'find . -name x -print', 'echo a{b,c}d', 'echo ${HOME}/x', 'cat src/{a,b}{1..2}.txt', 'cat .claude/{guard,owner-proof}.cjs']) assert.equal(bash(c), 'allow', c);
+});
