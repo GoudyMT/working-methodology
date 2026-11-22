@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // U15 (build 24): the flow lock. Five checks on the build flow, each a plain script over saved files; none calls a model.
-//   node user/kit-tools/flow-check.mjs start <plan.md> --role builder     the plan's latest plan-graph run is clean and not older than the plan
+//   node user/kit-tools/flow-check.mjs start <plan.md> --role builder     plan-check names no fault, and the plan's latest plan-graph run at its full path is clean and not older than the plan
 //   node user/kit-tools/flow-check.mjs agents <folder>                   no agent id is both tester and builder, or holds over 3 units or 2 lanes
 //   node user/kit-tools/flow-check.mjs reviews <unit> --dir <folder>     one review record (a second needs the lead's note), findings need a fix record
 //   node user/kit-tools/flow-check.mjs reviewers <ledger.jsonl>          more than 3 units waiting while at most one reviewer is active
@@ -55,11 +55,17 @@ function notesOf(text) {
 	});
 }
 
-// start <plan.md> --role builder: the latest plan-graph line for this plan's name (its folder's git dir) has no faults
-// and is not older than the plan file.
-function start(planArg) {
+// start <plan.md> --role builder: plan-check's checks name no fault first; then the latest plan-graph line for this plan's
+// full path (its folder's git dir; a legacy line with no planPath matches by name) has no faults and is not older than the plan file.
+async function start(planArg) {
 	const plan = path.resolve(planArg);
 	const name = path.basename(plan);
+	// plan-check's checks come first: a plan it refuses never starts, whatever its plan-graph run said.
+	// Loaded here only: plan-check reads the plan graph, and the other subcommands never need it.
+	const { planFaults } = await import('./plan-check.mjs');
+	let faults;
+	try { faults = planFaults(plan); } catch (e) { return bad(`${name}: ${e.message}`); }
+	if (faults.length) return fault(faults.map((f) => `${name} has a plan-check fault: ${f}`));
 	const mtime = fs.statSync(plan).mtimeMs;
 	const g = gitIn(path.dirname(plan), ['rev-parse', '--git-common-dir']);
 	if (g.status !== 0) return fault([`${name} is not in a git repository, so there is no plan-graph log: run plan-graph on it`]);
@@ -67,10 +73,14 @@ function start(planArg) {
 	let lines = [];
 	try { lines = readText(logFile).split(/\r?\n/).filter((l) => l.trim()); } catch (e) { if (e.code !== 'ENOENT') throw e; }
 	let last = null;
+	// Windows and macOS fold case in file names, as lanes.mjs folds a path; the compare folds the same way.
+	const fold = process.platform === 'win32' || process.platform === 'darwin' ? (s) => s.toLowerCase() : (s) => s;
+	const full = fold(plan.replace(/\\/g, '/'));
 	for (const line of lines) {
 		let o;
 		try { o = JSON.parse(line); } catch { return bad(`${logFile} has a line that is not JSON`); }
-		if (o && o.plan === name) last = o;
+		// A line with a planPath is this plan only at that full path; a legacy line with none matches by basename.
+		if (o && (o.planPath === undefined ? o.plan === name : typeof o.planPath === 'string' && fold(o.planPath) === full)) last = o;
 	}
 	if (!last) return fault([`no plan-graph log line for ${name} in ${logFile}: run node .claude/plan-graph.mjs ${planArg} first`]);
 	if (last.faults !== 0) return fault([`plan-graph's latest run of ${name} (${last.at}) reported ${last.faults} fault(s): fix the plan and run plan-graph again`]);
@@ -90,12 +100,17 @@ function agents(folder) {
 	for (const name of fs.readdirSync(folder).sort()) {
 		if (!name.endsWith('.jsonl')) continue;
 		const text = readText(path.join(folder, name));
-		if (!text.split(/\r?\n/).some((l) => l.trim() === 'RECORD:')) continue;
+		const lines = text.split(/\r?\n/);
+		// A file with no word "record" is not a hand-back; one that names it without the exact RECORD: line is a fault.
+		if (!lines.some((l) => l.trim() === 'RECORD:')) {
+			if (lines.some((l) => /record/i.test(l))) out.push(`${name}: no exact RECORD: line`);
+			continue;
+		}
 		const r = check(text);
 		if (!r.ok) { out.push(`${name}: ${r.errors.join('; ')}`); continue; }
 		n++;
 		const role = roleLine(text);
-		if (!role || typeof role.agent !== 'string' || !role.agent) continue;
+		if (!role || typeof role.agent !== 'string' || !role.agent) { out.push(`${name}: its role line has no agent key`); continue; }
 		const e = by.get(role.agent) ?? { roles: new Set(), units: new Set(), lanes: new Set() };
 		by.set(role.agent, e);
 		e.roles.add(role.role);
@@ -120,11 +135,13 @@ function reviews(unit, dir) {
 	if (!files.length) return fault([`no review for ${unit} in ${dir}: the test-reviewer writes ${unit}.review.jsonl`]);
 	const out = [];
 	let findings = 0;
+	const ids = [];
 	files.forEach(({ name }, i) => {
 		const text = readText(path.join(dir, name));
 		const r = check(text, { role: 'test-reviewer' });
 		if (!r.ok) { out.push(`${name}: ${r.errors.join('; ')}`); return; }
 		findings += r.findings.length;
+		ids.push(...r.findings.map((f) => f.id));
 		if (i > 0 && !notesOf(text).some((o) => o.writer === 'lead' && /^second review:/.test(o.note))) {
 			out.push(`${name} is a second review of ${unit} with no lead note: a line {"note":"second review: <why>","writer":"lead"}`);
 		}
@@ -134,6 +151,10 @@ function reviews(unit, dir) {
 	if (hasFix) {
 		const fx = check(readText(path.join(dir, fixName)), { role: 'tester' });
 		if (!fx.ok) out.push(`${fixName}: ${fx.errors.join('; ')}`);
+		// A finding passes only with a fixed line for its id; a note saying "fixed" does not mark it.
+		const fixed = new Set(fx.findings.filter((f) => f.status === 'fixed').map((f) => f.id));
+		const missing = ids.filter((id) => !fixed.has(id));
+		if (missing.length) out.push(`${unit} review finding(s) with no fixed line in ${fixName}: ${missing.join(', ')}`);
 	}
 	if (findings && !hasFix) out.push(`${unit} has ${findings} review finding(s) and no fix record: ${fixName} holds the tester's fixes`);
 	return out.length ? fault(out) : say(`reviews: ${unit} ok, ${files.length} review record(s), ${findings} finding(s)`);
@@ -161,6 +182,8 @@ function reviewers(file) {
 }
 
 // rounds <unit> --dir <folder>: <unit>.checker*.jsonl, a FIX record holds a line VERDICT: FIX. The unit name matches exactly.
+// The verdict is the file's FIRST VERDICT: line: the checker's report puts its verdict first, so a later VERDICT: line is
+// text the report quotes, and L9 pins the first line as the one that counts.
 function rounds(unit, dir) {
 	const fix = fs.readdirSync(dir).filter((name) => {
 		const m = /^(.+)\.checker\d*\.jsonl$/.exec(name);
@@ -217,7 +240,7 @@ function main(argv) {
 }
 
 try {
-	process.exitCode = main(process.argv.slice(2));
+	process.exitCode = await main(process.argv.slice(2));
 } catch (e) {
 	if (!e.code) throw e;
 	process.stderr.write(`flow-check: cannot read ${e.path ?? ''}: ${e.code}\n`);

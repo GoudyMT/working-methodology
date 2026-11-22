@@ -292,3 +292,40 @@ test('S6 spec 3: rules/agent-teams.md stays under 14000 bytes', () => {
 	const bytes = fs.statSync(RULE).size;
 	assert.ok(bytes < MAX_RULE_BYTES, `rules/agent-teams.md is ${bytes} bytes, cap is ${MAX_RULE_BYTES}`);
 });
+
+// A one-unit plan whose Risk and Category cells are given. Its file is not a guard path, so only the cells can make it a guard unit.
+const cellPlan = (risk, category) => ['# Batch plan - x', '', '## Units', '', '| Id | Files | Runs | Risk | Category |', '|---|---|---|---|---|', `| U1 | \`src/a.mjs\` | alone | ${risk} | ${category} |`, '', '## Collision list', ''].join('\n');
+// The checklist subcommand on the cellPlan plan and a log of the given lines.
+const cellChecklist = (risk, category, lines) => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs is missing');
+	const dir = kitTemp.makeTemp('overwatch-');
+	const plan = path.join(dir, 'plan.md');
+	const log = path.join(dir, 'checklist.jsonl');
+	fs.writeFileSync(plan, cellPlan(risk, category));
+	fs.writeFileSync(log, lines.join('\n') + '\n');
+	return spawnSync(process.execPath, [FLOW, 'checklist', log, '--plan', plan], { cwd: dir, encoding: 'utf8' });
+};
+const MERGED_NO_CHECK = [step(T(1), 'U1', 'tests'), step(T(2), 'U1', 'review'), step(T(3), 'U1', 'build'), step(T(4), 'U1', 'merged')];
+const MERGED_AFTER_CHECK = [step(T(1), 'U1', 'tests'), step(T(2), 'U1', 'review'), step(T(3), 'U1', 'build'), step(T(4), 'U1', 'check'), step(T(5), 'U1', 'merged')];
+
+// why: catches a Risk high unit on a non-guard file merged with no check step passing, so a high-risk change ships unchecked.
+test('C23 spec 1: a unit with Risk high and no guard file is an error when merged with no check step, and clean with one', () => {
+	const res = cellChecklist('high', '', MERGED_NO_CHECK);
+	assert.equal(res.status, 1, out(res));
+	assert.match(out(res), /U1/);
+	assert.match(out(res), /check/);
+	// Control: the same unit with a check step before merged is ok.
+	const ok = cellChecklist('high', '', MERGED_AFTER_CHECK);
+	assert.equal(ok.status, 0, out(ok));
+});
+
+// why: catches a Category guard unit on a non-guard file merged with no check step passing, so a guard change marked by its category ships unchecked.
+test('C24 spec 1: a unit with Category guard and no guard file is an error when merged with no check step, and clean with one', () => {
+	const res = cellChecklist('low', 'guard', MERGED_NO_CHECK);
+	assert.equal(res.status, 1, out(res));
+	assert.match(out(res), /U1/);
+	assert.match(out(res), /check/);
+	// Control: the same unit with a check step before merged is ok.
+	const ok = cellChecklist('low', 'guard', MERGED_AFTER_CHECK);
+	assert.equal(ok.status, 0, out(ok));
+});

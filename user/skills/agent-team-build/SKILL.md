@@ -74,6 +74,8 @@ unmarked.
 | **Builder** | the `builder` agent (its own worktree; on the model the step table in `kit.config.json` names: Haiku, one step up on a red rerun) | one unit: a failing test first, the least code, a break check, a local commit, an evidence report | edits outside its file list; lowers a test; pushes; starts agents |
 | **Checker** | the `checker` agent (Opus, read-only) | reviews one high-risk unit: plan fit, goals, rules, test strength, claims vs evidence | edits files; passes a unit on the builder's word |
 | **Scanner** | the `scanner` agent (Haiku, read-only) | lists, counts and locations across many files: a first pass the requester re-checks | judgment, design, code, writes |
+| **Tester** | the `tester` agent (Haiku, its own worktree) | writes one unit's failing tests first, each proved red on an assertion | product code; lowers or skips a test; passes a unit |
+| **Test reviewer** | the `test-reviewer` agent (Sonnet, read-only) | reviews one red commit of tests against the plan's acceptance lines, before any builder starts | edits files; writes or passes tests |
 
 In orchestrated mode the main session is the **overseer** above the lead (`orchestrated.md`, "The layers").
 
@@ -126,7 +128,7 @@ Every build has a written plan file that every agent reads before its unit runs:
    commit; a high, critical, security or owner-rule fix with a test that fails before it, a low or medium one only when a
    real input shows it (rule:finding-pipeline). Then the fix check (rule:finding-pipeline): each fix's test fails on the
    code before it, and CI's test check states each named fix test's verdict. No checker re-reviews the fixes, and
-   there is no re-sweep: a second sweep is the user's call. Group the findings with `{{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`, so each lane shares no file with another, and a fix merges once its tests pass and CI is green, with no re-review. Then
+   there is no re-sweep: a second sweep is the user's call. Group the findings with `{{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`, so each lane shares no file with another (lanes.mjs groups sweep findings only; a plan's units are split by plan-graph), and a fix merges once its tests pass and CI is green, with no re-review. Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
    wait for the user, except a feature-branch push inside the user's bound (rule:outward-acts). For any other push
    the lead asks in a pop-up quoting the exact command, `KIT_PUSH_APPROVED=1` included, and runs it after the user's
@@ -144,11 +146,11 @@ message of each turn, which is what the lead receives.
 
 The build lead runs the batch as the overwatch lead. It is the build lead, not an extra role: it adds no seat to the roles table, and it keeps the lead's tools. Its run, in order:
 
-1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and split the units into lanes with `lanes.mjs`.
-2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief.
+1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and build the lanes from plan-graph's output: units that touch one file share a lane.
+2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. Before a tester's or writer's spawn, the lead writes that agent's file list to `kit-unit-files.txt` with `node {{CLAUDE_HOME}}/kit-tools/unit-lock.mjs --tester --files <tests>`, so the files it may touch are fixed before it starts.
 3. **Answer lane questions.** Each question from a lane gets one answer, written in that lane's log.
-4. **Log every step.** Write each step as a JSON line (unit, step, at, by), and read the checklist after each merge: `node {{CLAUDE_HOME}}/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>`.
-5. **Spin down the teams.** Stop each agent once its lane hands back, and leave none running.
+4. **Log every step.** Write each step as a JSON line (unit, step, at, by), and read the checklist after each merge: `node {{CLAUDE_HOME}}/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>`. After the tester's red commit, the lead locks the unit's row with `node {{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> --lock <unit>`; the count gate then checks the commit's new tests against that row with `node {{CLAUDE_HOME}}/kit-tools/unit-check.mjs <base>..<head> --plan <plan.md> --unit <id>`.
+5. **Spin down the teams.** Stop each agent once its lane hands back, and leave none running. The lead adds an `agent` key (the agent id it got back) to the role line of every hand-back record it saves.
 6. **Merge the lanes.** Merge each lane's branch into the feature branch, in plan order.
 7. **One sweep.** Run the pre-PR sweep once, on the integrated branch.
 8. **Fixes in lanes.** Each finding the sweep names is fixed in its own lane, under the same merge rule.

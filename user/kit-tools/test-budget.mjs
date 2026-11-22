@@ -42,7 +42,7 @@ const categoryOf = (file, map) => {
 };
 
 /**
- * The paths a Files cell names: its backticked paths, or else its comma-separated names.
+ * The paths a Files cell names: each comma-separated part's backticked paths, or else the part itself when it has none.
  *
  * Args:
  *     cell: the cell's text.
@@ -50,10 +50,10 @@ const categoryOf = (file, map) => {
  * Returns:
  *     The paths, in the order the cell gives them.
  */
-export const filesOf = (cell) => {
-	const ticked = [...String(cell).matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-	return (ticked.length ? ticked : String(cell).split(',')).map((p) => p.trim()).filter(Boolean);
-};
+export const filesOf = (cell) => (String(cell).match(/(?:`[^`]*`|[^,`])+/g) || []).flatMap((seg) => {
+	const ticked = [...seg.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim());
+	return ticked.length ? ticked : [seg.trim()];
+}).filter(Boolean);
 
 /**
  * The testCategories map of a kit.config.json: its keys are globs, its values categories. No key means no map.

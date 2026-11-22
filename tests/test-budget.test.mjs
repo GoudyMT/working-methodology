@@ -245,3 +245,18 @@ test('B11 spec S11: the batch-plan Units table has Category and Tests columns, a
 	assert.ok(fs.existsSync(ADAPTER), 'project-adapter.md is missing');
 	assert.match(fs.readFileSync(ADAPTER, 'utf8'), /^\|[^\n]*testCategories/m);
 });
+
+// why: catches a mixed Files cell that drops its bare name, so a guard file written beside a backticked one computes as logic (S1 cells).
+test('B12 cell: a mixed Files cell reads its bare guard name, so a logic Category on it is refused; an all-backticked cell does the same', () => {
+	const mixed = runCheck(planText([row('U1', { Files: '`docs/a.md`, project/.claude/approve.mjs', Category: 'logic' })]));
+	assert.equal(mixed.status, 1, out(mixed));
+	assert.match(out(mixed), /guard/);
+	assert.match(out(mixed), /approve\.mjs/);
+	// Control: an all-backticked cell naming the same two files is refused the same way.
+	const ticked = runCheck(planText([row('U1', { Files: '`docs/a.md`, `project/.claude/approve.mjs`', Category: 'logic' })]));
+	assert.equal(ticked.status, 1, out(ticked));
+	assert.match(out(ticked), /approve\.mjs/);
+	// Control: an all-backticked cell of two plain files, with its logic Category, passes.
+	const plain = runCheck(planText([row('U1', { Files: '`docs/a.md`, `src/b.mjs`', Category: 'logic' })]));
+	assert.equal(plain.status, 0, out(plain));
+});

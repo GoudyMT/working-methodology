@@ -53,14 +53,18 @@ const NO_LOG = /no .*log|plan-graph/i;
 const handBack = (role, ...lines) => ['Prose.', 'RECORD:', JSON.stringify(role), ...lines].join('\n') + '\n';
 const finding = (id) => JSON.stringify({ id, severity: 'medium', status: 'open', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tighten it' });
 const NOTE = (text, writer = 'lead') => JSON.stringify({ note: text, writer });
+// A fix line that marks review finding <id> fixed; a fix record holding only a note does not pass.
+const fixedLine = (id) => JSON.stringify({ id, severity: 'medium', status: 'fixed', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tightened it' });
 
 // ---------------------------------------------------------------------------------------------------------------
 // L1: a builder start needs the plan's latest plan-graph run to have exited 0, with the plan unchanged since.
 // Choice: plan-graph logs {at, plan: basename, units, faults} and no hash, so "unchanged" is the log line's time against
 // the plan file's mtime, and "exited 0" is faults == 0.
 // ---------------------------------------------------------------------------------------------------------------
-const PLAN_OK = '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n| U2 | `b.txt` | parallel |\n';
-const PLAN_BAD = '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n| U2 | `a.txt` | parallel |\n';
+// A full plan: start runs plan-check first, so the plan carries the Risk, Category and Tests columns it reads.
+const fullPlan = (u2File) => `# plan\n\n## Units\n\n| Id | Files | Runs | Risk | Category | Tests | Tester |\n|---|---|---|---|---|---|---|\n| U1 | \`a.txt\` | parallel | low | logic | check 1 -> S1 | |\n| U2 | \`${u2File}\` | parallel | low | logic | check 1 -> S1 | |\n`;
+const PLAN_OK = fullPlan('b.txt');
+const PLAN_BAD = fullPlan('a.txt');
 function planRepo(text = PLAN_OK) {
 	const dir = repo();
 	const plan = put(dir, 'docs/plan.md', text);
@@ -242,7 +246,7 @@ test('L6: reviews exits 1 when the review has findings and there is no fix recor
 
 // why: catches a finished review and fix pair being refused so the builder never starts
 test('L6: reviews exits 0 with one review record that has findings and one fix record', () => {
-	const r = reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed R1', 'tester')] }));
+	const r = reviews(reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] }));
 	assert.equal(r.code, 0, r.out);
 });
 
@@ -254,25 +258,25 @@ test('L6: reviews exits 0 with a review that has no findings and no fix record',
 
 // why: catches a second review slipping in with no reason, which hides a repeat loop
 test('L6: reviews exits 1 on a second review record with no second-review note', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], second: [finding('R2')], fix: [NOTE('fixed', 'tester')] })), /second review of U1 with no lead note/);
+	failed(reviews(reviewDir({ review: [finding('R1')], second: [finding('R2')], fix: [fixedLine('R1'), fixedLine('R2')] })), /second review of U1 with no lead note/);
 });
 
 // why: catches the lead's reasoned second review being refused
 test('L6: reviews exits 0 on a second review record that holds the lead second-review note', () => {
-	const r = reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: the fix changed the test shape'), finding('R2')], fix: [NOTE('fixed', 'tester')] }));
+	const r = reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: the fix changed the test shape'), finding('R2')], fix: [fixedLine('R1'), fixedLine('R2')] }));
 	assert.equal(r.code, 0, r.out);
 });
 
 // why: catches a note written by someone other than the lead opening the second review
 test('L6: reviews exits 1 when the second-review note is written by the tester, not the lead', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: I want one', 'tester'), finding('R2')], fix: [NOTE('fixed', 'tester')] })), /second review of U1 with no lead note/);
+	failed(reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: I want one', 'tester'), finding('R2')], fix: [fixedLine('R1'), fixedLine('R2')] })), /second review of U1 with no lead note/);
 });
 
 // why: catches another unit's review record counting for this unit
 test('L6: reviews for U2 ignores the U1 records', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] }), 'U2'), /no review for U2/);
+	failed(reviews(reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] }), 'U2'), /no review for U2/);
 	// Folded control: U10 records do not count for U1, including an unexplained second U10 review.
-	const dir = reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] });
+	const dir = reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] });
 	put(dir, 'U10.review.jsonl', handBack(REVIEW_ROLE, finding('R9')));
 	put(dir, 'U10.review2.jsonl', handBack(REVIEW_ROLE, finding('R10')));
 	const ok = reviews(dir);
@@ -443,6 +447,121 @@ test('L9: the hook GUARD_PATHS equals tester-model GUARD_PATHS', async () => {
 	const hook = createRequire(import.meta.url)(AGENT_MODEL);
 	assert.ok('GUARD_PATHS' in hook, 'agent-model.cjs exports GUARD_PATHS');
 	assert.deepEqual(hook.GUARD_PATHS, await importTesterGuard());
+});
+
+// ---------------------------------------------------------------------------------------------------------------
+// H2-H5 (build 24 sweep fixes): the agent check names what it cannot read, the review check needs fixed lines,
+// the overwatch steps name the lock and unit check, and lanes.mjs refuses a plan it cannot read.
+// ---------------------------------------------------------------------------------------------------------------
+const LANES = here('../user/kit-tools/lanes.mjs');
+const SKILL = here('../user/skills/agent-team-build/SKILL.md');
+
+// why: catches start letting a builder go ahead on a plan plan-check refuses, or on another plan.md's clean log by basename (L1).
+test('L1 start: refuses a plan plan-check refuses, matches the log by full path, and a clean run of this plan still starts', () => {
+	const PLAN_CHECK = here('../user/kit-tools/plan-check.mjs');
+	const FULL_PLAN = (category) => `# plan\n\n## Units\n\n| Id | Files | Runs | Risk | Category | Tests | Tester |\n|---|---|---|---|---|---|---|\n| U1 | \`a.txt\` | parallel | low | ${category} | check 1 -> S1 | |\n| U2 | \`b.txt\` | parallel | low | logic | check 1 -> S1 | |\n`;
+	const dir = repo();
+	const clean = put(dir, 'docs/plan.md', FULL_PLAN('logic'));
+	const bad = put(dir, 'bad/plan.md', FULL_PLAN(''));
+	const elsewhere = put(dir, 'elsewhere/plan.md', FULL_PLAN('logic'));
+	const graph = (p) => spawnSync(process.execPath, [PLAN_GRAPH, p], { cwd: dir, env: env(), encoding: 'utf8' });
+	const check = (p) => spawnSync(process.execPath, [PLAN_CHECK, p], { cwd: dir, env: env(), encoding: 'utf8' });
+	// Control: a plan plan-check accepts, with its own clean plan-graph run, starts.
+	assert.equal(check(clean).status, 0, 'the control plan passes plan-check');
+	assert.equal(graph(clean).status, 0);
+	assert.equal(start(clean).code, 0, start(clean).out);
+	// Red 1: plan-check refuses the empty Category, yet plan-graph runs clean on it, so start must still refuse it.
+	assert.equal(check(bad).status, 1, 'plan-check refuses the empty Category');
+	assert.equal(graph(bad).status, 0);
+	failed(start(bad), /Category|plan-check/i);
+	// Red 2: a plan.md at another path has no plan-graph run of its own; the clean log of the plan above must not count for it.
+	failed(start(elsewhere), NO_LOG);
+});
+
+// why: catches a documented hand-back with no agent key being skipped silently, so its tester and builder identity is never checked (H2).
+test('H2 agents: role lines with no agent key are named and exit 1; a keyed hand-back is not named', () => {
+	const dir = tmp('flow-agents-');
+	put(dir, 'U1.tester.jsonl', handBack({ role: 'tester', commit: 'abc1234', clarity: 'clear' }, NOTE('done', 'tester')));
+	put(dir, 'U1.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234' }, NOTE('done', 'builder')));
+	// Control: a hand-back with an agent key and an exact RECORD: line is not named.
+	put(dir, 'U9.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234', agent: 'a9', unit: 'U9' }, NOTE('done', 'builder')));
+	const r = agents(dir);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /U1\.tester\.jsonl/, r.out);
+	assert.match(r.out, /U1\.builder\.jsonl/, r.out);
+	assert.doesNotMatch(r.out, /U9\.builder\.jsonl/, r.out);
+});
+
+// why: catches a .jsonl whose RECORD: marker is misspelled being skipped with no word, so its role is never read (H2).
+test('H2 agents: a .jsonl with no exact RECORD: line is named and exits 1; a keyed hand-back is not named', () => {
+	const dir = tmp('flow-agents-');
+	put(dir, 'U1.builder.jsonl', `Prose.\nRECORD :\n${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U1' })}\n${NOTE('done')}\n`);
+	// Control: a hand-back with an agent key and an exact RECORD: line is not named.
+	put(dir, 'U9.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234', agent: 'a9', unit: 'U9' }, NOTE('done')));
+	const r = agents(dir);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /U1\.builder\.jsonl/, r.out);
+	assert.doesNotMatch(r.out, /U9\.builder\.jsonl/, r.out);
+});
+
+// why: catches a fix file that never marks a review finding fixed passing review, so an unfixed finding reaches the builder (H3).
+test('H3 reviews: a fix file that does not mark review finding R1 fixed is refused, and one with a fixed line passes', () => {
+	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed R1', 'tester')] })), /R1/);
+	// Control: a fixed line for R1 in the fix record passes.
+	const ok = reviews(reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] }));
+	assert.equal(ok.code, 0, ok.out);
+});
+
+// why: catches a second review's findings going unchecked for fixes, so R2 ships unfixed behind a passing R1 (H3).
+test('H3 reviews: a second review finding R2 with no fixed line is refused and named, and fixed lines for R1 and R2 pass', () => {
+	const second = [NOTE('second review: the fix changed the test shape'), finding('R2')];
+	failed(reviews(reviewDir({ review: [finding('R1')], second, fix: [fixedLine('R1')] })), /R2/);
+	// Control: with fixed lines for R1 and R2 the same two reviews pass.
+	const ok = reviews(reviewDir({ review: [finding('R1')], second, fix: [fixedLine('R1'), fixedLine('R2')] }));
+	assert.equal(ok.code, 0, ok.out);
+});
+
+// why: catches the overwatch steps never naming the lock and the unit check, so a builder runs on an unlocked row (H4).
+test('H4 SKILL.md: the overwatch steps name plan-check --lock and unit-check --plan --unit', () => {
+	const text = fs.readFileSync(SKILL, 'utf8');
+	const at = text.indexOf('## The overwatch lead');
+	const end = text.indexOf('## Who decides');
+	assert.ok(at >= 0 && end > at, 'SKILL.md has the overwatch section and the Who decides section after it');
+	const section = text.slice(at, end);
+	assert.match(section, /plan-check(\.mjs)?\b[^\n]*--lock/);
+	assert.match(section, /unit-check(\.mjs)?\b[^\n]*--plan[^\n]*--unit/);
+});
+
+// why: catches the split step naming lanes.mjs, a sweep-findings tool, for splitting a plan's units (H5).
+test('H5 SKILL.md: the plan-and-split step names plan-graph for the unit split and does not name lanes.mjs there', () => {
+	const text = fs.readFileSync(SKILL, 'utf8');
+	const step = text.split('\n').find((l) => l.includes('**Plan and split.**'));
+	assert.ok(step, 'SKILL.md has the Plan and split step');
+	assert.match(step, /plan-graph/);
+	assert.doesNotMatch(step, /lanes\.mjs/);
+});
+
+// why: catches lanes.mjs printing nothing and exiting 0 for a markdown plan, so a build's units are never split into lanes (H5).
+test('H5 lanes: a markdown plan exits 2 with stderr and empty stdout; controls: all-fixed prints nothing, one open finding prints one lane', () => {
+	const dir = tmp('flow-lanes-');
+	const lanes = (file) => spawnSync(process.execPath, [LANES, file], { cwd: dir, env: env(), encoding: 'utf8' });
+	const plan = put(dir, 'plan.md', '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n');
+	const r = lanes(plan);
+	assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+	assert.equal(r.stdout, '');
+	assert.ok(r.stderr.trim() !== '', 'a stderr message names the problem');
+	// Control: a findings file where every finding is fixed exits 0 with empty stdout.
+	const fixed = put(dir, 'fixed.jsonl', `${JSON.stringify({ id: 'F1', severity: 'high', status: 'fixed', where: 'a.js:1', claim: 'c', proof: 'p', fix: 'f' })}\n`);
+	const done = lanes(fixed);
+	assert.equal(done.status, 0, `${done.stdout}${done.stderr}`);
+	assert.equal(done.stdout, '');
+	// Control: one valid open finding exits 0 and prints one lane line.
+	const open = put(dir, 'open.jsonl', `${JSON.stringify({ id: 'F2', severity: 'high', status: 'open', where: 'a.js:1', claim: 'c', proof: 'p', fix: 'f' })}\n`);
+	const one = lanes(open);
+	assert.equal(one.status, 0, `${one.stdout}${one.stderr}`);
+	const rows = one.stdout.split('\n').filter((l) => l.trim() !== '');
+	assert.equal(rows.length, 1, one.stdout);
+	assert.deepEqual(JSON.parse(rows[0]).findings, ['F2']);
 });
 
 // why: catches a PASS record quoting a FIX verdict being counted as a fix round

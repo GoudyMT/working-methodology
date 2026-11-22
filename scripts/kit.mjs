@@ -2402,6 +2402,9 @@ export function build({ kit }) {
   out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
   // approve.mjs reads the owner's pop-up answers the way the guards do (T2): the same exact-copy rule.
   out.set('user/kit-tools/owner-yes.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'owner-yes.cjs'), 'utf8'));
+  // plan-check and count-gate read the plan graph and its spawn helper; an installed kit holds user/ only, so each gets an exact copy here.
+  out.set('user/kit-tools/plan-graph.mjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'plan-graph.mjs'), 'utf8'));
+  out.set('user/kit-tools/safe-spawn.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'safe-spawn.cjs'), 'utf8'));
   for (const [rel, text] of roleFiles(kit)) out.set(rel, text);
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
