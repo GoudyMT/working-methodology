@@ -18,12 +18,23 @@
 | U16 | `user/kit-tools/handoff.mjs`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/agents/tester.md`, `user/agents/test-reviewer.md`, `tests/ask-dont-guess.test.mjs` | after U15, U10 |
 | U17 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/SKILL.md`, `tests/plan-check.test.mjs` | after U16, U5 |
 | U18 | `user/skills/agent-team-build/SKILL.md`, `user/kit-tools/flow-check.mjs`, `user/kit-tools/handoff.mjs`, `rules/agent-teams.md`, `tests/overwatch.test.mjs` | after U17 |
+| U19 | `user/kit-tools/test-budget.mjs`, `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/templates/project-adapter.md`, `tests/test-budget.test.mjs` | after U18 |
+| U21 | `scripts/test-check.mjs`, `scripts/mutation-check.mjs`, `user/kit-tools/test-value.mjs`, `user/skills/agent-team-build/SKILL.md`, `tests/test-value.test.mjs` | after U18, U11, U13 |
+| U20 | `user/kit-tools/unit-check.mjs`, `user/kit-tools/handoff.mjs`, `user/agents/test-reviewer.md`, `user/agents/tester.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `tests/test-count.test.mjs` | after U19 |
+| U22 | `user/skills/agent-team-build/templates/batch-plan.md`, `user/agents/tester.md`, `tests/guard-rows.test.mjs` | after U19, U20 |
 
 U18 spec note (2026-11-22 12:39Z): the overwatch lead is the build lead (and the orchestrator), not an extra role. Its
 run: plan and split into lanes; the owner's stated intent plus the plan is approval unless the plan raises a new call;
 start the teams and watch them; answer lane questions and keep the JSONL checklist; spin teams down as lanes finish;
 merge the lanes; run the one sweep; fix in lanes; then CI, the gate and the owner's yes. Each step is checked by a
 script, hook or guard.
+
+Smart test strategy (owner-approved 2026-11-22, relayed 16:02Z): U19 = T-B1 plan sets the budget (logic, about 12
+tests); U20 = T-B2 count gate at red and review (logic, about 12); U21 = T-B3 value check after green (glue, about 6;
+report-only in 1.51.0); U22 = T-B4 guard rows (guard, about 8; one Opus check, at most 2 rounds). Category table:
+guard ceiling 25, logic 15, glue 6, data 2, docs 3; the highest category of a unit's files wins; a control is an
+assertion, not a test; over a ceiling splits at planning. Then the build's own new tests are cut to this standard
+(owner pop-up yes on the cut list) and the survivors named in the record before the next push.
 
 ## After the lanes
 

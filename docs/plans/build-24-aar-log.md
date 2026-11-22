@@ -54,3 +54,5 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
   beyond what the lead holds. The lead is the floor manager today.
 - The cost the lead carries is context: each relay, review and merge adds to it, and the lead compacted once at
   92 percent. A separate manager would help most as context relief, not as more oversight.
+
+- 2026-11-22: writer stopped before naming 566 tests (about 566 changelog lines under A7). Owner picked: cut tests first, after the smart test strategy lands. Push and CI wait on that cut.
