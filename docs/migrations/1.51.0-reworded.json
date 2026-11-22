@@ -37,7 +37,7 @@
     },
     {
       "before": "- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`; a scope is optional and rare.",
-      "after": "- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`, `retest`; a scope is optional and rare. `retest` is for a change to an existing locked test after its red commit: the pre-push hook holds a push that carries one until the owner's yes, and a PR title is never `retest`.",
+      "after": "- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`, `retest`; a scope is rare.",
       "why": "K308 (build 24): the retest commit type, held by pre-push until the owner's yes, is named with the other types"
     }
   ]

@@ -52,6 +52,8 @@ The build lead of a batch is the overwatch lead: its run is in `agent-team-build
 
 The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in the Claude folder's `agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
 
+A builder never edits a locked test. A change to one after its red commit is a `retest` commit: the pre-push hook holds a push that carries one until the owner's yes, and a PR title is never `retest`.
+
 ### Agent Canary {#agent-canary}
 
 Every kit-role agent opens each message to whoever started it with the phrase on the last line of field 8's block, which it finds only by opening that block with Read (role files and preloaded rules are injected, so never there). Why: an agent that skipped or lost its rules does not know it drifted.
