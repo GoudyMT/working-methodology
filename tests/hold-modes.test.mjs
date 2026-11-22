@@ -558,3 +558,22 @@ test('handoff-gate refuses a non-JSON line, a missing role line, a missing field
 	// Folded control (was its own test): a valid record is not refused.
 	assert.equal(verdict(['Prose.', 'RECORD:', ROLE, JSON.stringify(FIELDS)].join('\n')), null, 'a valid record is not refused');
 });
+
+// why: catches a plugin-named role call (kit:checker) that agent-model reads as having no role file, so a model mismatch passes under enforce
+test('agent-model reads a plugin role name as its bare role file, refusing a mismatch under enforce', () => {
+	const hookDir = kitTemp.makeTemp('agent-model-plugin-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
+	fs.writeFileSync(path.join(hookDir, 'holds.json'), holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'enforce' }]));
+	const config = roleConfig({ checker: 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const dir = repo();
+	const calls = [{ subagent_type: 'kit:checker', model: 'haiku' }, { subagent_type: 'checker', model: 'haiku' }, { subagent_type: 'kit:checker', model: 'opus' }];
+	const run = checkCalls(hookDir, dir, calls, env);
+	assert.equal(run.status, 0, run.stderr);
+	const [plugin, bare, same] = JSON.parse(run.stdout);
+	assert.equal(plugin && plugin.hookSpecificOutput && plugin.hookSpecificOutput.permissionDecision, 'deny', `kit:checker on haiku is refused: ${run.stdout}`);
+	// Folded control: the bare name is refused the same way, and kit:checker on its own family is not refused.
+	assert.equal(bare && bare.hookSpecificOutput && bare.hookSpecificOutput.permissionDecision, 'deny', `checker on haiku is refused: ${run.stdout}`);
+	assert.equal(same, null, 'kit:checker on opus is not refused');
+});
