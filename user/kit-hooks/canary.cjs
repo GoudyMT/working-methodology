@@ -205,7 +205,10 @@ const check = (input) => { try { return run(input).out || null; } catch { return
 
 if (require.main === module) {
 	try {
-		const r = run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}'));
+		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+		// The log-only hand-back record gate rides on this hook, so a role's hook table keeps one entry per matcher.
+		if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') { try { require('./handoff-gate.cjs').run(input); } catch { /* a log never blocks */ } }
+		const r = run(input);
 		if (r.out) process.stdout.write(JSON.stringify(r.out));
 		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
 		process.exitCode = r.code || 0;

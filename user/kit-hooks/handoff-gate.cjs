@@ -24,5 +24,10 @@ function run(input) {
 	fs.appendFileSync(path.join(common.stdout.trim(), 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'handoff-gate', errors })}\n`);
 }
 
-try { run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* a log that fails never blocks the hand-back */ }
-process.exitCode = 0;
+// canary.cjs calls run() from the role files' hand-back hook, so a role's hook table keeps one entry per matcher.
+if (require.main === module) {
+	try { run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* a log that fails never blocks the hand-back */ }
+	process.exitCode = 0;
+}
+
+module.exports = { run };
