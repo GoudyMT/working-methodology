@@ -19,9 +19,9 @@
 | U17 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/SKILL.md`, `tests/plan-check.test.mjs` | after U16, U5 |
 | U18 | `user/skills/agent-team-build/SKILL.md`, `user/kit-tools/flow-check.mjs`, `user/kit-tools/handoff.mjs`, `rules/agent-teams.md`, `tests/overwatch.test.mjs` | after U17 |
 | U19 | `user/kit-tools/test-budget.mjs`, `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/templates/project-adapter.md`, `tests/test-budget.test.mjs` | after U18 |
-| U21 | `scripts/test-check.mjs`, `scripts/mutation-check.mjs`, `user/kit-tools/test-value.mjs`, `user/skills/agent-team-build/SKILL.md`, `tests/test-value.test.mjs` | after U18, U11, U13 |
+| U21 | `scripts/test-check.mjs`, `scripts/mutation-check.mjs`, `user/kit-tools/test-value.mjs`, `user/skills/agent-team-build/SKILL.md`, `tests/value-gate.test.mjs` | after U18, U11, U13 |
 | U20 | `user/kit-tools/unit-check.mjs`, `user/kit-tools/handoff.mjs`, `user/agents/test-reviewer.md`, `user/agents/tester.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `tests/test-count.test.mjs` | after U19 |
-| U22 | `user/skills/agent-team-build/templates/batch-plan.md`, `user/agents/tester.md`, `tests/guard-rows.test.mjs` | after U19, U20 |
+| U22 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/agents/tester.md`, `tests/guard-rows.test.mjs` | after U19, U20 |
 
 U18 spec note (2026-11-22 12:39Z): the overwatch lead is the build lead (and the orchestrator), not an extra role. Its
 run: plan and split into lanes; the owner's stated intent plus the plan is approval unless the plan raises a new call;
