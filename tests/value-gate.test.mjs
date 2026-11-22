@@ -114,7 +114,7 @@ test('mutation-check --value reports covering set, seconds, dollars and approx c
 	const nothing = catchNothingSection(first.stdout);
 	assert.match(nothing, /big is only called/, 'the never-catching test is listed in its section');
 	assert.doesNotMatch(nothing, /small is checked/, 'the test that catches a flip is not in the never-catching section');
-	assert.match(out, /covering set/i, 'a smallest covering set is named');
+	assert.match(out, /Covering set \(greedy[^)]*\): 1 test\(s\) catch all 1 caught flip\(s\): tests\/calc\.test\.mjs::small is checked/, 'the covering set is the test that catches the flip');
 	assert.match(out, /small is checked.*\d(\.\d+)?\s?s\b/, 'each test has its seconds');
 	assert.match(out, /not priced/, 'no CI rate set: dollars print "not priced"');
 	// Control: the configured rate turns the seconds into a dollar figure.
@@ -135,7 +135,8 @@ test('mutation-check --value exits 0 and names a survivor', () => {
 	const { root } = valueRepo();
 	const r = spawnSync(process.execPath, [MUT, '--value'], { cwd: root, encoding: 'utf8' });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
-	assert.match(r.stdout + r.stderr, /src\/calc\.mjs:\d+/, 'the survivor is named by its file and line');
+	// Tied to the named survivor: the SURVIVED line for big's first branch, not a caught line (which also names a file and line).
+	assert.match(r.stdout + r.stderr, new RegExp(`SURVIVED src/calc\\.mjs:${lineOf(CALC_BRANCH, 'if (x === 2)')} `), 'the survivor is named by its file and line');
 });
 
 // why: catches the project test-value step not running the mutationCommand from kit.config.json or not printing its stdout; also the step printing not measured and exiting 0 with no tool named (V4, V5).
@@ -158,8 +159,12 @@ test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its 
 // why: guards rule:agent-team-adapter (the build skill tells the lead to fold or drop a test that catches nothing)
 test('agent-team-build SKILL.md says the lead folds or drops a test that catches nothing before merge', () => {
 	const src = fs.readFileSync(SKILL, 'utf8');
-	assert.match(src, /catches nothing/, 'the skill names a test that catches nothing');
-	assert.match(src, /\bfolds?\b/, 'the lead folds it');
-	assert.match(src, /\bdrops?\b/, 'the lead drops it');
-	assert.match(src, /before the unit merges|before merge/, 'this happens before the unit merges');
+	// Anchored: the four claims must sit on the lead's Integrate step in "The flow", not anywhere in the file.
+	const flow = src.slice(src.indexOf('## The flow'), src.indexOf('## The overwatch lead'));
+	const step = flow.split('\n').find((l) => /^5\. \*\*Integrate \(lead\)\./.test(l));
+	assert.ok(step, 'The flow has the Integrate (lead) step as its item 5');
+	assert.match(step, /catches nothing/, 'the step names a test that catches nothing');
+	assert.match(step, /\bfolds?\b/, 'the lead folds it');
+	assert.match(step, /\bdrops?\b/, 'the lead drops it');
+	assert.match(step, /before the unit merges/, 'this happens before the unit merges');
 });
