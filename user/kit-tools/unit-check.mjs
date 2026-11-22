@@ -72,7 +72,7 @@ function parseTap(out) {
 // A loop's name (with a ${...}) stands for the names it makes.
 function stateOf(states = new Map(), name) {
 	if (!name.includes('${')) return states.get(name) || 'fail';
-	const re = new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`);
+	const re = new RegExp(`^${name.split(/(?:\$\{[^}]*\})+/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`);
 	const made = [...states].filter(([n]) => re.test(n)).map(([, s]) => s);
 	if (made.length === 0) return 'fail';
 	return made.includes('fail') ? 'fail' : made.includes('skip') ? 'skip' : 'pass';
