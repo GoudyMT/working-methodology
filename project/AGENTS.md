@@ -166,7 +166,7 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 
 ## What holds where {#what-holds-where}
 
-The guards and hooks under `.claude` run only inside Claude Code, so they hold Claude's own tool calls and nothing else. An agent or tool outside Claude Code is held only by git hooks and CI, such as another AI tool, a script or a push from any machine. A rule that must hold everywhere needs a git hook or a CI check, not a `.claude` guard alone.
+The guards and hooks under `.claude` run only inside Claude Code, so they hold Claude's own tool calls and nothing else. An agent or tool outside Claude Code is held only by git hooks and CI, such as another AI tool, a script or a push from any machine. A rule that must hold everywhere needs a git hook or a CI check, not a `.claude` guard alone. Why: a guard that only one tool runs leaves every other tool unchecked.
 
 ## Session Workflow {#session-workflow}
 
