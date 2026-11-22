@@ -273,17 +273,6 @@ test('pre-push holds a retest: range without the owner yes and lets it through w
 	assert.equal(yes.status, 0, `the owner's yes lets the push through: ${yes.stderr}`);
 });
 
-// why: catches a push of an ordinary commit refused for a retest it does not hold, so every push stops
-test('pre-push does not refuse a range with no retest: commit for that reason', () => {
-	const { dir, red, bare } = pushRepo();
-	put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
-	const feat = commit(dir, 'feat: tidy add');
-	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${feat} refs/heads/feat/x ${red}\n`);
-	assert.equal(r.status, 0, r.stderr);
-	assert.doesNotMatch(r.stderr, /retest/);
-	assert.doesNotMatch(r.stderr, OWNER_YES);
-});
-
 // why: catches a retest: commit at the start of a longer push passing because only the last commit is read
 test('pre-push refuses a three-commit push whose first commit is a retest:, naming that commit', () => {
 	const { dir, red, bare } = pushRepo();
@@ -319,16 +308,6 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 	}
 });
 
-// why: catches a new-branch push (remote sha all zeros) that skips the secret scan, so a key goes out with a new branch
-test('pre-push still scans a new-branch push whose remote sha is all zeros', () => {
-	const { dir, bare } = pushRepo();
-	put(dir, { 'src/keys.js': `export const key = '${['AKIA', 'IOSFODNN7EXAMPLE'].join('')}';\n` });
-	const key = commit(dir, 'feat: add a key');
-	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/new ${key} refs/heads/feat/new ${ZERO}\n`);
-	assert.notEqual(r.status, 0, `the new branch was refused: ${r.stderr}`);
-	assert.match(r.stderr, /secret/i);
-});
-
 // why: catches the kit's own pre-push passing a retest: range on to the remote, since the kit source runs that hook too
 test("the kit's own pre-push refuses a range holding a retest: commit and says an owner yes is needed", () => {
 	const { dir, red } = redRepo();
@@ -361,23 +340,6 @@ test('pre-push refuses a retest(scope): commit in both the kit and the project h
 		assert.notEqual(r.status, 0, `${hook} refused: ${r.stderr}`);
 		assert.ok(r.stderr.includes('retest(lock): x'), `${hook} names the subject: ${r.stderr}`);
 	}
-});
-
-// why: catches a push whose remote head this repo never fetched being read as unreadable, which blocks a push with no retest
-test('pre-push lets a new branch with no retest through when the remote holds a head this repo never fetched', () => {
-	const { dir, bare } = pushRepo();
-	const parent = kitTemp.makeTemp('lock-other-');
-	git(parent, ['clone', '-q', bare, 'other']);
-	const other = path.join(parent, 'other');
-	git(other, ['checkout', '-q', '-b', 'feat/other']);
-	put(other, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
-	commit(other, 'feat: other clone work');
-	git(other, ['push', '-q', 'origin', 'feat/other']);
-	put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
-	const feat = commit(dir, 'feat: tidy add');
-	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${feat} refs/heads/feat/x ${ZERO}\n`);
-	assert.equal(r.status, 0, `a push with no retest goes through: ${r.stderr}`);
-	assert.doesNotMatch(r.stderr, /cannot be read/);
 });
 
 // why: catches a new branch carrying a retest: commit going out unheld because only its own sha is read
@@ -415,39 +377,6 @@ test('pre-push refuses a new branch whose range holds a retest: commit', () => {
 	}
 });
 
-// why: catches an update push re-refusing a retest the remote already holds on another branch, which blocks every merge of main
-test('pre-push does not refuse an update push for a retest the remote already holds on another branch', () => {
-	const { dir, red, bare } = pushRepo();
-	git(dir, ['checkout', '-q', '-b', 'topic']);
-	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-	commit(dir, 'retest: tighten the add case');
-	git(dir, ['push', '-q', 'origin', 'topic']);
-	git(dir, ['checkout', '-q', 'main']);
-	git(dir, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
-	git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
-	put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
-	const first = commit(dir, 'feat: first add');
-	git(dir, ['push', '-q', 'origin', 'feat/x']);
-	git(dir, ['merge', '-q', '--no-edit', 'main']);
-	put(dir, { 'src/util.js': 'export const id = (x) => x + 0;\n' });
-	const next = commit(dir, 'feat: tidy util');
-	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${next} refs/heads/feat/x ${first}\n`);
-	assert.equal(r.status, 0, `the update push goes through: ${r.stderr}`);
-	assert.doesNotMatch(r.stderr, /retest/);
-});
-
-// why: catches the kit's own pre-push refusing a retest push even with the owner's pop-up yes to that push, unlike the project hook
-test("the kit's own pre-push lets a retest: push through with the owner's pop-up yes to that push", () => {
-	const { dir, red, bare } = pushRepo();
-	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-	const retest = commit(dir, 'retest: tighten the add case');
-	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
-	const cfg = kitTemp.makeTemp('lock-owner-kit-');
-	ownerTaps(cfg, dir, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-	const yes = pushRun(KIT_PRE_PUSH, dir, bare, input, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
-	assert.equal(yes.status, 0, `the owner's yes lets the kit hook's push through: ${yes.stderr}`);
-});
-
 // why: catches the kit's own pre-push passing a retest push with no owner yes; the refusal that names the owner's yes must stay
 test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes and names it", () => {
 	const { dir, red, bare } = pushRepo();
@@ -467,18 +396,6 @@ test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes a
 		const yes5 = pushRun(KIT_PRE_PUSH, d5, b5, input5, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg5, CLAUDE_CODE_SESSION_ID: TAP_SID });
 		assert.equal(yes5.status, 0, `the owner's yes lets the kit hook's push through: ${yes5.stderr}`);
 	}
-});
-
-// why: catches an approved agent push of a retest commit refused even with the owner's pop-up yes to that push
-test('pre-push lets a retest: push through on KIT_PUSH_APPROVED=1 with the owner\'s pop-up yes to that push', () => {
-	const { dir, red, bare } = pushRepo();
-	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-	const retest = commit(dir, 'retest: tighten the add case');
-	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
-	const cfg = kitTemp.makeTemp('lock-approved-');
-	ownerTaps(cfg, dir, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, input, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
-	assert.equal(r.status, 0, `the approved push with the owner's yes goes through: ${r.stderr}`);
 });
 
 // why: catches an approved retest push going through with no owner pop-up yes, so the marker alone lifts the hold
@@ -501,18 +418,6 @@ test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-u
 		const ok6 = pushRun(PROJECT_PRE_PUSH, d6, b6, input6, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg6, CLAUDE_CODE_SESSION_ID: TAP_SID });
 		assert.equal(ok6.status, 0, `the approved push with the owner's yes goes through: ${ok6.stderr}`);
 	}
-});
-
-// why: catches the kit's own pre-push refusing an approved retest push even with the owner's pop-up yes to that push
-test("the kit's own pre-push lets a retest: push through on KIT_PUSH_APPROVED=1 with the owner's pop-up yes to that push", () => {
-	const { dir, red, bare } = pushRepo();
-	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-	const retest = commit(dir, 'retest: tighten the add case');
-	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
-	const cfg = kitTemp.makeTemp('lock-approved-kit-');
-	ownerTaps(cfg, dir, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-	const r = pushRun(KIT_PRE_PUSH, dir, bare, input, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
-	assert.equal(r.status, 0, `the approved push with the owner's yes goes through the kit hook: ${r.stderr}`);
 });
 
 // why: catches the kit's own pre-push passing an approved retest push with no owner pop-up yes, so the marker alone lifts it

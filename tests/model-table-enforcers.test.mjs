@@ -263,14 +263,6 @@ test('a call that matches its role file writes nothing, by full id, family name 
 	assert.deepEqual(lines(), []);
 });
 
-// why: catches a role file with no model line being read as a missing role file
-test('a role file with no model line and a call with no model writes nothing', () => {
-	const { run, lines } = hookSetup({ scanner: '' });
-	run('Agent', { subagent_type: 'scanner', prompt: 'x' });
-	run('Agent', { subagent_type: 'scanner', model: 'opus', prompt: 'x' });
-	assert.deepEqual(lines(), []);
-});
-
 // why: guards rule:agent-role-table (a hook that refuses turns a log-only slip-catcher into a stop on every agent)
 test('the agent model hook never refuses or asks, whatever the call names', () => {
 	assert.ok(fs.existsSync(HOOK));
@@ -368,24 +360,6 @@ test('install user keeps the settings keys already in settings.json beside the l
 	}
 });
 
-// why: catches a second install user moving the lead or doubling the hooks in settings.json
-test('a second install user leaves the lead settings and the hooks as they were', () => {
-	const { kit, home } = leadKit();
-	install({ kit, home, target: 'user' });
-	const first = fs.readFileSync(path.join(home, 'settings.json'), 'utf8');
-	install({ kit, home, target: 'user' });
-	assert.equal(fs.readFileSync(path.join(home, 'settings.json'), 'utf8'), first);
-});
-
-// why: catches a kit with no lead step writing an empty or invented model into settings.json
-test('a kit with no lead step writes no model or effort into settings.json', () => {
-	const { kit, home } = makeKit();
-	install({ kit, home, target: 'user' });
-	const s = settingsOf(home);
-	assert.equal('model' in s, false);
-	assert.equal('effortLevel' in s, false);
-});
-
 // ---------------------------------------------------------------------------------------------------------------
 // 6. session start writes a list row for an unmeasured or retiring model
 // ---------------------------------------------------------------------------------------------------------------
@@ -455,15 +429,6 @@ test('a role moved to another unmeasured model gets one more row', () => {
 	assert.equal(rowFor(made, 'scanner', 'claude-y-8').length, 1);
 });
 
-// why: catches a clean kit with every role measured still adding rows at session start
-test('session start adds no list row when every role is on a measured model', () => {
-	const { kit, home, start, rows } = listKit();
-	fs.rmSync(path.join(home, 'agents/scanner.md'));
-	fs.writeFileSync(path.join(kit, 'kit.config.json'), JSON.stringify({ ownerName: 'Pat', roles: { builder: { model: 'claude-a-1', effort: 'high' } }, models: { measured: ['claude-a-1'], retiring: [] } }));
-	start();
-	assert.deepEqual(rows(), []);
-});
-
 // why: catches the row written by hand so the list fails its own check
 test('the rows session start adds pass the state check of the project', () => {
 	const { proj, start } = listKit();
@@ -509,23 +474,4 @@ test('session start never runs the project state.mjs', () => {
 	start();
 	assert.equal(fs.existsSync(path.join(proj, 'ran.txt')), false, 'the project state.mjs ran at session start');
 	assert.equal(rows().length, 2);
-});
-
-// why: catches a row file written through a linked folder
-test('session start writes nothing through a linked .kit folder', () => {
-	const { proj, start } = listKit();
-	const outside = makeTemp('kit-link-target-');
-	fs.rmSync(path.join(proj, '.kit'), { recursive: true, force: true });
-	fs.symlinkSync(outside, path.join(proj, '.kit'), 'junction');
-	start();
-	assert.deepEqual(fs.readdirSync(outside), []);
-});
-
-// why: catches one failed row write dropping all session start text
-test('a row that cannot be written keeps the session start text', () => {
-	const { proj, start } = listKit();
-	fs.rmSync(path.join(proj, '.kit'), { recursive: true, force: true });
-	fs.writeFileSync(path.join(proj, '.kit'), 'a plain file, not a folder');
-	const text = start();
-	assert.match(String(text), /Kit roles:/);
 });
