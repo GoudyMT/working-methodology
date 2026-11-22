@@ -813,10 +813,16 @@ test('a RECORD from another role or another commit is refused, and this round\'s
 	const control = k301Outcome(dir, r, [recordFor(role, head), k301Clean, k301Clean, k301Clean, k301Clean], 1);
 	assert.equal(control.status, 0, control.stdout);
 	assert.equal(tallied(), true, 'this round\'s record is not tallied');
-	for (const [name, commit, what] of [['lead', head, 'another role'], [role, 'deadbee', 'another commit']]) {
+	for (const [name, commit, what] of [['lead', head, 'another role'], [role, 'deadbee', 'another commit'], ['Reviewer', head, 'a role in capitals'], [`${role}-2`, head, 'a role with a suffix']]) {
 		const res = k301Outcome(dir, r, [recordFor(name, commit), k301Clean, k301Clean, k301Clean, k301Clean], 1);
 		assert.equal(res.status, 0, res.stdout);
 		assert.equal(tallied(), false, `a record from ${what} was tallied`);
+	}
+	// Controls: an upper-case copy of the head sha, and a 7-character prefix of it, name the same commit, so they are tallied.
+	for (const [name, commit] of [['upper-case head sha', head.toUpperCase()], ['7-character head prefix', head.slice(0, 7)]]) {
+		const res = k301Outcome(dir, r, [recordFor(role, commit), k301Clean, k301Clean, k301Clean, k301Clean], 1);
+		assert.equal(res.status, 0, res.stdout);
+		assert.equal(tallied(), true, `a record naming the ${name} was not tallied`);
 	}
 });
 
@@ -829,13 +835,15 @@ test('a finding above the RECORD line in another shape is refused, not silently 
 	const tallied = () => approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked;
 	const pretty = ['Prose.', '{', '  "id": "F0",', '  "severity": "high",', '  "status": "confirmed"', '}', ...tail].join('\n');
 	const escaped = ['Prose.', '{"id": "F0", "\\u0073everity": "high", "status": "confirmed"}', ...tail].join('\n');
+	const prettyEscaped = ['Prose.', '{', '  "id": "F0",', '  "\\u0073everity": "high",', '  "status": "confirmed"', '}', ...tail].join('\n');
 	// Control: the record alone is tallied, so the refusals below come from the finding above it.
 	const control = k301Outcome(dir, r, [['Prose.', ...tail].join('\n'), k301Clean, k301Clean, k301Clean, k301Clean], 1);
 	assert.equal(control.status, 0, control.stdout);
 	assert.equal(tallied(), true, 'the record alone is not tallied');
-	for (const [name, msg] of [['pretty-printed', pretty], ['key-escaped', escaped]]) {
+	for (const [name, msg] of [['pretty-printed', pretty], ['key-escaped', escaped], ['pretty-printed with an escaped severity key', prettyEscaped]]) {
 		const res = k301Outcome(dir, r, [msg, k301Clean, k301Clean, k301Clean, k301Clean], 1);
 		assert.equal(res.status, 0, res.stdout);
+		assert.match(res.stdout, /--findings[^\n]*not checked/, `a ${name} finding above the record gave no refusal reason in the outcome`);
 		assert.equal(tallied(), false, `a ${name} finding above the record was dropped and the record tallied`);
 	}
 });
