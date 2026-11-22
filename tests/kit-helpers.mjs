@@ -39,6 +39,11 @@ export function copyKitCli(kit) {
   // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
   for (const f of ['merge-on-green.mjs', 'safe-git.mjs']) fs.copyFileSync(path.resolve('scripts', f), path.join(kit, 'scripts', f));
   for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
+  // The slot list module (K315, build 24): copied only where it exists, so the other fixtures still install before it is built.
+  if (fs.existsSync(path.resolve('user/skills/pre-pr-sweep/slots.mjs'))) {
+    fs.mkdirSync(path.join(kit, 'user/skills/pre-pr-sweep'), { recursive: true });
+    fs.copyFileSync(path.resolve('user/skills/pre-pr-sweep/slots.mjs'), path.join(kit, 'user/skills/pre-pr-sweep/slots.mjs'));
+  }
 }
 
 export function makeKit() {
