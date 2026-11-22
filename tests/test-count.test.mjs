@@ -181,6 +181,68 @@ test('C10 spec C10: builder-brief.md says one test per plan line, tests are a fl
 	assert.match(text, /never[^.]*\badd\b[^.]*\bdrop/i);
 });
 
+// why: catches unit-check passing an unlocked row as unchanged, so a Tests cell that was never locked is never caught (H4).
+test('H4 unit-check: with no locks file the row is reported not locked and the run does not pass', () => {
+	const fx = fixture({ red: redFile(2, 0) });
+	const plan = writePlan(fx.dir, [row(2)]);
+	const unlocked = runUnit(fx, plan);
+	assert.match(out(unlocked), /not locked/i);
+	assert.notEqual(unlocked.status, 0, out(unlocked));
+	// Control: with the row's sha written to the lock file, as C11 does, the same commit passes.
+	const rowLine = fs.readFileSync(plan, 'utf8').split('\n').find((l) => l.startsWith('| U1 |'));
+	fs.writeFileSync(`${plan}.locks.json`, JSON.stringify({ U1: crypto.createHash('sha256').update(rowLine).digest('hex') }));
+	const locked = runUnit(fx, plan);
+	assert.equal(locked.status, 0, out(locked));
+});
+
+// why: catches a count that keeps only the first red commit, so a unit whose tests come in two red commits is miscounted (M5).
+test('M5 count gate: two red commits, 2 tests then 1 test, against a 3-line Tests cell pass', () => {
+	const fx = fixture({ red: redFile(2, 0) });
+	const git = (args) => spawnSync('git', args, { cwd: fx.dir, encoding: 'utf8' });
+	fs.writeFileSync(path.join(fx.dir, TEST_FILE), redFile(3, 0));
+	git(['add', '-A']);
+	git(['commit', '-q', '-m', 'test: red count two']);
+	const head = git(['rev-parse', 'HEAD']).stdout.trim();
+	const base = fx.range.split('..')[0];
+	const res = runUnit({ ...fx, range: `${base}..${head}` }, writePlan(fx.dir, [row(3)]));
+	assert.equal(res.status, 0, out(res));
+});
+
+// why: catches a count command reading the whole file, so one new test in a file of five counts as six (M5).
+test('M5 count gate: with countCommand, one test added to a file that holds five counts as 1', () => {
+	const five = `${HEADER}\n${[0, 1, 2, 3, 4].map((i) => passing(`t${i}`)).join('\n')}\n`;
+	const script = "import fs from 'node:fs';\nconst text = fs.readFileSync(process.argv.at(-1), 'utf8');\nconsole.log((text.match(/^test\\(/gm) || []).length);\n";
+	const fx = fixture({ base: five, red: `${five}${failing('t5')}\n`, config: { command: 'node fake-count.mjs', script } });
+	const res = runUnit(fx, writePlan(fx.dir, [row(1)]));
+	assert.equal(res.status, 0, out(res));
+});
+
+// why: catches a test file name reaching a shell as code, so a name with a metacharacter runs a command (M5).
+test('M5 count gate: a test file name with shell metacharacters is passed as data and runs nothing', () => {
+	const NAME = 'a%KIT_PWN%$(mkdir pwn2).test.mjs';
+	const dir = kitTemp.makeTemp('unit-count-');
+	const git = (args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
+	git(['init', '-q', '-b', 'main']);
+	git(['config', 'user.email', 'tester@example.com']);
+	git(['config', 'user.name', 'tester']);
+	fs.writeFileSync(path.join(dir, 'README.md'), 'base\n');
+	fs.writeFileSync(path.join(dir, 'kit.config.json'), JSON.stringify({ countCommand: 'node fake-count.mjs' }));
+	fs.writeFileSync(path.join(dir, 'fake-count.mjs'), 'console.log(2);\n');
+	git(['add', '-A']);
+	git(['commit', '-q', '-m', 'chore: base']);
+	const base = git(['rev-parse', 'HEAD']).stdout.trim();
+	fs.mkdirSync(path.join(dir, 'tests'));
+	fs.writeFileSync(path.join(dir, 'tests', NAME), redFile(2, 0));
+	git(['add', '-A']);
+	git(['commit', '-q', '-m', 'test: red count']);
+	const head = git(['rev-parse', 'HEAD']).stdout.trim();
+	const plan = writePlan(dir, [{ ...row(2), Files: `\`tests/${NAME}\`` }]);
+	const payloadEnv = { ...process.env, KIT_PWN: `x"&mkdir ${path.join(dir, 'pwned')}&"` };
+	spawnSync(process.execPath, [UNIT_CHECK, `${base}..${head}`, '--repo', dir, '--plan', plan, '--unit', 'U1'], { encoding: 'utf8', env: payloadEnv });
+	assert.equal(fs.existsSync(path.join(dir, 'pwned')), false, 'the %KIT_PWN% payload ran a command (cmd.exe expansion)');
+	assert.equal(fs.existsSync(path.join(dir, 'pwn2')), false, 'the $(mkdir pwn2) payload ran a command (POSIX sh substitution)');
+});
+
 // why: catches a count gate passing a plan edited after its lock, so a unit's locked Tests cell can change unseen (C11).
 test('C11 lock: an edited locked row fails with "the locked row changed", and the unedited row passes', () => {
 	// The locked row is the unedited one; the lock file holds its sha256, as the lock writes it.

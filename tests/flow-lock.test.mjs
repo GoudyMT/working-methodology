@@ -458,6 +458,79 @@ test('L9: the hook GUARD_PATHS equals tester-model GUARD_PATHS', async () => {
 	assert.deepEqual(hook.GUARD_PATHS, await importTesterGuard());
 });
 
+// ---------------------------------------------------------------------------------------------------------------
+// H2-H5 (build 24 sweep fixes): the agent check names what it cannot read, the review check needs fixed lines,
+// the overwatch steps name the lock and unit check, and lanes.mjs refuses a plan it cannot read.
+// ---------------------------------------------------------------------------------------------------------------
+const LANES = here('../user/kit-tools/lanes.mjs');
+const SKILL = here('../user/skills/agent-team-build/SKILL.md');
+const fixedLine = (id) => JSON.stringify({ id, severity: 'medium', status: 'fixed', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tightened it' });
+
+// why: catches a documented hand-back with no agent key being skipped silently, so its tester and builder identity is never checked (H2).
+test('H2 agents: documented tester and builder role lines with no agent key are named in the output, not skipped', () => {
+	const dir = tmp('flow-agents-');
+	put(dir, 'U1.tester.jsonl', handBack({ role: 'tester', commit: 'abc1234', clarity: 'clear' }, NOTE('done', 'tester')));
+	put(dir, 'U1.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234' }, NOTE('done', 'builder')));
+	const r = agents(dir);
+	assert.match(r.out, /U1\.tester\.jsonl/, r.out);
+	assert.match(r.out, /U1\.builder\.jsonl/, r.out);
+});
+
+// why: catches a .jsonl whose RECORD: marker is misspelled being skipped with no word, so its role is never read (H2).
+test('H2 agents: a .jsonl with no exact RECORD: line is named in the output, not skipped silently', () => {
+	const dir = tmp('flow-agents-');
+	put(dir, 'U1.builder.jsonl', `Prose.\nRECORD :\n${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U1' })}\n${NOTE('done')}\n`);
+	const r = agents(dir);
+	assert.match(r.out, /U1\.builder\.jsonl/, r.out);
+});
+
+// why: catches a fix file that never marks a review finding fixed passing review, so an unfixed finding reaches the builder (H3).
+test('H3 reviews: a fix file that does not mark review finding R1 fixed is refused, and one with a fixed line passes', () => {
+	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed R1', 'tester')] })), /R1/);
+	// Control: a fixed line for R1 in the fix record passes.
+	const ok = reviews(reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] }));
+	assert.equal(ok.code, 0, ok.out);
+});
+
+// why: catches a second review's findings going unchecked for fixes, so R2 ships unfixed behind a passing R1 (H3).
+test('H3 reviews: a second review finding R2 with no fixed line is refused and named, and fixed lines for R1 and R2 pass', () => {
+	const second = [NOTE('second review: the fix changed the test shape'), finding('R2')];
+	failed(reviews(reviewDir({ review: [finding('R1')], second, fix: [fixedLine('R1')] })), /R2/);
+	// Control: with fixed lines for R1 and R2 the same two reviews pass.
+	const ok = reviews(reviewDir({ review: [finding('R1')], second, fix: [fixedLine('R1'), fixedLine('R2')] }));
+	assert.equal(ok.code, 0, ok.out);
+});
+
+// why: catches the overwatch steps never naming the lock and the unit check, so a builder runs on an unlocked row (H4).
+test('H4 SKILL.md: the overwatch steps name plan-check --lock and unit-check --plan --unit', () => {
+	const text = fs.readFileSync(SKILL, 'utf8');
+	const at = text.indexOf('## The overwatch lead');
+	const end = text.indexOf('## Who decides');
+	assert.ok(at >= 0 && end > at, 'SKILL.md has the overwatch section and the Who decides section after it');
+	const section = text.slice(at, end);
+	assert.match(section, /plan-check\.mjs[^\n]*--lock/);
+	assert.match(section, /unit-check\.mjs[^\n]*--plan[^\n]*--unit/);
+});
+
+// why: catches the split step naming lanes.mjs, a sweep-findings tool, for splitting a plan's units (H5).
+test('H5 SKILL.md: the plan-and-split step names plan-graph for the unit split and does not name lanes.mjs there', () => {
+	const text = fs.readFileSync(SKILL, 'utf8');
+	const step = text.split('\n').find((l) => l.includes('**Plan and split.**'));
+	assert.ok(step, 'SKILL.md has the Plan and split step');
+	assert.match(step, /plan-graph/);
+	assert.doesNotMatch(step, /lanes\.mjs/);
+});
+
+// why: catches lanes.mjs printing nothing and exiting 0 for a markdown plan, so a build's units are never split into lanes (H5).
+test('H5 lanes: a markdown plan given to lanes.mjs exits 2 with a stderr message and an empty stdout', () => {
+	const dir = tmp('flow-lanes-');
+	const plan = put(dir, 'plan.md', '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n');
+	const r = spawnSync(process.execPath, [LANES, plan], { cwd: dir, env: env(), encoding: 'utf8' });
+	assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
+	assert.equal(r.stdout, '');
+	assert.ok(r.stderr.trim() !== '', 'a stderr message names the problem');
+});
+
 // why: catches a PASS record quoting a FIX verdict being counted as a fix round
 test('L9: rounds exits 0 when a PASS record quotes an earlier VERDICT: FIX line', () => {
 	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
