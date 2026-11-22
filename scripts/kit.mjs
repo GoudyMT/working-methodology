@@ -703,6 +703,56 @@ function wireGate(home, dryRun, lead) {
   return 'added';
 }
 
+// K341 (build 24): a project's .kit/models.json may change a step's model, but not to a model below the step's floor and
+// not on a never-drop step. Install project refuses such an override before it writes anything, naming the step (or
+// models.json for a file it cannot read), and writes .claude/model-floors.json, the floors the installed
+// .claude/model-override.mjs reads. The rule matches that file's: same family-and-generation rank as model-table.mjs.
+function modelOverrideGate(ctx, kitInfo) {
+  if (ctx.target !== 'project') return;
+  const floors = {};
+  for (const [name, s] of Object.entries(kitInfo.config.steps || {})) {
+    if (s.floor === undefined && s.neverDrop !== true) continue;
+    floors[name] = { model: s.model, ...(s.floor !== undefined ? { floor: s.floor } : {}), ...(s.neverDrop === true ? { neverDrop: true } : {}) };
+  }
+  const rank = (model) => { const m = String(model ?? '').toLowerCase(); return m.includes('opus') ? 3 : m.includes('sonnet') ? 2 : m.includes('haiku') ? 1 : 0; };
+  const generation = (model) => { const m = /-(\d+(?:-\d+)*)$/.exec(String(model ?? '').toLowerCase()); return m ? m[1].split('-').map(Number) : []; };
+  const meets = (model, floor) => {
+    if (rank(floor) === 0) return false;
+    if (rank(model) !== rank(floor)) return rank(model) > rank(floor);
+    const a = generation(model), b = generation(floor);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const x = a[i] ?? 0, y = b[i] ?? 0;
+      if (x !== y) return x > y;
+    }
+    return true;
+  };
+  const file = path.join(ctx.projectDir, '.kit', 'models.json');
+  if (fs.existsSync(file)) {
+    const shape = 'Its shape is {"steps":{"<step>":{"model":"<id>"}}}. Nothing was written: fix .kit/models.json, then run install project again.';
+    let data;
+    try {
+      const raw = fs.readFileSync(file, 'utf8');
+      data = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+    } catch (e) {
+      throw new Error(`Install refused: models.json cannot be read or does not parse (${e.message}). ${shape}`);
+    }
+    const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+    if (!isObj(data) || !isObj(data.steps)) throw new Error(`Install refused: models.json needs a steps object. ${shape}`);
+    const faults = [];
+    for (const [name, row] of Object.entries(data.steps)) {
+      if (!isObj(row) || typeof row.model !== 'string' || !row.model.trim()) throw new Error(`Install refused: models.json step ${name} needs a model string. ${shape}`);
+      if (!Object.hasOwn(floors, name)) continue;
+      const f = floors[name];
+      if (f.neverDrop && row.model !== f.model) faults.push(`step ${name} is never-drop (${f.model}): an override to ${row.model} is refused`);
+      if (f.floor !== undefined && !meets(row.model, f.floor)) faults.push(`step ${name}: model ${row.model} is below its floor ${f.floor}`);
+    }
+    if (faults.length) throw new Error(`Install refused: ${faults.join('; ')}. Nothing was written: fix .kit/models.json, then run install project again.`);
+  }
+  if (ctx.dryRun) return;
+  fs.mkdirSync(path.join(ctx.projectDir, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.projectDir, '.claude', 'model-floors.json'), JSON.stringify({ steps: floors }, null, 1) + '\n');
+}
+
 /**
  * Copy the kit into ~/.claude (target 'user') or a project (target 'project').
  *
@@ -726,6 +776,7 @@ export function install(ctx) {
   const checked = releaseRun ? releaseBytes(ctx.kit, ctx.release.tree, [...entries, ...kitInputs(ctx.kit)]) : null;
   const kitInfo = loadKit(ctx.kit, checked, ctx.home);
   guardProfile(ctx, kitInfo);
+  modelOverrideGate(ctx, kitInfo);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
