@@ -25,6 +25,7 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 - **Files you may create:** <exact list> | none
 - **Read first:** <files, tests and docs, each with why>
 - **Tests to write first, and the failure each must show:** <...>
+- If a test looks wrong, stop and report it; never work around a test.
 - **Done when:** <observable conditions>; within this unit's size-budget share: <each budget and the bytes this
   unit may add> | no size budget touched
 
@@ -43,4 +44,13 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 
 ## Report
 
-Use the report format in your role instructions, as your final message.
+Use the report format in your role instructions, as your final message. End it with a `RECORD:` line, then a role and
+commit line, then one JSON line per open problem you found (a real open problem only; its keys are "id", "severity",
+"status", "where", "claim", "proof" and "fix"), then one notChecked line, as in this example:
+
+```
+RECORD:
+{"role":"builder","commit":"<your head>"}
+{"id":"<F1>","severity":"<high>","status":"<confirmed or plausible>","where":"<file:line>","claim":"<one line>","proof":"<the evidence>","fix":"<the fix>"}
+{"notChecked":"<what you did not get to, or nothing>"}
+```
