@@ -45,6 +45,7 @@
     "scripts/kit.mjs"
    ],
    "tests": [
+    "tests/guard-rows.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-plugin.test.mjs",
     "tests/kit-rules.test.mjs",
@@ -54,6 +55,7 @@
     "tests/model-table.test.mjs",
     "tests/overwatch.test.mjs",
     "tests/review-gate.test.mjs",
+    "tests/test-count.test.mjs",
     "tests/test-lock.test.mjs"
    ],
    "workflows": []
@@ -92,13 +94,17 @@
    ],
    "tests": [
     "tests/flow-lock.test.mjs",
+    "tests/guard-rows.test.mjs",
     "tests/handoff.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-install.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/overwatch.test.mjs",
     "tests/plan-check.test.mjs",
-    "tests/test-lock.test.mjs"
+    "tests/test-budget.test.mjs",
+    "tests/test-count.test.mjs",
+    "tests/test-lock.test.mjs",
+    "tests/value-gate.test.mjs"
    ],
    "workflows": []
   },
@@ -114,7 +120,6 @@
     "project/.claude/size-band.mjs"
    ],
    "tests": [
-    "tests/handoff-canary.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep.test.mjs",
@@ -210,9 +215,7 @@
   "what-holds-where": {
    "guards": [],
    "scripts": [],
-   "tests": [
-    "tests/what-holds.test.mjs"
-   ],
+   "tests": [],
    "workflows": []
   },
   "session-workflow": {
@@ -224,7 +227,9 @@
   "what-this-file-is-not": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/what-holds.test.mjs"
+   ],
    "workflows": []
   },
   "visual-design-collaboration": {
@@ -954,8 +959,8 @@
   "code-standards",
   "critical-rules-priority-index",
   "edit-discipline",
+  "what-holds-where",
   "session-workflow",
-  "what-this-file-is-not",
   "craft-floor",
   "design-for-human-error",
   "enumerate-before-you-count",
