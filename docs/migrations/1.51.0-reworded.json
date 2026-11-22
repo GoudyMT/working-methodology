@@ -34,6 +34,11 @@
       "before": "| orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |",
       "after": "",
       "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    },
+    {
+      "before": "- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`; a scope is optional and rare.",
+      "after": "- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`, `retest`; a scope is optional and rare. `retest` is for a change to an existing locked test after its red commit: the pre-push hook holds a push that carries one until the owner's yes, and a PR title is never `retest`.",
+      "why": "K308 (build 24): the retest commit type, held by pre-push until the owner's yes, is named with the other types"
     }
   ]
 }
