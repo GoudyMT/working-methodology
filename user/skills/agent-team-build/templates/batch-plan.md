@@ -15,10 +15,13 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
 
 ## Units
 
-| Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Runs | Built by |
-|---|---|---|---|---|---|---|
-| U1 | | | | | parallel / alone / after Ux | builder / lead |
+| Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Risk | Tester | Runs | Built by |
+|---|---|---|---|---|---|---|---|---|
+| U1 | | | | | low / medium / high | | parallel / alone / after Ux | builder / lead |
 
+- **Risk and Tester** set the tester's model: "high" in Risk puts the tester on Sonnet; "sonnet" in Tester, written by
+  the owner at approval, does too. Blank Tester keeps the default Haiku. Print the model and the criterion that fired
+  with `node ~/.claude/kit-tools/tester-model.mjs <this plan> <unit>`.
 - **Runs:** "parallel" only when the unit shares no file, port, server or fixture with another parallel unit.
   `node .claude/plan-graph.mjs <this plan>` names every pair that may run at once and shares a file (files in
   backticks); ports, servers and fixtures are still checked by hand.
