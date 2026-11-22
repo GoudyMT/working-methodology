@@ -48,6 +48,7 @@
     "tests/kit-helpers.mjs",
     "tests/kit-plugin.test.mjs",
     "tests/kit-rules.test.mjs",
+    "tests/model-override.test.mjs",
     "tests/model-scripts.test.mjs",
     "tests/model-table-enforcers.test.mjs",
     "tests/model-table.test.mjs"
@@ -743,6 +744,7 @@
     "tests/gate-seen-twice.test.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-recall.test.mjs",
+    "tests/model-override.test.mjs",
     "tests/recall-behave.test.mjs"
    ],
    "workflows": []

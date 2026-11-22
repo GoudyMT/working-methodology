@@ -14,6 +14,7 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 12:2x | U8 | Haiku tester | Ended twice without delivering its report | Lead read the commit and ran the file itself; third ask delivered |
 | 12:2x | U5 | Haiku tester | Guessed: printed names are family words for known ids, config string otherwise | Reviewer judged it consistent; flagged as an unwritten rule |
 | 12:3x | U11 | Haiku tester | Flagged: the CI job needs a test map the PR does not carry | Lead ruled: report mode exits 0 with a note; the job builds the map |
+| 12:4x | U4 | Haiku tester | Asked three open questions instead of guessing (owner-yes lift, guard vs pre-push, red sha role) | Lead answered in one message |
 
 ## 2. Drift from L1 to L13 and how it was caught
 
