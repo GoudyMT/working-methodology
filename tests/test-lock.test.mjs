@@ -320,3 +320,103 @@ test('the builder brief template does not tell the builder to write its own file
 	}
 	assert.match(body, /\blead\b[^\n]{0,80}kit-unit-files\.txt/, 'the brief names the lead as the writer of kit-unit-files.txt');
 });
+
+// why: catches a retest(scope): commit that slips past the hold's exact "retest:" match, so a scoped retest ships unseen in either hook
+test('pre-push refuses a retest(scope): commit in both the kit and the project hook, naming its subject', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const retest = commit(dir, 'retest(lock): x');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} refused: ${r.stderr}`);
+		assert.ok(r.stderr.includes('retest(lock): x'), `${hook} names the subject: ${r.stderr}`);
+	}
+});
+
+// why: catches a push whose remote head this repo never fetched being read as unreadable, which blocks a push with no retest
+test('pre-push lets a new branch with no retest through when the remote holds a head this repo never fetched', () => {
+	const { dir, bare } = pushRepo();
+	const parent = kitTemp.makeTemp('lock-other-');
+	git(parent, ['clone', '-q', bare, 'other']);
+	const other = path.join(parent, 'other');
+	git(other, ['checkout', '-q', '-b', 'feat/other']);
+	put(other, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
+	commit(other, 'feat: other clone work');
+	git(other, ['push', '-q', 'origin', 'feat/other']);
+	put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+	const feat = commit(dir, 'feat: tidy add');
+	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${feat} refs/heads/feat/x ${ZERO}\n`);
+	assert.equal(r.status, 0, `a push with no retest goes through: ${r.stderr}`);
+	assert.doesNotMatch(r.stderr, /cannot be read/);
+});
+
+// why: catches a new branch carrying a retest: commit going out unheld because only its own sha is read
+test('pre-push refuses a new branch whose range holds a retest: commit', () => {
+	const { dir, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/new ${retest} refs/heads/feat/new ${ZERO}\n`);
+	assert.notEqual(r.status, 0, `the new branch was refused: ${r.stderr}`);
+	assert.match(r.stderr, OWNER_YES);
+});
+
+// why: catches an update push re-refusing a retest the remote already holds on another branch, which blocks every merge of main
+test('pre-push does not refuse an update push for a retest the remote already holds on another branch', () => {
+	const { dir, red, bare } = pushRepo();
+	git(dir, ['checkout', '-q', '-b', 'topic']);
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	commit(dir, 'retest: tighten the add case');
+	git(dir, ['push', '-q', 'origin', 'topic']);
+	git(dir, ['checkout', '-q', 'main']);
+	git(dir, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
+	git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
+	put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+	const first = commit(dir, 'feat: first add');
+	git(dir, ['push', '-q', 'origin', 'feat/x']);
+	git(dir, ['merge', '-q', '--no-edit', 'main']);
+	put(dir, { 'src/util.js': 'export const id = (x) => x + 0;\n' });
+	const next = commit(dir, 'feat: tidy util');
+	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${next} refs/heads/feat/x ${first}\n`);
+	assert.equal(r.status, 0, `the update push goes through: ${r.stderr}`);
+	assert.doesNotMatch(r.stderr, /retest/);
+});
+
+// why: catches the kit's own pre-push refusing a retest push even with the owner's pop-up yes to that push, unlike the project hook
+test("the kit's own pre-push lets a retest: push through with the owner's pop-up yes to that push", () => {
+	const { dir, red, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
+	const cfg = kitTemp.makeTemp('lock-owner-kit-');
+	ownerTaps(cfg, dir, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+	const yes = pushRun(KIT_PRE_PUSH, dir, bare, input, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
+	assert.equal(yes.status, 0, `the owner's yes lets the kit hook's push through: ${yes.stderr}`);
+});
+
+// why: catches the kit's own pre-push passing a retest push with no owner yes; the refusal that names the owner's yes must stay
+test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes and names it", () => {
+	const { dir, red, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`);
+	assert.notEqual(r.status, 0, `the kit hook refused: ${r.stderr}`);
+	assert.match(r.stderr, OWNER_YES);
+});
+
+// why: catches the builder brief keeping the test-first line or not naming the tester's red commit as never edited
+test('the builder brief drops the test-first line and says the tester red commit is never edited', () => {
+	const body = fs.readFileSync(BRIEF, 'utf8');
+	assert.doesNotMatch(body, /Tests to write first/);
+	assert.match(body, /tester'?s red commit[^\n]*never edit/i);
+});
+
+// why: catches the name check refusing a retest: subject or accepting a retest/ branch, which would break the retest type's rule
+test('name-check accepts a retest: subject and refuses a retest/ branch name', () => {
+	const NAME_CHECK = path.resolve('project/.claude/name-check.mjs');
+	const msg = path.join(kitTemp.makeTemp('lock-msg-'), 'MSG');
+	fs.writeFileSync(msg, 'retest: tighten the add case\n');
+	const m = spawnSync(process.execPath, [NAME_CHECK, 'message', msg], { env: isolatedEnv(), encoding: 'utf8' });
+	assert.equal(m.status, 0, `the retest subject is accepted: ${m.stderr}`);
+	const b = spawnSync(process.execPath, [NAME_CHECK, 'branch', 'retest/x'], { env: isolatedEnv(), encoding: 'utf8' });
+	assert.equal(b.status, 1, `the retest/ branch is refused: ${b.stdout}${b.stderr}`);
+});
