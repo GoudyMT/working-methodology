@@ -442,3 +442,40 @@ test('the test-reviewer role file matches the table entry for test-review and it
 	assert.deepEqual(want, { model: config.roles['test-reviewer'].model, effort: config.roles['test-reviewer'].effort });
 	assert.deepEqual({ model: field('model'), effort: field('effort') }, want);
 });
+
+// why: catches PR code running in the base copy gate job
+test('the model table check runs in unit-tests, never in kit-tests', () => {
+	const ci = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
+	const unit = ci.slice(ci.indexOf('\n  unit-tests:'), ci.indexOf('\n  test-check:'));
+	assert.match(unit, /node user\/kit-tools\/model-table\.mjs check \./);
+	const kit = ci.slice(ci.indexOf('\n  kit-tests:'));
+	assert.doesNotMatch(kit, /model-table\.mjs/);
+});
+
+// why: catches session start running project code instead of the kit copy
+test('session start never runs the project state.mjs', () => {
+	const { proj, start, rows } = listKit();
+	fs.writeFileSync(path.join(proj, '.claude/state.mjs'), `import fs from 'node:fs';\nfs.writeFileSync(${JSON.stringify(path.join(proj, 'ran.txt'))}, 'ran');\n`);
+	start();
+	assert.equal(fs.existsSync(path.join(proj, 'ran.txt')), false, 'the project state.mjs ran at session start');
+	assert.equal(rows().length, 2);
+});
+
+// why: catches a row file written through a linked folder
+test('session start writes nothing through a linked .kit folder', () => {
+	const { proj, start } = listKit();
+	const outside = makeTemp('kit-link-target-');
+	fs.rmSync(path.join(proj, '.kit'), { recursive: true, force: true });
+	fs.symlinkSync(outside, path.join(proj, '.kit'), 'junction');
+	start();
+	assert.deepEqual(fs.readdirSync(outside), []);
+});
+
+// why: catches one failed row write dropping all session start text
+test('a row that cannot be written keeps the session start text', () => {
+	const { proj, start } = listKit();
+	fs.rmSync(path.join(proj, '.kit'), { recursive: true, force: true });
+	fs.writeFileSync(path.join(proj, '.kit'), 'a plain file, not a folder');
+	const text = start();
+	assert.match(String(text), /Kit roles:/);
+});
