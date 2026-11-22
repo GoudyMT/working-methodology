@@ -493,12 +493,6 @@ jobs:
           M="$RUNNER_TEMP/base/scripts/rule-map.mjs"; [ -f "$M" ] || { echo "the base has no rule-map.mjs: this PR's copy runs"; M=scripts/rule-map.mjs; }
           node "$M" check
 
-      # E36 (build 24): each step's model, effort and floor must agree with its role file and script, so a drifted role
-      # file fails the PR here.
-      - name: Model table check
-        shell: bash
-        run: node user/kit-tools/model-table.mjs check .
-
       # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
       - name: Link scan
         shell: bash
@@ -515,6 +509,12 @@ jobs:
           K="$RUNNER_TEMP/base/scripts/kit.mjs"; grep -qs KIT_CHECK_ROOT "$K" || { echo "the base has no kit.mjs that reads another tree: this PR's copy runs"; K=scripts/kit.mjs; }
           KIT_CHECK_ROOT=. node "$K" build
           git diff --exit-code
+
+      # E36 (build 24): each step's model, effort and floor must agree with its role file and script, so a drifted role
+      # file fails the PR here. It runs after every check that judges the PR, since it reads the PR's own table.
+      - name: Model table check
+        shell: bash
+        run: node user/kit-tools/model-table.mjs check .
 
       # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
       # a replaced download fails here before it runs.
