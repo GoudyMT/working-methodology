@@ -26,6 +26,7 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 - **Read first:** <files, tests and docs, each with why>
 - **Red tests (the tester's red commit <sha>; never edit them), and the failure each must show:** <...>
 - If a test looks wrong, stop and report it; never work around a test.
+- **Tests are a floor:** one test per plan line. The builder must never add or drop a test; a test that looks wrong is a stop.
 - **Done when:** <observable conditions>; within this unit's size-budget share: <each budget and the bytes this
   unit may add> | no size budget touched
 

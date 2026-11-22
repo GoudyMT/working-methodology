@@ -18,6 +18,7 @@
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { units, faults } from '../../project/.claude/plan-graph.mjs';
 import safeSpawn from '../../project/.claude/safe-spawn.cjs';
 import { check } from './handoff.mjs';
@@ -157,8 +158,24 @@ function readLocks(file) {
 function lockFaults(locks, raw) {
 	return Object.entries(locks).flatMap(([id, hex]) => {
 		if (!raw.has(id)) return [`locked unit ${id} has no row in the Units table`];
-		return sha(raw.get(id)) === hex ? [] : [`unit ${id} is locked and its row has changed since it was locked`];
+		return sha(raw.get(id)) === hex ? [] : [`unit ${id}: the locked row changed since --lock`];
 	});
+}
+
+// For unit-check's count gate: one unit's row of a plan. Its Files paths, its Tests line count, and whether its row
+// changed since its --lock. Throws an Error when the plan, its Units table or the unit's row cannot be read.
+export function unitGate(plan, id) {
+	const table = unitsTable(fs.readFileSync(plan, 'utf8'));
+	if (table === null) throw new Error(`${plan} has no ## Units table`);
+	const col = (key) => table.head.findIndex((h) => h.startsWith(key.toLowerCase()));
+	if (col('Files') < 0 || col('Tests') < 0) throw new Error(`${plan}: the Units table has no Files or Tests column`);
+	const i = table.rows.findIndex((r) => (r[col('Id')] || '').replace(/[*_`]/g, '').trim() === id);
+	if (i < 0) throw new Error(`the Units table has no row for unit ${id}`);
+	const cells = table.rows[i];
+	const lines = (cells[col('Tests')] || '').split(/<br\s*\/?>/i).filter((l) => l.trim()).length;
+	const locks = readLocks(`${plan}.locks.json`);
+	const changed = Object.prototype.hasOwnProperty.call(locks, id) && locks[id] !== sha(table.raws[i]);
+	return { files: filesOf(cells[col('Files')] || ''), lines, changed };
 }
 
 // The role line of a hand-back: the first non-blank line after the last RECORD: line, as handoff.mjs reads it.
@@ -283,4 +300,5 @@ function main(argv) {
 	}
 }
 
-process.exitCode = main(process.argv.slice(2));
+// Runs only when started directly: unit-check imports unitGate from this file.
+if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) process.exitCode = main(process.argv.slice(2));

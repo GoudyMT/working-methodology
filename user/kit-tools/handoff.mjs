@@ -14,7 +14,10 @@ import { fileURLToPath } from 'node:url';
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const FINDING_KEYS = ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix'];
 // The statuses a test-reviewer may write (K310). Other roles' statuses are not checked here.
-const REVIEW_STATUSES = ['wrong-test', 'uncovered', 'passes-on-base', 'vague', 'open'];
+// U20: swap (a test replaced; its replacement names the assertions it keeps), redundant, add (names the break it catches).
+const REVIEW_STATUSES = ['wrong-test', 'uncovered', 'passes-on-base', 'vague', 'open', 'swap', 'redundant', 'add'];
+const filled = (v) => typeof v === 'string' && v.trim() !== '';
+const swapOk = (r) => isObject(r) && filled(r.test) && Array.isArray(r.keeps) && r.keeps.length > 0 && r.keeps.every(filled);
 // U16: a tester or test-reviewer states whether its spec was clear, asked (a lead answer must follow) or assumed (refused).
 // A missing clarity is a warning in this release (log-only), so only the values are checked as errors.
 const CLARITY = ['clear', 'asked', 'assumed'];
@@ -108,6 +111,10 @@ export function check(text, expect = {}) {
 			}
 			if (expect.role === 'test-reviewer' && typeof obj.status === 'string' && obj.status && !REVIEW_STATUSES.includes(obj.status)) {
 				errs.push(`bad \`status\` ${JSON.stringify(obj.status)}, want one of ${REVIEW_STATUSES.join(', ')}`);
+			}
+			if (expect.role === 'test-reviewer' && obj.status === 'add' && !filled(obj.breaks)) errs.push('`breaks` is missing or empty: an add names the break it catches');
+			if (expect.role === 'test-reviewer' && obj.status === 'swap' && !swapOk(obj.replacement)) {
+				errs.push('`replacement` must be {"test": "<name>", "keeps": [<assertions the swap keeps>]}, with at least one kept assertion');
 			}
 			if (typeof obj.id === 'string' && obj.id) {
 				if (seen.has(obj.id)) errs.push(`duplicate \`id\` ${JSON.stringify(obj.id)}`);

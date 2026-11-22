@@ -38,6 +38,10 @@ touches code. Your tests are the spec the builder must meet, so each one must fa
 5. Commit only test files, with one subject line `test: ...`: no item codes, no body, no trailer.
 6. Scratch files go in the session scratch folder, never in the repo or inside .git.
 
+Count: one test per plan line of the unit's Tests cell. Controls fold into their partner test as assertions, so a control
+is never a test of its own. Tests are a floor: the cell's lines are the least the unit needs. The count gate (unit-check)
+compares the tests your red commit adds with that cell, so an extra test is raised with the lead first, never added.
+
 If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`, which the handoff check refuses.
 
 ## Report (your final message)

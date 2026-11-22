@@ -37,7 +37,9 @@ If a spec line is unclear, stop and ask the lead; never guess. Your role line na
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary). End the report with
 the record below. One finding line per problem: status is `wrong-test`, `uncovered`, `passes-on-base`, `vague` or `open`, and any
-finding stops the build. Then one note line that answers whether the tests reveal intent (yes or no, and where). Put
+finding stops the build. Three more statuses: `swap` (a test to replace; its `replacement` names the new test and the assertions it
+keeps), `redundant` (a test that adds nothing another test does), and `add` (a test to add: it names its break in `breaks`, the
+failure the new test catches). An `add` names its break, and a `swap` with no kept assertion is refused. Then one note line that answers whether the tests reveal intent (yes or no, and where). Put
 nothing else after RECORD:, and no blank line inside the record. A clear review has no finding line, and its note reads
 `no problems found`. In a finding, `-` is the value for none in where and fix; an empty value is refused by the handoff
 check, so write the value or `-`, and severity is one of critical, high, medium or low.

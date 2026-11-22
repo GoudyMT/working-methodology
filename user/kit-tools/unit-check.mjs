@@ -1,91 +1,24 @@
 #!/usr/bin/env node
-// K309 and K312 (build 24): a unit's history proves test-first only with the right commit shape: a red test-only commit
-// before each feat or fix, refactors that leave tests alone, retests for the owner's yes.
-// Usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>] (exit 0 pass, 1 faults, 2 bad use).
+// A unit's history proves test-first only with the right commit shape: a red test-only commit before each feat or fix.
+// Usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>] [--plan <plan.md> --unit <id>] (0 pass, 1 fault, 2 bad use)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
-import safeSpawn from './audits/safe-spawn.cjs';
 import kitTemp from './kit-temp.cjs';
+import { BLANK, commitOf, countGate, gitOut, gitRun, gitShow, testsIn } from './count-gate.mjs';
 
-const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec']);
 const UNCHECKED = new Set(['chore', 'docs', 'build', 'ci']);
 const MIXED = 'mixed: the commit touches source and test files; split it';
 const NO_RED = 'no red commit before it';
 const NO_RED_TEST = 'test changed without a red test; use retest:';
 const USAGE = 'usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>] (node:test projects only)\n';
-// A test( call in code (group 1: the char before it; t.test( is no test).
-const TEST_CALL = /(^|[^\w.$])test\(/gm;
-const NAME = /\s*(['"`])((?:\\.|(?!\1).)*)\1/y;
-// Strings, templates and comments, blanked before the search.
-const MASK = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|`(?:\\[\s\S]|[^`\\])*`|'(?:\\[\s\S]|[^'\\\n])*'|"(?:\\[\s\S]|[^"\\\n])*"/g;
-const BLANK = /^\s*(\/\/|$)/;
 // A TAP result line at any indent; a SKIP or TODO directive is read.
 const TAP = /^\s*(not ok|ok) \d+ - (.*?)(?: # (SKIP|TODO)\b.*)?$/;
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 
-// A test file: in a test, tests, __tests__ or spec folder, or named *.test.* or *.spec.*.
-const isTestFile = (rel) => {
-	const parts = rel.split('/');
-	return parts.slice(0, -1).some((d) => TEST_DIRS.has(d)) || /\.(test|spec)\./.test(parts[parts.length - 1]);
-};
-
 // The kit runner's switches stay out of the child runs.
 const childEnv = () => Object.fromEntries(Object.entries(process.env).filter(([k]) => !/^KIT_|^NODE_TEST_CONTEXT$/.test(k)));
-const gitRun = (repo, args, opts = {}) => safeSpawn.gitRead(repo, args, { encoding: 'utf8', maxBuffer: 1 << 28, ...opts });
-function gitOut(repo, args) {
-	const r = gitRun(repo, args);
-	if (r.status !== 0) throw new Error(`git ${args.join(' ')} failed: ${String(r.stderr).trim()}`);
-	return r.stdout;
-}
-const gitShow = (repo, rev, file) => {
-	const r = gitRun(repo, ['show', `${rev}:${file}`]);
-	return r.status === 0 ? r.stdout : null;
-};
-
-// The line where the test( call at lines[at], column col, closes.
-function closeOf(lines, at, col) {
-	let depth = 0;
-	let quote = null;
-	for (let k = at; k < lines.length; k++) {
-		const s = lines[k];
-		if (quote && quote !== '`') quote = null;
-		for (let c = k === at ? col : 0; c < s.length; c++) {
-			const ch = s[c];
-			if (quote) {
-				if (ch === '\\') c++;
-				else if (ch === quote) quote = null;
-			} else if (ch === '/' && s[c + 1] === '/') break;
-			else if (ch === '"' || ch === "'" || ch === '`') quote = ch;
-			else if (ch === '(') depth++;
-			else if (ch === ')' && --depth === 0) return k;
-		}
-	}
-	return lines.length - 1;
-}
-
-// A file's tests in order; each runs from the comment or blank lines above it to its last line.
-function testsIn(text) {
-	const src = String(text);
-	const lines = src.split('\n');
-	const masked = src.replace(MASK, (m) => m.replace(/[^\n]/g, ' '));
-	const out = [];
-	for (const m of masked.matchAll(TEST_CALL)) {
-		const at = m.index + m[1].length;
-		NAME.lastIndex = at + 5;
-		const n = NAME.exec(src);
-		if (n) out.push({ name: n[2].replace(/\\(.)/g, '$1'), start: src.slice(0, at).split('\n').length - 1, col: at - (src.lastIndexOf('\n', at) + 1) });
-	}
-	let prev = -1;
-	for (const t of out) {
-		t.end = closeOf(lines, t.start, t.col);
-		t.head = t.start;
-		while (t.head - 1 > prev && BLANK.test(lines[t.head - 1])) t.head--;
-		prev = t.end;
-	}
-	return out;
-}
 
 // The new-file line numbers a commit adds to one file.
 function addedLines(repo, hash, file) {
@@ -176,16 +109,6 @@ function runFiles(dir, files, ms) {
 	return { states, timedOut };
 }
 
-function commitOf(repo, hash) {
-	const subject = gitOut(repo, ['log', '-1', '--format=%s', hash]).trim();
-	const files = gitOut(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', '--root', hash]).split('\n').filter(Boolean);
-	const tests = files.filter(isTestFile);
-	const cls = tests.length === 0 ? 'source' : tests.length === files.length ? 'test' : 'mixed';
-	const type = (/^([a-z]+)(\([^)]*\))?!?:/.exec(subject) || [])[1] || '';
-	const p = gitRun(repo, ['rev-parse', '--verify', '-q', `${hash}^`]);
-	return { hash, short: gitOut(repo, ['rev-parse', '--short', hash]).trim(), subject, tests, cls, type, parent: p.status === 0 ? p.stdout.trim() : undefined };
-}
-
 // Runs the rules over the commits, oldest first: fault lines (stderr), owner yes lines (stdout).
 function check(repo, hashes, ms) {
 	const commits = hashes.map((h) => commitOf(repo, h));
@@ -264,16 +187,14 @@ function parseArgs(argv) {
 	const out = { repo: process.cwd(), timeout: 120000 };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
-		if (a === '--repo' || a === '--timeout') {
+		if (['--repo', '--timeout', '--plan', '--unit'].includes(a)) {
 			const v = argv[++i];
-			if (v === undefined) return null;
-			if (a === '--repo') out.repo = v;
-			else if (/^\d+$/.test(v) && Number(v) > 0) out.timeout = Number(v);
-			else return null;
+			if (v === undefined || (a === '--timeout' && !(/^\d+$/.test(v) && Number(v) > 0))) return null;
+			out[a.slice(2)] = a === '--timeout' ? Number(v) : v;
 		} else if (out.range === undefined) out.range = a;
 		else return null;
 	}
-	if (out.range === undefined || !out.range.includes('..')) return null;
+	if (out.range === undefined || !out.range.includes('..') || (out.plan === undefined) !== (out.unit === undefined)) return null;
 	out.repo = path.resolve(out.repo);
 	return out;
 }
@@ -299,6 +220,7 @@ function run(args) {
 		return 2;
 	}
 	const { faults, notes } = check(repo, hashes, timeout);
+	if (args.plan !== undefined) faults.push(...countGate(repo, hashes, args.plan, args.unit));
 	for (const n of notes) process.stdout.write(`${n}\n`);
 	if (faults.length) {
 		process.stderr.write(`${faults.join('\n')}\n`);
