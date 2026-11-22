@@ -21,7 +21,7 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
 
 - **Risk and Tester** set the tester's model: "high" in Risk puts the tester on Sonnet; "sonnet" in Tester, written by
   the owner at approval, does too. Blank Tester keeps the default Haiku. Print the model and the criterion that fired
-  with `node ~/.claude/kit-tools/tester-model.mjs <this plan> <unit>`.
+  with the kit's tester-model.mjs (its path is on the "Kit tools this session" start-up line), giving this plan and the unit.
 - **Runs:** "parallel" only when the unit shares no file, port, server or fixture with another parallel unit.
   `node .claude/plan-graph.mjs <this plan>` names every pair that may run at once and shares a file (files in
   backticks); ports, servers and fixtures are still checked by hand.
