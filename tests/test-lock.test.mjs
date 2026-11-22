@@ -427,3 +427,53 @@ test('the builder brief drops the test-first line and says the tester red commit
 	assert.match(body, /tester'?s red commit[^\n]*never edit/i);
 });
 
+// why: catches a fix:, feat: or test: commit that edits an existing test file pushed with no owner yes, so a test changes unheld
+test('pre-push holds a fix:, feat: or test: commit that edits an existing test file, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		for (const subject of ['fix: tighten the add case', 'feat: tighten the add case', 'test: tighten the add case']) {
+			const { dir, red, bare } = pushRepo();
+			put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+			const edit = commit(dir, subject);
+			const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+			assert.notEqual(r.status, 0, `${hook} passed "${subject}" that edits tests/add.test.mjs: ${r.stderr}`);
+			assert.match(r.stderr, OWNER_YES, `${hook} asks for the owner's yes on "${subject}"`);
+		}
+		// Folded controls (were their own tests): a commit that only adds a new test file, and a fix: that edits only source, still pass.
+		{
+			const { dir, red, bare } = pushRepo();
+			put(dir, { 'tests/new.test.mjs': 'test("new", () => {});\n' });
+			const adds = commit(dir, 'feat: add a new test file');
+			const ok = pushRun(hook, dir, bare, `refs/heads/feat/x ${adds} refs/heads/feat/x ${red}\n`);
+			assert.equal(ok.status, 0, `${hook} held a new test file: ${ok.stderr}`);
+			assert.doesNotMatch(ok.stderr, OWNER_YES);
+		}
+		{
+			const { dir, red, bare } = pushRepo();
+			put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+			const src = commit(dir, 'fix: tidy add');
+			const ok = pushRun(hook, dir, bare, `refs/heads/feat/x ${src} refs/heads/feat/x ${red}\n`);
+			assert.equal(ok.status, 0, `${hook} held a source-only fix: ${ok.stderr}`);
+			assert.doesNotMatch(ok.stderr, OWNER_YES);
+		}
+	}
+});
+
+// why: catches a Retest: commit in capitals pushed unheld, since the subject match is case-sensitive and reads only the type
+test('pre-push holds a Retest: commit in any letter case, and passes Retesting: as a word that is no type', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		const cap = commit(dir, 'Retest: tighten the add case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${cap} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed "Retest:": ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+		// Folded control (was its own test): Retesting: is not the retest type, so it still passes.
+		const { dir: d2, red: r2, bare: b2 } = pushRepo();
+		put(d2, { 'src/add.js': 'export const add = (a, b) => a + b + 2;\n' });
+		const near = commit(d2, 'Retesting: tighten the add case');
+		const ok = pushRun(hook, d2, b2, `refs/heads/feat/x ${near} refs/heads/feat/x ${r2}\n`);
+		assert.equal(ok.status, 0, `${hook} held Retesting:: ${ok.stderr}`);
+		assert.doesNotMatch(ok.stderr, OWNER_YES);
+	}
+});
+

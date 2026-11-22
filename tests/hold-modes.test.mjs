@@ -323,3 +323,75 @@ test('hold-check reads the kit dir it is given, not the folder it is run from', 
 	assert.equal(r.code, 1, r.out);
 	assert.match(r.out, /alpha-hold/);
 });
+
+// why: catches an enforce hold that agent-model logs and passes, so a model mismatch is never stopped under enforce
+test('agent-model refuses a model-mismatch call when its hold reads enforce, and passes and logs it under log', () => {
+	const hookDir = kitTemp.makeTemp('agent-model-modes-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const calls = [{ subagent_type: 'opus-role', model: 'haiku' }, { subagent_type: 'opus-role', model: 'opus' }];
+	const setMode = (mode) => fs.writeFileSync(path.join(hookDir, 'holds.json'), holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode }]));
+	const dir = repo();
+	setMode('enforce');
+	const enforced = checkCalls(hookDir, dir, calls, env);
+	assert.equal(enforced.status, 0, enforced.stderr);
+	const decisions = JSON.parse(enforced.stdout);
+	assert.equal(decisions[0] && decisions[0].hookSpecificOutput && decisions[0].hookSpecificOutput.permissionDecision, 'deny', `the mismatch call is refused: ${enforced.stdout}`);
+	assert.equal(decisions[1], null, 'the same-family call is not refused');
+	setMode('log');
+	const logged = checkCalls(hookDir, dir, calls, env);
+	assert.equal(logged.status, 0, logged.stderr);
+	assert.deepEqual(JSON.parse(logged.stdout), [null, null], 'under log neither call is refused');
+	assert.match(agentLogText(dir), /"mode":"log"/);
+});
+
+// why: catches a hook copied without hold-mode.cjs logging a plain log row, which hides that its hold could not be read
+test('agent-model marks a log row holdModeMissing when hold-mode.cjs is absent, and not when it is present', () => {
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const call = [{ subagent_type: 'opus-role', model: 'haiku' }];
+	const bare = kitTemp.makeTemp('agent-model-nohold-');
+	fs.copyFileSync(AGENT_MODEL, path.join(bare, 'agent-model.cjs'));
+	const dirBare = repo();
+	const missing = checkCalls(bare, dirBare, call, env);
+	assert.equal(missing.status, 0, missing.stderr);
+	const rowBare = JSON.parse(agentLogText(dirBare).trim().split('\n')[0]);
+	assert.equal(rowBare.mode, 'log');
+	assert.equal(rowBare.holdModeMissing, true, JSON.stringify(rowBare));
+	const full = kitTemp.makeTemp('agent-model-withhold-');
+	fs.copyFileSync(AGENT_MODEL, path.join(full, 'agent-model.cjs'));
+	fs.copyFileSync(HOLD_MODE, path.join(full, 'hold-mode.cjs'));
+	fs.writeFileSync(path.join(full, 'holds.json'), holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'log' }]));
+	const dirFull = repo();
+	assert.equal(checkCalls(full, dirFull, call, env).status, 0);
+	const rowFull = JSON.parse(agentLogText(dirFull).trim().split('\n')[0]);
+	assert.equal('holdModeMissing' in rowFull, false, JSON.stringify(rowFull));
+});
+
+// why: catches a broken RECORD that handoff-gate only logs under enforce, so the hand-back reaches the lead with no refusal
+test('handoff-gate refuses a broken RECORD block under enforce, and stays silent for a valid one or under log', () => {
+	const kit = kitTemp.makeTemp('handoff-gate-kit-');
+	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/kit-tools/handoff.mjs'), path.join(kit, 'kit-tools', 'handoff.mjs'));
+	const gate = path.join(kit, 'kit-hooks', 'handoff-gate.cjs');
+	const setMode = (mode) => fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), holdsText([{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode }]));
+	const cwd = kitTemp.makeTemp('handoff-gate-repo-');
+	spawnSync('git', ['-C', cwd, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	const ROLE = '{"role": "builder", "commit": "abc1234"}';
+	const FIELDS = { id: 'F1', severity: 'low', status: 'red', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
+	const broken = ['Prose.', 'RECORD:', ROLE, JSON.stringify({ ...FIELDS, proof: '' })].join('\n');
+	const valid = ['Prose.', 'RECORD:', ROLE, JSON.stringify(FIELDS)].join('\n');
+	const send = (message) => spawnSync(process.execPath, [gate], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
+	setMode('enforce');
+	const refused = send(broken);
+	assert.equal(refused.status, 0, refused.stderr);
+	let out = null;
+	assert.doesNotThrow(() => { out = JSON.parse(refused.stdout); }, `enforce prints a decision: ${refused.stdout}`);
+	assert.equal(out && out.hookSpecificOutput && out.hookSpecificOutput.permissionDecision, 'deny', `the broken record is refused: ${refused.stdout}`);
+	assert.equal(send(valid).stdout.trim(), '', 'a valid record is not refused');
+	setMode('log');
+	assert.equal(send(broken).stdout.trim(), '', 'under log the gate prints nothing');
+});
