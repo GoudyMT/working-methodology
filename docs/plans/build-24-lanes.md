@@ -62,3 +62,5 @@ assertion, not a test; over a ceiling splits at planning. Then the build's own n
   replayed within its window; a yes to a plain branch push also covers retest commits. Spend it under the push lock
   and make a retest push's yes quote the head sha or a retest marker; the project hook's approved path should take
   the 10-minute age for retests.
+- mutation-check.mjs is 20911 bytes (16181 at base) and test-check.mjs 40216 (40039 at base), both over the 14000 module size; the size test does not cover scripts/. Decide split or exemption (U21 builder flag).
+- --value covering set is greedy ("near the smallest"); test-value groups from scripts/test-value.mjs are not reused, because kit tools install without scripts/.
