@@ -130,6 +130,7 @@ test('pr-size exits 2 outside a git repository', () => {
 
 // why: guards rule:agent-role-table (the shipped size rule reads the real table's writers, so a missing script is found)
 test('the real pr-size names the real table writers', () => {
+	assert.ok(fs.existsSync('user/kit-tools/pr-size.mjs'), 'user/kit-tools/pr-size.mjs is missing');
 	const steps = JSON.parse(fs.readFileSync('kit.config.json', 'utf8')).steps;
 	assert.equal(steps['writer-large']?.model, OPUS, 'steps.writer-large is not in kit.config.json');
 	const r = sizeRun(path.resolve('user/kit-tools/pr-size.mjs'), sizeRepo(11), ['main']);
@@ -144,6 +145,7 @@ test('the real pr-size names the real table writers', () => {
 
 // why: guards rule:agent-role-table (the table has no entry for the large writer, so the size rule names an unchecked model)
 test('the real table holds a writer-large step on opus, medium, enforced by pr-size', () => {
+	assert.ok(fs.existsSync('user/kit-tools/pr-size.mjs'), 'user/kit-tools/pr-size.mjs is missing');
 	const step = JSON.parse(fs.readFileSync('kit.config.json', 'utf8')).steps['writer-large'];
 	assert.ok(step, 'steps.writer-large is missing');
 	assert.deepEqual({ model: step.model, effort: step.effort, enforcer: step.enforcer }, { model: OPUS, effort: 'medium', enforcer: 'script:user/kit-tools/pr-size.mjs' });
@@ -208,6 +210,13 @@ test('a call with no model and no role file is logged with the fields, and still
 	assert.ok(typeof rows[0].why === 'string' && rows[0].why.length > 0, 'why');
 	assert.ok(!Number.isNaN(Date.parse(rows[0].at)), 'at');
 	assert.ok('want' in rows[0], 'want');
+	// Folded control (was its own test): catches a role file with no model line being read as a missing role file.
+	{
+		const quiet = hookSetup({ scanner: '' });
+		quiet.run('Agent', { subagent_type: 'scanner', prompt: 'x' });
+		quiet.run('Agent', { subagent_type: 'scanner', model: 'opus', prompt: 'x' });
+		assert.deepEqual(quiet.lines(), []);
+	}
 });
 
 // why: guards rule:agent-role-table (a call whose model family differs from its role file runs a step on the wrong model)
@@ -327,6 +336,14 @@ test('install user writes the lead model and effort into settings.json', () => {
 	const s = settingsOf(home);
 	assert.equal(s.model, 'claude-lead-7');
 	assert.equal(s.effortLevel, 'xhigh');
+	// Folded control (was its own test): catches a kit with no lead step writing an empty or invented model into settings.json.
+	{
+		const bare = makeKit();
+		install({ kit: bare.kit, home: bare.home, target: 'user' });
+		const none = settingsOf(bare.home);
+		assert.equal('model' in none, false);
+		assert.equal('effortLevel' in none, false);
+	}
 });
 
 // why: catches install user dropping the owner's other settings keys when it writes the lead
@@ -341,6 +358,14 @@ test('install user keeps the settings keys already in settings.json beside the l
 	assert.equal(s.model, 'claude-lead-7', 'the lead model replaces the old one');
 	assert.ok(s.hooks && s.hooks.PreToolUse, 'the launcher hooks are still wired');
 	assert.ok(s.hooks.PreToolUse.some((e) => JSON.stringify(e).includes('echo foreign')), 'the foreign PreToolUse entry was dropped');
+	// Folded control (was its own test): catches a second install user moving the lead or doubling the hooks in settings.json.
+	{
+		const twice = leadKit();
+		install({ kit: twice.kit, home: twice.home, target: 'user' });
+		const once = fs.readFileSync(path.join(twice.home, 'settings.json'), 'utf8');
+		install({ kit: twice.kit, home: twice.home, target: 'user' });
+		assert.equal(fs.readFileSync(path.join(twice.home, 'settings.json'), 'utf8'), once);
+	}
 });
 
 // why: catches a second install user moving the lead or doubling the hooks in settings.json
@@ -393,6 +418,21 @@ test('session start adds one list row for each role on a retiring or unmeasured 
 	assert.equal(rowFor(made, 'checker', 'claude-c-1').length, 1, 'the retiring checker');
 	assert.equal(rowFor(made, 'scanner', 'claude-z-9').length, 1, 'the unmeasured scanner');
 	for (const r of made) assert.ok(typeof r.id === 'string' && r.id.length > 0 && typeof r.title === 'string', JSON.stringify(r));
+	// Folded control (was its own test): catches a clean kit with every role measured still adding rows at session start.
+	{
+		const clean = listKit();
+		fs.rmSync(path.join(clean.home, 'agents/scanner.md'));
+		fs.writeFileSync(path.join(clean.kit, 'kit.config.json'), JSON.stringify({ ownerName: 'Pat', roles: { builder: { model: 'claude-a-1', effort: 'high' } }, models: { measured: ['claude-a-1'], retiring: [] } }));
+		clean.start();
+		assert.deepEqual(clean.rows(), []);
+	}
+	// Folded control (was its own test): catches one failed row write dropping all session start text.
+	{
+		const blocked = listKit();
+		fs.rmSync(path.join(blocked.proj, '.kit'), { recursive: true, force: true });
+		fs.writeFileSync(path.join(blocked.proj, '.kit'), 'a plain file, not a folder');
+		assert.match(String(blocked.start()), /Kit roles:/);
+	}
 });
 
 // why: catches a later session start adding the same role and model row a second time
@@ -431,10 +471,20 @@ test('the rows session start adds pass the state check of the project', () => {
 	const r = spawnSync(process.execPath, [path.join(proj, '.claude/state.mjs'), 'list', '--all'], { cwd: proj, encoding: 'utf8' });
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
 	assert.match(r.stdout, /claude-z-9/);
+	// Folded control (was its own test): catches a row file written through a linked folder.
+	{
+		const linked = listKit();
+		const outside = makeTemp('kit-link-target-');
+		fs.rmSync(path.join(linked.proj, '.kit'), { recursive: true, force: true });
+		fs.symlinkSync(outside, path.join(linked.proj, '.kit'), 'junction');
+		linked.start();
+		assert.deepEqual(fs.readdirSync(outside), []);
+	}
 });
 
 // why: catches the test reviewer running on a model the table does not name
 test('the test-reviewer role file matches the table entry for test-review and its role entry', () => {
+	assert.ok(fs.existsSync('user/agents/test-reviewer.md'), 'user/agents/test-reviewer.md is missing');
 	const config = JSON.parse(fs.readFileSync('kit.config.json', 'utf8'));
 	const front = fs.readFileSync('user/agents/test-reviewer.md', 'utf8').split(/\r?\n/).slice(1, fs.readFileSync('user/agents/test-reviewer.md', 'utf8').split(/\r?\n/).indexOf('---', 1));
 	const field = (key) => front.find((l) => l.startsWith(`${key}:`))?.slice(key.length + 1).trim();
