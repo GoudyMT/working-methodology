@@ -35,6 +35,8 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 
 | 14:1x | L6, L16 | A lead note (second review, lead answer) is text in the agent's own record, so an agent can forge it | Opus check on U15; ruled a log-stage limit, a lead-only file is a build 25 item |
 
+| 14:3x | L13 | The retest yes was built for the owner's terminal only, not the pop-up path the owner picked; its test faked the terminal env, so it passed | Lead, reading the hook before the first push; fixed as the unit's round 2 |
+
 ## 3. Lead context and handoffs
 
 | When (UTC) | Stage | Lead context | Handoff |
