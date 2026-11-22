@@ -44,6 +44,8 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+// The record check a hand-back's RECORD: block must pass (the kit's tools folder sits beside the skills folder).
+import { check as checkRecord } from '../../kit-tools/handoff.mjs';
 // K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
 // source and in the Claude folder alike).
 const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../kit-hooks/prices.cjs');
@@ -833,11 +835,15 @@ function writeBriefs(c, hash, ceilings, facts, unit = 'tokens') {
 			'Read more by line range as you need; never a whole file over 40 KB.',
 			`Scratch: ${scratch} is yours alone for any probe that writes; write nowhere else, never in the repository or another role's folder.`,
 			'',
-			`Finding format: ${r.finding || 'file:line, the claim, the input that breaks it or the rule it breaks, the proof'}. At most ${Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP} findings, ranked by severity.`,
+			`Finding format: ${r.finding || 'a RECORD: line, then one JSON line per finding with the keys id, severity (critical, high, medium or low), status (confirmed or plausible), where (file:line), claim, proof (the input that breaks it, or the rule it breaks and the evidence) and fix'}. At most ${Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP} findings, ranked by severity.`,
 			'Report: hand it back with SubagentHandback. After the opening your rules require, the report is:',
 			`ROLE: ${r.role || r.kind}`,
-			'<severity> | <CONFIRMED or PLAUSIBLE> | <one-line claim> | <file:line> | <evidence>   (one line per finding; "No findings" if none)',
 			'Not checked: <what you did not get to, or "nothing">',
+			'Then a RECORD: line, its role line, one JSON line per finding and a notChecked line, as in this example (replace every <...>):',
+			'RECORD:',
+			`{"role":${JSON.stringify(r.role || r.kind)},"commit":"${head}"}`,
+			'{"id":"<F1>","severity":"<high>","status":"<confirmed or plausible>","where":"<file:line>","claim":"<one line>","proof":"<the evidence>","fix":"<the fix>"}',
+			'{"notChecked":"<what you did not get to, or nothing>"}',
 			'Change no file in the repository.',
 			'',
 		].join('\n');
@@ -872,6 +878,18 @@ function reportRows(parsed) {
 	}
 	if (message === null) return null;
 	const lines = message.split(/\r?\n/);
+	// A RECORD: block is read by the record check: a record that fails it, or a finding that is neither confirmed nor
+	// plausible, is unreadable, the same as a report in no shape.
+	if (lines.some((l) => l.trim() === 'RECORD:')) {
+		const rec = checkRecord(message);
+		if (!rec.ok) return null;
+		const rows = [];
+		for (const f of rec.findings) {
+			if (!/^(confirmed|plausible)$/i.test(f.status)) return null;
+			rows.push({ severity: f.severity, verdict: f.status.toUpperCase(), claim: f.claim, where: f.where, evidence: f.proof });
+		}
+		return rows;
+	}
 	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) return null;
 	const rows = [];
 	for (const l of lines) {
