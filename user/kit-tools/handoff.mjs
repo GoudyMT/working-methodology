@@ -4,7 +4,7 @@
 // repaired most broken records. A hand-back is prose, a line `RECORD:`, then one JSON object per line. A plain script
 // checks it, so any model's output can pass through it, and a `|` in a claim is kept (the old pipe format split it).
 //
-// Usage: node handoff.mjs check <file|->     (exit 0 valid, 1 invalid with errors on stderr, 2 unreadable input)
+// Usage: node handoff.mjs check <file|-> [--role <r>] [--commit <c>]     (exit 0 valid, 1 invalid with errors on stderr, 2 unreadable input)
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -25,12 +25,28 @@ function keyErrors(obj, keys) {
 
 const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
 
-export function check(text) {
+// True when the first non-blank line after a RECORD: marker is a role line with a valid shape.
+function startsWithRole(lines, at) {
+	const first = lines.slice(at + 1).find((l) => l.trim() !== '');
+	try {
+		const o = first === undefined ? null : JSON.parse(first);
+		return isObject(o) && keyErrors(o, ['role', 'commit']).length === 0;
+	} catch { return false; }
+}
+
+// expect: optional { role, commit } the brief named; a commit matches when either one is a prefix of the other.
+export function check(text, expect = {}) {
 	const out = { ok: false, findings: [], notChecked: 0, notes: 0, errors: [] };
 	const lines = String(text).split(/\r?\n/);
-	const start = lines.findLastIndex((l) => l.trim() === 'RECORD:');
-	if (start < 0) {
+	const marks = lines.flatMap((l, i) => (l.trim() === 'RECORD:' ? [i] : []));
+	if (!marks.length) {
 		out.errors.push('no RECORD: line');
+		return out;
+	}
+	const start = marks[marks.length - 1];
+	// An earlier block with a real role line is a second hand-back; a quoted example without one is just prose.
+	if (marks.slice(0, -1).some((m) => startsWithRole(lines, m)) && startsWithRole(lines, start)) {
+		out.errors.push('two records: the text holds more than one RECORD: block with a role line');
 		return out;
 	}
 	const seen = new Set();
@@ -46,6 +62,11 @@ export function check(text) {
 		if (isRole) {
 			const errs = isObject(obj) ? keyErrors(obj, ['role', 'commit']) : ['missing `role`'];
 			if (errs.length === 0 && !/^[0-9a-f]{7,40}$/i.test(obj.commit)) errs.push('bad `commit`, want 7 to 40 hex characters');
+			if (errs.length === 0) {
+				if (expect.role !== undefined && obj.role !== expect.role) errs.push(`\`role\` is ${obj.role}, the brief named ${expect.role}`);
+				const c = expect.commit;
+				if (c !== undefined && !obj.commit.startsWith(c) && !c.startsWith(obj.commit)) errs.push(`\`commit\` is ${obj.commit}, the brief named ${c}`);
+			}
 			errs.forEach(fail);
 			return;
 		}
@@ -80,9 +101,22 @@ export function check(text) {
 }
 
 function main(argv) {
-	const [cmd, file] = argv;
+	const [cmd, ...rest] = argv;
+	const expect = {};
+	let file;
+	for (let i = 0; i < rest.length; i++) {
+		if (rest[i] === '--role' || rest[i] === '--commit') {
+			const v = rest[++i];
+			if (v === undefined) {
+				console.error(`${rest[i - 1]} needs a value`);
+				return 2;
+			}
+			expect[rest[i - 1].slice(2)] = v;
+		} else if (file === undefined) file = rest[i];
+		else file = null;
+	}
 	if (cmd !== 'check' || !file) {
-		console.error('usage: node handoff.mjs check <file|->');
+		console.error('usage: node handoff.mjs check <file|-> [--role <r>] [--commit <c>]');
 		return 2;
 	}
 	let text;
@@ -90,7 +124,7 @@ function main(argv) {
 		console.error(`cannot read ${file}: ${e.code || e.message}`);
 		return 2;
 	}
-	const r = check(text);
+	const r = check(text, expect);
 	if (!r.ok) {
 		console.error(r.errors.join('\n'));
 		return 1;
