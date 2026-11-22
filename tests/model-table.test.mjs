@@ -426,3 +426,274 @@ test('check exits 2 when the config is not valid JSON', () => {
 	const run = spawnSync(process.execPath, [MODULE, 'check', dir], { encoding: 'utf8' });
 	assert.equal(run.status, 2);
 });
+
+// Fixture helpers for the checks added below.
+const sweepConfig = (model = SONNET) => ({ roles: {}, steps: { sweep: { model, effort: 'high', enforcer: 'const:scripts/approve.mjs#DEFAULT_MODEL' } } });
+const roleWith = (name, lines) => `---\nname: ${name}\nmodel: ${SONNET}\neffort: high\n${lines.join('\n')}\n---\n\nRole body.\n`;
+const withRole = (role, fields) => {
+	const config = soundConfig();
+	Object.assign(config.roles[role], fields);
+	return config;
+};
+// The builder's access, set in config.roles and in its role file, against the fixture kit.
+const builderAccess = (fields, lines) => faultsOf(withRole('builder', fields), { ...soundFiles(), 'user/agents/builder.md': roleWith('builder', lines) });
+// Passes when some fault names the role and a word matching the regex (the key, in config or in the file).
+function assertFaultLike(faults, role, re) {
+	assert.ok(faults.some((f) => f.includes(role) && re.test(f)), `no fault names ${role} + ${re} in ${JSON.stringify(faults)}`);
+}
+
+// why: catches a junction run of the CLI that skips its main block and exits 0 with no check
+test('the CLI run through a Windows junction exits 2 on a folder with no kit.config.json', { windows: 'also', skip: process.platform !== 'win32' && 'junction is Windows only' }, () => {
+	const linkDir = path.join(kitTemp.makeTemp('model-table-link-'), 'link');
+	fs.symlinkSync(path.dirname(MODULE), linkDir, 'junction');
+	const empty = kitTemp.makeTemp('model-table-empty-');
+	const run = spawnSync(process.execPath, [path.join(linkDir, 'model-table.mjs'), 'check', empty], { encoding: 'utf8' });
+	assert.equal(run.status, 2, run.stderr);
+});
+
+// why: catches a step with no model key that passes with nothing said about the blank model
+test('a step with no model key and nothing else wrong is a fault saying model is missing', () => {
+	const faults = faultsOf({ roles: {}, steps: { gate: { effort: 'medium', enforcer: 'lead' } } }, {});
+	assertFault(faults, 'gate', 'missing', 'model');
+});
+
+// why: catches a step with no effort key that passes with nothing said about the blank effort
+test('a step with no effort key and nothing else wrong is a fault saying effort is missing', () => {
+	const faults = faultsOf({ roles: {}, steps: { gate: { model: OPUS, enforcer: 'lead' } } }, {});
+	assertFault(faults, 'gate', 'missing', 'effort');
+});
+
+// why: catches an unknown enforcer kind that the check passes as a step it cannot read
+test('an unknown enforcer kind is a fault naming the step and the kind', () => {
+	const faults = faultsOf({ roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'magic:x' } } }, {});
+	assertFault(faults, 'gate', 'magic');
+});
+
+// why: catches a kit config with no steps object that exits 0 as a sound table
+test('the CLI exits 1 and names steps when kit.config.json has no steps object', () => {
+	const dir = kit({ roles: {} }, {});
+	const run = spawnSync(process.execPath, [MODULE, 'check', dir], { encoding: 'utf8' });
+	assert.equal(run.status, 1, run.stderr);
+	assert.ok(run.stderr.includes('steps'), run.stderr);
+});
+
+// why: catches a role file or const file with CRLF line ends that reads as a mismatch on every value
+test('a CRLF role file and a CRLF const file give no fault when the values match', () => {
+	const config = { roles: {}, steps: { sweep: { model: SONNET, effort: 'high', enforcer: 'const:scripts/approve.mjs#DEFAULT_MODEL' } } };
+	const files = { 'scripts/approve.mjs': `const DEFAULT_MODEL = '${SONNET}';\r\n` };
+	assert.deepEqual(faultsOf(config, files), []);
+	const roleFiles = { 'user/agents/builder.md': soundFiles()['user/agents/builder.md'].replace(/\n/g, '\r\n'), 'user/agents/checker.md': soundFiles()['user/agents/checker.md'].replace(/\n/g, '\r\n') };
+	assert.deepEqual(faultsOf(soundConfig(), roleFiles), []);
+});
+
+// why: catches a const step with no name after the hash that the check passes silently
+test('a const enforcer with no name after the hash is a fault naming the step', () => {
+	const config = { roles: {}, steps: { sweep: { model: SONNET, effort: 'high', enforcer: 'const:scripts/x.mjs' } } };
+	const files = { 'scripts/x.mjs': `const DEFAULT_MODEL = '${SONNET}';\n` };
+	assertFault(faultsOf(config, files), 'sweep');
+});
+
+// why: catches a step written as a bare string that the check reads as a table row
+test('a step that is a string and not an object is a fault naming the step', () => {
+	const config = { roles: {}, steps: { bad: 'claude-sonnet-5-5' } };
+	assertFault(faultsOf(config, {}), 'bad', 'not an object');
+});
+
+// why: catches an unknown CLI command that exits 0 and reads as a clean check
+test('the CLI exits 2 on an unknown command', () => {
+	const run = spawnSync(process.execPath, [MODULE, 'nope'], { encoding: 'utf8' });
+	assert.equal(run.status, 2, run.stderr);
+});
+
+// why: catches a const check fooled by a commented-out line that holds the table's model
+test('a const line inside a block comment does not satisfy a top-level line that holds another model', () => {
+	const files = { 'scripts/approve.mjs': `/*\nconst DEFAULT_MODEL = '${SONNET}';\n*/\nconst DEFAULT_MODEL = '${HAIKU}';\n` };
+	assertFault(faultsOf(sweepConfig(SONNET), files), 'sweep', 'DEFAULT_MODEL');
+});
+
+// why: catches a const check fooled by a line inside a template literal that holds the table's model
+test('a const line inside a template literal does not satisfy a top-level line that holds another model', () => {
+	const text = 'const HELP = `\nconst DEFAULT_MODEL = \'' + SONNET + '\';\n`;\nconst DEFAULT_MODEL = \'' + HAIKU + '\';\n';
+	assertFault(faultsOf(sweepConfig(SONNET), { 'scripts/approve.mjs': text }), 'sweep', 'DEFAULT_MODEL');
+});
+
+// why: catches a const named twice at top level that the check reads as one sound definition
+test('two top-level definitions of the same constant are a fault naming it', () => {
+	const files = { 'scripts/approve.mjs': `const DEFAULT_MODEL = '${SONNET}';\nconst DEFAULT_MODEL = '${SONNET}';\n` };
+	assertFault(faultsOf(sweepConfig(SONNET), files), 'sweep', 'DEFAULT_MODEL');
+});
+
+// why: catches a role file whose only model line is indented under another key and still reads as the top-level model
+test('an indented model line under another key does not count as the frontmatter model', () => {
+	const files = soundFiles();
+	files['user/agents/builder.md'] = `---\nname: builder\neffort: high\ntools: Read, Grep, Glob\n  model: ${SONNET}\n---\n\nRole body.\n`;
+	assertFault(faultsOf(soundConfig(), files), 'builder', 'user/agents/builder.md');
+});
+
+// why: catches a role file with two top-level model keys that the check reads as one value
+test('a duplicate top-level model key in a role file is a fault naming the file', () => {
+	const files = soundFiles();
+	files['user/agents/builder.md'] = `---\nname: builder\nmodel: ${SONNET}\nmodel: ${SONNET}\neffort: high\ntools: Read, Grep, Glob\n---\n\nRole body.\n`;
+	assertFault(faultsOf(soundConfig(), files), 'user/agents/builder.md', 'model');
+});
+
+// why: guards rule:agent-role-table (settings takes no argument, so settings:x is a fault naming the step)
+test('a settings enforcer with an argument is a fault naming the step', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'settings:x' } } };
+	assertFault(faultsOf(config, {}), 'gate', 'settings');
+});
+
+// why: guards rule:agent-role-table (lead takes no argument, so lead:foo is a fault naming the step)
+test('a lead enforcer with an argument is a fault naming the step', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead:foo' } } };
+	assertFault(faultsOf(config, {}), 'gate', 'lead');
+});
+
+// why: catches a script step whose named file is gone while its table row stays and passes
+test('a script enforcer whose file does not exist is a fault naming the path', () => {
+	const config = { roles: {}, steps: { run: { model: 'none', effort: '-', enforcer: 'script:scripts/missing.mjs' } } };
+	assertFault(faultsOf(config, {}), 'run', 'scripts/missing.mjs');
+});
+
+// why: guards rule:agent-role-table (a script step whose file is present raises no fault from its enforcer)
+test('a script enforcer whose file exists gives no fault', () => {
+	const config = { roles: {}, steps: { run: { model: 'none', effort: '-', enforcer: 'script:scripts/present.mjs' } } };
+	assert.deepEqual(faultsOf(config, { 'scripts/present.mjs': 'export {};\n' }), []);
+});
+
+// why: catches a misspelled step key such as Floor that the check ignores and passes as no floor
+test('an unknown step key such as Floor is a fault naming the step and the key', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead', Floor: OPUS } } };
+	assertFault(faultsOf(config, {}), 'gate', 'Floor');
+});
+
+// why: guards rule:agent-role-table (a step that uses only the six allowed keys raises no key fault)
+test('a step using only the six allowed keys raises no key fault', () => {
+	const config = { roles: {}, steps: { tester: { model: HAIKU, effort: 'medium', enforcer: 'lead', floor: HAIKU, stepUp: SONNET, neverDrop: true } } };
+	assert.deepEqual(faultsOf(config, {}), []);
+});
+
+// why: catches a generation-3 opus that meets a generation-5-5 floor because both rank as opus
+test('claude-opus-3 is a fault under a claude-opus-5-5 floor', () => {
+	const config = { roles: {}, steps: { gate: { model: 'claude-opus-3', effort: 'high', enforcer: 'lead', floor: OPUS } } };
+	assertFault(faultsOf(config, {}), 'gate', 'never-drop');
+});
+
+// why: guards rule:agent-role-table (claude-opus-5-5 meets a claude-opus-5-5 floor, so the family and generation check passes it)
+test('claude-opus-5-5 meets a claude-opus-5-5 floor', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead', floor: OPUS } } };
+	assert.deepEqual(faultsOf(config, {}), []);
+});
+
+// why: catches a generation read as a whole string so claude-opus-5-4 passes a claude-opus-5-5 floor
+test('claude-opus-5-4 is a fault under a claude-opus-5-5 floor', () => {
+	const config = { roles: {}, steps: { gate: { model: 'claude-opus-5-4', effort: 'high', enforcer: 'lead', floor: OPUS } } };
+	assertFault(faultsOf(config, {}), 'gate', 'never-drop');
+});
+
+// why: guards rule:agent-role-table (a never-drop flag on a model step with no floor is a fault naming the step)
+test('neverDrop on a model step with no floor is a fault naming the step', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead', neverDrop: true } } };
+	assertFault(faultsOf(config, {}), 'gate', 'never-drop');
+});
+
+// why: guards rule:agent-role-table (neverDrop with a floor on a model step raises no fault)
+test('neverDrop on a model step that has a floor gives no fault', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead', floor: OPUS, neverDrop: true } } };
+	assert.deepEqual(faultsOf(config, {}), []);
+});
+
+// why: guards rule:agent-role-table (a script step may carry neverDrop with no floor and raise no fault)
+test('neverDrop on a script step with no floor gives no fault', () => {
+	const config = { roles: {}, steps: { step6: { model: 'none', effort: '-', enforcer: 'script:scripts/release-verify.mjs', neverDrop: true } } };
+	assert.deepEqual(faultsOf(config, { 'scripts/release-verify.mjs': 'export {};\n' }), []);
+});
+
+// why: guards rule:agent-role-table (a role file tools line that differs from config.roles tools is a fault naming the role and the key)
+test('a role file tools line that differs from config.roles tools is a fault naming the role and the key', () => {
+	assertFault(builderAccess({ tools: ['Read', 'Edit', 'Write'] }, ['tools: Read, Grep, Glob']), 'builder', 'tools');
+});
+
+// why: guards rule:agent-role-table (a role file tools line that matches config.roles tools raises no fault)
+test('a role file tools line that matches config.roles tools gives no fault', () => {
+	assert.deepEqual(builderAccess({ tools: ['Read', 'Edit'] }, ['tools: Read, Edit']), []);
+});
+
+// why: guards rule:agent-role-table (a denied list with no disallowedTools line in the role file is a fault naming the role)
+test('a config denied list with no disallowedTools line is a fault naming the role and the key', () => {
+	assertFaultLike(builderAccess({ denied: ['WebFetch', 'Agent'] }, ['tools: Read, Grep, Glob']), 'builder', /denied|disallowed/);
+});
+
+// why: guards rule:agent-role-table (a disallowedTools line that matches config.roles denied raises no fault)
+test('a disallowedTools line that matches config.roles denied gives no fault', () => {
+	assert.deepEqual(builderAccess({ denied: ['WebFetch', 'Agent'] }, ['disallowedTools: WebFetch, Agent']), []);
+});
+
+// why: guards rule:agent-role-table (an empty denied list with a disallowedTools line in the role file is a fault naming the role)
+test('an empty config denied list with a disallowedTools line is a fault naming the role and the key', () => {
+	assertFaultLike(builderAccess({ denied: [] }, ['disallowedTools: Agent']), 'builder', /denied|disallowed/);
+});
+
+// why: guards rule:agent-role-table (an empty denied list with no disallowedTools line raises no fault)
+test('an empty config denied list with no disallowedTools line gives no fault', () => {
+	assert.deepEqual(builderAccess({ denied: [] }, []), []);
+});
+
+// why: guards rule:agent-role-table (a non-empty rules list with no skills line in the role file is a fault naming the role)
+test('a config rules list with no skills line is a fault naming the role and the key', () => {
+	assertFaultLike(builderAccess({ rules: ['edit-discipline'] }, []), 'builder', /rules|skills/);
+});
+
+// why: guards rule:agent-role-table (a skills line naming the role's rules skill raises no fault)
+test('a config rules list with skills builder-rules gives no fault', () => {
+	assert.deepEqual(builderAccess({ rules: ['edit-discipline'] }, ['skills: builder-rules']), []);
+});
+
+// why: guards rule:agent-role-table (an empty rules list with a skills line in the role file is a fault naming the role)
+test('an empty config rules list with a skills line is a fault naming the role and the key', () => {
+	assertFaultLike(builderAccess({ rules: [] }, ['skills: builder-rules']), 'builder', /rules|skills/);
+});
+
+// why: guards rule:agent-role-table (an empty rules list with no skills line raises no fault)
+test('an empty config rules list with no skills line gives no fault', () => {
+	assert.deepEqual(builderAccess({ rules: [] }, []), []);
+});
+
+// The access each original role must hold, copied from the role table in rules/agent-teams.md (Agent Role Table).
+const TABLE_ROLES = {
+	builder: { tools: ['Read', 'Edit', 'Write', 'Grep', 'Glob', 'Bash', 'PowerShell'], denied: ['WebFetch', 'WebSearch', 'Agent'], rules: ['edit-discipline', 'test-integrity', 'test-value'] },
+	checker: { tools: ['Read', 'Grep', 'Glob', 'Bash', 'PowerShell'], denied: ['Edit', 'Write', 'WebFetch', 'WebSearch', 'Agent'], rules: ['test-integrity', 'test-value', 'anti-hallucination', 'enumerate-before-you-count'] },
+	scanner: { tools: ['Read', 'Grep', 'Glob'], denied: [], rules: [] },
+	reviewer: { tools: ['Read', 'Grep', 'Glob', 'Bash', 'PowerShell', 'WebFetch', 'WebSearch'], denied: ['Edit', 'Write', 'Agent'], rules: ['anti-hallucination', 'enumerate-before-you-count'] },
+	orchestrator: { tools: ['Agent', 'SendMessage', 'ToolSearch', 'Read', 'Edit', 'Write', 'Grep', 'Glob', 'Bash', 'PowerShell', 'WebSearch', 'WebFetch'], denied: [], rules: [] },
+};
+// The access the new roles must hold, as this unit's spec names it.
+const NEW_ROLES = {
+	tester: { tools: ['Read', 'Edit', 'Write', 'Grep', 'Glob', 'Bash', 'PowerShell'], denied: ['WebFetch', 'WebSearch', 'Agent'], rules: ['edit-discipline', 'test-integrity', 'test-value'] },
+	'test-reviewer': { tools: ['Read', 'Grep', 'Glob'], denied: [], rules: ['test-integrity', 'test-value'] },
+	researcher: { tools: ['Read', 'Grep', 'Glob'], denied: [], rules: ['anti-hallucination', 'enumerate-before-you-count'] },
+	drafter: { tools: ['Read', 'Grep', 'Glob'], denied: [], rules: [] },
+	writer: { tools: ['Read', 'Grep', 'Glob', 'Write'], denied: [], rules: [] },
+};
+const realRoles = () => JSON.parse(fs.readFileSync(path.join(REAL_DIR, 'kit.config.json'), 'utf8')).roles;
+const accessOf = (role) => ({ tools: role.tools, denied: role.denied, rules: role.rules });
+
+// why: guards rule:agent-role-table (a role in config.roles with no tools, denied or rules list cannot be checked against its file)
+test('every real config role carries tools, denied and rules lists, and the real table gives no fault', () => {
+	const roles = realRoles();
+	const lists = Object.fromEntries(Object.entries(roles).map(([n, r]) => [n, [Array.isArray(r.tools), Array.isArray(r.denied), Array.isArray(r.rules)]]));
+	assert.deepEqual(lists, Object.fromEntries(Object.keys(roles).map((n) => [n, [true, true, true]])));
+	assert.deepEqual(tableFaults(JSON.parse(fs.readFileSync(path.join(REAL_DIR, 'kit.config.json'), 'utf8')), REAL_DIR), []);
+});
+
+// why: guards rule:agent-role-table (an original role's access in config drifts from the role table in rules/agent-teams.md)
+test('the five original roles hold the access the role table in rules/agent-teams.md names', () => {
+	const roles = realRoles();
+	assert.deepEqual(Object.fromEntries(Object.keys(TABLE_ROLES).map((n) => [n, accessOf(roles[n])])), TABLE_ROLES);
+});
+
+// why: guards rule:agent-role-table (a new role's access drifts from the spec's tools, denied and rules for it)
+test('the new roles hold the access this unit names for tester, test-reviewer, researcher, drafter and writer', () => {
+	const roles = realRoles();
+	assert.deepEqual(Object.fromEntries(Object.keys(NEW_ROLES).map((n) => [n, accessOf(roles[n])])), NEW_ROLES);
+});
