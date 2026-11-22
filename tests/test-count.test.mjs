@@ -16,6 +16,7 @@ const REVIEWER = fileURLToPath(new URL('../user/agents/test-reviewer.md', import
 const BRIEF = fileURLToPath(new URL('../user/skills/agent-team-build/templates/builder-brief.md', import.meta.url));
 
 const TEST_FILE = 'tests/a.test.mjs';
+const OTHER_FILE = 'tests/b.test.mjs';
 const TESTS = 'Tests to write first, and the failure each must show';
 const HEAD = ['Id', 'Files', 'Runs', 'Risk', 'Category', TESTS, 'Tester'];
 const out = (res) => res.stdout + res.stderr;
@@ -36,7 +37,7 @@ const itFailing = (name) => `it('${name}', () => assert.fail('red'));`;
 // n test lines in a Tests cell, separated by <br> as the template asks.
 const lines = (n) => Array.from({ length: n }, (_, i) => `check ${i + 1} -> S1`).join('<br>');
 // A Units row for U1 that names the test file, with a Tests cell of n lines (or the given cell text).
-const row = (n, cell = lines(n)) => ({ Id: 'U1', Files: `\`${TEST_FILE}\``, Runs: 'alone', Risk: 'low', Category: 'logic', [TESTS]: cell, Tester: '' });
+const row = (n, cell = lines(n), files = `\`${TEST_FILE}\``) => ({ Id: 'U1', Files: files, Runs: 'alone', Risk: 'low', Category: 'logic', [TESTS]: cell, Tester: '' });
 const planText = (rows) => ['# Batch plan - x', '', '## Units', '', `| ${HEAD.join(' | ')} |`, `|${HEAD.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${HEAD.map((h) => r[h] ?? '').join(' | ')} |`), '', '## Collision list', ''].join('\n');
 const writePlan = (dir, rows) => {
 	const file = path.join(dir, 'plan.md');
@@ -44,7 +45,8 @@ const writePlan = (dir, rows) => {
 	return file;
 };
 // A temp git repo: a base commit (with an optional countCommand config), then one red commit that adds the test file.
-const fixture = ({ red, base: baseFile = null, config = null }) => {
+// other (optional) is a second test file: its base and red text, written beside the first.
+const fixture = ({ red, base: baseFile = null, config = null, other = null }) => {
 	const dir = kitTemp.makeTemp('unit-count-');
 	const git = (args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
 	git(['init', '-q', '-b', 'main']);
@@ -57,10 +59,12 @@ const fixture = ({ red, base: baseFile = null, config = null }) => {
 	}
 	fs.mkdirSync(path.join(dir, 'tests'), { recursive: true });
 	if (baseFile !== null) fs.writeFileSync(path.join(dir, TEST_FILE), baseFile);
+	if (other !== null) fs.writeFileSync(path.join(dir, OTHER_FILE), other.base);
 	git(['add', '-A']);
 	git(['commit', '-q', '-m', 'chore: base']);
 	const base = git(['rev-parse', 'HEAD']).stdout.trim();
 	fs.writeFileSync(path.join(dir, TEST_FILE), red);
+	if (other !== null) fs.writeFileSync(path.join(dir, OTHER_FILE), other.red);
 	git(['add', '-A']);
 	git(['commit', '-q', '-m', 'test: red count']);
 	const head = git(['rev-parse', 'HEAD']).stdout.trim();
@@ -79,18 +83,20 @@ const handoffCheck = async (text) => {
 	return check(text, { role: 'test-reviewer' });
 };
 
-// why: catches a count that misses it() calls, so a unit whose tests use it() is refused for a count it meets (C1).
+// why: catches a count that misses it() calls or the second file a row names, so a unit is refused for a count it meets (C1).
 test('C1 spec C1: unit-check counts the test() and it() calls the red commit adds, per file the locked row names', () => {
-	// The base holds one test; the red commit extends the file with one test() and one it(), so it adds 2.
+	// Each base file holds one test; the red commit adds one test() and one it() to a.test.mjs and one test() to b.test.mjs, so 3 in all.
 	const fx = fixture({
 		base: `${HEADER}\n${passing('t0')}\n`,
 		red: `${HEADER}\n${passing('t0')}\n${failing('t1')}\n${itFailing('i1')}\n`,
+		other: { base: `${HEADER}\n${passing('u0')}\n`, red: `${HEADER}\n${passing('u0')}\n${failing('u1')}\n` },
 	});
-	const res = runUnit(fx, writePlan(fx.dir, [row(2)]));
+	const both = `\`${TEST_FILE}\`, \`${OTHER_FILE}\``;
+	const res = runUnit(fx, writePlan(fx.dir, [row(3, lines(3), both)]));
 	assert.equal(res.status, 0, out(res));
-	// Control: the same commit against a plan of one test is refused, so the count was read as something other than 2.
-	const off = runUnit(fx, writePlan(fx.dir, [row(1)]));
-	assert.equal(off.status, 1, out(off));
+	// Control: a plan of 2 is refused, which is what a count of the first file alone would show, so the second file must be counted.
+	const firstOnly = runUnit(fx, writePlan(fx.dir, [row(2, lines(2), both)]));
+	assert.equal(firstOnly.status, 1, out(firstOnly));
 });
 
 // why: catches a project count command being ignored, so the kit's own counter decides a project's test count (C2).
