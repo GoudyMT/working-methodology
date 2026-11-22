@@ -477,3 +477,116 @@ test('pre-push holds a Retest: commit in any letter case, and passes Retesting: 
 	}
 });
 
+// why: catches a test file deleted, renamed, or edited at another path (.test.cjs, tests/sub/) pushed unheld, since the hold reads only the subject
+test('pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit of existing test files, in both hooks', () => {
+	const cases = [
+		{ subject: 'feat: drop the add tests', change: (d) => git(d, ['rm', '-q', 'tests/add.test.mjs']) },
+		{ subject: 'fix: rename the add tests', change: (d) => git(d, ['mv', 'tests/add.test.mjs', 'tests/sum.test.mjs']) },
+		{ subject: 'fix: tighten the cjs case', base: { 'tests/add.test.cjs': 'test("a", () => {});\n' }, change: (d) => put(d, { 'tests/add.test.cjs': 'test("b", () => {});\n' }) },
+		{ subject: 'fix: tighten the sub case', base: { 'tests/sub/add.mjs': 'test("a", () => {});\n' }, change: (d) => put(d, { 'tests/sub/add.mjs': 'test("b", () => {});\n' }) },
+	];
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		for (const c of cases) {
+			const { dir, red, bare } = pushRepo();
+			if (c.base) {
+				// The base file is already on the remote, so the push's range holds only the edit.
+				put(dir, c.base);
+				const base = commit(dir, 'test: add the base test');
+				git(dir, ['push', '-q', 'origin', `${base}:refs/heads/feat/base`]);
+			}
+			c.change(dir);
+			const edit = commit(dir, c.subject);
+			const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+			assert.notEqual(r.status, 0, `${hook} passed "${c.subject}": ${r.stderr}`);
+			assert.match(r.stderr, OWNER_YES);
+		}
+	}
+});
+
+// why: catches a git revert of a test change pushed unheld, since its subject starts with Revert and no hold reads it
+test('pre-push holds a git revert that carries a test change, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, bare } = pushRepo();
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'test: tighten the add case');
+		// The edit is already on the remote, so the push's range holds only the revert.
+		git(dir, ['push', '-q', 'origin', `${edit}:refs/heads/feat/base`]);
+		git(dir, ['revert', '--no-edit', edit]);
+		const revert = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${revert} refs/heads/feat/x ${ZERO}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed the revert: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
+// why: catches a fixup! retest: commit pushed unheld, since its subject starts with fixup! and the retest type never matches
+test('pre-push holds a fixup! retest: commit, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 3;\n' });
+		const fix = commit(dir, 'fixup! retest: tighten the add case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${fix} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed the fixup!: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
+// why: catches a tester with no list and no way to write one before the red commit, so its edit fence stops every edit
+test('unit-lock --tester writes a test-only list with no red line, and refuses a source file', () => {
+	const { dir } = redRepo();
+	const run = (files) => spawnSync(process.execPath, [LOCK, '--tester', '--files', files], { cwd: dir, env: isolatedEnv(), encoding: 'utf8' });
+	const refused = run('src/add.js,tests/add.test.mjs');
+	assert.equal(refused.status, 1, `a source file is refused: ${refused.stdout}${refused.stderr}`);
+	assert.equal(fs.existsSync(listPath(dir)), false, 'a refused tester list writes nothing');
+	const ok = run('tests/add.test.mjs');
+	assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
+	assert.deepEqual(listLines(dir), ['tests/add.test.mjs'], 'the list holds the test file, with no red line');
+	// Folded control (was its own test): the fence lets the tester edit the test it lists and stops a source file it does not.
+	assert.equal(fence(dir, 'tester', 'tests/add.test.mjs').code, 0, 'the tester may edit the test it lists');
+	assert.equal(fence(dir, 'tester', 'src/add.js').code, 2, 'the tester may not edit a file it does not list');
+});
+
+// why: catches a plugin role sent as kit:builder or kit:tester that the fence reads as no role, so its test edits pass
+test('edit fence reads a plugin role name kit:builder or kit:tester as the builder or tester role', () => {
+	const { dir } = redRepo();
+	assert.equal(fence(dir, 'kit:builder', 'tests/add.test.mjs').code, 2, 'a plugin builder may not edit a test file');
+	assert.equal(fence(dir, 'kit:tester', 'src/add.js').code, 2, 'a plugin tester with no list is stopped');
+	// Folded control (was its own test): a plugin role that is neither stays unfenced.
+	assert.equal(fence(dir, 'kit:scanner', 'src/add.js').code, 0, 'a plugin scanner is not fenced');
+});
+
+// why: catches a test edit under another spelling of its type or a scope, pushed unheld, since the hold matches one lowercase form
+test('pre-push holds a test edit under any spelling of its type, in both hooks, and repeats its verdict', () => {
+	const subjects = ['fix(hooks): tighten the add case', 'Fix: tighten the add case', 'TEST: tighten the add case', 'RETEST: tighten the add case', 'retest: tighten the add case'];
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		for (const subject of subjects) {
+			const { dir, red, bare } = pushRepo();
+			put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+			const edit = commit(dir, subject);
+			const push = () => pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+			const first = push();
+			assert.notEqual(first.status, 0, `${hook} passed "${subject}": ${first.stderr}`);
+			assert.match(first.stderr, OWNER_YES);
+			assert.notEqual(push().status, 0, `${hook} passed "${subject}" on a repeat`);
+		}
+	}
+});
+
+// why: catches a test edit in the middle of a push range, or on a new branch, pushed unheld because only the tip was read
+test('pre-push holds a push whose test edit sits mid-range, and a new branch carrying a test edit, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 4;\n' });
+		commit(dir, 'feat: tidy add');
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		commit(dir, 'fix: tighten the add test');
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 5;\n' });
+		const tip = commit(dir, 'feat: tidy add again');
+		const mid = pushRun(hook, dir, bare, `refs/heads/feat/x ${tip} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(mid.status, 0, `${hook} passed the range with a mid-range test edit: ${mid.stderr}`);
+		assert.match(mid.stderr, OWNER_YES);
+		const fresh = pushRun(hook, dir, bare, `refs/heads/feat/new ${tip} refs/heads/feat/new ${ZERO}\n`);
+		assert.notEqual(fresh.status, 0, `${hook} passed a new branch with a test edit: ${fresh.stderr}`);
+	}
+});
+
