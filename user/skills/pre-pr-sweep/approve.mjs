@@ -45,7 +45,8 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // The record check a hand-back's RECORD: block must pass (the kit's tools folder sits beside the skills folder).
-import { check as checkRecord } from '../../kit-tools/handoff.mjs';
+let checkRecord = null;
+try { ({ check: checkRecord } = await import('../../kit-tools/handoff.mjs')); } catch { /* no checker: a RECORD report is not tallied */ }
 // K315: the template slots a rules block must not still hold (one list, shared with install).
 import { slotsIn } from './slots.mjs';
 // K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
@@ -885,6 +886,10 @@ function reportRows(parsed) {
 	// A RECORD: block is read by the record check: a record that fails it, or a finding that is neither confirmed nor
 	// plausible, is unreadable, the same as a report in no shape.
 	if (lines.some((l) => l.trim() === 'RECORD:')) {
+		if (!checkRecord) return null;
+		// A finding in another shape above the record is a second report: refused, not tallied beside the record.
+		const last = lines.findLastIndex((l) => l.trim() === 'RECORD:');
+		if (lines.slice(0, last).some((l) => /^\s*(critical|high|medium|low)\s*\|/.test(l) || /^\s*\{.*"severity"/.test(l))) return null;
 		const rec = checkRecord(message);
 		if (!rec.ok) return null;
 		const rows = [];
