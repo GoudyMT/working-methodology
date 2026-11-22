@@ -2,10 +2,10 @@
 
 ## 1.50.2 - 2026-11-22
 
-The commit check accepts a `retest:` subject, the type for a test changed after its red commit, so a branch that uses it passes the name check.
+The commit check accepts a `retest:` subject, the type for a test changed after its red commit, so a branch that uses it passes the name check; from 1.51.0 a push that carries one is held for the owner's yes.
 
 ### Fixed
-- The commit check accepts the `retest:` type in the kit and the project copy of the name check.
+- The commit check accepts the `retest:` type, a test changed after its red commit, in the kit and the project copy of the name check; a PR title is never a retest subject. The hold for the owner's yes arrives with 1.51.0.
 
 ## 1.50.1 - 2026-11-22
 
