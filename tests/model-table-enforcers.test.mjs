@@ -82,9 +82,43 @@ test('pr-size falls back to main when there is no origin/main', () => {
 // why: catches a count taken from the working tree instead of the branch against its base
 test('pr-size counts the committed branch diff, not files left uncommitted', () => {
 	const repo = sizeRepo(10);
+	const g = gitIn(repo);
+	g('switch', '-q', 'main');
+	for (let i = 0; i < 5; i++) write(repo, `main${i}.txt`, 'x\n');
+	g('add', '-A');
+	g('commit', '-qm', 'main moves on');
+	g('switch', '-q', 'feat/x');
 	for (let i = 0; i < 3; i++) write(repo, `loose${i}.txt`, 'x\n');
 	const r = sizeRun(sizeKit(), repo, ['main']);
 	assert.equal(r.stdout.trim(), 'writer: claude-small-1 (10 files)');
+});
+
+// why: catches a default base that ignores origin/main when it exists
+test('pr-size with no base argument counts against origin/main when it exists', () => {
+	const repo = makeTemp('size-origin-repo-');
+	const origin = makeTemp('size-origin-bare-');
+	const g = gitIn(repo);
+	spawnSync('git', ['init', '-q', '-b', 'main', '--bare', origin], { encoding: 'utf8' });
+	g('init', '-q', '-b', 'main');
+	write(repo, 'base.txt', 'base\n');
+	g('add', 'base.txt');
+	g('commit', '-qm', 'base');
+	g('remote', 'add', 'origin', origin);
+	g('push', '-q', 'origin', 'main');
+	write(repo, 'local0.txt', 'x\n');
+	write(repo, 'local1.txt', 'x\n');
+	g('add', '-A');
+	g('commit', '-qm', 'local main only');
+	g('switch', '-qc', 'feat/x');
+	for (let i = 0; i < 9; i++) write(repo, `src/f${i}.txt`, `${i}\n`);
+	g('add', 'src');
+	g('commit', '-qm', 'change');
+	const onOrigin = g('diff', '--name-only', 'origin/main...HEAD').stdout.trim().split('\n').length;
+	const onLocal = g('diff', '--name-only', 'main...HEAD').stdout.trim().split('\n').length;
+	assert.notEqual(onOrigin, onLocal, 'the two bases must give different counts for this test to mean anything');
+	const r = sizeRun(sizeKit(), repo);
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout.trim(), `writer: claude-large-2 (${onOrigin} files)`);
 });
 
 // why: guards rule:agent-role-table (the size rule run outside a repo prints a writer as if the change were empty)
@@ -132,17 +166,24 @@ function hookSetup(roles = {}) {
 	const files = {};
 	for (const f of fs.readdirSync(path.join(cfg, 'kit-hooks'))) files[`kit-hooks/${f}`] = crypto.createHash('sha256').update(fs.readFileSync(path.join(cfg, 'kit-hooks', f))).digest('hex');
 	fs.writeFileSync(path.join(cfg, 'kit-install.json'), JSON.stringify({ files }));
-	for (const [name, model] of Object.entries(roles)) write(cfg, `agents/${name}.md`, `---\nname: ${name}\n${model ? `model: ${model}\n` : ''}---\n\nbody\n`);
+	// A fake home holds the same role files as the Claude folder, so a run never reads the owner's real home.
+	const home = makeTemp('amodel-home-');
+	const roleText = (name, model) => `---\nname: ${name}\n${model ? `model: ${model}\n` : ''}---\n\nbody\n`;
+	for (const [name, model] of Object.entries(roles)) {
+		write(cfg, `agents/${name}.md`, roleText(name, model));
+		write(home, `.claude/agents/${name}.md`, roleText(name, model));
+	}
 	const repo = makeTemp('amodel-repo-');
 	gitIn(repo)('init', '-q', '-b', 'main');
 	const log = path.join(repo, '.git', 'kit-agent-model.log');
-	const run = (tool_name, tool_input) => {
-		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd: repo }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg, CLAUDE_PROJECT_DIR: repo } });
+	const run = (tool_name, tool_input, cwd = repo) => {
+		const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg, CLAUDE_PROJECT_DIR: repo, HOME: home, USERPROFILE: home };
+		const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd }), encoding: 'utf8', env });
 		assert.equal(r.status, 0, r.stderr);
 		return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
 	};
 	const lines = () => (fs.existsSync(log) ? fs.readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
-	return { run, lines };
+	return { run, lines, repo };
 }
 
 // why: guards rule:agent-role-table (the agent model hook is not on the guard's list for Agent and Task calls)
@@ -188,8 +229,24 @@ test('a Task call is logged the same as an Agent call', () => {
 	assert.equal(lines().length, 1);
 });
 
+// why: catches the log landing in a worktree git dir instead of the common dir
+test('the agent model log lands in the main repo git dir when the call runs in a linked worktree', () => {
+	const { run, lines, repo } = hookSetup({ writer: HAIKU });
+	const g = gitIn(repo);
+	write(repo, 'a.txt', 'a\n');
+	g('add', 'a.txt');
+	g('commit', '-qm', 'init');
+	const wt = path.join(makeTemp('amodel-wt-'), 'wt');
+	g('worktree', 'add', '-q', wt, '-b', 'feat/wt');
+	run('Agent', { subagent_type: 'writer', model: 'opus', prompt: 'x' }, wt);
+	assert.equal(lines().length, 1, 'no line in the main repo kit-agent-model.log');
+	const wtGitDir = path.resolve(wt, gitIn(wt)('rev-parse', '--git-dir').stdout.trim());
+	assert.equal(fs.existsSync(path.join(wtGitDir, 'kit-agent-model.log')), false, `a log in the worktree git dir ${wtGitDir}`);
+});
+
 // why: catches a matching call writing a log line on every agent start
 test('a call that matches its role file writes nothing, by full id, family name or no model', () => {
+	assert.ok(fs.existsSync(HOOK));
 	const { run, lines } = hookSetup({ writer: HAIKU });
 	run('Agent', { subagent_type: 'writer', model: HAIKU, prompt: 'x' });
 	run('Agent', { subagent_type: 'writer', model: 'haiku', prompt: 'x' });
@@ -201,16 +258,19 @@ test('a call that matches its role file writes nothing, by full id, family name 
 test('a role file with no model line and a call with no model writes nothing', () => {
 	const { run, lines } = hookSetup({ scanner: '' });
 	run('Agent', { subagent_type: 'scanner', prompt: 'x' });
+	run('Agent', { subagent_type: 'scanner', model: 'opus', prompt: 'x' });
 	assert.deepEqual(lines(), []);
 });
 
 // why: guards rule:agent-role-table (a hook that refuses turns a log-only slip-catcher into a stop on every agent)
 test('the agent model hook never refuses or asks, whatever the call names', () => {
-	const { run } = hookSetup({ writer: HAIKU });
+	assert.ok(fs.existsSync(HOOK));
+	const { run, lines } = hookSetup({ writer: HAIKU });
 	for (const input of [{ subagent_type: 'writer', model: 'opus' }, { subagent_type: 'nobody' }, { prompt: 'x' }, { subagent_type: 'writer', model: 'not-a-model' }]) {
 		const out = run('Agent', { prompt: 'x', ...input });
 		assert.equal(out.permissionDecision, undefined, JSON.stringify(input));
 	}
+	assert.ok(lines().some((r) => r.type === 'writer' && /opus/.test(r.model) && /haiku/.test(r.want)), 'the mismatched writer call on opus logged no line');
 });
 
 // why: catches an agent model hook that returns something other than null to the guard
@@ -220,15 +280,21 @@ test('the agent model hook module returns null for a mismatched call', () => {
 	write(cfg, 'agents/writer.md', `---\nname: writer\nmodel: ${HAIKU}\n---\n`);
 	const repo = makeTemp('amodel-direct-repo-');
 	gitIn(repo)('init', '-q', '-b', 'main');
-	const prev = { a: process.env.KIT_CLAUDE_HOME, b: process.env.CLAUDE_CONFIG_DIR };
+	const home = makeTemp('amodel-direct-home-');
+	write(home, '.claude/agents/writer.md', `---\nname: writer\nmodel: ${HAIKU}\n---\n`);
+	const prev = { a: process.env.KIT_CLAUDE_HOME, b: process.env.CLAUDE_CONFIG_DIR, h: process.env.HOME, u: process.env.USERPROFILE };
 	process.env.KIT_CLAUDE_HOME = cfg;
 	process.env.CLAUDE_CONFIG_DIR = cfg;
+	process.env.HOME = home;
+	process.env.USERPROFILE = home;
 	try {
 		const hook = require(HOOK);
 		assert.equal(hook.check({ tool_name: 'Agent', tool_input: { subagent_type: 'writer', model: 'opus' }, cwd: repo }), null);
 	} finally {
 		if (prev.a === undefined) delete process.env.KIT_CLAUDE_HOME; else process.env.KIT_CLAUDE_HOME = prev.a;
 		if (prev.b === undefined) delete process.env.CLAUDE_CONFIG_DIR; else process.env.CLAUDE_CONFIG_DIR = prev.b;
+		if (prev.h === undefined) delete process.env.HOME; else process.env.HOME = prev.h;
+		if (prev.u === undefined) delete process.env.USERPROFILE; else process.env.USERPROFILE = prev.u;
 	}
 });
 
@@ -266,13 +332,15 @@ test('install user writes the lead model and effort into settings.json', () => {
 // why: catches install user dropping the owner's other settings keys when it writes the lead
 test('install user keeps the settings keys already in settings.json beside the lead', () => {
 	const { kit, home } = leadKit();
-	fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ theme: 'dark', permissions: { allow: ['Read'] }, model: 'claude-old-1' }));
+	const foreign = { matcher: 'Foo', hooks: [{ type: 'command', command: 'echo foreign' }] };
+	fs.writeFileSync(path.join(home, 'settings.json'), JSON.stringify({ theme: 'dark', permissions: { allow: ['Read'] }, model: 'claude-old-1', hooks: { PreToolUse: [foreign] } }));
 	install({ kit, home, target: 'user' });
 	const s = settingsOf(home);
 	assert.equal(s.theme, 'dark');
 	assert.deepEqual(s.permissions, { allow: ['Read'] });
 	assert.equal(s.model, 'claude-lead-7', 'the lead model replaces the old one');
 	assert.ok(s.hooks && s.hooks.PreToolUse, 'the launcher hooks are still wired');
+	assert.ok(s.hooks.PreToolUse.some((e) => JSON.stringify(e).includes('echo foreign')), 'the foreign PreToolUse entry was dropped');
 });
 
 // why: catches a second install user moving the lead or doubling the hooks in settings.json

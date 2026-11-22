@@ -10,7 +10,6 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { tableFaults } from '../user/kit-tools/model-table.mjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 import { FAKE_PHRASE, FORMAT_SKILLS, KIT_TEXT_FILES, ROWS, SHEET, adapterRepo, answerQ3, band, canary, canaryLog, canaryRepo, caseKit, compileTools, fences, front, g, gitTree, makeKit, makeTemp, noFront, plainLine, read, require, role, roleTable, ruleFiles, runAudit, runHook, sessionStartReport, sheetTools, status, words } from './kit-helpers.mjs';
 
@@ -543,7 +542,6 @@ test('each agent role file matches the role table in kit.config.json: tools, den
   const config = JSON.parse(read(path.resolve('kit.config.json')));
   const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
   assert.deepEqual(files.filter((r) => !config.roles[r]), [], 'role files with no roles entry');
-  assert.deepEqual(tableFaults(config, path.resolve('.')), []);
 });
 
 // why: guards rule:agent-role-table (a markdown row kept beside the config would be a second home that drifts)
