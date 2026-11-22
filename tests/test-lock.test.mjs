@@ -257,7 +257,8 @@ test('pre-push holds a retest: range without the owner yes and lets it through w
 	const held = pushRun(PROJECT_PRE_PUSH, dir, bare, input);
 	assert.notEqual(held.status, 0, 'held without a yes');
 	const cfg = kitTemp.makeTemp('lock-owner-');
-	ownerTaps(cfg, dir, 'git push origin feat/x');
+	// The yes is dated a second before the push: owner-yes.cjs reads a yes dated after now as no yes at all.
+	ownerTaps(cfg, dir, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
 	const yes = pushRun(PROJECT_PRE_PUSH, dir, bare, input, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
 	assert.equal(yes.status, 0, `the owner's yes lets the push through: ${yes.stderr}`);
 });
