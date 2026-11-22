@@ -47,3 +47,7 @@ script, hook or guard.
 - Some builder briefs gave no canary phrase; the role files' rules carry it unevenly (check the brief templates).
 - flow-check checklist: C19-C22 pass only through the usage exit 2, and C11's folder entries pass with folder
   matching broken (builder doubt).
+- Retest push yes (automated security review): the kit hook does not spend the yes in kit-push.log, so it can be
+  replayed within its window; a yes to a plain branch push also covers retest commits. Spend it under the push lock
+  and make a retest push's yes quote the head sha or a retest marker; the project hook's approved path should take
+  the 10-minute age for retests.
