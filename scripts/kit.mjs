@@ -18,6 +18,7 @@ import launch from '../user/kit-tools/kit-launch.cjs';
 import { mergeOnGreen, renderMergeOnGreen, homeSpelling } from './merge-on-green.mjs';
 import { retiredHits, retiredList, hitLine } from '../project/.claude/retired-check.mjs';
 import { waiting as reportWaiting, unheard as reportUnheard, intakeHere as reportIntakeHere } from '../project/.claude/kit-report.mjs';
+import { slotsIn } from '../user/skills/pre-pr-sweep/slots.mjs';
 
 // git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
 // Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
@@ -2812,6 +2813,19 @@ function toBin(p, root) {
   fs.renameSync(p, path.join(bin, `${path.basename(p)}-${Date.now()}`));
 }
 
+// K315 (build 24): one line per template slot a project file still holds after install, naming the file (relative to the
+// project) and the slot. The list is slotsIn's, in user/skills/pre-pr-sweep/slots.mjs, which the sweep brief writer reads too.
+function unfilledSlotLines(ctx) {
+  const lines = [];
+  for (const e of plan(ctx).entries) {
+    if (e.key.startsWith('memory/')) continue;
+    let text;
+    try { text = fs.readFileSync(e.dest, 'utf8'); } catch { continue; }
+    for (const slot of slotsIn(text)) lines.push(`    unfilled slot in ${e.key}: ${slot}`);
+  }
+  return lines;
+}
+
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   // The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
@@ -2868,6 +2882,7 @@ function main(argv) {
     if (target === 'project' && !withTemplates.includes('web') && !showsUi(projectDir) && !APP_TEMPLATES.some((t) => fs.existsSync(path.join(projectDir, t)))) console.log('    app templates left out: no UI found; add --with-templates web to install them');
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
+    if (target === 'project') for (const l of unfilledSlotLines({ kit, home, target, projectDir, withTemplates })) console.log(l);
     if (target === 'project' && !dryRun) for (const l of doubleRunLines(projectDir)) console.log(`    ${l}`);
     // T14: install is finished only when every part is present and wired. The kit's own copy runs, never the project's.
     const use = useCheck(kit, projectDir, home);
