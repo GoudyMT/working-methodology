@@ -8,6 +8,9 @@ const fs = require('fs');
 const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
 
+// Roles whose edits need the lead's file list (their role bodies say so); a builder without one edits its worktree as before.
+const LISTED_ROLES = ['tester', 'writer'];
+
 // The real path, through any symlink or junction: git reports the worktree's real path, so the target must be
 // compared the same way. A file not yet written resolves through its nearest existing folder.
 function real(p) {
@@ -45,6 +48,10 @@ function main() {
 			process.stderr.write(`Blocked: ${rel} is not in this unit's file list (git rev-parse --git-path kit-unit-files.txt). Report it to the lead instead of editing it.\n`);
 			return 2;
 		}
+	} else if (LISTED_ROLES.includes(input.agent_type)) {
+		// A tester or writer edits only what the lead listed, so with no list it stops (a builder keeps its worktree edits).
+		process.stderr.write(`Blocked: ${input.agent_type} has no file list. The lead writes kit-unit-files.txt before the unit starts; stop and report it.\n`);
+		return 2;
 	}
 	return 0;
 }

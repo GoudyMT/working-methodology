@@ -113,7 +113,7 @@ function reportFaults(report) {
 }
 
 // Kit roles that report up and task no one; an orchestrator and the main session are taskers.
-const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer'];
+const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer', 'tester', 'test-reviewer', 'researcher', 'drafter', 'writer'];
 
 // One event's answer: { out } for a tool call to refuse, { code: 2 } for a stop to hold. The dispatcher (guard.cjs)
 // calls it for tool calls; Claude Code runs this file itself for the stop events.

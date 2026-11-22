@@ -1,0 +1,39 @@
+{
+  "lines": [
+    {
+      "before": "Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that: a test holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from the last column. Why: access widened in one file alone is invisible.",
+      "after": "Each agent role gets only the tools its job needs and starts with the rules that bind it. `kit.config.json` `roles` is the one home for that (tools, denied tools, rules at start, model, effort): `model-table.mjs check` holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from it. Why: access widened in one file alone is invisible.",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs; the markdown table could not hold the five new roles under the module cap"
+    },
+    {
+      "before": "| Role | Job | Tools | Denied tools | Rules at start |",
+      "after": "",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    },
+    {
+      "before": "| builder | Builds one unit test-first in its own worktree | Read, Edit, Write, Grep, Glob, Bash, PowerShell | WebFetch, WebSearch, Agent | edit-discipline, test-integrity, test-value |",
+      "after": "",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    },
+    {
+      "before": "| checker | Checks one finished unit; never edits | Read, Grep, Glob, Bash, PowerShell | Edit, Write, WebFetch, WebSearch, Agent | test-integrity, test-value, anti-hallucination, enumerate-before-you-count |",
+      "after": "",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    },
+    {
+      "before": "| scanner | Lists, counts and checks across files | Read, Grep, Glob | none | none |",
+      "after": "",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    },
+    {
+      "before": "| reviewer | Reviews one sweep role or dimension; never edits | Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch | Edit, Write, Agent | anti-hallucination, enumerate-before-you-count |",
+      "after": "",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    },
+    {
+      "before": "| orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |",
+      "after": "",
+      "why": "E36 (build 24): role access moved into the kit.config.json roles table, checked by model-table.mjs"
+    }
+  ]
+}

@@ -33,6 +33,12 @@ A weak test here ships a green bug, so you find the weak ones before any code is
 
 ## Report (your final message)
 
-Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then JSONL only,
-one line per finding, with status `wrong-test`, `uncovered`, `passes-on-base` or `vague`:
-`{"id":"","status":"","where":"","claim":"","proof":""}`. No lines means clear. Any line stops the build.
+Open every message to whoever started you with the line your rules block asks for (rule:agent-canary). End the report with:
+
+RECORD:
+{"role":"test-reviewer","commit":"<the red commit>"}
+{"id":"","severity":"","status":"","where":"","claim":"","proof":"","fix":""}
+(one line per problem; status is `wrong-test`, `uncovered`, `passes-on-base` or `vague`; any line stops the build)
+INTENT: <one line: do the tests reveal what the behaviour is for, yes or no, and the test that shows it>
+
+A clear review writes {"note":"no problems found","writer":"test-reviewer"} in place of the finding lines.

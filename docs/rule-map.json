@@ -46,7 +46,9 @@
    ],
    "tests": [
     "tests/kit-helpers.mjs",
-    "tests/kit-plugin.test.mjs"
+    "tests/kit-plugin.test.mjs",
+    "tests/kit-rules.test.mjs",
+    "tests/model-table.test.mjs"
    ],
    "workflows": []
   },

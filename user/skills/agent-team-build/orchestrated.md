@@ -13,7 +13,7 @@ which reports completion back to the main session (never several prongs in one s
 | User | the person | - | approves each team plan; the hard stops (privacy, security, legal, copy and visuals, budgets, downloads); push, pull request, merge, release | - |
 | Overseer | the main session | Opus | briefs each orchestrator; checks its plan before the user sees it; checks every sweep contract and report for legitimacy and gaps before it reaches the user; runs the shared machine; relays questions; opens pull requests and merges with the user; writes the run record and the decision log | builds a prong's units |
 | Orchestrator | the `orchestrator` role | Opus, 1-hour cache | plans its team and stops; after approval runs its phase through the team | pushes; touches the main checkout or the tracking files |
-| Builder | the `builder` role | Sonnet | one unit, test-first, in its own worktree | design, copy, files off its list |
+| Builder | the `builder` role | the step table in `kit.config.json` names it (Haiku; one step up on a red rerun) | one unit, test-first, in its own worktree | design, copy, files off its list |
 | Checker | the `checker` role | Opus | read-only review of one high-risk unit | edits |
 | Scanner | the `scanner` role | Haiku | read-only lists, counts and locations; a first pass the requester re-checks | judgment, writes, shell |
 

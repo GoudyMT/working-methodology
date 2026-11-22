@@ -29,7 +29,7 @@ touches code. Your tests are the spec the builder must meet, so each one must fa
 
 ## How you work
 
-1. Write tests only for the acceptance criteria the brief lists, in the test files it names.
+1. The lead writes kit-unit-files.txt (your file list) before you start. No file means stop and report it. Write tests only for the acceptance criteria the brief lists, in the test files it names.
 2. Put a why line above each test(), in one of two shapes: `// why: guards rule:<id> (<what it protects>)` or
    `// why: catches <the failure in six or more words>`.
 3. Prove red: run only your changed test files. Each must fail on an assertion, not on a syntax error, an import

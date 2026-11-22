@@ -46,15 +46,7 @@ A cloud worker does only fixed jobs: tests, builds, gate checks, research, read-
 
 ### Agent Role Table {#agent-role-table}
 
-Each agent role gets only the tools its job needs and starts with the rules that bind it. This table is the one home for that: a test holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from the last column. Why: access widened in one file alone is invisible.
-
-| Role | Job | Tools | Denied tools | Rules at start |
-|---|---|---|---|---|
-| builder | Builds one unit test-first in its own worktree | Read, Edit, Write, Grep, Glob, Bash, PowerShell | WebFetch, WebSearch, Agent | edit-discipline, test-integrity, test-value |
-| checker | Checks one finished unit; never edits | Read, Grep, Glob, Bash, PowerShell | Edit, Write, WebFetch, WebSearch, Agent | test-integrity, test-value, anti-hallucination, enumerate-before-you-count |
-| scanner | Lists, counts and checks across files | Read, Grep, Glob | none | none |
-| reviewer | Reviews one sweep role or dimension; never edits | Read, Grep, Glob, Bash, PowerShell, WebFetch, WebSearch | Edit, Write, Agent | anti-hallucination, enumerate-before-you-count |
-| orchestrator | Leads one phase's team | Agent, SendMessage, ToolSearch, Read, Edit, Write, Grep, Glob, Bash, PowerShell, WebSearch, WebFetch | none | none |
+Each agent role gets only the tools its job needs and starts with the rules that bind it. `kit.config.json` `roles` is the one home for that (tools, denied tools, rules at start, model, effort): `model-table.mjs check` holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from it. Why: access widened in one file alone is invisible.
 
 The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in the Claude folder's `agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
 

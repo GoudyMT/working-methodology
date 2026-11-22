@@ -1,6 +1,6 @@
 ---
 name: agent-team-build
-description: Build an approved feature with a team of agents, in one of two modes - batch (the main session leads; Sonnet builders build each unit test-first in their own worktree; Opus checkers verify the high-risk units) or orchestrated (the main session oversees an Opus orchestrator per phase that plans and runs its own team of builders, checkers and Haiku scanners). Use only in a project whose standards contain an "Agent-Team Build" project adapter, once the user has approved the plan, or when the user runs /agent-team-build.
+description: Build an approved feature with a team of agents, in one of two modes - batch (the main session leads; builders build each unit test-first in their own worktree, each role on the model the step table in kit.config.json names; Opus checkers verify the high-risk units) or orchestrated (the main session oversees an Opus orchestrator per phase that plans and runs its own team of builders, checkers and Haiku scanners). Use only in a project whose standards contain an "Agent-Team Build" project adapter, once the user has approved the plan, or when the user runs /agent-team-build.
 ---
 
 # Agent-Team Build
@@ -71,7 +71,7 @@ unmarked.
 | Role | Who | Does | Never |
 |---|---|---|---|
 | **Lead** | the main session (Opus) in batch mode; an `orchestrator` agent in orchestrated mode | writes the plan; briefs builders, checkers and scanners; judges findings on evidence; integrates units; runs the full gate; reports | builds units a builder should build; calls anything done without the gate |
-| **Builder** | the `builder` agent (Sonnet, its own worktree) | one unit: a failing test first, the least code, a break check, a local commit, an evidence report | edits outside its file list; lowers a test; pushes; starts agents |
+| **Builder** | the `builder` agent (its own worktree; on the model the step table in `kit.config.json` names: Haiku, one step up on a red rerun) | one unit: a failing test first, the least code, a break check, a local commit, an evidence report | edits outside its file list; lowers a test; pushes; starts agents |
 | **Checker** | the `checker` agent (Opus, read-only) | reviews one high-risk unit: plan fit, goals, rules, test strength, claims vs evidence | edits files; passes a unit on the builder's word |
 | **Scanner** | the `scanner` agent (Haiku, read-only) | lists, counts and locations across many files: a first pass the requester re-checks | judgment, design, code, writes |
 
