@@ -91,7 +91,7 @@ test('U6 spec 4: the test-reviewer role file names the intent: note line', () =>
 
 // why: catches the rules skill leaving out the intent: note line, so a brief that preloads only the skill loses the question.
 test('U6 spec 4: the test-reviewer rules skill names the intent: note line', () => {
-	assert.match(read(SKILL_FILE), /intent:/);
+	assert.match(read(SKILL_FILE), /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);
 });
 
 // why: catches a clean review failing the gate when it has no findings and the reviewer's intent note is its only line.
@@ -114,13 +114,13 @@ test('U6 spec 2: every review finding with a fixed line passes check --review (e
 // why: catches one unfixed finding passing the gate because the other finding was fixed.
 test('U6 spec 2: a review finding with no fixed line is exit 1 and names its id', () => {
 	const dir = gateDir({
-		review: handBack(REVIEW_ROLE, finding('R1', 'vague'), finding('R2', 'uncovered'), INTENT),
-		fix: handBack(FIX_ROLE, finding('R1', 'fixed')),
+		review: handBack(REVIEW_ROLE, finding('ZQ1', 'vague'), finding('ZQ2', 'uncovered'), INTENT),
+		fix: handBack(FIX_ROLE, finding('ZQ1', 'fixed')),
 	});
 	const r = runReview(dir);
 	assert.equal(r.status, 1, r.stdout);
-	assert.match(r.stderr, /R2/, r.stderr);
-	assert.doesNotMatch(r.stderr, /R1/, r.stderr);
+	assert.match(r.stderr, /ZQ2/, r.stderr);
+	assert.doesNotMatch(r.stderr, /ZQ1/, r.stderr);
 });
 
 // why: catches a missing fix record passing the gate when no finding was ever fixed.
@@ -217,3 +217,99 @@ test('U6 spec 2: with no --dir, the review is read from kit-reviews under the gi
 	const r = cli(['check', '--review', 'U1'], { cwd: repo });
 	assert.equal(r.status, 0, r.stderr || r.stdout);
 });
+
+// why: catches a test-reviewer record accepting fixed, the tester's own status, so a reviewer could mark a finding done.
+test('U6 TR1: a test-reviewer finding with status fixed is an error naming fixed on line 2', () => {
+	const dir = tempDir();
+	const file = path.join(dir, 'record.txt');
+	fs.writeFileSync(file, handBack(REVIEW_ROLE, finding('R1', 'fixed'), INTENT));
+	const r = cli(['check', file, '--role', 'test-reviewer']);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stderr, /^line 2: .*fixed/m, r.stderr);
+});
+
+// why: catches the reviewer role losing its confirmed and plausible statuses when the review set is narrowed.
+for (const status of ['confirmed', 'plausible']) {
+	test(`U6 TR1: a reviewer finding with status ${status} still passes check --role reviewer`, () => {
+		const dir = tempDir();
+		const file = path.join(dir, 'record.txt');
+		fs.writeFileSync(file, handBack('{"role":"reviewer","commit":"abc1234"}', finding('R1', status), ''));
+		const r = cli(['check', file, '--role', 'reviewer']);
+		assert.equal(r.status, 0, r.stderr || r.stdout);
+	});
+}
+
+// why: catches an empty status passing the test-reviewer check, which would record a finding with no verdict at all.
+test('U6 TR1: an empty status under --role test-reviewer is an error naming the line', () => {
+	const dir = tempDir();
+	const file = path.join(dir, 'record.txt');
+	fs.writeFileSync(file, handBack(REVIEW_ROLE, finding('R1', ''), INTENT));
+	const r = cli(['check', file, '--role', 'test-reviewer']);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stderr, /^line 2: /m, r.stderr);
+});
+
+// why: catches a non-string status passing the test-reviewer check when a number stands where a status word belongs.
+test('U6 TR1: a non-string status under --role test-reviewer is an error naming the line', () => {
+	const dir = tempDir();
+	const file = path.join(dir, 'record.txt');
+	fs.writeFileSync(file, handBack(REVIEW_ROLE, finding('R1', 5), INTENT));
+	const r = cli(['check', file, '--role', 'test-reviewer']);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stderr, /^line 2: .*`status`/m, r.stderr);
+});
+
+// why: catches a review holding a red status passing the gate, when red is not one of the five statuses.
+test('U6 TR2: --review with a review status red exits 1 naming red on line 2', () => {
+	const dir = gateDir({ review: handBack(REVIEW_ROLE, finding('R1', 'red'), INTENT) });
+	const r = runReview(dir);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stderr, /^line 2: .*red/m, r.stderr);
+});
+
+// why: catches a fix record written by a non-tester role counting as the tester's fixes, which lets any role close a finding.
+test('U6 TR2: --review with a fix record whose role line is not tester exits 1', () => {
+	const dir = gateDir({
+		review: handBack(REVIEW_ROLE, finding('R1', 'vague'), INTENT),
+		fix: handBack('{"role":"builder","commit":"abc1234"}', finding('R1', 'fixed')),
+	});
+	const r = runReview(dir);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stderr, /tester/, r.stderr);
+});
+
+// why: catches a fix record with a broken JSON line being skipped, so a fixed line quietly goes missing from the count.
+test('U6 TR2: --review with a fix record holding bad JSON exits 1 naming line 2', () => {
+	const dir = gateDir({
+		review: handBack(REVIEW_ROLE, finding('R1', 'vague'), INTENT),
+		fix: handBack(FIX_ROLE, 'this is not json'),
+	});
+	const r = runReview(dir);
+	assert.equal(r.status, 1, r.stdout);
+	assert.match(r.stderr, /^line 2: /m, r.stderr);
+});
+
+// why: catches the default folder missing a review written from a linked worktree, which would report no review for a unit.
+test('U6 TR4: run in a linked worktree, the review is found in the main repo .git/kit-reviews', () => {
+	const main = tempDir();
+	const gitRun = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8' });
+	assert.equal(gitRun(['init', '-q'], main).status, 0);
+	assert.equal(gitRun(['-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], main).status, 0);
+	const wt = path.join(tempDir(), 'wt');
+	assert.equal(gitRun(['worktree', 'add', '-q', wt], main).status, 0);
+	const folder = path.join(main, '.git', 'kit-reviews');
+	fs.mkdirSync(folder, { recursive: true });
+	fs.writeFileSync(path.join(folder, 'U1.review.jsonl'), handBack(REVIEW_ROLE, INTENT));
+	const r = cli(['check', '--review', 'U1'], { cwd: wt });
+	assert.equal(r.status, 0, r.stderr || r.stdout);
+});
+
+// why: catches a unit name with a parent-folder step reaching outside the review folder, whatever the slash style.
+for (const unit of ['..\\x', '../x', '']) {
+	test(`U6 TR6: a unit name of ${JSON.stringify(unit)} is exit 2 naming the unit`, () => {
+		const dir = gateDir({ review: handBack(REVIEW_ROLE, INTENT) });
+		const r = runReview(dir, unit);
+		assert.equal(r.status, 2, r.stdout + r.stderr);
+		assert.match(r.stderr, /unit/i, r.stderr);
+	});
+}
