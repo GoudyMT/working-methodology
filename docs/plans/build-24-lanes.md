@@ -20,7 +20,7 @@
 | U18 | `user/skills/agent-team-build/SKILL.md`, `user/kit-tools/flow-check.mjs`, `user/kit-tools/handoff.mjs`, `rules/agent-teams.md`, `tests/overwatch.test.mjs` | after U17 |
 | U19 | `user/kit-tools/test-budget.mjs`, `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/templates/project-adapter.md`, `tests/test-budget.test.mjs` | after U18 |
 | U21 | `scripts/test-check.mjs`, `scripts/mutation-check.mjs`, `user/kit-tools/test-value.mjs`, `user/skills/agent-team-build/SKILL.md`, `tests/value-gate.test.mjs` | after U18, U11, U13 |
-| U20 | `user/kit-tools/unit-check.mjs`, `user/kit-tools/handoff.mjs`, `user/agents/test-reviewer.md`, `user/agents/tester.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `tests/test-count.test.mjs` | after U19 |
+| U20 | `user/kit-tools/unit-check.mjs`, `user/kit-tools/count-gate.mjs`, `user/kit-tools/plan-check.mjs`, `user/kit-tools/handoff.mjs`, `user/agents/test-reviewer.md`, `user/agents/tester.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `tests/test-count.test.mjs` | after U19 |
 | U22 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/agents/tester.md`, `tests/guard-rows.test.mjs` | after U19, U20 |
 
 U18 spec note (2026-11-22 12:39Z): the overwatch lead is the build lead (and the orchestrator), not an extra role. Its
@@ -64,3 +64,4 @@ assertion, not a test; over a ceiling splits at planning. Then the build's own n
   the 10-minute age for retests.
 - mutation-check.mjs is 20911 bytes (16181 at base) and test-check.mjs 40216 (40039 at base), both over the 14000 module size; the size test does not cover scripts/. Decide split or exemption (U21 builder flag).
 - --value covering set is greedy ("near the smallest"); test-value groups from scripts/test-value.mjs are not reused, because kit tools install without scripts/.
+- U21 fix: no test asserts the --value usage exit 2 or the six-word floor on exempt why lines (builder doubt); test-format covers the shapes on real tests only.
