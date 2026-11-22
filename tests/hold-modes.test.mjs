@@ -20,7 +20,8 @@ const REAL_HOLDS = path.resolve('user/kit-hooks/holds.json');
 // A child process environment whose home and Claude config folders are temp dirs, so no test reads the real home.
 function isolatedEnv(extra = {}) {
 	const home = kitTemp.makeTemp('hold-home-');
-	return { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: path.join(home, '.claude'), ...extra };
+	const config = path.join(home, '.claude');
+	return { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: config, KIT_CLAUDE_HOME: config, ...extra };
 }
 
 const GIT_ID = { GIT_AUTHOR_NAME: 'Tester', GIT_AUTHOR_EMAIL: 'tester@example.invalid', GIT_COMMITTER_NAME: 'Tester', GIT_COMMITTER_EMAIL: 'tester@example.invalid' };
@@ -57,8 +58,8 @@ const hookPath = (name) => `user/kit-hooks/${name}`;
 const hookText = (name) => `// ${name}\n`;
 
 // Runs the kit check in dir with the given arguments; out holds stdout and stderr together.
-function runCheck(dir, args = []) {
-	const r = spawnSync(process.execPath, [HOLD_CHECK, ...args], { cwd: dir, env: isolatedEnv(), encoding: 'utf8' });
+function runCheck(dir, args = [], extraEnv = {}) {
+	const r = spawnSync(process.execPath, [HOLD_CHECK, ...args], { cwd: dir, env: isolatedEnv(extraEnv), encoding: 'utf8' });
 	return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
 
@@ -71,7 +72,8 @@ function scenario({ before, after, hooks = [], tag = 'v1.0.0' }) {
 	for (const h of hooks) files[hookPath(h)] = hookText(h);
 	put(dir, files);
 	save(dir, 'release', tag);
-	if (after !== undefined) put(dir, { 'user/kit-hooks/holds.json': holdsText(after) });
+	// after null deletes the working tree's holds.json.
+	if (after !== undefined) put(dir, { 'user/kit-hooks/holds.json': after === null ? null : holdsText(after) });
 	return dir;
 }
 
@@ -131,6 +133,17 @@ test('hold-mode returns enforce for a listed hold whose mode is neither log nor 
 	assert.equal(mode('typo-hold'), 'enforce');
 });
 
+// why: catches a holds.json of the wrong shape throwing in hold-mode, so a hook crashes instead of defaulting to enforce
+test('hold-mode returns enforce and does not throw for holds.json of the wrong shape', () => {
+	const shapes = ['{}', '[]', 'null', '{"holds":"x"}', '{"holds":[null,3]}'];
+	for (const text of shapes) {
+		let mode;
+		assert.doesNotThrow(() => { mode = modeOf(holdModeDir(text)); }, `hold-mode.cjs loads with ${text}`);
+		assert.doesNotThrow(() => mode('x'), `mode('x') does not throw with ${text}`);
+		assert.equal(mode('x'), 'enforce', `mode('x') is enforce with ${text}`);
+	}
+});
+
 // why: catches agent-model ignoring holds.json, so its log mode can never be changed by the list
 test('agent-model reads its mode through hold-mode.cjs, then logs the call in log mode and returns null', () => {
 	const hookDir = kitTemp.makeTemp('agent-model-hook-');
@@ -139,7 +152,7 @@ test('agent-model reads its mode through hold-mode.cjs, then logs the call in lo
 	// A stub hold-mode.cjs that records each id it is asked for and answers log, so only the wiring is under test.
 	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nconst fs = require('fs');\nmodule.exports = { mode(id) { fs.appendFileSync(${JSON.stringify(callRecord)}, id + '\\n'); return 'log'; } };\n`);
 	const dir = repo();
-	const script = `const r = require(${JSON.stringify(path.join(hookDir, 'agent-model.cjs'))}).check({ tool_input: { subagent_type: 'no-such-role' }, cwd: ${JSON.stringify(dir)} }); process.stdout.write(JSON.stringify(r));`;
+	const script = `const r = require(${JSON.stringify(path.join(hookDir, 'agent-model.cjs'))}).check({ tool_name: 'Agent', tool_input: { subagent_type: 'no-such-role' }, cwd: ${JSON.stringify(dir)} }); process.stdout.write(JSON.stringify(r));`;
 	const run = spawnSync(process.execPath, ['-e', script], { env: isolatedEnv(), encoding: 'utf8' });
 	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
 	assert.equal(run.stdout, 'null', 'check returns null');
@@ -149,6 +162,42 @@ test('agent-model reads its mode through hold-mode.cjs, then logs the call in lo
 	const logFile = path.join(common, 'kit-agent-model.log');
 	assert.ok(fs.existsSync(logFile), 'the log-mode call wrote kit-agent-model.log');
 	assert.match(fs.readFileSync(logFile, 'utf8'), /"hook":"agent-model"/);
+});
+
+// why: catches a deleted holds.json that the check reads as no holds, so an enforce hold vanishes unnoticed
+test('hold-check exits 1 and names the hold when the working tree deletes holds.json over an enforce hold', () => {
+	const dir = scenario({
+		before: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }],
+		hooks: ['alpha.cjs'],
+		after: null,
+	});
+	const r = runCheck(dir, [dir, '--base', 'v1.0.0']);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /alpha-hold/);
+});
+
+// why: catches an untracked hook file treated as missing, so a hold whose hook is new cannot be added
+test('hold-check exits 0 when the hook file a new hold names is present but untracked', () => {
+	const dir = scenario({
+		before: undefined,
+		after: [{ id: 'beta-hold', hook: 'beta.cjs', mode: 'log' }],
+		hooks: [],
+	});
+	put(dir, { [hookPath('beta.cjs')]: hookText('beta.cjs') });
+	const r = runCheck(dir, [dir, '--base', 'v1.0.0']);
+	assert.equal(r.code, 0, r.out);
+});
+
+// why: catches a hook committed at the release then deleted from disk, which leaves its hold guarding nothing
+test('hold-check exits 1 and names the hold when a hook committed at the release is deleted from disk', () => {
+	const dir = scenario({
+		before: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }],
+		hooks: ['alpha.cjs'],
+	});
+	put(dir, { [hookPath('alpha.cjs')]: null });
+	const r = runCheck(dir, [dir, '--base', 'v1.0.0']);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /alpha-hold/);
 });
 
 // why: catches a dropped enforce hold that the release check lets through as a plain mode change
@@ -215,15 +264,19 @@ test('hold-check exits 0 when enforce holds stay enforce and a log hold moves to
 	assert.equal(r.code, 0, r.out);
 });
 
-// why: catches the default base read by text sort, so v1.9.0 is taken as newer than v1.10.0 and a fixed hold looks dropped
-test('hold-check with no --base compares against the latest v* tag by version, not by text', () => {
+// why: catches the default base read by text or date, so the wrong tag is compared and a real drop goes unflagged
+test('hold-check with no --base compares against the latest v* tag by version, not by text or by date', () => {
 	const dir = repo();
-	put(dir, { 'user/kit-hooks/alpha.cjs': hookText('alpha.cjs'), 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }]) });
+	put(dir, { 'user/kit-hooks/alpha.cjs': hookText('alpha.cjs'), 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }]) });
 	save(dir, 'release 1.9.0', 'v1.9.0');
-	put(dir, { 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }]) });
+	put(dir, { 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }]) });
 	save(dir, 'release 1.10.0', 'v1.10.0');
+	// A newer non-v tag holds the hold as log; only v* tags may serve as the default base.
+	put(dir, { 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }]) });
+	save(dir, 'old build', 'old-build');
 	const r = runCheck(dir, [dir]);
-	assert.equal(r.code, 0, r.out);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /alpha-hold/);
 });
 
 // why: catches --base ignored, so a check against an older release passes or fails for the wrong tag
@@ -242,7 +295,8 @@ test('hold-check with --base checks against the named ref, not the latest tag', 
 test('hold-check exits 2 when the kit dir is not a git repo', () => {
 	const dir = kitTemp.makeTemp('hold-plain-');
 	put(dir, { 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }]), 'user/kit-hooks/alpha.cjs': hookText('alpha.cjs') });
-	const r = runCheck(dir, [dir]);
+	// The ceiling stops git from finding an enclosing repo above the temp folder.
+	const r = runCheck(dir, [dir], { GIT_CEILING_DIRECTORIES: path.dirname(dir) });
 	assert.equal(r.code, 2, r.out);
 });
 
