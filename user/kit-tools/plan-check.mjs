@@ -5,7 +5,7 @@
 // (project/.claude/plan-graph.mjs) must name no fault: two units that may run at once and touch one file, a Runs that
 // names no unit, or a cycle of "after". Test budget (test-budget.mjs): a Category cell may not be lower than the category
 // the unit's files compute; a unit's test lines (the Tests cell, split by <br>) may not pass its category's ceiling; each
-// test line says "-> <id>"; and each rule under the unit's "### <id> spec" section ("- <id>: ...") has a test line naming it.
+// test line says "-> <id>"; and each rule under the unit's "### <id> spec" section ("- <id>: ...") has a test line naming it. A guard unit's test lines carry its three fixed rows (guard-rows.mjs).
 // --lock <unit> writes the sha256 of the unit's row line to <plan>.locks.json, when the plan checks clean; a later check
 // refuses a locked row whose text changed.
 // With --records <folder>, each .jsonl file there is a whole hand-back (prose, RECORD:, then JSON lines), checked by
@@ -23,6 +23,7 @@ import { units, faults } from '../../project/.claude/plan-graph.mjs';
 import safeSpawn from '../../project/.claude/safe-spawn.cjs';
 import { check } from './handoff.mjs';
 import { budget, filesOf, readMap, InputError, CEILING, ORDER } from './test-budget.mjs';
+import { guardRowFaults } from './guard-rows.mjs';
 
 const COLUMNS = ['Id', 'Files', 'Runs', 'Risk', 'Category', 'Tests', 'Tester'];
 
@@ -85,6 +86,7 @@ function budgetFaults(id, cells, at, map, rules) {
 	if (lines.length === 0) found.push(`unit ${id} has an empty Tests cell`);
 	if (lines.length > CEILING[b.category]) found.push(`unit ${id} has ${lines.length} test lines, over its ${b.category} ceiling of ${CEILING[b.category]}: split the unit`);
 	for (const l of lines) if (!l.includes('->')) found.push(`unit ${id} has a test line with no "->": ${l}`);
+	if (b.category === 'guard') found.push(...guardRowFaults(id, lines));
 	const named = new Set(lines.flatMap((l) => [...l.matchAll(/->\s*([A-Za-z][\w-]*)/g)].map((m) => m[1])));
 	for (const rule of rules) if (!named.has(rule)) found.push(`unit ${id} spec rule ${rule} has no test line with -> ${rule}`);
 	return found;

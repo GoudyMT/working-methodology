@@ -31,6 +31,13 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
   backticks); ports, servers and fixtures are still checked by hand.
 - **Built by:** "lead" for a small or tightly coupled unit; a split costs more than it saves there.
 - **Done when** names the unit's size-budget share (below), or "no size budget touched".
+- **Guard units** (Category guard, or Risk high, or a GUARD_PATHS file) carry three fixed lines in the Tests cell, each at the
+  start of its line (the lines split by `<br>`) and each ending `-> <spec id>`. `bypass:` is a variant of the call (another
+  shell, a wrapper or a path spelling) that the guard must still refuse; `repeat:` is the guard run twice with the same
+  verdict; `fail-closed:` or `fail-open:` is a broken guard that blocks or lets the call through, and that line says
+  "logged". A `wiring:` line (the guard is registered where it must run) may sit beside them, never in place of one.
+  Example Tests cell: `| bypass: runs the guard through a wrapper and another shell -> <S1><br>repeat: runs the guard twice
+  with the same verdict -> <S1><br>fail-closed: a broken guard blocks the call and is logged -> <S1> |`
 
 ## Collision list (from a repo-wide search, never from memory)
 

@@ -42,6 +42,8 @@ Count: one test per plan line of the unit's Tests cell. Controls fold into their
 is never a test of its own. Tests are a floor: the cell's lines are the least the unit needs. The count gate (unit-check)
 compares the tests your red commit adds with that cell, so an extra test is raised with the lead first, never added.
 
+Guard units. When the unit's test budget is guard (test-budget.mjs: Category guard, Risk high, or a GUARD_PATHS file), its Tests cell carries three fixed rows, one test each, and each line starts with its tag: `bypass:` (a variant of the call that the guard must still refuse: another shell, a wrapper, a path spelling), `repeat:` (the guard run twice gives the same verdict), and `fail-closed:` or `fail-open:` (a broken guard blocks or lets the call through, and the line says logged). plan-check refuses a guard unit without them. A `wiring:` line (the guard is registered where it must run) is an extra proof beside the three, never a stand-in for one. Whether a bypass test is a real variant is your judgment and the reviewer's.
+
 If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`, which the handoff check refuses.
 
 ## Report (your final message)
