@@ -1557,7 +1557,10 @@ test('the priority index names the size-budget rule by ID and by the file that h
 
 // Fills a template's example from the template's own text: an empty value gets a sample, a <placeholder> gets a hash.
 const EXAMPLE_VALUES = { id: 'K1', severity: 'low', status: 'wrong-test', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
-const fillExample = (json) => json.replace(/"(\w+)":""/g, (m, k) => `"${k}":"${EXAMPLE_VALUES[k] ?? 'x'}"`).replace(/<[^>"]*>/g, 'abc1234');
+const fillExample = (json) => json
+  .replace(/"(\w+)":""/g, (m, k) => `"${k}":"${EXAMPLE_VALUES[k] ?? 'x'}"`)
+  .replace(/"(\w+)":"<[^"]*>"/g, (m, k) => `"${k}":"${k === 'commit' ? 'abc1234' : (EXAMPLE_VALUES[k] ?? 'x')}"`)
+  .replace(/<[^>"]*>/g, 'abc1234');
 const handoffCheck = (text) => spawnSync(process.execPath, [path.resolve('user/kit-tools/handoff.mjs'), 'check', '-'], { input: text, encoding: 'utf8' });
 const HANDOFF_PROSE = 'Report.';
 // The test-reviewer record block, as its template words it: the lines after RECORD: up to the first blank line.
@@ -1633,7 +1636,7 @@ test('a test-reviewer or tester finding line copied with its blanks is refused b
   for (const [name, finding] of [['test-reviewer', reviewer], ['tester', tester]]) {
     const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', fillExample(name === 'tester' ? role : reviewerBlock().find((l) => l.includes('"role"'))), finding].join('\n'));
     assert.equal(r.status, 1, `${name} blank finding line passed`);
-    assert.match(r.stderr, /empty `id`/, name);
+    assert.match(r.stderr, /unfilled placeholder/, name);
   }
 });
 

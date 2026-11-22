@@ -463,3 +463,16 @@ test('N19 spec 9: CLI check with matching --role and --commit exits 0', () => {
 	const res = cli(['check', file, '--role', 'tester', '--commit', '158ec54']);
 	assert.equal(res.status, 0, res.stderr);
 });
+
+// why: catches a finding that ships a whole placeholder as its claim, so an unfilled template line passes the gate
+test('a finding whose claim is a whole placeholder is refused as an unfilled placeholder on its line', () => {
+	const r = check(record(ROLE, finding('K1', { claim: '<the claim>' })));
+	assert.equal(r.ok, false);
+	assert.ok(r.errors.some((e) => /^line 2: /.test(e) && e.includes('`claim`') && e.includes('unfilled placeholder')), JSON.stringify(r.errors));
+});
+
+// why: catches a claim that only mentions angle brackets inside its text, refused as a placeholder it is not
+test('a claim with angle brackets inside its text is not an unfilled placeholder', () => {
+	const r = check(record(ROLE, finding('K1', { claim: 'a <b> c' })));
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+});
