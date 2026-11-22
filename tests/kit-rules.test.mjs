@@ -1625,3 +1625,50 @@ test('the edit fence lets a builder edit when the session folder is not in a git
   const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
   assert.equal(out.status, 0, out.stderr);
 });
+
+// why: guards rule:agent-role-table (a finding example copied with its blanks still is refused by the handoff check)
+test('a test-reviewer or tester finding line copied with its blanks is refused by the handoff check', () => {
+  const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
+  const [role, tester] = testerExamples();
+  for (const [name, finding] of [['test-reviewer', reviewer], ['tester', tester]]) {
+    const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', fillExample(name === 'tester' ? role : reviewerBlock().find((l) => l.includes('"role"'))), finding].join('\n'));
+    assert.equal(r.status, 1, `${name} blank finding line passed`);
+    assert.match(r.stderr, /empty `id`/, name);
+  }
+});
+
+// why: catches a finding example that shows empty strings where a placeholder belongs, so a writer copies blanks as values
+test('the test-reviewer and tester finding examples show placeholders, not empty strings', () => {
+  const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
+  const [, tester] = testerExamples();
+  assert.doesNotMatch(reviewer, /":""/, 'test-reviewer finding example holds an empty string');
+  assert.doesNotMatch(tester, /":""/, 'tester finding example holds an empty string');
+});
+
+// why: catches a template that leaves "-" for none unnamed, so a writer may fill fix with an invented value
+test('the test-reviewer and tester templates name "-" as the value for none', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) {
+    assert.match(read(path.resolve('user/agents', f)), /`-`[^\n]*\bnone\b|\bnone\b[^\n]*`-`/, `${f} does not name - as none`);
+  }
+});
+
+// why: catches a test-reviewer clear form that drops its intent note, so the run record never shows what the review was for
+test('the test-reviewer clear form keeps an intent note beside the no problems note', () => {
+  const text = read(path.resolve('user/agents/test-reviewer.md'));
+  assert.match(text, /\{"note":"no problems found","writer":"test-reviewer"\}/);
+  assert.match(text, /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);
+});
+
+// why: catches an edit fence that lets a tester edit through when it throws after reading the agent type
+test('the edit fence refuses a tester edit when the hook throws after reading its agent type', () => {
+  const dir = gitTree();
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'tester', tool_name: 'Edit', tool_input: { file_path: 5 } });
+  assert.equal(out.status, 2, out.stderr);
+});
+
+// why: guards rule:agent-role-table (a builder whose edit hook throws keeps the fail-open pass-through it has today)
+test('the edit fence lets a builder edit through when the hook throws, as today', () => {
+  const dir = gitTree();
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: 5 } });
+  assert.equal(out.status, 0, out.stderr);
+});
