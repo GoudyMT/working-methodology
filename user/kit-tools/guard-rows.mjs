@@ -23,6 +23,10 @@ export function guardRowFaults(id, lines) {
 	}
 	const fails = lines.filter((l) => FAIL.test(l));
 	if (fails.length === 0) found.push(`unit ${id} is a guard unit with no fail-closed: or fail-open: row`);
-	for (const l of fails) if (!/\blogged\b/.test(l)) found.push(`unit ${id} has a guard fail row that does not say logged: ${l}`);
+	// A denial ("not logged", "never logged", "nothing logged", "no ... logged") is no logging; "unlogged" has no word boundary before "logged", so it fails the first test.
+	for (const l of fails) {
+		if (/\b(not|never|nothing|no)\b[^,;]*\blogged\b/.test(l)) found.push(`unit ${id} has a guard fail row that says the outcome is not logged: ${l}`);
+		else if (!/\blogged\b/.test(l)) found.push(`unit ${id} has a guard fail row that does not say logged: ${l}`);
+	}
 	return found;
 }
