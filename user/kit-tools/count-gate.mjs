@@ -89,12 +89,13 @@ export function commitOf(repo, hash) {
 }
 
 // The count a countCommand prints for the red commit's copy of one file, written to a temp folder under its own name.
-function commandCount(repo, cmd, rev, f) {
+function commandCount(repo, words, rev, f) {
 	const dir = kitTemp.makeTemp('count-gate-');
 	try {
 		const tmp = path.join(dir, path.basename(f));
 		fs.writeFileSync(tmp, gitShow(repo, rev, f) || '');
-		const r = spawnSync(`${cmd} "${tmp}"`, { cwd: repo, shell: true, encoding: 'utf8' });
+		// No shell: the command's words run as given and the file name is one argument, so it is data, never code.
+		const r = spawnSync(words[0], [...words.slice(1), tmp], { cwd: repo, shell: false, encoding: 'utf8', windowsHide: true, env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
 		if (!/^\s*\d+\s*$/.test(r.stdout)) throw new Error(`countCommand printed no integer for ${f}`);
 		return Number(r.stdout);
 	} finally {
@@ -102,21 +103,30 @@ function commandCount(repo, cmd, rev, f) {
 	}
 }
 
-// Count gate: the first test: commit adds as many tests to the unit's test files as the Tests cell has lines.
+// The tests one commit adds to one test file: its count less its parent's, a file the parent does not hold counting 0.
+// With no countCommand, the test names the commit adds.
+function addedIn(repo, words, c, f) {
+	const now = gitShow(repo, c.hash, f);
+	if (now === null) return 0;
+	const was = c.parent === undefined ? null : gitShow(repo, c.parent, f);
+	if (words !== undefined) return commandCount(repo, words, c.hash, f) - (was === null ? 0 : commandCount(repo, words, c.parent, f));
+	const names = new Set(testsIn(was || '').map((t) => t.name));
+	return testsIn(now).filter((t) => !names.has(t.name)).length;
+}
+
+// Count gate: the test: commits in the range add as many tests to the unit's test files as the locked Tests cell has lines.
 export function countGate(repo, hashes, plan, id) {
 	const gate = unitGate(plan, id);
 	if (gate.changed) return [`${id}: the locked row changed since --lock`];
-	const red = hashes.map((h) => commitOf(repo, h)).find((c) => c.type === 'test');
-	if (!red) return [`${id}: no test: commit in the range, so no red commit to count`];
+	const reds = hashes.map((h) => commitOf(repo, h)).filter((c) => c.type === 'test');
+	if (!reds.length) return [`${id}: no test: commit in the range, so no red commit to count`];
 	const cfgFile = path.join(repo, 'kit.config.json');
 	const cmd = fs.existsSync(cfgFile) ? JSON.parse(fs.readFileSync(cfgFile, 'utf8')).countCommand : undefined;
+	const words = typeof cmd === 'string' && cmd.trim() ? cmd.trim().split(/\s+/) : undefined;
 	const files = gate.files.filter(isTestFile);
-	const counts = files.map((f) => {
-		if (cmd !== undefined) return commandCount(repo, cmd, red.hash, f);
-		const was = new Set(testsIn(gitShow(repo, red.parent, f) || '').map((t) => t.name));
-		return testsIn(gitShow(repo, red.hash, f) || '').filter((t) => !was.has(t.name)).length;
-	});
-	const total = counts.reduce((a, b) => a + b, 0);
+	const perRed = reds.map((c) => files.map((f) => addedIn(repo, words, c, f)));
+	const total = perRed.flat().reduce((a, b) => a + b, 0);
 	if (total === gate.lines) return [];
-	return [`${red.short} ${red.subject}: ${files.map((f, i) => `${f}: ${counts[i]}`).join(', ')} (${total} tests), but the locked row's Tests cell has ${gate.lines} lines`];
+	const byFile = files.map((f, i) => `${f}: ${perRed.reduce((sum, row) => sum + row[i], 0)}`).join(', ');
+	return [`${reds.map((c) => c.short).join(', ')}: ${byFile} (${total} tests), but the locked row's Tests cell has ${gate.lines} lines`];
 }
