@@ -140,6 +140,20 @@ says, a "Closed out: <unit id>" note included. Start a fresh agent of the same r
 rule's pick-up steps; after the second failed cycle on a unit, stop and tell the user. The hook sees the last
 message of each turn, which is what the lead receives.
 
+## The overwatch lead
+
+The build lead runs the batch as the overwatch lead. It is the build lead, not an extra role: it adds no seat to the roles table, and it keeps the lead's tools. Its run, in order:
+
+1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and split the units into lanes with `lanes.mjs`.
+2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief.
+3. **Answer lane questions.** Each question from a lane gets one answer, written in that lane's log.
+4. **Log every step.** Write each step as a JSON line (unit, step, at, by), and read the checklist after each merge: `node {{CLAUDE_HOME}}/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>`.
+5. **Spin down the teams.** Stop each agent once its lane hands back, and leave none running.
+6. **Merge the lanes.** Merge each lane's branch into the feature branch, in plan order.
+7. **One sweep.** Run the pre-PR sweep once, on the integrated branch.
+8. **Fixes in lanes.** Each finding the sweep names is fixed in its own lane, under the same merge rule.
+9. **CI gate, then the owner's yes.** Wait for CI to go green, then ask the owner's yes before any outward act.
+
 ## Who decides
 
 - **Builder:** details inside its unit (local names, test layout, a mechanical fix), each reported under
