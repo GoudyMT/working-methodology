@@ -13,6 +13,7 @@
 const fs = require('fs');
 const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
+const { recordCounts } = require('./record-counts.cjs');
 
 // git from node's own folder, never the project (build 23).
 const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
@@ -100,16 +101,7 @@ function finalReport(input) {
 // What a reviewer's report lacks against the shape its brief gives: a "ROLE:" line, one line per finding in five
 // fields (severity | CONFIRMED or PLAUSIBLE | claim | file:line | evidence) or "No findings", and a "Not checked:" line.
 const SEVERITY_ROW = /^\s*(critical|high|medium|low)\s*\|/i;
-// A report that holds a valid RECORD: block meets the same shape in JSON: its role line is the ROLE line, its findings
-// are the rows and its notChecked line is the "Not checked:" line. The block is checked by kit-tools/handoff.mjs in its
-// own program, from node's own folder, as handoff-gate.cjs does. Null when there is no such block.
-function recordCounts(report) {
-	const checker = path.join(__dirname, '..', 'kit-tools', 'handoff.mjs');
-	if (!fs.existsSync(checker) || !String(report).split(/\r?\n/).some((l) => l.trim() === 'RECORD:')) return null;
-	const r = safeSpawn.tool(process.execPath, [checker, 'check', '-'], { input: String(report), encoding: 'utf8' });
-	const m = r.status === 0 ? /^ok: (\d+) findings, (\d+) notChecked/m.exec(String(r.stdout)) : null;
-	return m ? { findings: Number(m[1]), notChecked: Number(m[2]) } : null;
-}
+// A report with a RECORD: block meets the same shape in JSON (record-counts.cjs): see recordCounts there.
 function reportFaults(report) {
 	const lines = String(report).split(/\r?\n/);
 	const faults = [];
