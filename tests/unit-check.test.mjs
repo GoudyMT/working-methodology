@@ -470,3 +470,217 @@ test('unchecked types: a ci commit that mixes source and test is a mixed fault',
 	assert.equal(r.status, 1, r.stderr);
 	faultFor(r, ci, /mixed/);
 });
+
+// ---- review rows: names, skips, timeouts, merges (checker findings 1 to 16) ----
+const LOOP_RED_FILE = testFile(CASE_ONE) + "for (const x of ['one', 'two']) {\n\ttest(`adds ${x}`, () => { assert.equal(add(1, 2), 3); });\n}\n";
+const LOOP_KEEP_FILE = testFile(CASE_ONE) + "for (const x of ['one', 'two']) {\n\ttest(`keeps ${x}`, () => { assert.equal(add(4, 0), 4); });\n}\n";
+const nestedFile = (...cases) => "import { describe, test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/add.mjs';\ndescribe('add', () => {\n"
+	+ cases.map(([n, b]) => `\ttest(${JSON.stringify(n)}, () => { ${b} });\n`).join('') + '});\n';
+const ESCAPE_FILE = testFile(CASE_ONE) + String.raw`test('adds #1 to two', () => { assert.equal(add(1, 2), 3); });
+test('says \'hi\' to add', () => { assert.equal(add(1, 2), 3); });
+`;
+const SKIP_FILE = "import { existsSync } from 'node:fs';\nimport { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/add.mjs';\n"
+	+ 'test("add case one", () => { assert.equal(add(4, 0), 4); });\n'
+	+ "test('adds two numbers', { skip: existsSync(new URL('../src/flag.mjs', import.meta.url)) }, () => { assert.equal(add(1, 2), 3); });\n";
+const HANG_FILE = "import { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/add.mjs';\n"
+	+ "test('never resolves', () => new Promise(() => { setInterval(() => {}, 1000); }));\n";
+const NODE = process.execPath;
+
+// control: passes on the current module; pins that the run leaves the index alone.
+// why: catches a check that unstages or restages a file in the repo.
+test('review: a staged file stays staged across a run', () => {
+	const dir = repo();
+	redCommit(dir);
+	featCommit(dir);
+	fs.writeFileSync(path.join(dir, 'staged.txt'), 'staged\n');
+	gitOut(dir, 'add', '--', 'staged.txt');
+	const before = gitOut(dir, 'status', '--porcelain');
+	assert.ok(before.includes('A  staged.txt'), before);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(gitOut(dir, 'status', '--porcelain'), before);
+});
+
+// control: passes on the current module; pins that the run cleans its own temp folders.
+// why: catches a check that leaves unit-check temp folders behind it.
+test('review: no unit-check temp folder is left in the temp dir after a run', () => {
+	const dir = repo();
+	redCommit(dir);
+	featCommit(dir);
+	const tmp = kitTemp.makeTemp('owner-tmp-');
+	const r = spawnSync(NODE, [MODULE, 'base..HEAD', '--repo', dir], {
+		encoding: 'utf8',
+		timeout: 60000,
+		env: { ...process.env, TMPDIR: tmp, TEMP: tmp, TMP: tmp },
+	});
+	assert.equal(r.status, 0, r.stderr);
+	assert.deepEqual(fs.readdirSync(tmp).filter((n) => n.startsWith('unit-check-')), []);
+});
+
+// why: catches a test file that never exits stalling the check with no budget.
+test('review: a test file that never exits is a timed out fault within 20 seconds', () => {
+	const dir = repo();
+	const hang = commit(dir, 'test: add a case that never resolves', { 'tests/hang.test.mjs': HANG_FILE });
+	const started = Date.now();
+	const r = spawnSync(NODE, [MODULE, 'base..HEAD', '--repo', dir, '--timeout', '5000'], { encoding: 'utf8', timeout: 60000 });
+	const took = Date.now() - started;
+	assert.equal(r.status, 1, r.stderr);
+	assert.ok(took < 20000, `the run took ${took} ms`);
+	faultFor(r, hang, /timed out/);
+	assert.ok(r.stderr.includes('tests/hang.test.mjs'), r.stderr);
+});
+
+// why: catches a loop-named test with a template literal never matching its TAP line.
+test('review: a red then green pair built from loop-named tests exits 0', () => {
+	const dir = repo();
+	commit(dir, 'test: add the loop cases', { 'tests/add.test.mjs': LOOP_RED_FILE });
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a passing loop-named test added alone passing unflagged.
+test('review: a test commit adding only a passing loop test faults for use retest', () => {
+	const dir = repo();
+	const loop = commit(dir, 'test: add the passing loop cases', { 'tests/add.test.mjs': LOOP_KEEP_FILE });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, loop, /use retest:/);
+});
+
+// why: catches a new passing test marked by its why line counted as an old test.
+test('review: a new failing test with a why line and blank line after a passing test is a good pair', () => {
+	const dir = repo();
+	commit(dir, 'test: add a case after a why line', {
+		'tests/add.test.mjs': `${testFile(CASE_ONE)}\n// why: catches a new add case passing too early.\n\ntest("adds two numbers", () => { assert.equal(add(1, 2), 3); });\n`,
+	});
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a red then green pair with a describe block read as no test.
+test('review: a red then green pair with a test inside describe exits 0', () => {
+	const dir = repo({ 'tests/add.test.mjs': nestedFile(CASE_ONE) });
+	commit(dir, 'test: add a nested red case', { 'tests/add.test.mjs': nestedFile(CASE_ONE, ADDS) });
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a passing nested test added alone passing unflagged.
+test('review: a test commit adding only a passing nested test faults for use retest', () => {
+	const dir = repo({ 'tests/add.test.mjs': nestedFile(CASE_ONE) });
+	const nested = commit(dir, 'test: add a nested passing case', {
+		'tests/add.test.mjs': nestedFile(CASE_ONE, ['keeps the second', 'assert.equal(add(5, 0), 5);']),
+	});
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, nested, /use retest:/);
+});
+
+// why: catches a test name with a hash or escaped quote never matching its TAP line.
+test('review: test names with a hash and an escaped quote match their TAP results', () => {
+	const dir = repo();
+	commit(dir, 'test: add two named cases', { 'tests/add.test.mjs': ESCAPE_FILE });
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a test skipped on the green tree counted as passing.
+test('review: a test skipped on the green tree is a fault, skipped after the code', () => {
+	const dir = repo();
+	redCommit(dir, SKIP_FILE);
+	const feat = commit(dir, 'feat: add two numbers', { 'src/add.mjs': GOOD_SRC, 'src/flag.mjs': 'export const flag = true;\n' });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, feat, /skipped after the code/);
+});
+
+// why: catches a first test commit passing early unchecked behind a second one.
+test('review: two test commits before a feat: the first one passing early faults', () => {
+	const dir = repo();
+	const first = redCommit(dir, testFile(CASE_ONE, ['first early', 'assert.equal(add(4, 0), 4);'], ADDS));
+	redCommit(dir, testFile(CASE_ONE, ['first early', 'assert.equal(add(4, 0), 4);'], ADDS, ['second red', 'assert.equal(add(1, 1), 2);']));
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, first, /passed before the code/);
+});
+
+// why: catches a mixed commit resetting the red window so its feat lacks a red.
+test('review: a mixed commit between red and feat does not make the feat lack a red', () => {
+	const dir = repo();
+	redCommit(dir);
+	const mixed = commit(dir, 'chore: tidy add and its test', { 'src/add.mjs': `${BASE_SRC}\n`, 'tests/add.test.mjs': `${RED_FILE}// tidy\n` });
+	const feat = featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, mixed, /mixed/);
+	assert.equal(faultLines(r).filter((l) => l.includes(feat)).length, 0, r.stderr);
+});
+
+// control: passes on the current module; pins that a swapped passing test name is caught.
+// why: guards rule:test-integrity (a refactor that swaps one passing test name for another faults).
+test('review: a refactor that swaps one passing test name for another faults', () => {
+	const dir = repo({ 'tests/add.test.mjs': testFile(['keeps the first operand', 'assert.equal(add(4, 9), 4);'], ADDS) });
+	commit(dir, 'retest: add a comment to the add tests', {
+		'tests/add.test.mjs': `${testFile(['keeps the first operand', 'assert.equal(add(4, 9), 4);'], ADDS)}// note\n`,
+	});
+	const refactor = commit(dir, 'refactor: move to a plain sum', { 'src/add.mjs': GOOD_SRC });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, refactor, /refactor changed which tests pass/);
+});
+
+// control: passes on the current module; pins the exit 2 for a range with no double dot.
+// why: catches a range with no double dot read as a valid range.
+test('review: a range with no double dot exits 2', () => {
+	const dir = repo();
+	redCommit(dir);
+	featCommit(dir);
+	const r = spawnSync(NODE, [MODULE, 'base', '--repo', dir], { encoding: 'utf8', timeout: 60000 });
+	assert.equal(r.status, 2, r.stderr);
+});
+
+for (const type of ['chore', 'docs', 'build', 'ci']) {
+	// why: catches a test-only commit of an unchecked type passing with no retest.
+	test(`review: a ${type}: commit changing only test files faults for use retest`, () => {
+		const dir = repo();
+		const only = commit(dir, `${type}: add a passing case to the add tests`, { 'tests/add.test.mjs': testFile(CASE_ONE, ['keeps case two', 'assert.equal(add(5, 0), 5);']) });
+		const r = runCheck(dir);
+		assert.equal(r.status, 1, r.stderr);
+		faultFor(r, only, /use retest:/);
+	});
+}
+
+// why: catches a test commit deleting a block passing beside a new red test.
+test('review: a test commit that deletes a test block faults for use retest even beside a red test', () => {
+	const dir = repo({ 'tests/add.test.mjs': testFile(CASE_ONE, ['to delete', 'assert.equal(add(6, 0), 6);']) });
+	const drop = commit(dir, 'test: drop one case and add the sum', { 'tests/add.test.mjs': testFile(CASE_ONE, ADDS) });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, drop, /use retest:/);
+});
+
+// why: catches a merge commit in a range read as an ordinary commit.
+test('review: a range holding a merge commit exits 2 and names the merge', () => {
+	const dir = repo();
+	gitOut(dir, 'checkout', '-q', '-b', 'side');
+	commit(dir, 'chore: side change', { 'docs/side.md': 'side\n' });
+	gitOut(dir, 'checkout', '-q', 'main');
+	commit(dir, 'chore: main change', { 'docs/main.md': 'main\n' });
+	gitOut(dir, '-c', 'user.name=t', '-c', 'user.email=t@t', 'merge', '-q', '--no-ff', '-m', 'merge side', 'side');
+	const merge = gitOut(dir, 'rev-parse', '--short', 'HEAD');
+	const r = runCheck(dir);
+	assert.equal(r.status, 2, r.stderr);
+	assert.ok(r.stderr.includes(merge) && /merge/i.test(r.stderr), r.stderr);
+});
+
+// why: guards rule:test-integrity (usage text names the node:test scope of the tool).
+test('review: usage text with no arguments says the tool covers node:test projects', () => {
+	const r = spawnSync(NODE, [MODULE], { encoding: 'utf8', timeout: 60000 });
+	assert.equal(r.status, 2, r.stderr);
+	assert.match(r.stderr, /node:test/);
+});
