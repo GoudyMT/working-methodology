@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { copyKitCli, hashTree, makeKit, makeTemp } from './kit-helpers.mjs';
+import { copyKitCli, makeKit, makeTemp } from './kit-helpers.mjs';
 
 kitTemp.sessionRoot();
 
@@ -41,7 +41,7 @@ function tableKit() {
 const installProject = (ctx) =>
 	spawnSync(process.execPath, [path.join(ctx.kit, 'scripts/kit.mjs'), 'install', 'project', ctx.proj, '--unreleased'], { encoding: 'utf8', env: ctx.env });
 
-// Writes .kit/models.json in the project; a string goes in as written (for a malformed file).
+// Writes .kit/models.json in the project; a string goes in as written (for a malformed file), anything else as JSON.
 const writeOverride = (proj, body) => {
 	fs.mkdirSync(path.join(proj, '.kit'), { recursive: true });
 	fs.writeFileSync(path.join(proj, '.kit', 'models.json'), typeof body === 'string' ? body : JSON.stringify(body));
@@ -50,49 +50,72 @@ const writeOverride = (proj, body) => {
 const runCheck = (proj) =>
 	spawnSync(process.execPath, ['.claude/model-override.mjs', 'check'], { cwd: proj, encoding: 'utf8' });
 
+// Every entry under a folder, directories included, sorted: a refused install must leave this list as it was.
+const entries = (dir) => fs.readdirSync(dir, { recursive: true }).sort();
+
 // why: guards rule:agent-role-table (a project override lowering the checker below its opus floor installs anyway)
 test('install project refuses an override that names a model below a floor, naming the step and writing nothing', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, { steps: { checker: { model: 'claude-haiku-5-5' } } });
-	const before = hashTree(ctx.proj);
+	const before = entries(ctx.proj);
 	const r = installProject(ctx);
 	assert.notEqual(r.status, 0, 'a refused override exited 0');
 	assert.match(r.stderr + r.stdout, /checker/, 'the refusal does not name the step');
-	assert.deepEqual(hashTree(ctx.proj), before, 'a refused install wrote into the project');
+	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
 });
 
 // why: guards rule:agent-role-table (an older generation of the floor's own family slips under the floor unnoticed)
 test('install project refuses an override naming an older generation of the floor family', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, { steps: { checker: { model: 'claude-opus-5-4' } } });
-	const before = hashTree(ctx.proj);
+	const before = entries(ctx.proj);
 	const r = installProject(ctx);
 	assert.notEqual(r.status, 0, 'an older opus under the opus-5-5 floor installed');
 	assert.match(r.stderr + r.stdout, /checker/, 'the refusal does not name the step');
-	assert.deepEqual(hashTree(ctx.proj), before, 'a refused install wrote into the project');
+	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
 });
 
 // why: guards rule:agent-role-table (a sonnet floor on sweep-breadth is lowered to haiku by a project and installed)
 test('install project refuses a haiku override on the sonnet-floored sweep-breadth step, naming it', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, { steps: { 'sweep-breadth': { model: 'claude-haiku-5-5' } } });
+	const before = entries(ctx.proj);
 	const r = installProject(ctx);
 	assert.notEqual(r.status, 0, 'a haiku override under the sonnet floor installed');
 	assert.match(r.stderr + r.stdout, /sweep-breadth/, 'the refusal does not name the step');
+	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
 });
 
 // why: catches a never-drop step (step6) changed by a project override and installed without a word
 test('install project refuses any change to the never-drop step, naming it', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, { steps: { step6: { model: 'claude-haiku-5-5' } } });
-	const before = hashTree(ctx.proj);
+	const before = entries(ctx.proj);
 	const r = installProject(ctx);
 	assert.notEqual(r.status, 0, 'a change to the never-drop step installed');
 	assert.match(r.stderr + r.stdout, /step6/, 'the refusal does not name the step');
-	assert.deepEqual(hashTree(ctx.proj), before, 'a refused install wrote into the project');
+	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
 });
 
-// why: catches a raise above a floor refused as if it lowered the row, so a project cannot raise its own rows
+// why: catches a raise of the never-drop step (step6) accepted because only lowering was checked, so the row moves
+test('install project refuses a raise of the never-drop step, and the installed check exits 1 naming it', () => {
+	const ctx = tableKit();
+	writeOverride(ctx.proj, { steps: { step6: { model: 'claude-opus-5-5' } } });
+	const before = entries(ctx.proj);
+	const r = installProject(ctx);
+	assert.notEqual(r.status, 0, 'a raise of the never-drop step installed');
+	assert.match(r.stderr + r.stdout, /step6/, 'the refusal does not name the step');
+	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
+	// The check is the same rule: a clean install, then the override put back, must fail the check naming the step.
+	fs.rmSync(path.join(ctx.proj, '.kit', 'models.json'));
+	assert.equal(installProject(ctx).status, 0, 'the clean install failed');
+	writeOverride(ctx.proj, { steps: { step6: { model: 'claude-opus-5-5' } } });
+	const c = runCheck(ctx.proj);
+	assert.equal(c.status, 1, `exit ${c.status}: ${c.stderr}`);
+	assert.match(c.stderr + c.stdout, /step6/, 'the check does not name the step');
+});
+
+// why: catches a raise of a floor row refused as a lowering, so a project cannot raise a row it was meant to keep
 test('install project accepts a raise above a floor and installs the project copy of the check', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, { steps: { 'sweep-breadth': { model: 'claude-opus-5-5' } } });
@@ -101,12 +124,31 @@ test('install project accepts a raise above a floor and installs the project cop
 	assert.ok(fs.existsSync(path.join(ctx.proj, '.claude', 'model-override.mjs')), 'the project has no .claude/model-override.mjs');
 });
 
-// why: catches a change to a floorless step refused with the floor rules, so a valid project override never installs
-test('install project accepts a change to a step with no floor', () => {
+// why: catches an override equal to the floor refused as a lowering, so a project cannot pin a row at its floor
+test('install project accepts an override equal to the checker floor', () => {
+	const ctx = tableKit();
+	writeOverride(ctx.proj, { steps: { checker: { model: 'claude-opus-5-5' } } });
+	const r = installProject(ctx);
+	assert.equal(r.status, 0, `an equal-to-floor override was refused: ${r.stderr}`);
+});
+
+// why: catches a newer generation of the floor family refused as if it were a lowering, so upgrades are blocked
+test('install project accepts a newer generation of the checker floor family', () => {
+	const ctx = tableKit();
+	writeOverride(ctx.proj, { steps: { checker: { model: 'claude-opus-6-0' } } });
+	const r = installProject(ctx);
+	assert.equal(r.status, 0, `a newer-generation override was refused: ${r.stderr}`);
+});
+
+// why: guards rule:agent-role-table (an override on a step with no floor is refused, so a project cannot change a row freely)
+test('install project accepts a change to a step with no floor, and the installed check passes it', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, { steps: { writer: { model: 'claude-opus-5-5' } } });
 	const r = installProject(ctx);
 	assert.equal(r.status, 0, `a change to a floorless step was refused: ${r.stderr}`);
+	const c = runCheck(ctx.proj);
+	assert.equal(c.status, 0, `exit ${c.status}: ${c.stderr}`);
+	assert.ok(c.stdout.trim().length > 0, 'the check printed nothing');
 });
 
 // why: catches an install that refuses a project with no override file, so every project install breaks
@@ -120,11 +162,32 @@ test('install project with no .kit/models.json installs normally', () => {
 test('install project refuses a malformed .kit/models.json, naming the file', () => {
 	const ctx = tableKit();
 	writeOverride(ctx.proj, '{ "steps": { "checker": ');
-	const before = hashTree(ctx.proj);
+	const before = entries(ctx.proj);
 	const r = installProject(ctx);
 	assert.notEqual(r.status, 0, 'a malformed models.json installed');
 	assert.match(r.stderr + r.stdout, /models\.json/, 'the refusal does not name the file');
-	assert.deepEqual(hashTree(ctx.proj), before, 'a refused install wrote into the project');
+	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
+});
+
+// why: catches a wrong-shaped override (array steps, a bare string row, a non-string model, null) read as clean
+test('install project and the installed check refuse each wrong-shaped models.json, naming the file', () => {
+	const shapes = [{ steps: [] }, { steps: { writer: 'x' } }, { steps: { writer: { model: 5 } } }, null];
+	for (const shape of shapes) {
+		const ctx = tableKit();
+		writeOverride(ctx.proj, shape);
+		const before = entries(ctx.proj);
+		const r = installProject(ctx);
+		const label = JSON.stringify(shape);
+		assert.notEqual(r.status, 0, `install accepted ${label}`);
+		assert.match(r.stderr + r.stdout, /models\.json/, `install did not name the file for ${label}`);
+		assert.deepEqual(entries(ctx.proj), before, `a refused install wrote into the project for ${label}`);
+		// The check needs an installed copy: a clean install first, then the bad override.
+		const clean = tableKit();
+		assert.equal(installProject(clean).status, 0, 'the clean install failed');
+		writeOverride(clean.proj, shape);
+		const c = runCheck(clean.proj);
+		assert.equal(c.status, 2, `check exit ${c.status} for ${label}: ${c.stderr}`);
+	}
 });
 
 // why: guards rule:ci-gate (a project with no override file fails its CI on the check step it was given)
@@ -166,13 +229,11 @@ test('the installed override check exits 2 when .kit/models.json cannot be read'
 // why: guards rule:ci-gate (the node CI template never runs the override check, so a refused override merges unseen)
 test('the node CI template runs the override check as a live step', () => {
 	const text = fs.readFileSync(path.resolve('project/_Templates/ci-node.yml'), 'utf8');
-	const live = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
-	assert.ok(live.some((l) => /model-override\.mjs check/.test(l)), 'no live step runs node .claude/model-override.mjs check');
+	assert.match(text, /^\s*(?:- )?run:\s*node \.claude\/model-override\.mjs check\s*$/m, 'no live step runs node .claude/model-override.mjs check');
 });
 
 // why: guards rule:ci-gate (the python CI template never runs the override check, so a refused override merges unseen)
 test('the python CI template runs the override check as a live step', () => {
 	const text = fs.readFileSync(path.resolve('project/_Templates/ci-python.yml'), 'utf8');
-	const live = text.split(/\r?\n/).filter((l) => !/^\s*#/.test(l));
-	assert.ok(live.some((l) => /model-override\.mjs check/.test(l)), 'no live step runs node .claude/model-override.mjs check');
+	assert.match(text, /^\s*(?:- )?run:\s*node \.claude\/model-override\.mjs check\s*$/m, 'no live step runs node .claude/model-override.mjs check');
 });
