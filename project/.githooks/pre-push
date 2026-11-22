@@ -1,16 +1,9 @@
 #!/bin/sh
-# Pushes are the owner's (rule:outward-acts), with one bound the owner set (T1, 2026-11-10): a feature branch goes
-# without a yes. Anything else - main, master, the remote's default branch, a tag, a delete, a force push - needs the
-# owner's yes, after which the agent runs the push with KIT_PUSH_APPROVED=1 (Claude Code's guard lets that through only
-# on the owner's pop-up yes). Every push is scanned for secrets, commit by commit, and logged.
-# K163 (build 21, the owner's pick): this held only a shell marked AI_AGENT or CLAUDECODE, so an agent with neither
-# pushed main and a tag unchecked. It now holds every pusher. The owner's own push from their own terminal sets
-# KIT_OWNER_PUSH=1 (rule:outward-acts): the bound is theirs to pass, and the name check, the secret scan, the first push
-# gate, the armed-head stop and the log still run (the build 21 sweep: --no-verify, the only way before, skipped them
-# all). Claude Code's guard refuses a command that sets it, as it refuses --no-verify.
-# Git gives the refs being pushed on stdin once; keep them for every check below.
+# Pushes are the owner's (rule:outward-acts) but for a feature branch, which goes without a yes. Every push is scanned
+# for secrets and logged. KIT_OWNER_PUSH=1 (the owner's own push) passes the bound only; the other checks still run.
+# The refs being pushed, from stdin.
 refs=$(cat)
-# Branch names in the house style (rule:branching): every branch this push sends.
+# Branch names in house style (rule:branching).
 names="$(dirname "$0")/../.claude/name-check.mjs"
 if [ -f "$names" ]; then
   for rref in $(printf "%s
@@ -19,36 +12,24 @@ if [ -f "$names" ]; then
   done
 fi
 OWNER_WAY="The owner's own push from their own terminal has its own way (rule:outward-acts)."
-# The build 21 sweep: a url.insteadOf rewrite that matches the push URL sends every ls-remote below to another remote, so
-# the default-branch check and the secret scan would read a decoy's answer. Such a push is refused whoever runs it.
-# Each key and value read NUL-split, so a value with spaces is read whole, and an empty value, which matches every
-# URL, counts (the commit security reviews).
+# A url.insteadOf rewrite of the push URL would point every ls-remote below at a decoy, so it is refused.
 if git config -z --get-regexp '^url\..*\.insteadof$' 2>/dev/null | KIT_URL="$2" node -e 'let s="";process.stdin.on("data",(d)=>{s+=d;}).on("end",()=>{process.exit(s.split("\0").some((r)=>{const n=r.indexOf("\n");const v=r.slice(n+1);return n>=0&&process.env.KIT_URL.startsWith(v);})?0:1);})'; then
   echo "Push blocked: a url.insteadOf setting rewrites $2, so the hook cannot ask the real remote what it holds. Push to the remote's own URL with that setting out of the way." >&2
   exit 1
 fi
-# The remote's own answer for its default branch, asked by URL so no remote setting of this repo changes it; the local
-# origin/HEAD, which a command can move or delete, only when the remote cannot be asked or names none (the 1.26.0
-# sweep, C5 and V4). A remote that answers with no symref line (a HEAD that names a commit, a dumb server) was read as
-# having no default branch, so a push to it went out (K29): with branches there and nothing naming one, it prints ?.
+# The remote's own answer for its default branch, asked by URL; with branches there and none named, it prints ?.
 remote_default() {
   if out=$(git ls-remote --symref "$2" HEAD 2>/dev/null); then
     d=$(printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1)
-    # The remote answered and named none: the local origin/HEAD is not asked, since a tool can move it with any
-    # write to .git (the review of this fix). A new repo has no branch, so no default yet: its first push is judged
-    # below, as before.
+    # Named none: the local origin/HEAD is not asked, since a tool can move it. A new repo has no default yet.
     if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
   else
-    # A remote that cannot be asked: the local origin/HEAD is any command's to delete, and a config key can break this
-    # one call while the push itself goes through (the 1.28.0 sweep), so it may be the default branch: ?.
+    # A remote that cannot be asked: the default is unknown, so ?.
     d="?"
   fi
   printf '%s\n' "$d"
 }
-# The lock two pushes on one yes would race for. A lock older than 10 minutes was left by a push that was killed (the
-# build 23a sweep: a closed terminal left it, and every later owner push waited on it), so it is taken over.
-# The lock names its owner (this hook's pid and a nonce): it is taken over only when older than 10 minutes and its
-# owner is no longer running, and only its owner removes it (the commit security review: a slow push kept its lock).
+# Two pushes on one yes would race: the lock is taken over only when stale (older than 10 minutes, owner gone).
 lock_me="$$ $(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
 take_lock() {
   l="$common/kit-push.lock"
@@ -64,45 +45,46 @@ take_lock() {
       fi
     fi
   fi
-  echo "Push blocked: another push on the owner's yes is running ($common/kit-push.lock). Wait for it; a lock older than 10 minutes whose push is no longer running is taken over." >&2
+  echo "Push blocked: another push on the owner's yes is running ($common/kit-push.lock). Wait for it; a stale lock is taken over." >&2
   return 1
 }
 drop_lock() {
   [ "$(cat "$common/kit-push.lock/owner" 2>/dev/null)" = "$lock_me" ] && rm -rf "$common/kit-push.lock"
 }
-# U4 (build 24, K312): a retest: commit changes a test after its red commit, so a push that carries one needs the owner's
-# own yes. The owner's own push (KIT_OWNER_PUSH, below) checks that yes for each ref; every other push is refused here.
-# A new branch is read whole: its range is every commit the remote does not hold.
+# A test change needs the owner's yes: a retest: commit (any case; fixup! or squash! of one too), or an edit, delete or
+# rename of an existing test file, whatever its type. Every commit of the range is read; a merge is read through its commits.
 retests=""
 while read -r lref lsha rref rsha; do
   case "$lsha" in *[!0]*) ;; *) continue ;; esac
   below=$(git ls-remote --heads "$2" 2>/dev/null | while read -r s _; do git cat-file -e "$s^{commit}" 2>/dev/null && printf '%s ' "$s"; done)
   case "$rsha" in *[!0]*) below="$below$rsha" ;; esac
-  range=$(git log --format='%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a retest: commit in them cannot be ruled out. $range" >&2; exit 1; }
-  hits=$(printf '%s\n' "$range" | awk '$2 ~ /^retest(\([^)]*\))?!?:$/')
+  range=$(git -c core.quotePath=false log --no-merges --root -M --name-status --format='@%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a test change in them cannot be ruled out. $range" >&2; exit 1; }
+  hits=$(printf '%s\n' "$range" | awk -F '\t' '
+    function istest(p) { return p ~ /(^|\/)(test|tests|__tests__|spec)\// || p ~ /\.(test|spec)\.[^\/]*$/ }
+    function emit() { if (head != "" && held) print head }
+    /^@/ { emit(); head = substr($0, 2); held = 0; split(head, w, " "); t = tolower(w[2]); if ((t == "fixup!" || t == "squash!") && w[3] != "") t = tolower(w[3]); held = (t ~ /^retest(\([^)]*\))?!?:$/); next }
+    $1 ~ /^[MDR]/ && istest($2) { held = 1 }
+    END { emit() }')
   if [ -n "$hits" ]; then retests="$retests$hits
 "; fi
 done <<EOF
 $refs
 EOF
 if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
-  echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal. $OWNER_WAY" >&2
+  echo "Push blocked: this push holds a test change (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal. $OWNER_WAY" >&2
   printf '%s' "$retests" >&2
   exit 1
 fi
-# The push bound and the secret scan, for every pusher (K163).
+# The push bound and the secret scan, for every pusher.
 {
   common=$(git rev-parse --git-common-dir)
-  # The owner's marker is a variable a run-time-built name could set past the guard, so it counts only in a shell
-  # with neither AI marker (the commit security review); the guard holds a command that clears those.
+  # The owner's marker counts only in a shell with neither AI marker; the guard holds a command that clears those.
   if [ "$KIT_OWNER_PUSH" = "1" ] && [ -n "$AI_AGENT$CLAUDECODE" ]; then
     echo "Push blocked: KIT_OWNER_PUSH is the owner's own, from their own terminal; this shell is an AI's. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
     exit 1
   elif [ "$KIT_OWNER_PUSH" = "1" ]; then
-    # K215 (build 23a): a script an AI session writes and runs can clear both markers in its own shell, so the marker
-    # alone is no owner. The owner's push passes the bound only beside the owner's own fresh pop-up yes to a push naming
-    # each ref, as KIT_PUSH_APPROVED does (without its first-push limit on main); the checks below still run. The log
-    # line this push writes spends the yes.
+    # The marker alone is no owner: a script can clear both markers. The owner's push passes the bound only beside a
+    # fresh pop-up yes naming each ref; the checks below still run.
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
     take_lock || exit 1
     trap drop_lock EXIT
@@ -114,13 +96,11 @@ fi
         [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
       esac
       if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
-        # The owner's pick (2026-11-21, the build 23a sweep): in the owner's own terminal there is no session to hold a
-        # pop-up yes, so the owner types the ref's name at the terminal. A tool's shell has no terminal to read, so a
-        # script cannot answer; every check below still runs.
+        # With no session, the owner types the ref's name at their own terminal; a script has no terminal to answer.
         short=${rref#refs/heads/}
         short=${short#refs/tags/}
         if ! (exec 3<>/dev/tty) 2>/dev/null; then
-          echo "Push blocked: KIT_OWNER_PUSH with no Claude session asks the owner to type the ref's name at their own terminal, and this shell has none (K215: a script an AI runs can clear its markers). Run the push in your own terminal; from a Claude session, the owner's pop-up yes to the push and KIT_PUSH_APPROVED=1." >&2
+          echo "Push blocked: KIT_OWNER_PUSH with no Claude session asks the owner to type the ref's name at their own terminal, and this shell has none. Run the push in your own terminal." >&2
           exit 1
         fi
         exec 3<>/dev/tty
@@ -132,7 +112,7 @@ fi
           exit 1
         fi
       elif [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1" 10; then
-        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref, in the session CLAUDE_CODE_SESSION_ID names (K215: a script an AI runs can clear its markers). Answer Yes in that session's pop-up first, or run the push in your own terminal with no session, where you type the ref's name." >&2
+        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref, in the session CLAUDE_CODE_SESSION_ID names. Answer Yes in that session's pop-up first, or push from your own terminal with no session." >&2
         exit 1
       fi
     done <<EOF
@@ -151,7 +131,7 @@ EOF
       case "$branch" in main|master) why="${why:-the main branch}" ;; esac
       if [ -n "$default" ] && [ "$branch" = "$default" ]; then why="${why:-the default branch}"; fi
       if [ "$default" = "?" ]; then why="${why:-the remote names no default branch, so this may be it}"; fi
-      # The build 21 sweep: a remote with no branch yet makes the first one pushed its default.
+      # A remote with no branch yet makes the first one pushed its default.
       if [ -z "$default" ]; then why="${why:-the remote has no branch yet, so this push sets its default}"; fi
       case "$rsha" in *[!0]*)
         git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null || why="${why:-a force push}" ;;
@@ -168,16 +148,13 @@ EOF
       exit 1
     fi
   else
-    # The marker is a variable any script can set, so it counts only beside the owner's own pop-up yes, in this
-    # session's transcript, to a push that names each ref (T1).
+    # The marker is a variable any script can set, so it counts only beside the owner's pop-up yes to a push naming each ref.
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
-    # The build 21 sweep: two pushes on one yes, at once, both read the log before either wrote it. One push holds the
-    # lock from the yes check to the log line that spends the yes.
+    # The lock holds from the yes check to the log line that spends the yes.
     take_lock || exit 1
     trap drop_lock EXIT
     default=$(remote_default "$1" "$2")
-    # A new repo is one whose remote has no branch at all, asked of the remote itself: main on a remote that already
-    # holds master is no first push (the 1.26.0 sweep, C19). A remote that cannot be asked is not taken as new.
+    # A new repo's remote has no branch at all, asked of the remote; a remote that cannot be asked is not taken as new.
     heads=$(git ls-remote --heads "$2" 2>/dev/null) || heads="unknown"
     while read -r lref lsha rref rsha; do
       [ -n "$rref" ] || continue
@@ -189,9 +166,7 @@ EOF
           fi ;;
         esac ;;
       esac
-      # The owner, 2026-11-11: an AI pushes to main only as a new repo's first push. Git fills rsha from the remote's
-      # own answer during the push, so all zeros means the remote has no such branch yet; no local ref can fake it.
-      # Once main exists there, it takes a PR, whatever the yes.
+      # An AI pushes to main only as a new repo's first push: rsha is zero when the remote has no such branch yet.
       branch=${rref#refs/heads/}
       case "$rsha" in *[!0]*)
         case "$branch" in main|master)
@@ -210,7 +185,7 @@ EOF
       esac
       if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1"; then
         echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first. $OWNER_WAY" >&2
-        if [ -n "$retests" ]; then echo "This push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1." >&2; printf '%s' "$retests" >&2; fi
+        if [ -n "$retests" ]; then echo "This push holds a test change (named below). The owner's yes is needed: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1." >&2; printf '%s' "$retests" >&2; fi
         exit 1
       fi
     done <<EOF
@@ -224,19 +199,15 @@ EOF
   fi
   printf '%s\n' "$refs" | node "$scan" --push "$2" || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
 }
-# The first push gate (rule:first-push-gate), for any pusher whose git runs this hook: until the project's first push
-# has landed, only the commit .claude/first-push-check.mjs cleared (or one of its ancestors, or a tag of it) may go
-# out. The gate is done once that commit is on a remote branch, or once every first (root) commit being pushed is
-# already on a remote (the project was pushed before the kit came; the install leaves a done mark for that too). A
-# branch the host made on its own (a README) does not end it: its root is not ours.
+# The first push gate (rule:first-push-gate): until the first push lands, only the commit .claude/first-push-check.mjs
+# cleared (or its ancestor) may go out. It ends once that commit is on a remote, or every root commit pushed is already.
 common=$(git rev-parse --git-common-dir)
 if [ ! -f "$common/kit-first-push-done" ]; then
   checked=$(cat "$common/kit-first-push-ok" 2>/dev/null)
   if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
     : > "$common/kit-first-push-done"
   else
-    # What the remote already holds, asked of the remote itself: a local remote-tracking ref is any command's to write,
-    # and a fake one ended this gate (the 1.28.0 sweep). Only the commits it names that exist here count.
+    # What the remote holds, asked of the remote itself: a local remote-tracking ref can be faked.
     have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
     while read -r lref lsha rref rsha; do
       case "$lsha" in *[!0]*) ;; *) continue ;; esac
@@ -255,7 +226,7 @@ $refs
 EOF
   fi
 fi
-# GitHub documents no head pin past a writer's push, so a push over a head still armed stops here (rule:standing-grants).
+# A head still armed for a PR stops the push (rule:standing-grants).
 gatelog="$common/kit-merge-gate.log"
 if [ -f "$gatelog" ]; then
   while read -r lref lsha rref rsha; do
@@ -269,9 +240,7 @@ if [ -f "$gatelog" ]; then
 $refs
 EOF
 fi
-# Every check passed: the push is logged (time to the millisecond, auto or owner, ref, commit), the record the owner
-# reads after. An owner push the log cannot record does not go: the log is what spends the owner's yes (the 1.25.0
-# sweep: a read-only log let one yes push main three times).
+# Every check passed: log the push. An owner push the log cannot record does not go: the log spends the yes.
 {
   how=auto
   [ "$KIT_PUSH_APPROVED" = "1" ] && how=owner

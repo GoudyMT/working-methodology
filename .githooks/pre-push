@@ -4,15 +4,21 @@
 # no merge), but a head armed by hand is still held. Pushes stay the owner's by the permission rules; this only stops a push
 # over a head still armed, since GitHub documents no head pin past a writer's push (rule:standing-grants).
 refs=$(cat)
-# U4 (build 24, K312): a retest: commit changes a test after its red commit, so the push that carries one needs the
-# owner's yes. This hook holds no yes to check, so it refuses the push; a new branch is read whole.
+# A test change needs the owner's yes: a retest: commit (any letter case; fixup! or squash! of one too), or a commit
+# that modifies, deletes or renames an existing test file, whatever its type. Every commit in the range is read; a new
+# branch is read whole. A merge adds no test change of its own here, since each commit it brings in is read in the range.
 retests=""
 while read -r lref lsha rref rsha; do
   case "$lsha" in *[!0]*) ;; *) continue ;; esac
   below=$(git ls-remote --heads "$2" 2>/dev/null | while read -r s _; do git cat-file -e "$s^{commit}" 2>/dev/null && printf '%s ' "$s"; done)
   case "$rsha" in *[!0]*) below="$below$rsha" ;; esac
-  range=$(git log --format='%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a retest: commit in them cannot be ruled out. $range" >&2; exit 1; }
-  hits=$(printf '%s\n' "$range" | awk '$2 ~ /^retest(\([^)]*\))?!?:$/')
+  range=$(git -c core.quotePath=false log --no-merges --root -M --name-status --format='@%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a test change in them cannot be ruled out. $range" >&2; exit 1; }
+  hits=$(printf '%s\n' "$range" | awk -F '\t' '
+    function istest(p,   n, a, i) { n = split(p, a, "/"); for (i = 1; i < n; i++) if (a[i] ~ /^(test|tests|__tests__|spec)$/) return 1; return a[n] ~ /\.(test|spec)\./ }
+    function emit() { if (head != "" && held) print head }
+    /^@/ { emit(); head = substr($0, 2); held = 0; split(head, w, " "); t = tolower(w[2]); if ((t == "fixup!" || t == "squash!") && w[3] != "") t = tolower(w[3]); held = (t ~ /^retest(\([^)]*\))?!?:$/); next }
+    $1 ~ /^[MDR]/ && istest($2) { held = 1 }
+    END { emit() }')
   if [ -n "$hits" ]; then retests="$retests$hits
 "; fi
 done <<EOF
@@ -42,7 +48,7 @@ if [ -n "$retests" ]; then
 $refs
 EOF
   if [ "$owned" != 1 ]; then
-    echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal." >&2
+    echo "Push blocked: this push holds a test change, a retest: commit or an edit, delete or rename of a test file (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal." >&2
     printf '%s' "$retests" >&2
     exit 1
   fi
