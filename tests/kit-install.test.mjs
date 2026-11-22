@@ -1252,7 +1252,7 @@ test('the prompt hook cues the closeout once per release, from a release tag at 
 
 // K192 (the owner's pick, 2026-11-20): recall Q4, Q7 and Q9 missed one part of their rule at scorer-noise level. The
 // prompt hook cues the rule's own words when a message names its topic; each cue quotes its source word for word.
-// why: catches a message on a push, a swarm or a later idea that reaches the session with no rule in front of it
+// why: guards rule:outward-acts and rule:visual-design-collaboration: a message on their topic gets the rule in front of it
 test('the prompt hook cues a rule in its own words when a message names its topic (K192)', async () => {
   const kitTools = await import('../scripts/kit.mjs');
   assert.equal(typeof kitTools.ruleCues, 'function', 'K192: the rule cues');
@@ -1278,8 +1278,19 @@ test('the prompt hook cues a rule in its own words when a message names its topi
   assert.equal(cue('My PR merged and its release is out. What happens next?'), '', 'a merged PR is no push');
   // The Q6 check of 2026-11-21: one agent's findings are no swarm, so the swarm contract is no cue for them.
   assert.equal(cue('A review agent reported 9 findings. How do I handle them?'), '', 'one review agent is no swarm');
+  // T2 (build 23b, the owner's card 2026-11-21): the last repeated recall misses, Q14 (the yes is a pop-up tap, never
+  // typed words) and Q5 (a rendered wireframe decides a layout), get their rules' own words; ordinary words stay quiet.
+  // pin: 4 (each cue quotes its rule's owner-set words, and the loop above holds them to the source)
+  assert.match(cue('How does a session ask the owner for a yes to an outward act?'), /^rule:outward-acts \(AGENTS\.md\): .*choice pop-up quoting the act exactly/m);
+  assert.match(cue('How does a session ask the owner for a yes to an outward act?'), /^rule:blocked-prompts \(standards\/evidence-and-failures\.md\): .*Typed words only where the tool or model has no pop-up/m);
+  assert.match(cue('I need to choose a new screen layout. How do we decide it?'), /^rule:visual-design-collaboration \(\.claude\/rules\/design-and-ux\.md\): .*decided from a rendered wireframe, never prose/m);
+  assert.match(cue('Can you mock up the settings page?'), /rule:visual-design-collaboration/);
+  for (const quiet of ['yes, ship it', 'Yes please, go ahead.', 'ask for help on the parser', 'she said yes to the plan', 'fix the grid layout in the css', 'what is the folder layout of this repo?', 'the layout test fails', 'the app layout is broken on narrow widths', 'print the page layout']) assert.equal(cue(quiet), '', quiet);
   assert.equal(kitTools.ruleCues({ kit: path.resolve('.'), prompt: 'Push the branch.', env: { KIT_RULE_CUES: 'off' } }), '', 'the cues-off arm');
   for (const quiet of ['fix the greeting', 'read the agents file', 'push back on this design?']) assert.equal(cue(quiet), '', quiet);
+  // The build 23b sweep: an ask in the product, a person's sign-off and a test mock are no owner's yes or layout.
+  for (const quiet of ['make the form ask the user for approval', 'asked Bob for sign-off on the budget', 'mock up the API response in the test', 'we mocked up a client for the tests']) assert.equal(cue(quiet), '', quiet);
+  assert.match(cue('Before the merge, ask me for a yes.'), /rule:outward-acts/);
   // Through the hook, beside the kit check.
   const { kit, home, proj } = caseKit();
   fs.writeFileSync(path.join(home, 'kit-install.json'), JSON.stringify({ kitDir: kit.replace(/\\/g, '/') }));

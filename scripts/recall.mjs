@@ -8,7 +8,8 @@
 // Why a fresh headless session per question: an answer must come only from what a new session loads and can
 // read, never from an earlier answer. Only project settings load (--setting-sources project), but the run's folder sits
 // under the home folder, so ~/.claude/CLAUDE.md still loads as a parent folder's file, as it does in the owner's real
-// projects: every side of a comparison gets it, and a control is not a clean no-rules run (the owner, 2026-11-04). Tools are read-only, the way a careful session would look
+// projects: every side of a comparison gets it, and a control is not a clean no-rules run (the owner, 2026-11-04). Each
+// kit arm also carries its own Claude folder's CLAUDE.md as the probe's parent file (K231). Tools are read-only, the way a careful session would look
 // a rule up. Answers are saved word for word; scoring is done after, by a blind scorer, under
 // docs/evals/recall-scorer-brief.md.
 //
@@ -52,7 +53,9 @@ const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // What the gate guards: the rule text, and the keys, brief and harness that grade it.
 // I19 (1.42.0): also what renders or ships text a session reads - the project layer's own text, the memory, kit.mjs that
 // renders them - and the behaviour suite and its runner. The project layer's code (the guards) is graded by its tests.
-const GRADED = /^(rules\/|project\/.*\.md$|memory\/|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
+// K231 (S7, flag F5): the global CLAUDE.md is in every session's start text, and each arm now carries its own, so a
+// change to it is graded too.
+const GRADED = /^(rules\/|project\/.*\.md$|memory\/|user\/CLAUDE\.md$|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
 // T10 (1.42.0): beside the wording gate line, a rule change records the behaviour suite's line, written by
 // recall-behave.mjs line from the saved runs. The base branch's gate reads only the gate line, so this sits apart.
 const BEHAVE_LINE = /^behaviour: (\S+) median (\d+) baseline (\d+) suite v(\d+) control (\d+)( owner-accepted)?$/;
@@ -242,6 +245,45 @@ export function checkUserLayer(home, osHome = os.homedir()) {
 }
 
 /**
+ * K231 (S7, build 23b): sessions run with project settings only never read the Claude folder's own CLAUDE.md, so every
+ * arm was scored on whatever global file sat at the real ~/.claude, and a user-layer change was never measured. An arm
+ * now carries the CLAUDE.md its own Claude folder holds, but only when that file is the one install wrote (its install
+ * record's hash) and it is this arm's kit source with only the placeholders filled; anything else is refused, so a
+ * hand-edited folder still cannot be scored. The release arm's folder is a release install, which checkUserLayer holds.
+ *
+ * Args:
+ *     ctx: { home, kitDir, noKit, osHome }
+ *
+ * Returns:
+ *     { text, line }: the text to carry (null when none) and the run header's "User layer:" value
+ */
+export function armUserLayer({ home, kitDir, noKit, osHome = os.homedir() }) {
+  if (noKit) return { text: null, line: 'none (control)' };
+  const real = (p) => { try { return fs.realpathSync(p); } catch { return path.resolve(p); } };
+  const globalFile = path.join(osHome, '.claude', 'CLAUDE.md');
+  // The real ~/.claude is already read as a parent folder's file; carrying it again would load it twice.
+  if (real(home) === real(path.join(osHome, '.claude'))) return { text: null, line: 'the real ~/.claude/CLAUDE.md' };
+  const file = path.join(home, 'CLAUDE.md');
+  if (!fs.existsSync(file)) return { text: null, line: 'none: the Claude folder holds no CLAUDE.md' };
+  const norm = (t) => t.replace(/\r\n/g, '\n');
+  const text = fs.readFileSync(file, 'utf8');
+  let source = null;
+  try { source = fs.readFileSync(path.join(kitDir, 'user', 'CLAUDE.md'), 'utf8'); } catch { /* refused below */ }
+  const esc = (x) => x.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  const fromSource = source !== null && new RegExp(`^${norm(source).split(/\{\{[A-Z_]+\}\}/).map(esc).join('[\\s\\S]*?')}$`).test(norm(text));
+  const hash = crypto.createHash('sha256').update(text).digest('hex');
+  const recorded = readJson(path.join(home, 'kit-install.json'))?.files?.['CLAUDE.md'];
+  if (!fromSource || recorded !== hash) throw new Error(`${home} is not this arm's own user layer: CLAUDE.md changed by hand or installed from another kit than ${kitDir}. Run install user from that kit into this throwaway folder, then run this again`);
+  const beside = fs.existsSync(globalFile) ? ' beside the real ~/.claude/CLAUDE.md' : '';
+  return { text, line: `own${beside} (CLAUDE.md sha256 ${hash.slice(0, 12)})` };
+}
+
+/** K231: the arm's own global CLAUDE.md as a parent folder's file of its probe, the way ~/.claude/CLAUDE.md loads. */
+export function carryUserLayer(dir, layer) {
+  if (layer?.text != null) fs.writeFileSync(path.join(path.dirname(dir), 'CLAUDE.md'), layer.text);
+}
+
+/**
  * Make the run's folder: a git repo with the project layer from the kit folder, or nothing for the control.
  *
  * Args:
@@ -284,9 +326,10 @@ export function removeProbe({ dir, home, slug, osHome = os.homedir(), forget }) 
   }
 }
 
-export function runHeader({ label, keys, facts, when, cli, only = null }) {
+export function runHeader({ label, keys, facts, when, cli, only = null, userLayer }) {
   return [`# Recall run: ${label}`, '', `When: ${when}`, 'Path: kit-probes/<hex>/p<hex>', `CLI: ${cli}`, `Keys: v${keys}`, ...(only ? [`Only: ${only.join(', ')}`] : []),
-    `Project kit: ${facts.project}`, `User kit: ${facts.user}`, ...(facts.global ? [`Global CLAUDE.md also loaded from ~/.claude: ${facts.global}`] : []), `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
+    `Project kit: ${facts.project}`, `User kit: ${facts.user}`, ...(facts.global ? [`Global CLAUDE.md also loaded from ~/.claude: ${facts.global}`] : []),
+    ...(userLayer ? [`User layer: ${userLayer}`] : []), `approve.mjs at the user path: ${facts.approve ? 'yes' : 'no'}`, ''];
 }
 
 /**
@@ -455,7 +498,7 @@ function gate([base, head]) {
 }
 
 /** What a run asks and records, or a refusal: all of it before any session starts. */
-export function prepare({ projectDir, label, home, osHome, text, when, cli, only = null }) {
+export function prepare({ projectDir, label, home, osHome, text, when, cli, only = null, userLayer }) {
   checkUserLayer(home, osHome);
   const facts = installFacts({ projectDir, home, osHome });
   const keys = currentVersion(text);
@@ -466,14 +509,14 @@ export function prepare({ projectDir, label, home, osHome, text, when, cli, only
   // A second look asks only the questions that summed lower on the first, each still in its own fresh session.
   const missing = (only || []).find((n) => !qs.some((x) => x.n === n));
   if (missing !== undefined) throw new Error(`--only: no question ${missing} on keys v${keys}`);
-  return { qs: only ? qs.filter((x) => only.includes(x.n)) : qs, lines: runHeader({ label, keys, facts, when, cli, only }) };
+  return { qs: only ? qs.filter((x) => only.includes(x.n)) : qs, lines: runHeader({ label, keys, facts, when, cli, only, userLayer }) };
 }
 
 /** Ask each question in a fresh session in the probe folder, and return the answers as run-file lines. */
 export function askAll({ qs, projectDir, run }) {
   const lines = [];
   for (const { n, q, key } of qs) {
-    const r = run('claude', ['-p', '--model', RECALL_MODEL, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--allowedTools', 'Read,Grep,Glob',
+    const r = run('claude', ['-p', '--model', RECALL_MODEL, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--strict-mcp-config', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
       '--no-session-persistence'], { cwd: projectDir, input: q, encoding: 'utf8', timeout: 600000 });
     const answer = (r.stdout || '').trim();
@@ -509,11 +552,14 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
   checkHome(env);
   checkSessionHome(home, run);
   const kit = path.resolve(kitDir || KIT);
+  // K231: checked before the probe exists, so a refused layer leaves nothing behind.
+  const layer = armUserLayer({ home, kitDir: kit, noKit, osHome });
   const projectDir = probePath(osHome);
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
+    carryUserLayer(projectDir, layer);
     const cli = `${(run('claude', ['--version'], {}).stdout || 'unknown').trim()}; model ${RECALL_MODEL}, effort ${RECALL_EFFORT}`;
-    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli, only });
+    const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli, only, userLayer: layer.line });
     lines.push(...askAll({ qs, projectDir, run }));
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, `${label}.md`);

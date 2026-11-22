@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { checkUserLayer, checkGateHome, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
+import { armUserLayer, carryUserLayer, checkUserLayer, checkGateHome, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = path.join(KIT, 'docs', 'evals', 'behaviour-scenarios.json');
@@ -229,7 +229,7 @@ export function releasedUserLayer(home, dir) {
 /** One session on one scenario: the record, the grades and the reads outside. */
 export function runScenario({ s, dir, home, run }) {
 	const r = run('claude', ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL, '--effort', EFFORT,
-		'--setting-sources', 'project', '--permission-mode', 'default', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
+		'--setting-sources', 'project', '--strict-mcp-config', '--permission-mode', 'default', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
 		'--max-turns', MAX_TURNS, '--no-session-persistence'], { cwd: dir, input: s.prompt, encoding: 'utf8', timeout: 900000, maxBuffer: 1 << 28 });
 	if (/Not logged in/i.test(r.stdout || '')) throw new Error(`${s.id}: Claude Code is not logged in for the sessions' config folder`);
 	const ev = parseStream(r.stdout || '');
@@ -353,10 +353,12 @@ async function main(argv) {
 	// Every arm on its own throwaway Claude folder (the 2026-11-21 paired run; see recall.mjs checkGateHome).
 	checkGateHome(home);
 	checkHome(process.env);
+	const kit = path.resolve(kitDir || KIT);
+	// K231 (S7): the arm's own global CLAUDE.md, checked before any session; see recall.mjs armUserLayer.
+	const layer = armUserLayer({ home, kitDir: kit, noKit });
 	const run = (cmd, args, opts) => spawnSync(cmd, args, { encoding: 'utf8', ...opts });
 	checkSessionHome(home, run);
 	const kitTools = await import('./kit.mjs');
-	const kit = path.resolve(kitDir || KIT);
 	const released = !noKit && !kitTools.releaseState(kit).problems.length;
 	const suite = suiteVersion();
 	suite.scenarios = pickScenarios(suite.scenarios, just);
@@ -365,7 +367,7 @@ async function main(argv) {
 	const rows = [];
 	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
 	const head = run('git', ['rev-parse', 'HEAD'], { cwd: kit }).stdout.trim();
-	const marker = { head, suite: suite.version, released, noKit: !!noKit };
+	const marker = { head, suite: suite.version, released, noKit: !!noKit, userLayer: layer.line };
 	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name, just });
 	if (resume) console.log(`--resume: ${reuse.size} scenario(s) saved on ${head.slice(0, 7)} are graded from their records`);
 	for (const s of suite.scenarios) {
@@ -386,6 +388,7 @@ async function main(argv) {
 			setupProbe({ dir, kitDir: kit, noKit, released, run });
 			if (!noKit && !released) copyUserLayer(kit, dir, home);
 				else if (!noKit) releasedUserLayer(home, dir);
+			carryUserLayer(dir, layer);
 			readOnlyProbe(dir);
 			seed(dir, s.files, run, s.merged === true);
 			const r = runScenario({ s, dir, home, run });
@@ -400,7 +403,7 @@ async function main(argv) {
 	const total = rows.filter((r) => r.passed).length;
 	const cost = rows.reduce((n, r) => n + r.cost, 0);
 	if (before && only && (before.released !== released || before.noKit !== noKit)) throw new Error(`--only: ${name} was run on another kit side; start a new label`);
-	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, total, cost, rows, when: new Date().toISOString(), ...(just ? { just: [...just] } : {}) }, null, 1));
+	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, userLayer: layer.line, total, cost, rows, when: new Date().toISOString(), ...(just ? { just: [...just] } : {}) }, null, 1));
 	console.log(`${name}: ${total} of ${rows.length} on suite v${suite.version}, $${cost.toFixed(2)}`);
 }
 

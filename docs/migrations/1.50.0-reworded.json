@@ -1,0 +1,29 @@
+{
+  "lines": [
+    {
+      "before": "11. Size Budgets: Trim Before You Ask",
+      "after": "11. Size Budgets: Trim Before You Ask -> rule:size-budgets in `.claude/rules/code.md`",
+      "why": "K230: the start text names the size-budget rule by its id and file, so a session finds it without a search"
+    },
+    {
+      "before": "- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` in their own terminal: the pre-push hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.",
+      "after": "- **A gate bypass is never a tool's act:** skipping the git hooks (`--no-verify`) or moving the hooks path switches off the checks the owner's yes relies on. The guard refuses it even with a yes; only the owner runs it, in their own terminal. The owner's own push past the bound sets `KIT_OWNER_PUSH=1` and types the ref's name when the pre-push hook asks (in a session: the owner's fresh pop-up yes to that push and remote): the hook skips the bound and still runs its name check, secret scan and first push gate; a tool that sets it is refused like a bypass.",
+      "why": "the build 23a sweep: the owner's push from a terminal with no session was refused; the hook asks the owner to type the ref there, or reads a fresh pop-up yes to that push and remote (reworded in 23a, held back for this build's score gate)"
+    },
+    {
+      "before": "- **Never use unicode arrows** in code, comments, docstrings, or markdown: no `->`, `<-`, `<->`",
+      "after": "- **Never use unicode arrows** in code, comments, docstrings, or markdown: no U+2192, U+2190, U+2194",
+      "why": "K219: the line named the arrows by the ASCII forms it meant to ban, so it banned nothing; it now names their code points"
+    },
+    {
+      "before": "- Stay current - prefer 2025-2026 approaches over outdated patterns when relevant",
+      "after": "- Stay current - prefer approaches current as of today's date over outdated patterns when relevant",
+      "why": "K219: a fixed year range goes stale; the line ties it to the date in context"
+    },
+    {
+      "before": "Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line \"Kit tools this session\"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.",
+      "after": "Before any swarm (a sweep, a red-team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line \"Kit tools this session\"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.",
+      "why": "S1 (build 23b sweep): room for the cloud push line to name the secret scan; the swarm kinds are named plainly, the rules they point to unchanged"
+    }
+  ]
+}

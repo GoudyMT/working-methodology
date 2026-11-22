@@ -51,12 +51,46 @@ test('measureReal counts the memory index, global CLAUDE.md and the skill listin
   w(home, 'settings.json', JSON.stringify({ enabledPlugins: { 'on@m': true, 'off@m': false } }));
   const listing = (name, desc) => Buffer.byteLength(`${name}: ${desc}`);
   let r = measureReal({ projectDir: proj, home });
-  assert.deepEqual(r.parts, { project: 100, memoryIndex: 30, globalClaude: 50, userSkills: listing('mine', 'abc'), plugins: listing('on:s', 'one two') });
+  assert.deepEqual(r.parts, { project: 100, memoryIndex: 30, globalClaude: 50, userSkills: listing('mine', 'abc'), plugins: listing('on:s', 'one two'), agents: 0, startHook: 0 });
   assert.equal(r.total, 100 + 30 + 50 + listing('mine', 'abc') + listing('on:s', 'one two'));
   // A project turning a standby plugin on counts it there.
   w(proj, '.claude/settings.local.json', JSON.stringify({ enabledPlugins: { 'off@m': true } }));
   r = measureReal({ projectDir: proj, home });
   assert.equal(r.parts.plugins, listing('on:s', 'one two') + listing('off:s', 'one two'));
+});
+
+// K232 (build 23b): the raw start request held 43,173 B where measure --real said 41,683 B; it left out the agent
+// list (each agent's name, description and tools) and the SessionStart hook text, so a trim was judged on a short count.
+// why: guards rule:kit-standards
+test('measureReal also counts the agent list and the start-up hook text (K232)', () => {
+  const proj = makeTemp('real-proj-');
+  const home = makeTemp('real-home-');
+  const w = (root, rel, body) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), body); };
+  w(home, 'agents/builder.md', '---\nname: builder\ndescription: builds\ntools: Read, Edit\n---\nbody not loaded\n');
+  w(proj, '.claude/agents/scout.md', '---\nname: scout\ndescription: looks\n---\nbody\n');
+  const r = measureReal({ projectDir: proj, home, hookText: 'Kit tools this session: x' });
+  const line = (s) => Buffer.byteLength(s);
+  assert.equal(r.parts.agents, line('builder: builds (Tools: Read, Edit)') + line('scout: looks (Tools: *)'));
+  assert.equal(r.parts.startHook, line('Kit tools this session: x'));
+  assert.equal(r.total, Object.values(r.parts).reduce((a, b) => a + b, 0));
+  assert.equal(measureReal({ projectDir: proj, home }).parts.startHook, 0, 'no hook text given, none counted');
+});
+
+// The build 23b sweep: measure --real built the hook text by running the whole start-up report, which asked GitHub for
+// newer releases and wrote the project's notice file, so a measure hid the next release's notice.
+// why: guards rule:kit-standards: a read command that changes what the next session is told
+test('measure --real builds the start-up text without asking GitHub or writing the project\'s notice', async () => {
+  const { kit, home, proj } = makeKit();
+  install({ kit, home, target: 'user' });
+  install({ kit, home, target: 'project', projectDir: proj });
+  const notice = path.join(proj, '.kit', 'last-kit-notice.json');
+  fs.rmSync(notice, { force: true });
+  // The text measure --real counts: the start-up report as a fresh session gets it, built read-only.
+  const kitLib = await import('../scripts/kit.mjs');
+  assert.equal(typeof kitLib.startHookText, 'function', 'measure --real has a read-only builder for the start-up text');
+  const text = kitLib.startHookText({ kit, home, projectDir: proj, ahead: () => { throw new Error('asked GitHub'); } });
+  assert.match(text, /Kit tools this session/);
+  assert.equal(fs.existsSync(notice), false, 'measure wrote the notice');
 });
 
 // why: guards rule:kit-standards
@@ -613,6 +647,45 @@ test('install seeds the loop bounds file once and never changes the owner\'s', (
   fs.writeFileSync(file, template('owner'));
   install({ kit, home, target: 'project', projectDir: proj });
   assert.equal(read(file), template('owner'));
+});
+
+// 1.49.0 step 6: the ci-fix cap (ciFix 5) reached fresh installs only, so every project installed before ran with it
+// off. A limit the owner's file lacks is added at the kit's value; every value the owner set stays as it is.
+// why: guards rule:loop-driver
+test('install adds a limit the owner\'s bounds file lacks and keeps every value the owner set', () => {
+  const { kit, home, proj } = makeKit();
+  fs.mkdirSync(path.join(kit, 'project', '.claude'), { recursive: true });
+  const template = (limits) => `{\n  "steps": [\n    { "step": "merge", "who": "owner" }\n  ],\n  "limits": { ${limits} }\n}\n`;
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('"fixRound": 3'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  const file = path.join(proj, '.claude', 'bounds.json');
+  // The owner tightens a limit; the next kit adds a new one and loosens the old one's default.
+  fs.writeFileSync(file, template('"fixRound": 2'));
+  fs.writeFileSync(path.join(kit, 'project', '.claude', 'bounds.json'), template('"fixRound": 9, "ciFix": 5'));
+  const r = install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(JSON.parse(read(file)).limits, { fixRound: 2, ciFix: 5 }, read(file));
+  assert.deepEqual(JSON.parse(read(file)).steps, [{ step: 'merge', who: 'owner' }]);
+  assert.ok(r.updated.includes('.claude/bounds.json'), JSON.stringify(r));
+  // Run again, nothing is missing: the file is left exactly as it is.
+  const now = read(file);
+  const again = install({ kit, home, target: 'project', projectDir: proj });
+  assert.equal(read(file), now);
+  assert.ok(!again.updated.includes('.claude/bounds.json'), JSON.stringify(again));
+  // The build 23b sweep: a limit the owner took out stays out; a limit is offered once.
+  fs.writeFileSync(file, template('"fixRound": 2'));
+  install({ kit, home, target: 'project', projectDir: proj });
+  assert.deepEqual(JSON.parse(read(file)).limits, { fixRound: 2 }, 'a removed limit came back');
+  // The build 23b sweep: the limits object is the top-level one, even when an earlier object holds a "limits" key.
+  const other = makeKit();
+  fs.mkdirSync(path.join(other.kit, 'project', '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(other.kit, 'project', '.claude', 'bounds.json'), '{\n  "limits": { "fixRound": 3, "ciFix": 5 }\n}\n');
+  fs.mkdirSync(path.join(other.proj, '.claude'), { recursive: true });
+  const nested = '{\n  "notes": { "limits": { "x": 1 } },\n  "limits": { "fixRound": 2 }\n}\n';
+  fs.writeFileSync(path.join(other.proj, '.claude', 'bounds.json'), nested);
+  install({ kit: other.kit, home: other.home, target: 'project', projectDir: other.proj });
+  const got = JSON.parse(read(path.join(other.proj, '.claude', 'bounds.json')));
+  assert.deepEqual(got.notes, { limits: { x: 1 } }, 'the nested object was edited');
+  assert.deepEqual(got.limits, { fixRound: 2, ciFix: 5 });
 });
 
 // N5 (1.36.0): a 1.16 project ran under a 1.18 user layer whose approve.mjs needed a hook the project lacked, and
@@ -1341,4 +1414,78 @@ test('the sheet page ships no private data, calls no third party, and writes the
   assert.match(page, /const sid = current \+ '__finish'/);
   assert.match(page, /collection\('answers'\)\.doc\(qid\)\.set/);
   for (const field of ['grounding', 'sectionTitle', 'recWhy', 'submitted']) assert.ok(page.includes(field), field);
+});
+
+// K219 (build 23b): the no-raw-non-ASCII rule flattened the arrow glyphs, so the global CLAUDE.md banned the very
+// spellings it then required; and "prefer 2025-2026 approaches" went stale with nothing to refresh it.
+// why: guards rule:instruction-priority: instruction text that contradicts itself or pins a stale year range (K219)
+test('the arrow rule bans none of the spellings it requires, and no instruction pins a year range (K219)', () => {
+  const lines = read(path.resolve('user/CLAUDE.md')).split('\n');
+  const ban = lines.find((l) => /Never use unicode arrows/i.test(l));
+  const want = lines.find((l) => /Always use ASCII arrows/i.test(l));
+  assert.ok(ban && want, 'the arrow rule is still there');
+  const required = [...want.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
+  assert.ok(required.length > 0);
+  assert.deepEqual(required.filter((s) => ban.includes(s)), [], 'the ban names a spelling the next line requires');
+  const instructions = [path.resolve('user/CLAUDE.md'), ...ruleFiles()];
+  const pinned = instructions.flatMap((f) => read(f).split('\n').map((l, i) => [l, i + 1])
+    .filter(([l]) => /\b(19|20)\d\d\s*(-|to)\s*(19|20)\d\d\b/.test(l)).map(([, i]) => `${path.basename(f)}:${i}`));
+  assert.deepEqual(pinned, [], 'say "current" or tie it to the date in context, not a year range');
+});
+
+// The cloud build study (the owner's route, 2026-11-21): a push from the cloud kept the owner's identity, but a PR
+// opened or edited there gained a tool footer, so a cloud build pushes its branch only and the PC does the rest.
+// why: guards the owner's cloud lane decision (K270): a cloud thread pushes its branch, the PC does the rest
+test('the where-work-runs rule lets a cloud build push its own branch and keeps the PR on the owner\'s PC', () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const start = text.indexOf('{#where-work-runs}');
+  assert.ok(start > 0, 'rule:where-work-runs is in the agent-teams module');
+  const rule = text.slice(start, text.indexOf('\n#', start));
+  // pin: 4 (the owner's words for the cloud lane, K270)
+  assert.match(rule, /cloud build thread may push its own feature branch/);
+  const pc = /([^.]*) stay on the owner's PC/.exec(rule)?.[1] || '';
+  for (const act of ['Installs', 'sweeps', 'the PR', 'release verification']) assert.ok(pc.includes(act), act);
+  // S1 (the build 23b sweep): a cloud push runs no pre-push hook, so the line names the secret scan to run first, and
+  // the scan it names ships in every project.
+  const scan = /push its own feature branch once `node (\.claude\/[^`]+)` passes/.exec(rule)?.[1];
+  assert.ok(scan && fs.existsSync(path.resolve('project', scan)), 'the cloud push names the secret scan that ships');
+});
+
+// T12 + E24 C (build 23b): a cloud thread loads no repo hooks, so it takes only the fixed worker jobs. The rule, the
+// cloud refusals and the worker brief name one job list, so a session reading any of them sends the same work out.
+// why: guards the owner's fixed list of five cloud jobs, one list wherever it is read
+test('the where-work-runs rule, the cloud refusals and the worker brief name one job list (T12)', () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const start = text.indexOf('{#where-work-runs}');
+  assert.ok(start > 0, 'rule:where-work-runs is in the agent-teams module');
+  const rule = text.slice(start, text.indexOf('\n#', start));
+  const list = (s) => s.split(/,\s*|\s+or\s+/).map((w) => w.trim().toLowerCase()).filter(Boolean);
+  const jobs = list(/fixed jobs: ([^.]+)\./.exec(rule)?.[1] || '');
+  assert.deepEqual(jobs, ['tests', 'builds', 'gate checks', 'research', 'read-only review']);
+  const refusal = /worker jobs only \(([^)]+)\)/.exec(read(path.resolve('user/skills/pre-pr-sweep/approve.mjs')))?.[1] || '';
+  assert.deepEqual(list(refusal), jobs, 'approve.mjs refuses a sweep in the cloud with the same list');
+  for (const pc of ['Installs', 'sweeps', 'release verification', "owner's PC"]) assert.ok(rule.includes(pc), pc);
+  for (const token of ['`worker.mjs`', 'feature branch']) assert.ok(rule.includes(token), token);
+  const brief = /`(_Templates\/[^`]+\.md)`/.exec(rule)?.[1];
+  assert.ok(brief && fs.existsSync(path.resolve('project', brief)), 'the rule names the brief template that ships');
+  const job = /\*\*Job:\*\* <one of: ([^>]+)>/.exec(read(path.resolve('project', brief)))?.[1] || '';
+  assert.deepEqual(list(job), jobs, 'the brief offers the same jobs');
+  // The runner refuses a job off the list, from one constant (rule enforced by script, not prose).
+  const runner = /export const JOBS = \[([^\]]+)\]/.exec(read(path.resolve('user/kit-tools/worker.mjs')))?.[1] || '';
+  assert.deepEqual(list(runner.replace(/'/g, '')), jobs, 'worker.mjs starts only the same jobs');
+});
+
+// K230 (build 23b): the start text named the size-budget rule by its title only, and the rule sits in a module that
+// loads only when a code file is opened, so recall question 8 took 5 to 7 searches and ran out of its 8 turns at
+// random (startup-size measure, 6 of 17 trial sessions). The priority index names its ID and the file that holds it.
+// why: guards rule:size-budgets
+test('the priority index names the size-budget rule by ID and by the file that holds it (K230)', () => {
+  const core = read(path.resolve('rules/core.md'));
+  const line = /^11\. Size Budgets[^\n]*$/m.exec(core)?.[0] || '';
+  assert.ok(line.includes('rule:size-budgets'), line);
+  const agents = read(path.resolve('project/AGENTS.md'));
+  const file = /^\| code \| `([^`]+)` \|/m.exec(agents)?.[1];
+  assert.ok(file && read(path.resolve('rules/code.md')).includes('{#size-budgets}'), 'the rule lives in the code module');
+  assert.ok(line.includes(file), `the index line names ${file}: ${line}`);
+  assert.ok(agents.includes(line), 'the built AGENTS.md carries the same line');
 });

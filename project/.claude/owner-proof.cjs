@@ -292,7 +292,8 @@ function guardShape(p) {
 		// E1 (build 21): the report channel's grant (kit-report.json names the one intake repo and is its kill switch) and
 		// the owner's own scrub word list are the owner's to write, as the guard records are; so are the reports kit-report.mjs
 		// keeps (the commit security review: a report rewritten after the owner read it, or marked held again).
-		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks') || fits(r[0], 'kit-report.json') || fits(r[0], 'kit-scrub-words.json') || fits(r[0], 'kit-reports'));
+		// K176: kit-grants/ holds the lead's one-time grants of the owner's card yes; a worker writing one would be its own yes.
+		const trusted = (r) => r.length > 0 && (fits(r[0], 'kit-guard') || fits(r[0], 'kit-install.json') || fits(r[0], 'kit-tools') || fits(r[0], 'kit-hooks') || fits(r[0], 'kit-report.json') || fits(r[0], 'kit-scrub-words.json') || fits(r[0], 'kit-reports') || fits(r[0], 'kit-grants'));
 		if (h.length && p[i] === h[h.length - 1] && trusted(p.slice(i + 1))) return true;
 		// The Claude folder under a name of its own (CLAUDE_CONFIG_DIR), named as the place written to.
 		if (h.length && !fits(h[h.length - 1], '.claude') && i === p.length - 1 && p.length >= h.length && h.every((x, k) => p[p.length - h.length + k] === x)) return true;
@@ -301,7 +302,7 @@ function guardShape(p) {
 		if (rest.length === 0) return true;
 		if (rest[0] === 'worktrees' || rest[0] === 'projects') continue;
 		if (rest.length === 1 && (rest[0] === 'kit-hooks' || rest[0] === 'kit-tools')) return true;
-		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json') || (rest.length === 1 && (fits(rest[0], 'kit-report.json') || fits(rest[0], 'kit-scrub-words.json'))) || fits(rest[0], 'kit-reports')) return true;
+		if (fits(rest[0], 'kit-guard') || fits(rest[0], 'kit-install.json') || (rest.length === 1 && (fits(rest[0], 'kit-report.json') || fits(rest[0], 'kit-scrub-words.json'))) || fits(rest[0], 'kit-reports') || fits(rest[0], 'kit-grants')) return true;
 		const last = rest[rest.length - 1];
 		// A wildcard may name any guard the shell finds there (owner-pro* is owner-proof.cjs): it fails closed (S23-1, the
 		// mutation check showed only guard.cjs was matched).
@@ -425,7 +426,7 @@ function moved(segment, cwd) {
 // The words of a git or gh command that are a message (-m, --body, --title, --notes): text, not paths.
 const MESSAGE_FLAGS = /^(-m|--message|-b|--body|-t|--title|-n|--notes)$/i;
 // Programs a reader may pipe a transcript into: they read their input and write only their output.
-const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'measure-object', 'measure', 'out-string']);
+const PIPE_READERS = new Set([...READERS, 'sort', 'uniq', 'cut', 'tr', 'select-object', 'select', 'convertfrom-json', 'convertto-json', 'measure-object', 'measure', 'out-string']);
 // K229 (build 23a): readers that are plain only in some forms, so they are kept out of READERS and read by their words:
 // rg with no option that runs another program (--pre, --hostname-bin, a search of zipped files), find with no action
 // that deletes, runs or writes (-delete, -exec, -ok, -fprint, -fls), echo (its redirect is read like any other), date
@@ -836,7 +837,9 @@ function unquotedGroup(text, tool) {
 // whose property is taken at the end of a statement ((Get-Item x).Length) is that read; anything after the property
 // (an assignment, a method call) keeps the brackets and the strict reading.
 const READ_CMDLETS = 'get-item|gi|get-filehash|get-content|gc|get-childitem|gci|test-path';
-const BRACKET_READ = new RegExp(`(^|[;\\n]\\s*)\\(\\s*((?:${READ_CMDLETS})\\s[^()$\`;|&{}"\\n]*?)\\s*\\)(?:\\.[A-Za-z_]\\w*)+(?=\\s*(?:[;\\n]|$))`, 'gi');
+// The 1.49.0 workbench (F7): a kit script's lines piped on in the brackets ((node .claude/state.mjs list | Select-String
+// x).Count) is that pipeline too; what is left is read whole after the rewrite, its pipe stages included.
+const BRACKET_READ = new RegExp(`(^|[;\\n]\\s*)\\(\\s*((?:${READ_CMDLETS})\\s[^()$\`;|&{}"\\n]*?|node\\s+(?:\\.\\/)?\\.claude\\/[\\w.-]+\\.(?:mjs|cjs)(?:\\s[^()$\`;&{}"\\n]*?)?)\\s*\\)(?:\\.[A-Za-z_]\\w*)+(?=\\s*(?:[;\\n]|$))`, 'gi');
 // A variable set from a read pipeline and then only shown ($s = Get-Content x | ConvertFrom-Json; $s.a.b) is that
 // read: the value is shown, never used as a path. A variable used any other way (handed to a cmdlet, piped on, set
 // again) keeps the strict reading, since Get-Item's answer used as a path writes the file it names. Names PowerShell
@@ -852,7 +855,15 @@ function psShown(command) {
 	const head = (x) => x.split(/\s+/)[0].toLowerCase();
 	if (!READERS.has(head(stages[0])) || !stages.slice(1).every((x) => PIPE_READERS.has(head(x)))) return null;
 	const shown = new RegExp(`^\\$${m[1]}(?:\\.[A-Za-z_]\\w*)*$`, 'i');
-	const rest = statements.slice(1).filter(Boolean);
+	// The 1.49.0 workbench (F3): the variable piped into readers in brackets and a property taken (($j | ConvertTo-Json
+	// -Depth 3).Length) is shown too; the readers after it are kept, to be read as any command is.
+	const piped = new RegExp(`^\\(\\s*\\$${m[1]}\\s*\\|([^$(){}\`;&"\\n]+)\\)(?:\\.[A-Za-z_]\\w*)*$`, 'i');
+	const rest = statements.slice(1).filter(Boolean).map((x) => {
+		const p = piped.exec(x);
+		if (!p) return x;
+		const tail = p[1].split('|').map((y) => y.trim());
+		return tail.every((y) => PIPE_READERS.has(head(y))) ? tail.join(' | ') : x;
+	});
 	if (rest.some((x) => !shown.test(x) && new RegExp(`\\$\\{?${m[1]}\\b`, 'i').test(x))) return null;
 	return [m[2], ...rest.filter((x) => !shown.test(x))].join('; ');
 }
@@ -927,6 +938,27 @@ function shellWritesFrom(command, tool, start, names) {
 	if (/\bCDPATH\b/.test(source) && /(^|[\s;&|(])(cd|pushd|chdir)\b/i.test(source)) return true;
 	const text = plainText(joinContinuations(source), tool);
 	const segments = tokenize(text);
+	// The 1.49.0 workbench (F2): tee or Tee-Object taking a pipe writes it to the one file it names and sends it on, as
+	// a redirect of the stage before does, so it is read as that redirect (a guard it names is held as a write). Any
+	// other option (-Variable, -i) keeps the strict reading.
+	for (let i = segments.length - 1; i > 0; i--) {
+		const g = segments[i];
+		const w = g.filter((x) => !x.redirect);
+		if (segments[i - 1].end !== '|' || g.some((x) => x.redirect) || !w.length || !/^(tee|tee-object)$/i.test(w[0].value)) continue;
+		let file = null;
+		let ok = true;
+		for (let k = 1; k < w.length && ok; k++) {
+			const a = w[k].value;
+			if (/^(-a|--append)$/.test(a) || (tool === 'PowerShell' && /^-ap\w*$/i.test(a))) continue;
+			if (tool === 'PowerShell' && /^-(f|fi\w*|pa\w*|l|li\w*|lp|pspath)$/i.test(a) && file === null && k + 1 < w.length) file = w[++k];
+			else if (!a.startsWith('-') && file === null) file = w[k];
+			else ok = false;
+		}
+		if (!ok || !file) continue;
+		const merged = [...segments[i - 1], { ...file, redirect: true }];
+		Object.assign(merged, { end: g.end, opens: g.opens, closes: g.closes, endsGroup: g.endsGroup });
+		segments.splice(i - 1, 2, merged);
+	}
 	let cwd = start ? parts(start) : null;
 	let named = false;
 	// K19 (pass bar 4): bash's * and ? at the start of a path part never match a name starting with a dot while dotglob
@@ -1004,7 +1036,7 @@ function shellWritesFrom(command, tool, start, names) {
 	// nothing before it, and after it they cannot write what it was handed. Anything else beside it may: a definition, a
 	// script block run later, bash's $_ (the last word of the command before) or PowerShell's -OutVariable handed to a
 	// writer (the build 11 sweep). A substitution anywhere, or a definition anywhere in the text, keeps the strict reading.
-	const plainStep = (g) => {
+	const plainStep = (g, at) => {
 		const w = g.filter((x) => !x.redirect).map((x) => x.value);
 		const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
 		const onPath = !/[\\/]/.test(w[0] || '');
@@ -1021,17 +1053,39 @@ function shellWritesFrom(command, tool, start, names) {
 		// K145 (build 19): a PowerShell statement that is one quoted string ("==== $i") prints it, as Write-Output does; a
 		// substitution in it ($(...)) keeps the strict reading through the check below.
 		// K158 (build 21): true, : and pwd print or return and define nothing (false stays strict: false || x is a test row).
-		return (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || wordReader(w) || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
+		return memberStage(at) || (onPath && /^(true|:|pwd)$/.test(p) && w.slice(1).every((a) => /^-[LP]+$/.test(a))) || (onPath && ((READERS.has(p) || PIPE_READERS.has(p)) && !writes || wordReader(w) || (p === 'out-null' && w.length === 1) || /^(echo|write-output|write-host)$/.test(p))) || CHANGERS.has(p) || printSed(w)
 			|| (tool === 'PowerShell' && g.length === 1 && g[0].quoted === true)
 			|| (onPath && p === 'node' && w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(w[1])))
 			// K196: git -C <folder> runs the same read from that folder.
 			|| (onPath && p === 'git' && GIT_READS.has(w[1] === '-C' ? w[3] : w[1]) && !w.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a)))
 			|| (w.length > 0 && w.every((v) => /^[A-Za-z_]\w*=/.test(v)));
 	};
+	// The 1.49.0 workbench (F7, F8): PowerShell's % Line (ForEach-Object by a member's name) takes that member from each
+	// object it is handed, and runs it when it is a method, so on a file object (% Delete) it deletes. It is plain only
+	// where every stage before it in its pipe hands on lines of text, matches or JSON values: a kit script or a reader of
+	// text first, then only text filters.
+	const TEXT_SOURCES = /^(select-string|sls|get-content|gc|cat|type|convertfrom-json)$/;
+	const TEXT_FILTERS = /^(select-string|sls|select-object|select|out-string|convertfrom-json|convertto-json|sort-object)$/;
+	const stageHead = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); return { w, p: path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, '').toLowerCase() }; };
+	const memberStage = (i) => {
+		if (tool !== 'PowerShell' || i === undefined || i < 1 || segments[i - 1].end !== '|') return false;
+		const { w, p } = stageHead(segments[i]);
+		if (!/^(%|foreach-object|foreach)$/.test(p) || segments[i].some((x) => x.redirect)) return false;
+		const args = w.slice(1);
+		if (!((args.length === 1 && /^[A-Za-z_]\w*$/.test(args[0])) || (args.length === 2 && /^-m\w*$/i.test(args[0]) && /^[A-Za-z_]\w*$/.test(args[1])))) return false;
+		let k = i - 1;
+		while (k > 0 && segments[k - 1].end === '|') k--;
+		return segments.slice(k, i).every((g, n) => {
+			if (g.some((x) => x.redirect && !/^\d$/.test(x.value))) return false;
+			const s = stageHead(g);
+			if (n === 0 && s.p === 'node' && s.w.length > 1 && /^(\.\/)?\.claude\/[\w.-]+\.(mjs|cjs)$/.test(slash(s.w[1]))) return true;
+			return n === 0 ? TEXT_SOURCES.test(s.p) : TEXT_FILTERS.test(s.p);
+		});
+	};
 	const substituted = /[`]|\$\(|<\(/.test(text);
 	// $_, ${_} and !$ hand the last word of the command before to the next one, whatever that command is.
 	const defined = DEFINITION.test(text) || /\$\{?_(?!\w)|!\$/.test(String(command || ''));
-	const definesBefore = (s) => !neighbourBlind && (defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value)))))));
+	const definesBefore = (s) => !neighbourBlind && (defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g, k) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value)))))));
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
@@ -1043,12 +1097,12 @@ function shellWritesFrom(command, tool, start, names) {
 	// A pipe after a cd counts only when every stage of every pipeline is a plain reader with no redirect: a file list
 	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
 	const firstPipe = segments.findIndex((g) => g.end === '|');
-	const stageReads = (g) => { const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
+	const stageReads = (g, at) => { if (memberStage(at)) return true; const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
 	// K252 (build 23a): a stage that only sends its output on (node x.mjs 2>&1 | tail) runs in a shell of its own, so it
 	// cannot move the folder; it counts with no redirect but one output pointed at another, and its own words are read
 	// below as any command's are. Every stage that takes the pipe must still read.
 	const sendsOn = (g) => g.every((x) => !x.redirect || /^\d$/.test(x.value));
-	const pipesRead = segments.every((g, i) => (i > 0 && segments[i - 1].end === '|' ? stageReads(g) : g.end !== '|' || sendsOn(g)));
+	const pipesRead = segments.every((g, i) => (i > 0 && segments[i - 1].end === '|' ? stageReads(g, i) : g.end !== '|' || sendsOn(g)));
 	const otherBreak = segments.some((g) => !plainBreak(g.end) && g.end !== '|') || (firstPipe >= 0 && !pipesRead);
 	// K228 (build 23a): a bracket inside quotes ("(a.js)", node -e '...(...)') is text, so only one outside quotes, as
 	// bracketed reads it (strict for anything that reading does not model), makes the cd unsure.

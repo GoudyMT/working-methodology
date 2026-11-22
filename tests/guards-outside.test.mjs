@@ -620,6 +620,8 @@ test('V3 wiring: install user wires the launcher on every tool and the settings 
 	assert.equal(pre[0].matcher, '.*');
 	assert.equal(pre[0].hooks[0].onFailure, 'block');
 	assert.equal(named(user.hooks.ConfigChange, 'kit-launch.cjs').length, 1);
+	// K216 (build 23b): a launcher that cannot start or is slow on a settings change must hold the change, not apply it.
+	assert.equal(named(user.hooks.ConfigChange, 'kit-launch.cjs')[0].hooks[0].onFailure, 'block', 'the settings check blocks on failure (K216)');
 	assert.equal(named(user.hooks.UserPromptSubmit, 'kit-gate.cjs').length, 1, 'the kit gate stays');
 });
 
@@ -937,6 +939,8 @@ test('V3 user settings: a launcher entry kept by name but made harmless is refus
 		'an if that never matches': (u) => { launch(u.hooks.PreToolUse).hooks[0].if = 'Bash(nothing *)'; },
 		'onFailure dropped': (u) => { delete launch(u.hooks.PreToolUse).hooks[0].onFailure; },
 		'ConfigChange narrowed to skills': (u) => { launch(u.hooks.ConfigChange).matcher = 'skills'; },
+		// K216: without block, a settings check that fails to start lets the change through.
+		'ConfigChange onFailure dropped': (u) => { delete launch(u.hooks.ConfigChange).hooks[0].onFailure; },
 		'another node': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/(kit-start\.sh' )'[^']*'/, "$1'/tmp/node'"); },
 		// R7.2: the line without the start script, or without its fallback, is not the line install wrote.
 		'the start script skipped': (u) => { const h = launch(u.hooks.PreToolUse).hooks[0]; h.command = h.command.replace(/\/bin\/sh '[^']*kit-start\.sh' /, '').replace(/ \|\| printf .*$/, ''); },

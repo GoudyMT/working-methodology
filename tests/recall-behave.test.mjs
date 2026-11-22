@@ -96,6 +96,8 @@ test('a behaviour run allows no edit or shell, and seeds no file outside its fol
 	assert.equal(opt('--allowedTools'), 'Read,Grep,Glob,Skill');
 	assert.equal(opt('--permission-mode'), 'default');
 	assert.equal(opt('--setting-sources'), 'project');
+	// K177 (build 23b): a scenario's planted .mcp.json must not start a server or add tools.
+	assert.ok(argv.includes('--strict-mcp-config'), 'a behaviour session ignores project MCP servers (K177)');
 	assert.ok(!argv.some((a) => /bypass|dangerously/i.test(a)), argv.join(' '));
 	const dir = makeTemp('behave-');
 	const run = () => ({ status: 0, stdout: '', stderr: '' });
@@ -291,4 +293,25 @@ test('the candidate arm\'s copied skills name its own Claude folder, not the pla
 	const own = home.split(path.sep).join('/');
 	assert.equal(fs.readFileSync(path.join(dir, '.claude/skills/s/SKILL.md'), 'utf8'), `run ${own}/skills/pre-pr-sweep/approve.mjs\n`);
 	assert.equal(fs.readFileSync(path.join(dir, '.claude/agents/o.md'), 'utf8'), `see ${own}/agents/\n`);
+});
+
+// K231 (S7): each behaviour arm carries its own global CLAUDE.md (recall.mjs armUserLayer), so a hand-edited one in its
+// throwaway Claude folder is refused before any session, as the wording run refuses it.
+// why: guards the owner's score gate decision: each arm carries only its own global instructions, never one edited by hand
+test('a behaviour run refuses a throwaway Claude folder whose CLAUDE.md was edited by hand (K231), before any session', async () => {
+	const { install } = await import('../scripts/kit.mjs');
+	const osHome = makeTemp('k231-oshome-');
+	const kit = path.join(osHome, 'kit');
+	for (const [rel, body] of Object.entries({ 'VERSION': '1.0.0\n', 'kit.config.json': '{}', 'user/CLAUDE.md': '# Global\nOwner: {{OWNER_NAME}}\n' })) {
+		fs.mkdirSync(path.dirname(path.join(kit, rel)), { recursive: true });
+		fs.writeFileSync(path.join(kit, rel), body);
+	}
+	const home = path.join(osHome, 'kit-probes', 'cfg-cand');
+	fs.mkdirSync(home, { recursive: true });
+	install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
+	fs.appendFileSync(path.join(home, 'CLAUDE.md'), 'a hand edit\n');
+	const r = spawnSync(process.execPath, [path.resolve('scripts/recall-behave.mjs'), 'cand-1', kit], { encoding: 'utf8', env: { ...process.env, HOME: osHome, USERPROFILE: osHome, KIT_CLAUDE_HOME: home, CLAUDE_CONFIG_DIR: home, PATH: '' } });
+	assert.equal(r.status, 1, r.stdout + r.stderr);
+	for (const token of ['user layer', 'CLAUDE.md', 'by hand']) assert.ok(r.stderr.includes(token), r.stderr);
+	assert.doesNotMatch(r.stdout, /\[1\/\d+\]/);
 });

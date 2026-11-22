@@ -339,6 +339,47 @@ function threeWay({ ctx, src, renderOld, curBuf, base, want }) {
 // is never merged into it (the 1.36.0 template _State.json clashed in every project), updated, or folded back.
 // T7 (build 12): the loop's bounds file too, the owner's from the first install, so no kit change loosens it.
 export const DATA_FILES = ['_State.json', '_List.jsonl', '_Decisions.jsonl', '.claude/bounds.json'];
+// 1.49.0 step 6: a limit added to the kit (ciFix) reached fresh installs only. A limit missing from the bounds file is
+// added at the kit's value; nothing the owner set changes, and a file that does not read as one flat limits object is
+// left alone. The build 23b sweep: each limit is offered once (the stamp keeps the names), so one the owner took out
+// stays out; the edit lands in the top-level limits object, checked after; the file is replaced whole (a temp file
+// renamed into place). Returns { changed, offered }: whether the file changed (or would, on a dry run), and every
+// limit name the kit has now offered. The old copy goes to `keep` first.
+function addMissingLimits(dest, want, dryRun, keep, offeredBefore = []) {
+  const none = { changed: false, offered: offeredBefore };
+  let mine, kits;
+  if (fs.lstatSync(dest).isSymbolicLink()) return none;
+  try { mine = JSON.parse(fs.readFileSync(dest, 'utf8')); kits = JSON.parse(want); } catch { return none; }
+  const have = mine && mine.limits, add = kits && kits.limits;
+  if (!have || typeof have !== 'object' || Array.isArray(have) || !add || typeof add !== 'object') return none;
+  const offered = [...new Set([...offeredBefore, ...Object.keys(have), ...Object.keys(add)])].sort();
+  const missing = Object.entries(add).filter(([k, v]) => !Object.hasOwn(have, k) && !offeredBefore.includes(k) && Number.isFinite(v));
+  if (!missing.length) return { changed: false, offered };
+  const text = fs.readFileSync(dest, 'utf8');
+  // The top-level "limits": the last match whose result parses with the keys added there (an earlier nested object of
+  // the same name is skipped, never edited).
+  let next = null;
+  for (const m of text.matchAll(/("limits"\s*:\s*\{)([^{}]*?)(\s*\})/g)) {
+    const body = m[2].replace(/\s+$/, '');
+    const extra = missing.map(([k, v]) => `${JSON.stringify(k)}: ${v}`).join(', ');
+    const tryText = text.slice(0, m.index) + m[1] + body + (body.trim() ? ', ' : ' ') + extra + m[3] + text.slice(m.index + m[0].length);
+    let got;
+    try { got = JSON.parse(tryText); } catch { continue; }
+    const same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+    const { limits: gotLimits, ...gotRest } = got;
+    const { limits: _l, ...mineRest } = mine;
+    if (same(gotRest, mineRest) && Object.entries(have).every(([k, v]) => same(gotLimits[k], v)) && missing.every(([k, v]) => gotLimits[k] === v)) { next = tryText; break; }
+  }
+  if (next === null) return { changed: false, offered: offeredBefore };
+  if (!dryRun) {
+    fs.mkdirSync(path.dirname(keep), { recursive: true });
+    fs.copyFileSync(dest, keep);
+    const tmp = `${dest}.${process.pid}.tmp`;
+    fs.writeFileSync(tmp, next, { flag: 'wx' });
+    fs.renameSync(tmp, dest);
+  }
+  return { changed: true, offered };
+}
 export const isGuarded = (key) => /^\.claude\/[^/]+\.(cjs|mjs)$/.test(key) || /^\.githooks\/[^/]+$/.test(key);
 // K120 (1.42.0): in the Claude folder the kit's tools and hooks (the guard launcher among them) are its guard files: a
 // changed one is put back, never kept or merged.
@@ -637,7 +678,7 @@ function wireGate(home, dryRun) {
   const wants = [
     ['UserPromptSubmit', 'kit-gate.cjs', { hooks: [{ type: 'command', command: 'node', args: [toPosix(path.join(home, 'kit-hooks', 'kit-gate.cjs'))], timeout: 10 }] }],
     ['PreToolUse', 'kit-launch.cjs', { matcher: '.*', hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath), timeout: 10, onFailure: 'block' }] }],
-    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath, 'config-change'), timeout: 10 }] }],
+    ['ConfigChange', 'kit-launch.cjs', { hooks: [{ type: 'command', command: launch.launchCommand(launcher, process.execPath, 'config-change'), timeout: 10, onFailure: 'block' }] }],
   ];
   const before = JSON.stringify(settings);
   for (const [event, file, entry] of wants) {
@@ -715,6 +756,7 @@ export function install(ctx) {
     return { merged: true };
   };
   const hostOwned = new Set(stamp.hostOwned || []);
+  let limitsOffered = Array.isArray(stamp.limitsOffered) ? stamp.limitsOffered : [];
   const owed = {};
   let kept = false;
   for (const entry of entries) {
@@ -731,7 +773,15 @@ export function install(ctx) {
       write(); created.push(entry.key); files[entry.key] = wantHash;
       continue;
     }
-    if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) { files[entry.key] = stamp.files[entry.key] || wantHash; continue; }
+    if (ctx.target === 'project' && DATA_FILES.includes(entry.key)) {
+      files[entry.key] = stamp.files[entry.key] || wantHash;
+      if (entry.key === '.claude/bounds.json') {
+        const r = addMissingLimits(entry.dest, want, ctx.dryRun, path.join(backupDir, entry.key), Array.isArray(stamp.limitsOffered) ? stamp.limitsOffered : []);
+        limitsOffered = r.offered;
+        if (r.changed) { updated.push(entry.key); kept = true; }
+      }
+      continue;
+    }
     const cur = sha(compared(entry.key, fs.readFileSync(entry.dest, 'utf8')));
     const base = stamp.files[entry.key];
     if (cur === wantHash) {
@@ -898,6 +948,7 @@ export function install(ctx) {
     const out = { version: kitInfo.version, commit: kitInfo.commit, kitDir: toPosix(path.resolve(ctx.kit)), kitFingerprint: launch.kitFingerprint(ctx.kit), installedAt: new Date().toISOString(), files };
     if (hostOwned.size) out.hostOwned = [...hostOwned].sort();
     if (Object.keys(owed).length) out.owed = owed;
+    if (limitsOffered.length) out.limitsOffered = limitsOffered;
     // The node the launcher entry names (V3): kept here so status and the launcher can check the entry is the one written.
     if (ctx.target === 'user') out.node = toPosix(process.execPath);
     // Set by the CLI's release check; a stamp without it predates the check and reads as unknown, not unreleased.
@@ -1499,6 +1550,34 @@ function stableChannelLine(home) {
   return s && s.autoUpdatesChannel === 'stable' ? `Claude Code: autoUpdatesChannel is "stable", which trails the latest channel and can stay under the kit's floor (${RULES_MIN}). Set it to "latest" in the Claude config folder's settings.json, or check the version at each update.` : '';
 }
 
+// E36: a role on a model the kit has not measured its roles on, or one kit.config.json "models" marks retiring. The
+// role file in use wins over the table (an owner can move one by hand); a kit with no measured list says nothing.
+function roleModelLine(kit, dir) {
+  let config = {};
+  try { config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')); } catch { return ''; }
+  const models = config.models || {};
+  if (!Array.isArray(models.measured)) return '';
+  const retiring = new Set(models.retiring || []);
+  const named = [];
+  for (const role of Object.keys(config.roles || {}).sort()) {
+    let model = config.roles[role].model;
+    try {
+      const front = /^---\r?\n([\s\S]*?)\r?\n---/.exec(fs.readFileSync(path.join(dir, 'agents', `${role}.md`), 'utf8'));
+      // The build 23b sweep: a quoted value is the value inside the quotes.
+      const m = front && /^model:\s*['"]?([^'"\s]+)['"]?\s*$/m.exec(front[1]);
+      if (m) model = m[1];
+    } catch { /* not installed: the table's model */ }
+    // A family name (opus) is measured when the kit measured a model of that family.
+    const measured = models.measured.includes(model) || (/^(opus|sonnet|haiku)$/i.test(model) && models.measured.some((x) => x.toLowerCase().includes(model.toLowerCase())));
+    const file = `${toPosix(dir)}/agents/${role}.md`;
+    if (retiring.has(model)) named.push(`${role} runs on ${model}, which is marked retiring (${file})`);
+    else if (!measured) named.push(`${role} runs on ${model}, which the kit has not measured its roles on (${file})`);
+  }
+  // The build 23b sweep: the repair is on the owner's side (the role file wins over the kit's table, and changing the
+  // table leaves the release checkout).
+  return named.length ? `Kit roles: ${named.join('; ')}. Set the model line in that role file to a measured model, or measure the model first; the next release's table may move it.` : '';
+}
+
 /** K49: a line for each project settings file that still runs kit guards itself, as the shape before 1.25.1 did. */
 function doubleRunLines(projectDir) {
   const out = [];
@@ -1533,13 +1612,26 @@ export function kitToolsLine(dir) {
   return `Kit tools this session: sweep approval ${tool('skills/pre-pr-sweep/approve.mjs')}; merge gate ${tool('kit-tools/merge-gate.mjs')}${ps}. Run these copies, not another Claude folder's.`;
 }
 
-export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead }) {
+// K175: under the plugin the kit's skill is named with the plugin's prefix; a session told /methodology-kit finds none.
+export const skillCommand = (env = process.env) => (env.CLAUDE_PLUGIN_ROOT ? '/kit:methodology-kit' : '/methodology-kit');
+
+/**
+ * The start-up text a fresh session gets, built read-only for measure --real (the build 23b sweep): no question to GitHub
+ * about newer releases (the count is left out), and no notice or session list written in the project.
+ */
+export function startHookText({ kit, home, projectDir, ahead = () => ({ count: 0 }) }) {
+  return sessionStartReport({ kit, home, projectDir, source: 'startup', session: '', ahead, readOnly: true }) || '';
+}
+export function sessionStartReport({ kit, home, projectDir, source, session, env = process.env, claudeVersion = installedClaudeVersion, ahead: remote = remoteKitAhead, readOnly = false }) {
   const lines = [];
+  const skill = skillCommand(env);
   lines.push(kitToolsLine(env.CLAUDE_PLUGIN_ROOT || home));
   const old = claudeCodeTooOld(claudeVersion());
   if (old) lines.push(old.line);
   const channel = stableChannelLine(home);
   if (channel) lines.push(channel);
+  const roles = roleModelLine(kit, env.CLAUDE_PLUGIN_ROOT || home);
+  if (roles) lines.push(roles);
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   // K153 (build 20): a stale note is named before a thread acts on it, not only at the closeout that fails on it.
@@ -1561,23 +1653,26 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
     try { after = JSON.parse(fs.readFileSync(listFile, 'utf8')); } catch { /* none yet */ }
     const since = closed && after.closed === closed[1] ? after.sessions : [];
     const sid = String(session || '').replace(/[^\w.-]/g, '').slice(0, 64);
-    if (closed && source !== 'resume' && sid && !since.includes(sid)) {
+    if (!readOnly && closed && source !== 'resume' && sid && !since.includes(sid)) {
       try { fs.writeFileSync(listFile, `${JSON.stringify({ closed: closed[1], sessions: [...since, sid].slice(-50) })}\n`); } catch { /* the note is only a hint */ }
     }
     if (closed && source === 'resume' && !since.includes(sid)) lines.push(`The last closeout closed its task (${closed[1]}). A resumed session re-reads all of its old context: for the next task the owner types /clear (a CLI or Code session; a project thread closes when its work is done), then run node .claude/resume-packet.mjs check.`);
   }
-  const ahead = remote(kit);
-  if (ahead.count > 0) lines.push(`GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run /methodology-kit update.`);
+  const ahead = readOnly ? { count: 0 } : remote(kit);
+  // The build 23b sweep: a plugin's kit copy has no git, so the plugin itself is updated.
+  if (ahead.count > 0) lines.push(env.CLAUDE_PLUGIN_ROOT
+    ? `GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Update the kit plugin to ${ahead.newest}, then run ${skill} update.`
+    : `GitHub has ${ahead.count} newer kit release(s), newest ${ahead.newest}. Check out its newest release tag (${releaseCheckout(kit, ahead.newest)}), then run ${skill} update.`);
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   // Whatever session start reports covers the kit as it is now; the per-message check speaks only after this.
-  if (stamp.version) writeNotice(projectDir, kitVersion);
+  if (stamp.version && !readOnly) writeNotice(projectDir, kitVersion);
   if (!stamp.version) {
-    lines.push(`This project has no kit install record. Run /methodology-kit existing to adopt kit ${kitVersion}.`);
+    lines.push(`This project has no kit install record. Run ${skill} existing to adopt kit ${kitVersion}.`);
   } else if (semverAbove(kitVersion, stamp.version)) {
     const log = fs.readFileSync(path.join(kit, 'CHANGELOG.md'), 'utf8');
     const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
-    lines.push(`Kit ${kitVersion} has ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update.`);
+    lines.push(`Kit ${kitVersion} has ${newer} newer change(s) than this project (${stamp.version}). Run ${skill} update.`);
   }
   // Said every session, so an install made on purpose with --unreleased is never forgotten; ~/.claude carries the
   // rules of every project, so it is named too.
@@ -1585,9 +1680,9 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
   const userStamp = readStamp(path.join(home, STAMP_USER));
   // N5 (1.36.0; seen in a 1.16 project under a 1.18 user layer, whose approve.mjs needed a hook that project lacked, while
   // session start said only that an update was there): the skew is named for what it breaks.
-  if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run /methodology-kit update before either.`);
+  if (stamp.version && userStamp.version && semverAbove(userStamp.version, stamp.version)) lines.push(`~/.claude runs kit ${userStamp.version}, this project ${stamp.version}: the user layer's skills and hooks can need project files this install lacks, so a sweep or a build may stop on a missing hook. Run ${skill} update before either.`);
   if (userStamp.release === false) lines.push(`~/.claude runs an unreleased kit build (${userStamp.describe || 'no git history'}). ${checkout}, then run node "${toPosix(kit)}/scripts/kit.mjs" install user.`);
-  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run /methodology-kit update.${keptText(stamp, '/methodology-kit update')}`);
+  if (stamp.release === false) lines.push(`This project runs an unreleased kit build (${stamp.describe || 'no git history'}). ${checkout}, then run ${skill} update.${keptText(stamp, `${skill} update`)}`);
   if (stamp.version) {
     const r = foldBack({ kit, home, target: 'project', projectDir });
     // Only a file changed here and in the kit owes work; one changed only here holds the project's own values.
@@ -1927,7 +2022,7 @@ function remoteKitAhead(kit) {
  * Returns:
  *     the message, or '' when there is nothing new to say
  */
-export function promptCheckReport({ kit, projectDir }) {
+export function promptCheckReport({ kit, projectDir, env = process.env }) {
   const stamp = readStamp(path.join(projectDir, STAMP_PROJECT));
   if (!stamp.version) return '';
   const kitVersion = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
@@ -1938,7 +2033,7 @@ export function promptCheckReport({ kit, projectDir }) {
   writeNotice(projectDir, kitVersion);
   const log = fs.readFileSync(path.join(kit, 'CHANGELOG.md'), 'utf8');
   const newer = [...log.matchAll(/^## (\d+\.\d+\.\d+)/gm)].filter((m) => semverAbove(m[1], stamp.version)).length;
-  return `Kit ${kitVersion} was released while this session ran: ${newer} newer change(s) than this project (${stamp.version}). Run /methodology-kit update at the next stopping point.`;
+  return `Kit ${kitVersion} was released while this session ran: ${newer} newer change(s) than this project (${stamp.version}). Run ${skillCommand(env)} update at the next stopping point.`;
 }
 
 /**
@@ -1965,7 +2060,7 @@ export function closeoutCue({ projectDir, prompt = '', session = '', env = proce
   const releases = (...a) => (git(...a).stdout || '').split('\n').map((t) => t.trim()).filter((t) => /^v?\d+\.\d+\.\d+$/.test(t));
   const num = (t) => t.replace(/^v/, '');
   const here = releases('tag', '--points-at', 'HEAD');
-  // Only the repo's own release tag (the paired rerun of 2026-11-21, Max's pick): a cue on the owner's words sent
+  // Only the repo's own release tag (the paired rerun of 2026-11-21, the owner's pick): a cue on the owner's words sent
   // sessions to check the rule's conditions where nothing could show them, and they stopped instead of starting.
   if (!here.length) return '';
   // And only the newest one: a checkout of an old release to look at it is no release that just went out.
@@ -2010,7 +2105,7 @@ export function ruleCues({ kit, prompt = '', env = process.env }) {
  * What is waiting for the kit before a compact: fold-back in report mode for this project and
  * ~/.claude. It never changes a file outside the kit's reports/ folder; the owner sorts each item.
  */
-export function preCompactReport({ kit, home, projectDir }) {
+export function preCompactReport({ kit, home, projectDir, env = process.env }) {
   const waiting = [];
   for (const target of ['project', 'user']) {
     if (target === 'user' && !fs.existsSync(path.join(home, STAMP_USER))) continue;
@@ -2018,7 +2113,7 @@ export function preCompactReport({ kit, home, projectDir }) {
     waiting.push(...r.foldBack, ...r.conflict, ...r.added);
   }
   const lines = [waiting.length
-    ? `${waiting.length} rule change(s) waiting for the kit: ${waiting.join(', ')}. Sort them in the closeout's rule sort (project-only or portable), then /methodology-kit fold-back for the portable ones.`
+    ? `${waiting.length} rule change(s) waiting for the kit: ${waiting.join(', ')}. Sort them in the closeout's rule sort (project-only or portable), then ${skillCommand(env)} fold-back for the portable ones.`
     : 'No rule changes waiting for the kit.'];
   const vault = vaultBackup({ projectDir });
   if (!vault.configured) lines.push('No vault backup set up for this project. Set one up (NEW-PROJECT.md step 3b) so the private notes are never lost.');
@@ -2155,6 +2250,31 @@ export function fixedHomePaths({ kit }) {
   return hits;
 }
 
+// E36 (proof sweep: five model lines set by hand, no check on them): one table, kit.config.json "roles", names each
+// role's model and effort, and build writes the role files' two lines from it; install copies them as built. Read from
+// the tree build checks, so CI's base copy holds a PR's role files to the PR's own table.
+export function roleLines(text, { model, effort } = {}) {
+  const m = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  if (!m) return text;
+  let front = m[1];
+  for (const [key, value] of [['model', model], ['effort', effort]]) {
+    if (!value) continue;
+    const line = `${key}: ${value}`;
+    front = new RegExp(`^${key}:.*$`, 'm').test(front) ? front.replace(new RegExp(`^${key}:.*$`, 'm'), line) : `${front}\n${line}`;
+  }
+  return `---\n${front}\n---\n${text.slice(m[0].length)}`;
+}
+export function roleFiles(kit) {
+  let roles = {};
+  try { roles = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')).roles || {}; } catch { /* no table */ }
+  const out = new Map();
+  for (const role of Object.keys(roles).sort()) {
+    const rel = `user/agents/${role}.md`;
+    if (fs.existsSync(path.join(kit, rel))) out.set(rel, roleLines(fs.readFileSync(path.join(kit, rel), 'utf8'), roles[role]));
+  }
+  return out;
+}
+
 export function build({ kit }) {
   const dir = path.join(kit, 'rules');
   const mods = fs.readdirSync(dir).filter((n) => n.endsWith('.md')).sort()
@@ -2188,6 +2308,7 @@ export function build({ kit }) {
   out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
   // approve.mjs reads the owner's pop-up answers the way the guards do (T2): the same exact-copy rule.
   out.set('user/kit-tools/owner-yes.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'owner-yes.cjs'), 'utf8'));
+  for (const [rel, text] of roleFiles(kit)) out.set(rel, text);
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
     'that rule in the file named. To search, look for your words in the Rule and Also called columns.', '',
@@ -2220,6 +2341,123 @@ export function build({ kit }) {
       ...list.map((id) => sectionText(id) + '\n'), ''].join('\n'));
   }
   return out;
+}
+
+// K174: the plugin build. The plugin root is the Claude-folder stand-in, laid out as install user lays one out, so the
+// kit's tools find each other (approve.mjs loads ../../kit-hooks and ../../kit-tools) and the start-up line names real
+// paths; the kit's own copy (no .git, no tests) sits at kit/. Same input, same bytes: lists are sorted and nothing
+// records a time or a machine path.
+const PLUGIN_REPO = 'https://github.com/GoudyMT/kit-plugin.git';
+// The files a hook runs or loads, by extension: hashed into guard-manifest.json, which the launcher checks every call.
+const MANIFEST_FILE = /\.(cjs|mjs|js|json|sh|ps1)$/;
+/** The hooks: block of a role file, moved out (Claude Code ignores a plugin agent's own hooks), and the text without it. */
+export function roleHooksOf(text) {
+  const m = /^---\n([\s\S]*?)\n---\n/.exec(text);
+  const own = { PreToolUse: [], Stop: [] };
+  if (!m) return { text, hooks: own };
+  const keep = [];
+  let inHooks = false, event = null, matcher = '';
+  for (const line of m[1].split('\n')) {
+    if (/^hooks:\s*$/.test(line)) { inHooks = true; continue; }
+    if (inHooks && /^\S/.test(line)) inHooks = false;
+    if (!inHooks) { keep.push(line); continue; }
+    let x;
+    if ((x = /^  (\w+):\s*$/.exec(line))) { event = x[1]; matcher = ''; continue; }
+    if ((x = /matcher:\s*"([^"]*)"/.exec(line))) { matcher = x[1]; continue; }
+    if ((x = /kit-hooks\/([\w.-]+\.cjs)/.exec(line)) && own[event]) own[event].push(event === 'PreToolUse' ? [matcher, x[1]] : x[1]);
+  }
+  return { text: `---\n${keep.join('\n')}\n---\n${text.slice(m[0].length)}`, hooks: own };
+}
+const pluginHook = (mode, extra = {}) => ({ type: 'command', command: `NODE_OPTIONS= node "\${CLAUDE_PLUGIN_ROOT}/launch.cjs" ${mode}`, timeout: 10, ...extra });
+/** The plugin's hooks.json: K205's start wrapper for every tool call, and onFailure "block" where a failure would let a change through (K216). */
+export function pluginHooks() {
+  const start = `NODE_OPTIONS= sh "\${CLAUDE_PLUGIN_ROOT}/kit-tools/kit-start.sh" "$(command -v node)" "\${CLAUDE_PLUGIN_ROOT}/launch.cjs" || printf '%s' ${launch.shq(launch.START_FALLBACK)}`;
+  return { description: 'Methodology kit guards: one launcher for every event (built by kit.mjs build plugin).', hooks: {
+    SessionStart: [{ hooks: [pluginHook('session-start', { timeout: 30 })] }],
+    UserPromptSubmit: [{ hooks: [pluginHook('prompt')] }],
+    PreToolUse: [{ matcher: '.*', hooks: [{ type: 'command', command: start, timeout: 10, onFailure: 'block' }] }],
+    SubagentStop: [{ hooks: [pluginHook('subagent-stop')] }],
+    ConfigChange: [{ hooks: [pluginHook('config-change', { onFailure: 'block' })] }],
+  } };
+}
+/** K179: the marketplace file that pins the plugin to its tag and the plugin repo's commit (a git-subdir source). */
+export function marketplaceJson({ version, tag, sha: commit }) {
+  if (!/^v\d+\.\d+\.\d+$/.test(String(tag)) || !/^[0-9a-f]{40}$/.test(String(commit))) throw new Error('build plugin: the marketplace needs a release tag (vX.Y.Z) and the plugin repo commit (40 hex characters, --sha)');
+  return { name: 'methodology-kit', owner: { name: 'GoudyMT' }, plugins: [{ name: 'kit', description: `Methodology kit ${version}`, version,
+    source: { source: 'git-subdir', url: PLUGIN_REPO, path: 'plugins/kit', ref: tag, sha: commit } }] };
+}
+// The kit's tracked files (the release's own list), or a walk where the folder has no git.
+function kitFiles(kit) {
+  const r = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, '-c', 'core.quotepath=false', 'ls-files', '-z'], { encoding: 'utf8', cwd: SAFE_CWD, timeout: 30000, maxBuffer: 16 * 1024 * 1024 });
+  const list = r.status === 0 ? r.stdout.split('\0').filter(Boolean) : walk(kit, new Set(['.git', 'node_modules', 'reports'])).map((f) => toPosix(path.relative(kit, f)));
+  return list.filter((f) => !/^(tests|\.git)\//.test(f) && fs.existsSync(path.join(kit, f)) && fs.statSync(path.join(kit, f)).isFile()).sort();
+}
+/**
+ * Write the plugin for the kit folder into out (emptied first; only an empty folder or an earlier plugin build).
+ *
+ * Args:
+ *     kit: the kit folder (the checked-out release)
+ *     out: the plugin folder to write
+ *     release: { tag, commit } the build records in kit-build.json (K179), or null for an unreleased build
+ *
+ * Returns:
+ *     { files: count, manifest: count }
+ */
+export function buildPlugin({ kit, out, release = null }) {
+  const k = path.resolve(kit), o = path.resolve(out);
+  const inside = (a, b) => { const r = path.relative(b, a); return r === '' || (!r.startsWith('..') && !path.isAbsolute(r)); };
+  if (inside(o, k) || inside(k, o)) throw new Error('build plugin: --out must be outside the kit folder, and must not hold it');
+  // The build 23b sweep: only a folder an earlier build wrote is emptied (its kit-build.json names the kit, and it holds
+  // no git folder), never a plugin the owner wrote or a clone of the plugin repo.
+  let earlier = false;
+  try { earlier = JSON.parse(fs.readFileSync(path.join(o, 'kit-build.json'), 'utf8')).name === 'kit' && !fs.existsSync(path.join(o, '.git')); } catch { /* none */ }
+  if (fs.existsSync(o) && fs.readdirSync(o).length && !earlier) throw new Error(`build plugin: ${toPosix(o)} is not empty and holds no earlier plugin build`);
+  const config = JSON.parse(fs.readFileSync(path.join(k, 'kit.config.json'), 'utf8'));
+  const version = fs.readFileSync(path.join(k, 'VERSION'), 'utf8').trim();
+  const files = new Map();
+  const list = kitFiles(k);
+  for (const f of list) files.set(`kit/${f}`, fs.readFileSync(path.join(k, f)));
+  // The user layer at the root, as install user writes it: instruction text rendered, code as it is (a code file
+  // keeps its {{CLAUDE_HOME}} and reads the Claude folder from KIT_CLAUDE_HOME, which the launcher sets).
+  const roles = {};
+  for (const f of list.filter((x) => /^user\/(skills|agents|kit-hooks|kit-tools)\//.test(x))) {
+    const rel = f.slice('user/'.length);
+    let bytes = fs.readFileSync(path.join(k, f));
+    if (rel.endsWith('.md')) {
+      let text = render(bytes.toString('utf8'), { ownerName: config.ownerName, ownerProfile: '', claudeHome: '${CLAUDE_PLUGIN_ROOT}' });
+      const role = /^agents\/([\w-]+)\.md$/.exec(rel);
+      if (role) {
+        if (config.roles && config.roles[role[1]]) text = roleLines(text, config.roles[role[1]]);
+        const moved = roleHooksOf(text);
+        text = moved.text;
+        roles[role[1]] = moved.hooks;
+      }
+      bytes = Buffer.from(text);
+    }
+    files.set(rel, bytes);
+  }
+  const json = (v) => Buffer.from(`${JSON.stringify(v, null, 2)}\n`);
+  const sorted = (obj) => Object.fromEntries(Object.keys(obj).sort().map((key) => [key, obj[key]]));
+  files.set('roles.json', json(sorted(roles)));
+  files.set('launch.cjs', fs.readFileSync(path.join(k, 'user', 'kit-tools', 'plugin-launch.cjs')));
+  files.set('hooks/hooks.json', json(pluginHooks()));
+  files.set('.claude-plugin/plugin.json', json({ name: 'kit', version, description: `Methodology kit ${version} as a Claude Code plugin (built by kit.mjs build plugin; never edited by hand)` }));
+  files.set('kit-build.json', json({ name: 'kit', version, tag: release ? release.tag : null, commit: release ? release.commit : null }));
+  // The stamp the kit's guard reads the user-layer hooks against; no kitDir, so the start-up hook finds kit/ (K175).
+  const stampFiles = {};
+  for (const [rel, b] of [...files].filter(([rel]) => /^kit-(hooks|tools)\//.test(rel)).sort(([a], [b]) => (a < b ? -1 : 1))) stampFiles[rel] = sha(b);
+  files.set('kit-install.json', json({ version, release: Boolean(release), via: 'plugin', files: stampFiles }));
+  const manifest = {};
+  // The build 23b sweep: the role files and every skill's SKILL.md (their tools, model and hooks lines) are hashed too.
+  for (const rel of [...files.keys()].sort()) if ((MANIFEST_FILE.test(rel) && !/^kit\/docs\//.test(rel)) || /^agents\/[^/]+\.md$|^skills\/[^/]+\/SKILL\.md$/.test(rel)) manifest[rel] = sha(files.get(rel));
+  files.set('guard-manifest.json', json({ files: manifest }));
+  fs.rmSync(o, { recursive: true, force: true });
+  for (const rel of [...files.keys()].sort()) {
+    const dest = path.join(o, ...rel.split('/'));
+    fs.mkdirSync(path.dirname(dest), { recursive: true });
+    fs.writeFileSync(dest, files.get(rel));
+  }
+  return { files: files.size, manifest: Object.keys(manifest).length };
 }
 
 // Words that say nothing about which rule is meant.
@@ -2348,6 +2586,13 @@ function skillListing(file, prefix) {
   return Buffer.byteLength(`${prefix}${name}: ${desc}`);
 }
 
+// K232: an agent is listed as its name and description, then the tools it may use (all of them when none are named).
+function agentListing(file, prefix) {
+  const front = (fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').match(/^---\n([\s\S]*?)\n---/) || [])[1] || '';
+  const tools = ((front.match(/^tools:[ \t]*(.+)$/m) || [])[1] || '*').trim();
+  return skillListing(file, prefix) + Buffer.byteLength(` (Tools: ${tools})`);
+}
+
 /**
  * Measure what really loads before a session's first message (rule:kit-standards item 14): the project's own
  * start load (measure), the memory index, the global CLAUDE.md and its imports, and the listing line of every
@@ -2355,12 +2600,12 @@ function skillListing(file, prefix) {
  * organization's catalog are not on disk here and are not counted.
  *
  * Args:
- *     ctx: { projectDir, home }
+ *     ctx: { projectDir, home, hookText }: hookText is the start-up hook's text, counted as sent (K232)
  *
  * Returns:
- *     { parts: { project, memoryIndex, globalClaude, userSkills, plugins }, total }
+ *     { parts: { project, memoryIndex, globalClaude, userSkills, plugins, agents, startHook }, total }
  */
-export function measureReal({ projectDir, home }) {
+export function measureReal({ projectDir, home, hookText = '' }) {
   const size = (p) => (fs.existsSync(p) ? fs.statSync(p).size : 0);
   const skillFiles = (root) => walk(root).filter((f) => path.basename(f) === 'SKILL.md');
   const homeLoad = fs.existsSync(path.join(home, 'CLAUDE.md')) ? measure({ projectDir: home }).files.filter((f) => !f.file.startsWith('.claude/')) : [];
@@ -2370,6 +2615,10 @@ export function measureReal({ projectDir, home }) {
     globalClaude: homeLoad.reduce((s, f) => s + f.bytes, 0),
     userSkills: skillFiles(path.join(home, 'skills')).reduce((s, f) => s + skillListing(f, ''), 0),
     plugins: 0,
+    agents: [path.join(home, 'agents'), path.join(projectDir, '.claude', 'agents')]
+      .flatMap((d) => (fs.existsSync(d) ? fs.readdirSync(d).filter((n) => n.endsWith('.md')).map((n) => path.join(d, n)) : []))
+      .reduce((s, f) => s + agentListing(f, ''), 0),
+    startHook: Buffer.byteLength(String(hookText || '')),
   };
   let installed = {};
   try { installed = JSON.parse(fs.readFileSync(path.join(home, 'plugins', 'installed_plugins.json'), 'utf8')).plugins || {}; } catch { /* none */ }
@@ -2379,6 +2628,8 @@ export function measureReal({ projectDir, home }) {
     if (!entry || !fs.existsSync(entry.installPath)) continue;
     const prefix = key.split('@')[0] + ':';
     parts.plugins += skillFiles(path.join(entry.installPath, 'skills')).reduce((s, f) => s + skillListing(f, prefix), 0);
+    const agentDir = path.join(entry.installPath, 'agents');
+    if (fs.existsSync(agentDir)) parts.agents += fs.readdirSync(agentDir).filter((n) => n.endsWith('.md')).reduce((s, n) => s + agentListing(path.join(agentDir, n), prefix), 0);
   }
   return { parts, total: Object.values(parts).reduce((a, b) => a + b, 0) };
 }
@@ -2560,7 +2811,10 @@ function main(argv) {
     console.log(`restored: ${r.restored.join(', ') || 'none'}; kept (already there): ${r.kept.join(', ') || 'none'}`);
   } else if (cmd === 'measure' && argv.includes('--real')) {
     const dir = argv.slice(1).find((a) => a !== '--real') || process.cwd();
-    const r = measureReal({ projectDir: dir, home });
+    // K232: the start-up hook's text is part of what loads; built here as the hook builds it for a fresh session.
+    let hookText = '';
+    try { hookText = startHookText({ kit, home, projectDir: dir }); } catch { /* counted as none */ }
+    const r = measureReal({ projectDir: dir, home, hookText });
     for (const [k, v] of Object.entries(r.parts)) console.log(`${String(v).padStart(8)}  ${k}`);
     console.log(`${String(r.total).padStart(8)}  loaded before the first message (cap ${(loadKit(kit).config.caps || {}).realLoad || 'none'}); desktop-app catalog plugins not counted`);
   } else if (cmd === 'measure') {
@@ -2572,6 +2826,32 @@ function main(argv) {
     const hits = findRules({ kit, query: argv.slice(1).join(' ') });
     for (const h of hits) console.log(`rule:${h.id}  ${h.title}  (${h.module})`);
     if (!hits.length) console.log('No rule matched. Try other words, or read project/standards/INDEX.md.');
+  } else if (cmd === 'build' && target === 'plugin') {
+    // K174, K179: node scripts/kit.mjs build plugin --out <dir> [--marketplace <file> --sha <plugin repo commit>] [--unreleased]
+    const flag = (name) => { const i = argv.indexOf(name); return i >= 0 ? argv[i + 1] : undefined; };
+    const out = flag('--out');
+    if (!out) { console.error('build plugin: --out <dir> is needed'); process.exit(2); }
+    const rel = releaseState(kit);
+    const unreleased = argv.includes('--unreleased');
+    if (rel.problems.length && !unreleased) {
+      console.error(`build plugin refused: the kit folder is not a clean release, and a plugin is pinned to one:\n  ${rel.problems.join('\n  ')}\nCheck out the release tag, or pass --unreleased for a trial build.`);
+      process.exit(1);
+    }
+    const version = fs.readFileSync(path.join(kit, 'VERSION'), 'utf8').trim();
+    const head = spawnSync('git', ['-C', kit, ...NO_PROGRAMS, 'rev-parse', '-q', '--verify', 'HEAD^{commit}'], { encoding: 'utf8', cwd: SAFE_CWD }).stdout.trim();
+    const release = rel.problems.length ? null : { tag: `v${version}`, commit: head };
+    try {
+      const market = flag('--marketplace') ? marketplaceJson({ version, tag: release && release.tag, sha: flag('--sha') }) : null;
+      const r = buildPlugin({ kit, out, release });
+      if (market) {
+        fs.mkdirSync(path.dirname(path.resolve(flag('--marketplace'))), { recursive: true });
+        fs.writeFileSync(path.resolve(flag('--marketplace')), `${JSON.stringify(market, null, 2)}\n`);
+      }
+      console.log(`build plugin: wrote ${r.files} file(s) to ${toPosix(path.resolve(out))} (${r.manifest} in the guard manifest)${release ? `, pinned to ${release.tag} at ${release.commit.slice(0, 12)}` : ', unreleased'}${market ? `; marketplace ${toPosix(path.resolve(flag('--marketplace')))}` : ''}`);
+    } catch (e) {
+      console.error(e.message);
+      process.exit(1);
+    }
   } else if (cmd === 'build') {
     const tree = checkRoot(kit);
     const fixed = fixedHomePaths({ kit: tree });

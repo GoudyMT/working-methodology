@@ -6,6 +6,7 @@ tags:
   multi-agent-discipline: agents, subagents, parallel, swarm, fan-out
   swarm-contract: many agents, roles, review agents, approval table
   patterns-and-dispatch: dispatch, sessions, prongs, worktrees
+  where-work-runs: cloud, worker, PC, remote, offload
   agent-role-table: agent roles, access, tools, permissions, preloaded rules
   agent-team-adapter: agent team, builders, checkers, brief rules
   agent-canary: confirmation phrase, canary, drift check, close out, hand-off, respawn
@@ -19,7 +20,7 @@ tags:
 
 ### The Swarm Contract (NO swarm without one) {#swarm-contract}
 
-Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line "Kit tools this session"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
+Before any swarm (a sweep, a red-team, any fanout) write this table as a contract. STOP: no agent runs until the contract is approved - by `approve.mjs` (its command is in the start-up line "Kit tools this session"), run FIRST (APPROVED, the owner's standing approval: post its notice and go; rule:sweep-auto-approval; orchestrated: field 11) or by the owner (ASK: show the table and reasons). If it is not there, the kit's user layer is not installed: say so; the owner says yes. Why: a swarm without distinct questions buys clones at full price.
 
 | # | Role | The distinct question ONLY this role asks | Context injected | What a finding looks like | Token budget |
 |---|---|---|---|---|---|
@@ -50,6 +51,10 @@ Before any swarm (Pre-PR Deep Sweep, Mid-Design Red-Team, any fanout) write this
 **Dispatch - default is direct execution:** the main session builds small and medium features; agents are for genuinely parallel or wide work, or an independent review. Record tokens, time and real catches; recalibrate every 3-5 dispatches.
 
 **One session per prong:** each parallel prong runs in its own session, reporting to the main session. **Every plan has an "Execution approach" section** (per phase: direct, agents and their roles, or separate sessions), with the reasoning, its source and the expected time and cost, approved with the plan. Why: three prongs in one session bogged it down.
+
+### Where Work Runs {#where-work-runs}
+
+A cloud worker does only fixed jobs: tests, builds, gate checks, research, read-only review. A cloud build thread may push its own feature branch once `node .claude/secret-shapes.mjs` passes. Installs, sweeps, the PR and release verification stay on the owner's PC. A worker runs only through `worker.mjs`, on the owner's branch, from `_Templates/_Worker Brief Template.md`. Why: a cloud thread loads no repo hooks.
 
 ### Agent Role Table {#agent-role-table}
 

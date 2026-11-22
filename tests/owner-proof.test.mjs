@@ -82,8 +82,9 @@ test('the owner-proof guard refuses every tool write to the session transcripts 
 		// A message is only the value right after its flag; a redirect is never one.
 		['Bash', { command: 'git log "a b" > "~/.claude/projects/p/s.jsonl x"' }],
 		['Bash', { command: 'git commit -F "~/.claude/projects/p/s .jsonl"' }],
-		// A read piped on goes only into another reader.
-		['Bash', { command: 'cat ~/.claude/projects/p/s.jsonl | tee ~/x' }],
+		// A read piped on goes only into another reader, or a tee into a file the guard reads as a redirect.
+		['Bash', { command: 'cat ~/.claude/projects/p/s.jsonl | tee ~/.claude/projects/p/t.jsonl' }],
+		['Bash', { command: 'cat ~/.claude/projects/p/s.jsonl | tee -i ~/x' }],
 	];
 	for (const [tool, input] of deny) assert.equal(run(tool, input), 'deny', `${tool} ${JSON.stringify(input)}`);
 	// A session whose own folder is the Claude folder: a relative word is read from there.

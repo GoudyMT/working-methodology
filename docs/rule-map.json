@@ -25,6 +25,17 @@
    "tests": [],
    "workflows": []
   },
+  "where-work-runs": {
+   "guards": [],
+   "scripts": [
+    "user/kit-tools/worker.mjs"
+   ],
+   "tests": [
+    "tests/kit-rules.test.mjs",
+    "tests/worker.test.mjs"
+   ],
+   "workflows": []
+  },
   "agent-role-table": {
    "guards": [
     "user/kit-hooks/clean-tree.cjs",
@@ -34,7 +45,8 @@
     "scripts/kit.mjs"
    ],
    "tests": [
-    "tests/kit-helpers.mjs"
+    "tests/kit-helpers.mjs",
+    "tests/kit-plugin.test.mjs"
    ],
    "workflows": []
   },
@@ -89,6 +101,7 @@
    ],
    "tests": [
     "tests/kit-helpers.mjs",
+    "tests/kit-rules.test.mjs",
     "tests/kit-sweep.test.mjs"
    ],
    "workflows": []
@@ -103,7 +116,8 @@
    "guards": [],
    "scripts": [],
    "tests": [
-    "tests/kit-recall.test.mjs"
+    "tests/kit-recall.test.mjs",
+    "tests/kit-rules.test.mjs"
    ],
    "workflows": []
   },
@@ -155,6 +169,7 @@
     "tests/guards-outside.test.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
+    "tests/kit-plugin.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
     "tests/kit-rules.test.mjs",
@@ -163,6 +178,7 @@
     "tests/kit-sweep.test.mjs",
     "tests/lane-state.test.mjs",
     "tests/launcher-verify.test.mjs",
+    "tests/owner-grant.test.mjs",
     "tests/owner-proof.test.mjs",
     "tests/recall-ci.test.mjs",
     "tests/release-verify.test.mjs",
@@ -190,7 +206,9 @@
   "visual-design-collaboration": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/kit-install.test.mjs"
+   ],
    "workflows": []
   },
   "craft-floor": {
@@ -257,7 +275,9 @@
   "blocked-prompts": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/kit-install.test.mjs"
+   ],
    "workflows": []
   },
   "cost-first": {
@@ -488,6 +508,8 @@
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
+    "tests/kit-plugin.test.mjs",
+    "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/use-check.test.mjs"
@@ -679,9 +701,11 @@
    "guards": [],
    "scripts": [],
    "tests": [
+    "tests/ci-workflows.test.mjs",
     "tests/guards-hold.test.mjs",
     "tests/guards-outside.test.mjs",
     "tests/kit-install.test.mjs",
+    "tests/kit-plugin.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
     "tests/launcher-verify.test.mjs",
@@ -890,12 +914,10 @@
   "edit-discipline",
   "session-workflow",
   "what-this-file-is-not",
-  "visual-design-collaboration",
   "craft-floor",
   "design-for-human-error",
   "enumerate-before-you-count",
   "snag-response",
-  "blocked-prompts",
   "cost-first",
   "anti-hallucination",
   "dual-horizon",

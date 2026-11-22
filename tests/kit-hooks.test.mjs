@@ -13,6 +13,13 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 import { ATTRIBUTION, CORPUS, FAKE_PHRASE, GOOD_MAP, NAMES, ROWS, addThirdParty, canary, canaryLog, canaryRepo, caseKit, commitAll, excludeFile, firstPush, front, g, gitTree, honestBody, kitInstall, leanAudit, localProject, makeKit, makeTemp, mapRepo, mapRun, msgFile, nameRun, notesAudit, overlayKit, phraseLine, promptGate, read, readyProject, released, require, role, ruleFiles, runHook, sessionStartReport, status, stdAudit, trackRun, words } from './kit-helpers.mjs';
 
+// The 1.49.0 commit hook was added from Windows with no executable bit, so off Windows git skipped it and said so
+// only in a hint: a commit by a tool-named author went through in a fresh clone.
+// why: guards rule:commit-message-format
+test('the kit source records its own commit and push hooks as executable, so git runs them off Windows', { windows: 'also' }, () => {
+  for (const h of ['commit-msg', 'pre-push']) assert.match(spawnSync('git', ['ls-files', '-s', `.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
+});
+
 // why: guards rule:outward-acts
 test('the git pre-push hook is executable, in the kit and where install writes it', { windows: true }, () => {
   for (const h of ['pre-push', 'pre-commit']) assert.match(spawnSync('git', ['ls-files', '-s', `project/.githooks/${h}`], { encoding: 'utf8' }).stdout, /^100755 /, h);
@@ -989,6 +996,38 @@ test('the PR title check holds a title to the commit subject rule', () => {
   }
   // Names the field shares in the same shape are words (the K61 sweep).
   for (const ok of ['fix: the Haiku price line and its 100K warning', 'feat: guards read UTF-8 and v1.33.0', 'fix: the SHA256 check reads UTF8 on ARM64', 'feat: sync to S3 from EC2']) assert.equal(nameRun(['title', ok]).status, 0, ok);
+});
+
+// The cloud build study (1.49.0): a code typed in lowercase or with a dot is still a code, in a subject, a title and a
+// branch; the known words stay words in any case.
+// why: guards rule:commit-message-format
+test('the name check reads a lowercase or dotted list code as a code and keeps known words', () => {
+  for (const bad of ['fix: k212-k214 guard reads', 'fix: close r7.1 in the hook', 'feat: the e12 merge steps', 'fix: R7.1 push yes']) {
+    const r = nameRun(['title', bad]);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /internal code/, bad);
+  }
+  for (const ok of ['fix: v8 and x86 builds read sha256 and utf8', 'feat: guards read v1.33.0 and node 20.1', 'fix: mp3 and es6 files', 'chore: move to 1.50.0'])
+    assert.equal(nameRun(['title', ok]).status, 0, ok);
+  for (const bad of ['fix/guard-k212', 'feat/close-r7-1-hold', 'fix/the-e12-steps']) assert.equal(nameRun(['branch', bad]).status, 1, bad);
+  for (const ok of ['feat/cloud-worker-and-plugin-build', 'fix/v8-and-x86-builds', 'feat/sha256-check']) assert.equal(nameRun(['branch', ok]).status, 0, ok);
+});
+
+// The build 23b sweep: reading every lowercase letters-and-digits word as a code refused common tech words (d3, m1,
+// p95, py312, l2), so an existing branch could no longer be pushed. A lowercase code is one letter and two or three
+// digits, or a code with a range or a dot; a capital code may end in a letter or carry two dots (G1a, R7.1.2).
+// why: guards rule:commit-message-format
+test('the name check passes common lowercase tech words and still reads list codes in every shape', () => {
+  for (const ok of ['feat: update d3 charts and d3.js', 'chore: add py312 support', 'fix: p95 and p99 latency', 'feat: support apple m1 and m2', 'feat: an l2 cache', 'fix: vp9 decode', 'test: e2e on k8s', 'docs: a11y and i18n for b2b', 'chore: cs50 notes for q4'])
+    assert.equal(nameRun(['title', ok]).status, 0, ok);
+  for (const ok of ['feat/apple-m1-support', 'perf/p99-latency', 'chore/py312-support', 'feat/add-l2-cache', 'feat/update-d3-charts']) assert.equal(nameRun(['branch', ok]).status, 0, ok);
+  for (const bad of ['fix: the G1a reader', 'fix: close R7.1.2', 'fix: k21 and r7.1']) {
+    const r = nameRun(['title', bad]);
+    assert.equal(r.status, 1, bad);
+    assert.match(r.stderr, /internal code/, bad);
+  }
+  for (const bad of ['fix/guard-k212', 'feat/close-r7-1-hold', 'feature/b2-calendar']) assert.equal(nameRun(['branch', bad]).status, 1, bad);
+  assert.equal(nameRun(['repo', 'tool-v2']).status, 0, 'a version in a repo name');
 });
 
 // why: guards rule:branching (a repo name is public for good, like a branch name)

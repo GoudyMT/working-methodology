@@ -1,6 +1,14 @@
 {
   "ownerName": "Max",
   "retired": { "project": { "_Working Standards.md": "AGENTS.md", ".claude/attribution.mjs": [".claude/pr-body-audit.mjs", ".claude/pr-body-audit-lean.mjs"] }, "user": { "skills/plan-feature/references/explore-and-options.md": ["skills/brainstorm/references/question-craft.md", "skills/plan-feature/SKILL.md"] } },
+  "roles": {
+    "builder": { "model": "claude-sonnet-5-5", "effort": "high" },
+    "checker": { "model": "claude-opus-5-5", "effort": "high" },
+    "orchestrator": { "model": "claude-opus-5-5", "effort": "high" },
+    "reviewer": { "model": "claude-sonnet-5-5", "effort": "high" },
+    "scanner": { "model": "claude-haiku-5-5", "effort": "medium" }
+  },
+  "models": { "measured": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], "retiring": [] },
   "caps": { "module": 14000, "agentsMd": 22000, "sessionStart": 45500, "realLoad": 80000 },
   "vendor": {
     "dir": "../kit-vendor",

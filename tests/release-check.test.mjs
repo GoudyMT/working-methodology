@@ -315,3 +315,47 @@ test('ci-wait says once at ten minutes that a run is still going, and keeps to i
 	assert.equal((await ciWait({ commit: 'abc1234', every: 60 }, none.deps)).code, 2);
 	assert.match(none.lines.at(-1), /no CI run started/);
 });
+
+// K179 (build 23b): each release's plugin is published pinned to the tag and a commit, so the build must record which
+// kit commit it came from, and that record must be the tag's commit, or the plugin ships files the tag does not hold.
+// why: catches a published plugin built from another commit than the kit tag's
+test('a plugin build whose recorded tag or commit is not the kit tag\'s is missing (K179)', () => {
+	const t = setup();
+	const plugin = kitTemp.makeTemp('rc-plugin-');
+	const record = (o) => fs.writeFileSync(path.join(plugin, 'kit-build.json'), JSON.stringify({ name: 'kit', version: '1.1.0', ...o }));
+	record({ tag: 'v1.1.0', commit: t.merged });
+	const ok = releaseCheck({ ...t.opts, plugin }, t.deps);
+	assert.equal(ok.ok, true, t.lines.join('\n'));
+	assert.ok(t.lines.some((l) => /PASS plugin build pinned to v1\.1\.0/.test(l)), t.lines.join('\n'));
+	record({ tag: 'v1.1.0', commit: 'b'.repeat(40) });
+	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /plugin build pinned to v1\.1\.0: .*bbbbbbbbbbbb/);
+	record({ tag: 'v1.0.9', commit: t.merged });
+	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /records v1\.0\.9/);
+	fs.rmSync(path.join(plugin, 'kit-build.json'));
+	assert.match(all(releaseCheck({ ...t.opts, plugin }, t.deps)), /kit-build\.json/);
+	assert.equal(argsOf(['v1', '--pr', '5', '--plugin', 'p']).plugin, 'p');
+});
+
+// The build 23b sweep: the tag and commit a plugin records are two fields anyone can write, so with the release copy
+// the check builds the plugin again from it and holds the guard manifests equal.
+// why: catches a published plugin whose files are not the release's though its record says they are
+test('a plugin build whose files differ from a build of the release copy is missing', () => {
+	const t = setup();
+	const plugin = kitTemp.makeTemp('rc-plugin-');
+	fs.writeFileSync(path.join(plugin, 'kit-build.json'), JSON.stringify({ name: 'kit', version: '1.1.0', tag: 'v1.1.0', commit: t.merged }));
+	const manifest = (files) => JSON.stringify({ files });
+	fs.writeFileSync(path.join(plugin, 'guard-manifest.json'), manifest({ 'launch.cjs': 'aa' }));
+	const built = [];
+	const buildFrom = (want) => (copy, out) => { built.push(copy); fs.mkdirSync(out, { recursive: true }); fs.writeFileSync(path.join(out, 'guard-manifest.json'), manifest(want)); return { status: 0 }; };
+	const same = releaseCheck({ ...t.opts, copy: t.copy, plugin }, { ...t.deps, buildPlugin: buildFrom({ 'launch.cjs': 'aa' }) });
+	assert.ok(t.lines.some((l) => /PASS plugin files match a build of the release copy/.test(l)), t.lines.join('\n'));
+	assert.deepEqual(built, [t.copy]);
+	assert.ok(!same.missing.some((m) => /plugin files/.test(m)), same.missing.join('\n'));
+	const other = releaseCheck({ ...t.opts, copy: t.copy, plugin }, { ...t.deps, buildPlugin: buildFrom({ 'launch.cjs': 'bb' }) });
+	assert.match(all(other), /plugin files.*launch\.cjs/);
+	// A copy with a changed file is not the release: its build script is never run.
+	fs.writeFileSync(path.join(t.copy, 'extra.txt'), 'x\n');
+	built.length = 0;
+	assert.match(all(releaseCheck({ ...t.opts, copy: t.copy, plugin }, { ...t.deps, buildPlugin: buildFrom({ 'launch.cjs': 'aa' }) })), /not the clean tag/);
+	assert.deepEqual(built, [], 'the build ran from a changed copy');
+});

@@ -10,6 +10,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | multi-agent-discipline | Multi-Agent Discipline | `standards/agent-teams.md` | agents, subagents, parallel, swarm, fan-out |
 | swarm-contract | The Swarm Contract (NO swarm without one) | `standards/agent-teams.md` | many agents, roles, review agents, approval table |
 | patterns-and-dispatch | Patterns and Dispatch | `standards/agent-teams.md` | dispatch, sessions, prongs, worktrees |
+| where-work-runs | Where Work Runs | `standards/agent-teams.md` | cloud, worker, PC, remote, offload |
 | agent-role-table | Agent Role Table | `standards/agent-teams.md` | agent roles, access, tools, permissions, preloaded rules |
 | agent-canary | Agent Canary | `standards/agent-teams.md` | confirmation phrase, canary, drift check, close out, hand-off, respawn |
 | agent-team-adapter | Agent-Team Build: Project Adapter (TEMPLATE) | `standards/agent-teams.md` | agent team, builders, checkers, brief rules |

@@ -1,0 +1,69 @@
+# S1 (the build 23b sweep): a cloud build thread pushes its own feature branch, and a cloud session loads no pre-push
+# hook, so the secret scan and the name check the PC runs at push never ran; the PR's scans come only once a PR is open,
+# and this repo is public. Every push to a branch other than main runs main's copies of both: a slip-catcher for a
+# cloud push, not a lock (the branch carries this file; see the Same check as main step). About one minute a push.
+# Actions are pinned to full commit SHAs, so a moved tag cannot change what runs here.
+name: Branch push
+
+on:
+  push:
+    branches-ignore: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: branch-push-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  push-checks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Main's scripts
+        shell: bash
+        env:
+          # A replace ref would hand the branch's own blob back as main's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          mkdir -p "$RUNNER_TEMP/main"
+          git archive origin/main project/.claude | tar -x -C "$RUNNER_TEMP/main"
+
+      # The branch carries this file, so it could change its own check: once main has the file, a branch that changes
+      # it fails here. Still a slip-catcher (a branch can edit this step too); GitHub's own secret scanning and push
+      # protection, on for this repo, are the block a branch cannot change.
+      - name: Same check as main
+        shell: bash
+        run: |
+          if git cat-file -e origin/main:.github/workflows/branch-push.yml 2> /dev/null; then
+            git diff --quiet origin/main HEAD -- .github/workflows/branch-push.yml || { echo "this branch changes branch-push.yml; main's copy is the check"; exit 1; }
+          fi
+
+      # Every commit the branch holds past main, one by one, as the pre-push hook reads a push (a key added and then
+      # removed still went out); each run reads the whole branch, so a run cancelled by a later push loses nothing.
+      # Never prints a value.
+      - name: Secret scan
+        shell: bash
+        run: |
+          printf 'refs/heads/%s %s refs/heads/%s %s\n' "$GITHUB_REF_NAME" "$(git rev-parse HEAD)" "$GITHUB_REF_NAME" "$(git rev-parse origin/main)" \
+            | node "$RUNNER_TEMP/main/project/.claude/secret-shapes.mjs" --push
+
+      - name: Branch and commit names
+        shell: bash
+        run: |
+          node "$RUNNER_TEMP/main/project/.claude/name-check.mjs" branch "$GITHUB_REF_NAME"
+          for c in $(git rev-list --no-merges origin/main..HEAD); do
+            git log -1 --format=%B "$c" > "$RUNNER_TEMP/msg.txt"
+            node "$RUNNER_TEMP/main/project/.claude/name-check.mjs" message "$RUNNER_TEMP/msg.txt" || { echo "commit $c"; exit 1; }
+          done

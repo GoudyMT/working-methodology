@@ -888,6 +888,8 @@ test('every recall session runs in the probe folder with the question as its inp
   assert.match(calls[0].opts.cwd.replace(/\\/g, '/'), /kit-probes\/[0-9a-f]{6}\/p[0-9a-f]{6}$/);
   assert.deepEqual(calls.map((c) => c.opts.input), ['First?', 'Second?']);
   assert.equal(calls[0].args[calls[0].args.indexOf('--setting-sources') + 1], 'project');
+  // K177 (build 23b): a planted .mcp.json in the probe must not add tools or start a server in a scored session.
+  assert.ok(calls.every((c) => c.args.includes('--strict-mcp-config')), 'every recall session ignores project MCP servers (K177)');
   // MC2: recall names its model and effort, pinned to what the main session really runs (workbench MEASURE.md), so a
   // saved default or a new release never moves the ruler.
   assert.equal(calls[0].args[calls[0].args.indexOf('--model') + 1], 'claude-opus-5-5');
@@ -1581,4 +1583,102 @@ test('a recall run refuses rule text over its size cap before any session starts
   fs.writeFileSync(path.join(kit, 'project', 'AGENTS.md'), 'x'.repeat(200));
   const ok = spawnSync(process.execPath, [path.resolve('scripts/recall.mjs'), 'cand', kit], { encoding: 'utf8', env: { ...process.env, KIT_CLAUDE_HOME: path.join(kit, 'no-home') } });
   assert.doesNotMatch(ok.stderr, /over its cap/, 'under the caps, the run goes on to its next check');
+});
+
+// K231 (S7, build 23b): sessions run with project settings only never read the Claude folder's own CLAUDE.md, so every
+// arm was scored on whatever global file sat at the real ~/.claude, and a candidate's user/CLAUDE.md change was never
+// measured ("Not measured: the user layer changes" in every scores entry). Each arm now carries the CLAUDE.md its own
+// throwaway folder holds, checked against its install record and its own kit's source, as a parent folder's file of its
+// probe; a hand-edited one is still refused before any session starts.
+// why: catches a candidate's user/CLAUDE.md change that its recall sessions never read, so it was never scored
+test('recall (K231): an arm carries its own global CLAUDE.md into its probe, and a hand-edited one is refused', async () => {
+  const { recallRun } = await recallTools();
+  const { kit } = makeKit();
+  fs.writeFileSync(path.join(kit, 'user', 'CLAUDE.md'), '# Global\nA candidate line.\nOwner: {{OWNER_NAME}}\n{{OWNER_PROFILE}}\n');
+  const osHome = makeTemp('osh-k231-');
+  const home = path.join(osHome, 'kit-probes', 'cfg-cand');
+  fs.mkdirSync(home, { recursive: true });
+  install({ kit, home, target: 'user', release: { release: false, describe: 'abc1234' } });
+  const own = read(path.join(home, 'CLAUDE.md'));
+  assert.match(own, /A candidate line\./);
+  const text = read(path.resolve('docs/evals/recall-questions.md'));
+  const kitTools = { releaseState: () => ({ problems: ['not a tag'] }), projectSlug: (d) => path.basename(d), forget: () => ({ removed: [], why: 'no guard record names it' }) };
+  let seen = [];
+  const run = (cmd, args, opts) => {
+    if (cmd === 'claude' && args[0] === 'auth') return { status: 0, stdout: JSON.stringify({ configDirectory: home }) };
+    if (cmd === 'claude' && args[0] === '-p') { const f = path.join(path.dirname(opts.cwd), 'CLAUDE.md'); seen.push(fs.existsSync(f) ? read(f) : null); }
+    return { status: 0, stdout: 'an answer' };
+  };
+  const go = () => recallRun({ label: 'k231-cand', kitDir: kit, noKit: false, home, osHome, env: {}, text, when: 'w', outDir: makeTemp('out-'), kitTools, run });
+  const out = go();
+  assert.ok(seen.length > 0 && seen.every((t) => t === own), 'every session reads the arm\'s own global CLAUDE.md as a parent folder\'s file');
+  assert.match(read(out), /^User layer: own \(CLAUDE\.md sha256 [0-9a-f]{12}\)$/m);
+  // The real ~/.claude/CLAUDE.md also loads as a parent file, so the arm did not carry only its own.
+  fs.mkdirSync(path.join(osHome, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(osHome, '.claude', 'CLAUDE.md'), '# the real global\n');
+  // pin: 1 recall-score reads this header line into the sealed map
+  assert.match(read(go()), /^User layer: own beside the real ~\/\.claude\/CLAUDE\.md \(CLAUDE\.md sha256 [0-9a-f]{12}\)$/m);
+  fs.rmSync(path.join(osHome, '.claude'), { recursive: true });
+  // A hand edit to the throwaway folder, or a kit source the folder was not installed from, is refused before any session.
+  for (const [what, edit, undo] of [
+    ['a hand edit', () => fs.appendFileSync(path.join(home, 'CLAUDE.md'), 'a hand edit\n'), () => fs.writeFileSync(path.join(home, 'CLAUDE.md'), own)],
+    ['another kit source', () => fs.writeFileSync(path.join(kit, 'user', 'CLAUDE.md'), '# Global\nOwner: {{OWNER_NAME}}\n{{OWNER_PROFILE}}\n'), () => fs.writeFileSync(path.join(kit, 'user', 'CLAUDE.md'), '# Global\nA candidate line.\nOwner: {{OWNER_NAME}}\n{{OWNER_PROFILE}}\n')],
+  ]) {
+    edit();
+    seen = [];
+    assert.throws(go, /not this arm's own user layer: CLAUDE\.md changed by hand or installed from another kit/, what);
+    assert.deepEqual(seen, [], `${what}: no session ran`);
+    undo();
+  }
+  // The control carries none.
+  seen = [];
+  const control = recallRun({ label: 'k231-control', kitDir: null, noKit: true, home, osHome, env: {}, text, when: 'w', outDir: makeTemp('out-'), kitTools, run });
+  assert.ok(seen.every((t) => t === null));
+  assert.match(read(control), /^User layer: none \(control\)$/m);
+});
+
+// K231 (S7, flag F5): user/CLAUDE.md is in every session's start text, but the gate's trigger never named it, so a PR
+// changing only it (K219) passed the gate with no score.
+// why: guards rule:kit-standards: a user/CLAUDE.md change that merged with no recall score
+test('recall gate (K231): a PR that changes only user/CLAUDE.md needs a gate line', async () => {
+  const { checkGate } = await recallTools();
+  const r = checkGate(gateFacts({ changed: ['user/CLAUDE.md'], added: [] }));
+  assert.equal(r.ok, false);
+  assert.match(r.detail, /record a recall run/);
+  // The user layer's code and skills stay graded by their tests.
+  for (const f of ['user/kit-tools/kit-launch.cjs', 'user/skills/pr-body/SKILL.md']) assert.equal(checkGate(gateFacts({ changed: [f], added: [] })).ok, true, f);
+});
+
+// K231 (S7): the score tool says when the user layer was not measured, from each run's own header, so the entry's note
+// is never typed: only a gate whose every candidate and release run carried only its own CLAUDE.md drops it.
+// why: catches a Not measured line left out when an arm ran on another global file (the score prints it; no gate reads it)
+test('recall-score (K231): the user layer is called measured only when every candidate and release run carried its own', async () => {
+  const { blind } = await import('../scripts/recall-score.mjs');
+  const dir = makeTemp('rk231-');
+  const keysText = read(path.resolve('docs/evals/recall-questions.md'));
+  const n = (await recallTools()).questionCount(keysText, (await recallTools()).currentVersion(keysText));
+  const clean = [[], []];
+  const cli = (layer) => {
+    const runs = Object.keys(fiveEach(Array(5).fill(clean))).map((name) => {
+      const f = path.join(dir, `${name}.md`);
+      fs.writeFileSync(f, ['# Recall run: ' + name, '', 'When: 2026-11-20T10:00:00.000Z', `User layer: ${layer(name)}`, '', ...Array.from({ length: n }, (_, i) => `## ${i + 1}. q\n\nKey: k\n\nAnswer:\n\n> a\n\nScore: _\n`)].join('\n'));
+      return f;
+    });
+    const out = path.join(dir, `blind-${Math.random().toString(16).slice(2)}`);
+    const { map } = blind(out, runs, () => 0);
+    const lines = Object.keys(map).flatMap((id) => Array.from({ length: n }, (_, i) => `${id} Q${i + 1}: ${map[id].startsWith('control') ? 0 : 1}`));
+    fs.writeFileSync(path.join(dir, 'a.txt'), lines.join('\n'));
+    fs.writeFileSync(path.join(dir, 'b.txt'), lines.join('\n'));
+    return spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', path.join(dir, 'a.txt'), path.join(dir, 'b.txt'), path.join(out, 'sealed-map.json'), 'kit-x'], { encoding: 'utf8' });
+  };
+  const own = cli((name) => (name.startsWith('control') ? 'none (control)' : `own (CLAUDE.md sha256 ${name.startsWith('cand') ? 'aaaaaaaaaaaa' : 'bbbbbbbbbbbb'})`));
+  assert.equal(own.status, 0, own.stdout + own.stderr);
+  assert.doesNotMatch(own.stdout, /Not measured: the user layer/);
+  for (const other of ['own beside the real ~/.claude/CLAUDE.md (CLAUDE.md sha256 aaaaaaaaaaaa)', 'none: the Claude folder holds no CLAUDE.md']) {
+    const r = cli((name) => (name === 'base-3' ? other : name.startsWith('control') ? 'none (control)' : 'own (CLAUDE.md sha256 aaaaaaaaaaaa)'));
+    assert.ok(r.stdout.split('\n').includes(`Not measured: the user layer (base: ${other})`), r.stdout);
+  }
+  // An old run with no User layer line is not measured either.
+  const old = cli((name) => (name === 'cand-1' ? '' : 'own (CLAUDE.md sha256 aaaaaaaaaaaa)')).stdout.split('\n').find((l) => l.startsWith('Not measured: the user layer')) || '';
+  for (const token of ['cand', 'no User layer line']) assert.ok(old.includes(token), old);
 });
