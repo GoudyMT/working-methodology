@@ -183,18 +183,18 @@ test('T19 spec 7: a role line alone is never ok and says the record is empty', (
 	assert.ok(r.errors.some((e) => /empty/i.test(e)), JSON.stringify(r.errors));
 });
 
-// why: a notChecked line with an empty string must be an error on line 2, or a blank gap is counted as an honest disclosure.
-test('T20 spec 4: a notChecked line with an empty string is an error on line 2', () => {
+// why: a notChecked line with an empty string must be an error on line 3, or a blank gap is counted as an honest disclosure.
+test('T20 spec 4: a notChecked line with an empty string is an error on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"notChecked": ""}'));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
 });
 
 // why: a notChecked given as a number must be refused, or a count typed as a value passes as a disclosure.
-test('T21 spec 4: a numeric notChecked is an error naming notChecked on line 2', () => {
+test('T21 spec 4: a numeric notChecked is an error naming notChecked on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"notChecked": 5}'));
 	assert.equal(r.ok, false);
-	assert.ok(r.errors.some((e) => /^line 2: .*`notChecked`/.test(e)), JSON.stringify(r.errors));
+	assert.ok(r.errors.some((e) => /^line 3: .*`notChecked`/.test(e)), JSON.stringify(r.errors));
 });
 
 // why: a note line with no writer must be an error naming writer on line 2, or an anonymous note is accepted into the record.
@@ -205,17 +205,17 @@ test('T22 spec 4: a note line without a writer is an error naming writer on line
 });
 
 // why: an empty note text with a writer must be refused, or a blank note is counted as a finished note.
-test('T23 spec 4: a note with an empty text is an error naming note on line 2', () => {
+test('T23 spec 4: a note with an empty text is an error naming note on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"note": "", "writer": "tester"}'));
 	assert.equal(r.ok, false);
-	assert.ok(r.errors.some((e) => /^line 2: .*`note`/.test(e)), JSON.stringify(r.errors));
+	assert.ok(r.errors.some((e) => /^line 3: .*`note`/.test(e)), JSON.stringify(r.errors));
 });
 
 // why: an empty writer must be refused, or a note with no name behind it is accepted as signed.
-test('T24 spec 4: a note with an empty writer is an error naming writer on line 2', () => {
+test('T24 spec 4: a note with an empty writer is an error naming writer on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"note": "ok", "writer": ""}'));
 	assert.equal(r.ok, false);
-	assert.ok(r.errors.some((e) => /^line 2: .*`writer`/.test(e)), JSON.stringify(r.errors));
+	assert.ok(r.errors.some((e) => /^line 3: .*`writer`/.test(e)), JSON.stringify(r.errors));
 });
 
 // why: the result must carry findings in order and counts for notChecked and notes, or the CLI and callers read the wrong fields.
