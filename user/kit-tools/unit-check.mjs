@@ -69,11 +69,27 @@ function parseTap(out) {
 	return states;
 }
 
+// Whether a test name is one a loop's name makes: its literal head and tail, and its middle literals in order, with any
+// text in each slot. Plain string search, not a regex, so the time is linear in the name's length.
+function fitsSlots(name, n) {
+	const parts = name.split(/(?:\$\{[^}]*\})+/);
+	const head = parts[0];
+	const tail = parts[parts.length - 1];
+	if (n.length < head.length + tail.length || !n.startsWith(head) || !n.endsWith(tail)) return false;
+	const end = n.length - tail.length;
+	let at = head.length;
+	for (const mid of parts.slice(1, -1)) {
+		const i = n.indexOf(mid, at);
+		if (i < 0 || i + mid.length > end) return false;
+		at = i + mid.length;
+	}
+	return true;
+}
+
 // A loop's name (with a ${...}) stands for the names it makes.
 function stateOf(states = new Map(), name) {
 	if (!name.includes('${')) return states.get(name) || 'fail';
-	const re = new RegExp(`^${name.split(/(?:\$\{[^}]*\})+/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`);
-	const made = [...states].filter(([n]) => re.test(n)).map(([, s]) => s);
+	const made = [...states].filter(([n]) => fitsSlots(name, n)).map(([, s]) => s);
 	if (made.length === 0) return 'fail';
 	return made.includes('fail') ? 'fail' : made.includes('skip') ? 'skip' : 'pass';
 }
