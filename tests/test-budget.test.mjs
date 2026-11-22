@@ -65,27 +65,34 @@ test('B1 spec S1: test-budget prints one category line with its ceiling, and the
 });
 
 // why: catches a guard file or Risk high that does not fire guard, so a hook or gate change gets a logic budget (S2).
-test('B2 spec S2: Risk high or a GUARD_PATHS file fires guard, and the list is imported from tester-model.mjs', async () => {
+test('B2 spec S2: Risk high or any GUARD_PATHS entry fires guard, and a near-miss folder name does not', async () => {
 	assert.ok(fs.existsSync(TESTER), 'user/kit-tools/tester-model.mjs is missing');
 	const { GUARD_PATHS } = await import(pathToFileURL(TESTER).href);
-	assert.ok(GUARD_PATHS.includes('approve.mjs'));
 	const high = runBudget(['--files', 'src/a.mjs', '--risk', 'high']);
 	assert.equal(high.status, 0, out(high));
 	assert.match(high.stdout, /^category: guard \(ceiling 25; /m);
-	// Control: a GUARD_PATHS file at Risk low is guard too, and a plain file at Risk low is not.
-	const listed = runBudget(['--files', 'user/kit-tools/approve.mjs', '--risk', 'low']);
-	assert.match(listed.stdout, /^category: guard /m);
+	// Each GUARD_PATHS entry gets a file it names: a folder anywhere in the path, a file-name glob, or an exact file name.
+	// Run from the tester-model list itself, so a copy in test-budget.mjs that drops an entry fails here.
+	const sample = (g) => (g.endsWith('/') ? `user/${g}probe.cjs` : g.includes('*') ? g.replace('*', 'probe') : `user/tools/${g}`);
+	for (const g of GUARD_PATHS) {
+		const res = runBudget(['--files', sample(g), '--risk', 'low']);
+		assert.equal(res.status, 0, `${g}: ${out(res)}`);
+		assert.match(res.stdout, /^category: guard \(ceiling 25; /m, `${g} gives its file the guard category`);
+	}
+	// Control: a plain file at Risk low is not guard, and a folder whose name only ends like a guard folder is not either.
 	const plain = runBudget(['--files', 'src/a.mjs', '--risk', 'low']);
+	assert.equal(plain.status, 0, out(plain));
 	assert.doesNotMatch(plain.stdout, /^category: guard /m);
-	// Never a copy: the list comes from tester-model.mjs, not a literal in test-budget.mjs.
-	const src = fs.readFileSync(BUDGET, 'utf8');
-	assert.match(src, /import\s*\{[^}]*\bGUARD_PATHS\b[^}]*\}\s*from\s*['"]\.\/tester-model\.mjs['"]/);
-	assert.doesNotMatch(src, /['"]approve\.mjs['"]/);
+	const near = runBudget(['--files', 'src/my-kit-hooks/a.mjs', '--risk', 'low']);
+	assert.equal(near.status, 0, out(near));
+	assert.doesNotMatch(near.stdout, /^category: guard /m);
 });
 
 // why: catches an unmapped file counted as docs or glue, so a file the adapter never named gets a cheap budget (S3).
-test('B3 spec S3: the testCategories map sets categories by path or glob, and a file the map does not name counts as logic', () => {
-	const map = mapFile({ 'docs/*.md': 'docs', 'kit-tools/exact.cjs': 'glue' });
+test('B3 spec S3: the testCategories map sets categories by path or glob, and a file the map does not name counts as logic', async () => {
+	const { CEILING } = await import(pathToFileURL(BUDGET).href);
+	assert.equal(CEILING.data, 2);
+	const map = mapFile({ 'docs/*.md': 'docs', 'kit-tools/exact.cjs': 'glue', 'fixtures/*.json': 'data' });
 	const unmapped = runBudget(['--files', 'unmapped/z.txt', '--map', map]);
 	assert.equal(unmapped.status, 0, out(unmapped));
 	assert.match(unmapped.stdout, /^category: logic \(ceiling 15; /m);
@@ -94,13 +101,16 @@ test('B3 spec S3: the testCategories map sets categories by path or glob, and a 
 	assert.match(globbed.stdout, /^category: docs \(ceiling 3; /m);
 	const exact = runBudget(['--files', 'kit-tools/exact.cjs', '--map', map]);
 	assert.match(exact.stdout, /^category: glue \(ceiling 6; /m);
+	const data = runBudget(['--files', 'fixtures/x.json', '--map', map]);
+	assert.equal(data.status, 0, out(data));
+	assert.match(data.stdout, /^category: data \(ceiling 2; /m);
 });
 
 // why: catches a plan row lowering a category below the computed one, so a unit gets a cheaper budget than its files earn (S4).
 test('B4 spec S4: a Category above the computed one is raised to it, and one below is refused naming both', () => {
 	const raised = runBudget(['--files', 'src/a.mjs', '--category', 'guard']);
 	assert.equal(raised.status, 0, out(raised));
-	assert.match(raised.stdout, /^category: guard /m);
+	assert.match(raised.stdout, /^category: guard \(ceiling 25; raised from logic by the plan row\)/m);
 	// Control: a lower given category is refused, and the message names both the given and the computed one.
 	const lower = runBudget(['--files', 'src/a.mjs', '--category', 'docs']);
 	assert.equal(lower.status, 1, out(lower));
