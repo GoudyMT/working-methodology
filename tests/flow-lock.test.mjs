@@ -69,15 +69,11 @@ function planRepo(text = PLAN_OK) {
 const logLine = (over = {}) => `${JSON.stringify({ at: new Date().toISOString(), plan: 'plan.md', units: 2, faults: 0, ...over })}\n`;
 const start = (plan) => flow(['start', plan, '--role', 'builder']);
 
-// why: catches a builder start going ahead when plan-graph never ran on the plan
-test('L1: start exits 1 when the plan has no plan-graph log line', () => {
-	const { plan } = planRepo();
-	failed(start(plan), NO_LOG);
-});
-
-// why: catches a clean plan-graph run being refused so no builder can ever start
-test('L1: start exits 0 when the latest log line has no faults and is newer than the plan file', () => {
+// why: catches a builder start going ahead when plan-graph never ran, and a clean run refused so no builder can start
+test('L1: start exits 1 when the plan has no plan-graph log line, and 0 once a clean line is logged', () => {
 	const { plan, log } = planRepo();
+	failed(start(plan), NO_LOG);
+	// Control: a clean line, newer than the plan file, lets the start through.
 	const old = new Date(Date.now() - 60000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine());
@@ -113,20 +109,14 @@ test('L1: start exits 1 when the plan file changed after the plan-graph run', ()
 	failed(start(plan), /changed|newer|after/i);
 });
 
-// why: catches an older clean line hiding a newer faulty run
-test('L1: the latest log line for the plan wins over an older clean one', () => {
+// why: catches an older clean line hiding a newer faulty run, and an older faulty line blocking a start after a clean re-run
+test('L1: the latest log line for the plan wins, whichever of two lines is older', () => {
 	const { plan, log } = planRepo();
 	const old = new Date(Date.now() - 120000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine({ at: new Date(Date.now() - 60000).toISOString() }) + logLine({ faults: 1 }));
 	failed(start(plan), /fault/i);
-});
-
-// why: catches an older faulty line blocking a start after the plan was fixed and re-run
-test('L1: a later clean line wins over an older faulty one', () => {
-	const { plan, log } = planRepo();
-	const old = new Date(Date.now() - 120000);
-	fs.utimesSync(plan, old, old);
+	// Control: the faulty line older, the clean one newer, lets the start through.
 	fs.writeFileSync(log, logLine({ at: new Date(Date.now() - 60000).toISOString(), faults: 3 }) + logLine());
 	const r = start(plan);
 	assert.equal(r.code, 0, r.out);
@@ -173,22 +163,16 @@ function records(specs) {
 }
 const agents = (dir) => flow(['agents', dir]);
 
-// why: catches one agent writing the tests and the code, which removes the second pair of eyes
-test('L3: agents exits 1 when one agent id is both tester and builder', () => {
+// why: catches one agent writing the tests and the code, and a fresh clean team refused by the role-split check
+test('L3: agents exits 1 when one agent id is both tester and builder, and 0 when the ids differ or one builds two units', () => {
 	const r = agents(records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a1', role: 'builder', unit: 'U1', lane: 'A' }]));
 	failed(r, /agent a1 is both tester and builder/);
-});
-
-// why: catches a fresh clean team being refused by the role-split check
-test('L3: agents exits 0 when testers and builders are different agent ids', () => {
-	const r = agents(records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]));
-	assert.equal(r.code, 0, r.out);
-});
-
-// why: catches one agent id repeating a role across units being read as a mix of two roles
-test('L3: agents exits 0 when one agent is a builder on two units', () => {
-	const r = agents(records([{ agent: 'a2', unit: 'U1', lane: 'A' }, { agent: 'a2', unit: 'U2', lane: 'A' }]));
-	assert.equal(r.code, 0, r.out);
+	// Control: testers and builders under different agent ids pass.
+	const split = agents(records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]));
+	assert.equal(split.code, 0, split.out);
+	// Control: one agent id as builder on two units is one role repeated, not a mix of two roles, so it passes.
+	const twoUnits = agents(records([{ agent: 'a2', unit: 'U1', lane: 'A' }, { agent: 'a2', unit: 'U2', lane: 'A' }]));
+	assert.equal(twoUnits.code, 0, twoUnits.out);
 });
 
 // why: catches an agent piling up units until its context is stale
