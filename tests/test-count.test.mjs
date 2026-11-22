@@ -117,6 +117,20 @@ test('C2 spec C2: a countCommand in kit.config.json runs with the test file appe
 	// The no-countCommand case (the kit counter's 2 matches the plan's 2) is C3, C4's matching control, the same fixture and call.
 });
 
+// why: catches a countCommand whose program is missing reported as a wrong count, so the owner looks at the count, not the missing program
+test('a countCommand whose program cannot start is reported as could not start, and a startable one is not', () => {
+	const missing = fixture({ red: redFile(2, 0), config: { command: 'kit-no-such-counter --count', script: '' } });
+	const bad = runUnit(missing, lockedPlan(missing.dir, [row(2)]));
+	// A thrown error is a tool error, exit 2 (unit-check's catch), not a count fault (exit 1).
+	assert.equal(bad.status, 2, out(bad));
+	assert.match(out(bad), /countCommand could not start kit-no-such-counter/);
+	// Control: the same counter run through node starts and prints the matching 2, so it passes with exit 0.
+	const ok = fixture({ red: redFile(2, 0), config: { command: 'node fake-count.mjs', script: "console.log(2);\n" } });
+	const okRes = runUnit(ok, lockedPlan(ok.dir, [row(2)]));
+	assert.equal(okRes.status, 0, out(okRes));
+	assert.doesNotMatch(out(okRes), /could not start/);
+});
+
 // why: catches a red commit with a count off its locked row passing, so a unit ships short; or a matching count refused, which blocks a correct red commit (C3, C4).
 test('C3, C4 spec C3, C4: a count that differs fails on one line naming the file and both counts, and a matching count passes with exit 0', () => {
 	const fx = fixture({ red: redFile(2, 0) });
