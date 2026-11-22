@@ -196,6 +196,12 @@
    ],
    "workflows": []
   },
+  "what-holds-where": {
+   "guards": [],
+   "scripts": [],
+   "tests": [],
+   "workflows": []
+  },
   "session-workflow": {
    "guards": [],
    "scripts": [],
@@ -719,7 +725,8 @@
     "tests/owner-proof.test.mjs",
     "tests/recall-behave.test.mjs",
     "tests/recall-ci.test.mjs",
-    "tests/resume-packet.test.mjs"
+    "tests/resume-packet.test.mjs",
+    "tests/what-holds.test.mjs"
    ],
    "workflows": []
   },
@@ -925,6 +932,7 @@
   "code-standards",
   "critical-rules-priority-index",
   "edit-discipline",
+  "what-holds-where",
   "session-workflow",
   "what-this-file-is-not",
   "craft-floor",
