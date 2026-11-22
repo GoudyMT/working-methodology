@@ -154,6 +154,19 @@ test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its 
 	const none = spawnSync(process.execPath, [KIT_VALUE], { cwd: bare, encoding: 'utf8' });
 	assert.equal(none.status, 0, none.stdout + none.stderr);
 	assert.match(none.stdout, /not measured/);
+	// Report only: a mutation tool that exits 3 leaves the step at exit 0, and the step says so.
+	const failing = kitTemp.makeTemp('value-gate-');
+	write(failing, 'fail.mjs', 'process.exit(3);\n');
+	write(failing, 'kit.config.json', JSON.stringify({ mutationCommand: 'node fail.mjs' }));
+	const failed = spawnSync(process.execPath, [KIT_VALUE], { cwd: failing, encoding: 'utf8' });
+	assert.equal(failed.status, 0, `a failing tool is report only: ${failed.stdout}${failed.stderr}`);
+	assert.match(failed.stdout, /exit 3; report only/);
+	// The config that cannot be read is named as such, and the step still exits 0 as not measured.
+	const broken = kitTemp.makeTemp('value-gate-');
+	write(broken, 'kit.config.json', '{ not json');
+	const unreadable = spawnSync(process.execPath, [KIT_VALUE], { cwd: broken, encoding: 'utf8' });
+	assert.equal(unreadable.status, 0, unreadable.stdout + unreadable.stderr);
+	assert.match(unreadable.stdout, /not measured \(kit\.config\.json cannot be read\)/);
 });
 
 // why: guards rule:agent-team-adapter (the build skill tells the lead to fold or drop a test that catches nothing)
