@@ -90,12 +90,17 @@ function agents(folder) {
 	for (const name of fs.readdirSync(folder).sort()) {
 		if (!name.endsWith('.jsonl')) continue;
 		const text = readText(path.join(folder, name));
-		if (!text.split(/\r?\n/).some((l) => l.trim() === 'RECORD:')) continue;
+		const lines = text.split(/\r?\n/);
+		// A file with no word "record" is not a hand-back; one that names it without the exact RECORD: line is a fault.
+		if (!lines.some((l) => l.trim() === 'RECORD:')) {
+			if (lines.some((l) => /record/i.test(l))) out.push(`${name}: no exact RECORD: line`);
+			continue;
+		}
 		const r = check(text);
 		if (!r.ok) { out.push(`${name}: ${r.errors.join('; ')}`); continue; }
 		n++;
 		const role = roleLine(text);
-		if (!role || typeof role.agent !== 'string' || !role.agent) continue;
+		if (!role || typeof role.agent !== 'string' || !role.agent) { out.push(`${name}: its role line has no agent key`); continue; }
 		const e = by.get(role.agent) ?? { roles: new Set(), units: new Set(), lanes: new Set() };
 		by.set(role.agent, e);
 		e.roles.add(role.role);
