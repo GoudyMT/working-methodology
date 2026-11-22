@@ -1,8 +1,8 @@
 ---
 name: builder
 description: Builds ONE unit of an approved agent-team batch plan, test-first, in its own git worktree, and reports evidence. Use only when the lead hands over a complete builder brief (agent-team-build skill).
-model: claude-sonnet-5-5
-effort: high
+model: claude-haiku-5-5
+effort: medium
 isolation: worktree
 omitClaudeMd: true
 tools: Read, Edit, Write, Grep, Glob, Bash, PowerShell
