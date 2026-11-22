@@ -162,6 +162,38 @@ test('the brief writer refuses a rules block that still holds <PROJECT NAME>, na
 	assert.ok(fs.existsSync(briefFile(trailing)), 'no brief was written');
 });
 
+// why: catches a brief written with a privacy or scanner slot still unfilled, so reviewers read a placeholder as a rule.
+test('the brief writer refuses a rules block still holding <data boundary>, <secret files>, <safe logger> or <scanner>', () => {
+	// Each slot sits on the template line rules/agent-teams.md places it on (lines 94, 95, 106 and 107).
+	const SLOT_LINES = [
+		['<data boundary>', '   Privacy + security: <data boundary>; <baseline>; no secrets in client code or commits; never print'],
+		['<secret files>', '     values from <secret files>.'],
+		['<safe logger>', '   Errors: static opaque codes; detail to <safe logger>.'],
+		['<scanner>', '   CI-only gate: run <scanner> on each changed file by absolute path before reporting.'],
+	];
+	for (const [slot, line] of SLOT_LINES) {
+		const dir = briefRepo(rulesText(line));
+		const r = approveRun(featureContract(), dir);
+		assert.notEqual(r.status, 0, `a block with ${slot} wrote a brief`);
+		assert.ok((r.stdout + r.stderr).includes(slot), `the refusal does not name ${slot}`);
+		assertCleanRefusal(r);
+		assert.ok(!fs.existsSync(briefFile(dir)), `a brief file was written for ${slot}`);
+	}
+	// Other spellings of a slot, and a half-filled slot, are still unfilled, so each one is refused.
+	for (const line of ['   Privacy: <Data Boundary>', '   Privacy: <data  boundary>', '   CI-only gate: Pat <scanner>']) {
+		const dir = briefRepo(rulesText(line));
+		const r = approveRun(featureContract(), dir);
+		assert.notEqual(r.status, 0, `a block with "${line.trim()}" wrote a brief`);
+		assertCleanRefusal(r);
+		assert.ok(!fs.existsSync(briefFile(dir)), `a brief file was written for "${line.trim()}"`);
+	}
+	// Control: the same block with a plain value in place of the slot writes a brief.
+	const filled = briefRepo(rulesText('   Privacy: Pat, the pilot data only'));
+	const f = approveRun(featureContract(), filled);
+	assert.equal(f.status, 0, `refused: ${f.stdout} ${f.stderr}`);
+	assert.ok(fs.existsSync(briefFile(filled)), 'no brief was written for the filled block');
+});
+
 // why: catches a slot check that reads a fixed line offset, so extra prose above the block misses a slot inside it
 test('the brief writer finds a slot in the block when prose lines sit above it', () => {
 	const dir = briefRepo(rulesText('   Owner: <fill in>', 40));
