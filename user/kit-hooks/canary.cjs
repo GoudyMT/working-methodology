@@ -18,7 +18,7 @@ const { recordCounts } = require('./record-counts.cjs');
 // git from node's own folder, never the project.
 const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
-// around the phrase (bold, a quote, a heading) and hyphens inside it then compare the same; the space padding
+// around the phrase and hyphens inside it then compare the same; the space padding
 // keeps a word boundary on both sides.
 const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 
@@ -137,7 +137,7 @@ function run(input) {
 	const seen = path.join(found.commonDir, 'kit-canary-seen', key);
 	const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); };
 
-	// The desktop app's hand-back: the report is the call's own message. Checked here, at the call, because the stop
+	// The desktop app's hand-back. Checked here, at the call, because the stop
 	// event fires before the hand-back reaches the agent's transcript.
 	if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') {
 		const report = String((input.tool_input || {}).message || '');
@@ -206,10 +206,12 @@ const check = (input) => { try { return run(input).out || null; } catch { return
 if (require.main === module) {
 	try {
 		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
-		// The hand-back record gate follows its hold's mode (log or enforce); one deny carries both reasons.
+		// The hand-back gate follows its hold's mode; one deny carries both reasons.
 		let gate = null;
 		if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') { try { gate = require('./handoff-gate.cjs').run(input); } catch { /* a log never blocks */ } }
-		const r = run(input);
+		// Canary's own decision fails open; the gate's deny still prints.
+		let r = {};
+		try { r = run(input); } catch { /* fails open */ }
 		const denies = [gate, r.out].filter(Boolean);
 		if (denies.length) process.stdout.write(JSON.stringify({ hookSpecificOutput: { ...denies[0].hookSpecificOutput, permissionDecisionReason: denies.map((o) => o.hookSpecificOutput.permissionDecisionReason).join(' ') } }));
 		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
