@@ -1554,3 +1554,74 @@ test('the priority index names the size-budget rule by ID and by the file that h
   assert.ok(line.includes(file), `the index line names ${file}: ${line}`);
   assert.ok(agents.includes(line), 'the built AGENTS.md carries the same line');
 });
+
+// Fills a template's example from the template's own text: an empty value gets a sample, a <placeholder> gets a hash.
+const EXAMPLE_VALUES = { id: 'K1', severity: 'low', status: 'wrong-test', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
+const fillExample = (json) => json.replace(/"(\w+)":""/g, (m, k) => `"${k}":"${EXAMPLE_VALUES[k] ?? 'x'}"`).replace(/<[^>"]*>/g, 'abc1234');
+const handoffCheck = (text) => spawnSync(process.execPath, [path.resolve('user/kit-tools/handoff.mjs'), 'check', '-'], { input: text, encoding: 'utf8' });
+const HANDOFF_PROSE = 'Report.';
+// The test-reviewer record block, as its template words it: the lines after RECORD: up to the first blank line.
+const reviewerBlock = () => {
+  const lines = read(path.resolve('user/agents/test-reviewer.md')).split(/\r?\n/);
+  const at = lines.findIndex((l) => l.trim() === 'RECORD:');
+  assert.ok(at >= 0, 'the template has a RECORD: line');
+  const block = [];
+  for (const l of lines.slice(at + 1)) {
+    if (l.trim() === '') break;
+    block.push(l);
+  }
+  return block;
+};
+// The JSON examples the tester template gives in backticks: its role line, then its finding line.
+const testerExamples = () => [...read(path.resolve('user/agents/tester.md')).matchAll(/`(\{[^`]*\})`/g)].map((m) => m[1]);
+
+// why: catches a test-reviewer finding example the handoff check refuses, so a reviewer's findings never reach the ledger
+test('the test-reviewer finding example, filled in as its template says, passes the handoff check', () => {
+  const block = reviewerBlock().map(fillExample);
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', ...block].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a test-reviewer clear form the handoff check refuses, so a clean review reads as a failed hand-back
+test('the test-reviewer clear form, as its template words it, passes the handoff check', () => {
+  const clear = read(path.resolve('user/agents/test-reviewer.md')).match(/\{"note":[^}]*\}/);
+  assert.ok(clear, 'the template names a clear form');
+  const block = reviewerBlock();
+  const role = fillExample(block.find((l) => l.includes('"role"')));
+  const intent = block.filter((l) => !l.trim().startsWith('{'));
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, clear[0], ...intent].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a tester finding example the handoff check refuses, so a tester's red report is unreadable
+test('the tester finding example, filled in as its template says, passes the handoff check', () => {
+  const [role, finding] = testerExamples().map(fillExample);
+  assert.ok(role && finding, 'the template gives a role line and a finding line');
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, finding].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a tester template with no clear form, so a unit with no problems has no record the check accepts
+test('the tester template names a clear form that the handoff check accepts', () => {
+  const clear = read(path.resolve('user/agents/tester.md')).match(/\{"note":[^}]*\}/);
+  assert.ok(clear, 'the template names a clear form');
+  const [role] = testerExamples().map(fillExample);
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, clear[0]].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: guards rule:agent-role-table (a tester or writer edit outside any git repo has no file list, so it is refused)
+test('the edit fence refuses a tester or writer edit when the session folder is not in a git repo', () => {
+  const dir = makeTemp('fence-nogit-');
+  for (const agent_type of ['tester', 'writer']) {
+    const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+    assert.equal(out.status, 2, `${agent_type} edit outside git: ${out.stderr}`);
+  }
+});
+
+// why: guards rule:agent-role-table (a builder outside any git repo keeps the pass-through it has today)
+test('the edit fence lets a builder edit when the session folder is not in a git repo, as today', () => {
+  const dir = makeTemp('fence-nogit-');
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(out.status, 0, out.stderr);
+});

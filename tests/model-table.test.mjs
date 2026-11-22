@@ -667,7 +667,7 @@ test('an empty config rules list with no skills line gives no fault', () => {
 	assert.deepEqual(builderAccess({ rules: [] }, []), []);
 });
 
-// The access each original role must hold, copied from the role table in rules/agent-teams.md (Agent Role Table).
+// The access each original role held in the removed markdown role table (rules/agent-teams.md), now in kit.config.json roles.
 const TABLE_ROLES = {
 	builder: { tools: ['Read', 'Edit', 'Write', 'Grep', 'Glob', 'Bash', 'PowerShell'], denied: ['WebFetch', 'WebSearch', 'Agent'], rules: ['edit-discipline', 'test-integrity', 'test-value'] },
 	checker: { tools: ['Read', 'Grep', 'Glob', 'Bash', 'PowerShell'], denied: ['Edit', 'Write', 'WebFetch', 'WebSearch', 'Agent'], rules: ['test-integrity', 'test-value', 'anti-hallucination', 'enumerate-before-you-count'] },
@@ -694,8 +694,8 @@ test('every real config role carries tools, denied and rules lists, and the real
 	assert.deepEqual(tableFaults(JSON.parse(fs.readFileSync(path.join(REAL_DIR, 'kit.config.json'), 'utf8')), REAL_DIR), []);
 });
 
-// why: guards rule:agent-role-table (an original role's access in config drifts from the role table in rules/agent-teams.md)
-test('the five original roles hold the access the role table in rules/agent-teams.md names', () => {
+// why: guards rule:agent-role-table (an original role's access in kit.config.json drifts from what the removed table held)
+test('the five original roles hold the access the removed role table named, now in kit.config.json', () => {
 	const roles = realRoles();
 	assert.deepEqual(Object.fromEntries(Object.keys(TABLE_ROLES).map((n) => [n, accessOf(roles[n])])), TABLE_ROLES);
 });
@@ -765,4 +765,10 @@ test('the CLI exits 2 when kit.config.json holds null', () => {
 	const dir = kit(null, {});
 	const run = spawnSync(process.execPath, [MODULE, 'check', dir], { encoding: 'utf8' });
 	assert.equal(run.status, 2, run.stderr);
+});
+
+// why: catches a role file with no config.roles entry that widens access with no table row to check it against
+test('a role file with no config.roles entry is a fault naming the file', () => {
+	const files = { ...soundFiles(), 'user/agents/stray.md': roleFile('stray', SONNET, 'high') };
+	assertFault(faultsOf(soundConfig(), files), 'user/agents/stray.md');
 });
