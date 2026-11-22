@@ -1,6 +1,6 @@
 // The test-change hold of both pre-push hooks (rule:test-integrity). The hook passes the remote's URL; git gives the
 // refs on stdin as "lref lsha rref rsha". The remote's default branch and branch tips are asked of the remote here,
-// with the same reads the hook makes. Exit 0: nothing held. Exit 1: a test change or a retest: subject, named on
+// with the same reads the hook makes. Exit 0: nothing held. Exit 10: a test change or a retest: subject, named on
 // stdout. Exit 2: a read failed or the repo is shallow, which holds whatever the owner says.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
@@ -88,12 +88,14 @@ function entries(out) {
 
 // The "this change came from the remote" case: the branch side never changed the path since the default branch forked
 // (its first parent matches the merge base), and the merge's blob is one a remote branch already holds, so the merge
-// adds nothing the remote lacks. Anything else in a merge is held.
+// adds nothing the remote lacks. A deletion has no blob, so it is never from the remote: an undefined blob would
+// match a remote tip that also lacks the path. Anything else in a merge is held.
 function fromRemote(c, p, first, defTip, tips) {
 	if (!defTip) return false;
 	const base = mergeBase(first, defTip);
 	if (!base || tree(first).get(p) !== tree(base).get(p)) return false;
-	return tips.some((t) => tree(t).get(p) === tree(c).get(p));
+	const blob = tree(c).get(p);
+	return blob !== undefined && tips.some((t) => tree(t).get(p) === blob);
 }
 
 // One pushed commit: its subject, then each test path it changes against its first parent (or the empty tree).
@@ -132,7 +134,7 @@ try {
 	const held = run(process.argv[2], refs);
 	if (held.length) {
 		process.stdout.write(`${HOLD}\n${held.map((l) => `  ${l}`).join('\n')}\n`);
-		process.exitCode = 1;
+		process.exitCode = 10;
 	}
 } catch (e) {
 	const why = e instanceof Shallow ? SHALLOW : `Push blocked: the history of the push cannot be read (${e.message}), so a test change in it cannot be ruled out.`;
