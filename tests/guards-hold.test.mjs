@@ -627,7 +627,7 @@ test('the pre-push hook lets an AI push a feature branch, scans each pushed comm
 	g('config', 'user.email', 't@x');
 	fs.mkdirSync(path.join(dir, '.githooks'));
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'test-push-scan.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(dir, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'one\n');
@@ -1503,7 +1503,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	// K163 (build 21): the hook scans every pusher's push, so the scan sits beside it as install puts it.
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'test-push-scan.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	if (fs.existsSync(path.resolve('project/.claude/safe-spawn.cjs'))) fs.copyFileSync(path.resolve('project/.claude/safe-spawn.cjs'), path.join(dir, '.claude', 'safe-spawn.cjs')); // build 23: git runs through it; missing only on a base from before it
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
@@ -1671,7 +1671,7 @@ test('a script a Claude session writes and runs cannot clear its markers and pus
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs', 'test-push-scan.mjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	fs.writeFileSync(path.join(dir, 'a.md'), 'a\n');
 	g('add', '.');
 	g('commit', '-qm', 'one');
@@ -1722,7 +1722,7 @@ test('the owner push asks at the terminal with no session, and a yes is bound to
 	fs.copyFileSync(path.resolve('project/.githooks/pre-push'), path.join(dir, '.githooks', 'pre-push'));
 	fs.chmodSync(path.join(dir, '.githooks', 'pre-push'), 0o755);
 	fs.mkdirSync(path.join(dir, '.claude'));
-	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'name-check.mjs', 'safe-spawn.cjs', 'test-push-scan.mjs'].filter((x) => fs.existsSync(path.resolve('project/.claude', x)))) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
 	fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
 	const bare = kitTemp.makeTemp('k215b-remote-');
 	spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare]);
