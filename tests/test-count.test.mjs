@@ -106,10 +106,7 @@ test('C2 spec C2: a countCommand in kit.config.json runs with the test file appe
 	const res = runUnit(fx, writePlan(fx.dir, [row(2)]));
 	assert.equal(res.status, 1, out(res));
 	assert.match(out(res), /\b7\b/);
-	// Control: with no countCommand, the kit counter's 2 matches the plan's 2.
-	const bare = fixture({ red: redFile(2, 0) });
-	const kit = runUnit(bare, writePlan(bare.dir, [row(2)]));
-	assert.equal(kit.status, 0, out(kit));
+	// The no-countCommand case (the kit counter's 2 matches the plan's 2) is C3, C4's matching control, the same fixture and call.
 });
 
 // why: catches a red commit with a count off its locked row passing, so a unit ships short; or a matching count refused, which blocks a correct red commit (C3, C4).
@@ -148,16 +145,14 @@ test('C6 spec C6: an add finding with no breaks named is refused, and one that n
 });
 
 // why: catches a swap that drops an assertion with no replacement passing, so a weaker test replaces a stronger one unnoticed (C7).
-test('C7 spec C7: a swap with no replacement or with empty or missing keeps is refused, and one that keeps its assertions passes', async () => {
+test('C7 spec C7: a swap with no replacement or with empty or missing keeps is refused', async () => {
 	const noReplacement = await handoffCheck(reviewText({ status: 'swap' }));
 	assert.equal(noReplacement.ok, false);
 	const emptyKeeps = await handoffCheck(reviewText({ status: 'swap', replacement: { test: 'new test', keeps: [] } }));
 	assert.equal(emptyKeeps.ok, false);
 	const missingKeeps = await handoffCheck(reviewText({ status: 'swap', replacement: { test: 'new test' } }));
 	assert.equal(missingKeeps.ok, false);
-	// Control: a swap whose replacement keeps an assertion passes.
-	const kept = await handoffCheck(reviewText({ status: 'swap', replacement: { test: 'new test', keeps: ['assert.equal(x, 1)'] } }));
-	assert.equal(kept.ok, true, kept.errors.join('; '));
+	// The passing swap (one that keeps an assertion) is C5's check on the same call, so it is not repeated here.
 });
 
 // why: guards rule:agent-role-table (tester.md: one test per plan line, controls fold, tests are a floor)
