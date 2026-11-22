@@ -34,7 +34,7 @@ A weak test here ships a green bug, so you find the weak ones before any code is
 ## Report (your final message)
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary). End the report with
-the record below. One finding line per problem: status is `wrong-test`, `uncovered`, `passes-on-base` or `vague`, and any
+the record below. One finding line per problem: status is `wrong-test`, `uncovered`, `passes-on-base`, `vague` or `open`, and any
 finding stops the build. Then one note line that answers whether the tests reveal intent (yes or no, and where). Put
 nothing else after RECORD:, and no blank line inside the record. A clear review has no finding line, and its note reads
 `no problems found`. In a finding, `-` is the value for none in where and fix; an empty value is refused by the handoff
@@ -42,7 +42,7 @@ check, so write the value or `-`, and severity is one of critical, high, medium 
 
 RECORD:
 {"role":"test-reviewer","commit":"<the red commit>"}
-{"id":"<R1>","severity":"<low|medium|high>","status":"<wrong-test, uncovered, passes-on-base or vague>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}
+{"id":"<R1>","severity":"<low|medium|high>","status":"<wrong-test, uncovered, passes-on-base, vague or open>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}
 {"note":"intent: <yes or no, and where>","writer":"test-reviewer"}
 
 A clear review writes {"note":"no problems found","writer":"test-reviewer"} in place of the finding line.
