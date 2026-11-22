@@ -1,11 +1,11 @@
 #!/usr/bin/env node
-// U15 (build 24): the flow lock. Five checks on the build flow, each a plain script over saved files; none calls a model.
-//   node user/kit-tools/flow-check.mjs start <plan.md> --role builder     plan-check names no fault, and the plan's latest plan-graph run at its full path is clean and not older than the plan
-//   node user/kit-tools/flow-check.mjs agents <folder>                   no agent id is both tester and builder, or holds over 3 units or 2 lanes
-//   node user/kit-tools/flow-check.mjs reviews <unit> --dir <folder>     one review record (a second needs the lead's note), findings need a fix record
-//   node user/kit-tools/flow-check.mjs reviewers <ledger.jsonl>          more than 3 units waiting while at most one reviewer is active
-//   node user/kit-tools/flow-check.mjs rounds <unit> --dir <folder>      at most 2 FIX rounds from the checker per unit
-//   node user/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>   each unit's last step, and the flow faults
+// U15 (build 24): the flow lock. Five checks on the build flow, each a plain script over saved files; none calls a model. Usage: node user/kit-tools/flow-check.mjs <subcommand>:
+// - start <plan.md> --role builder - plan-check names no fault, and the plan's latest plan-graph run at its full path is clean and not older than the plan
+// - agents <folder> - no agent id is both tester and builder, or holds over 3 units or 2 lanes
+// - reviews <unit> --dir <folder> - one review record (a second needs the lead's note), findings need a fix record
+// - reviewers <ledger.jsonl> - more than 3 units waiting while at most one reviewer is active
+// - rounds <unit> --dir <folder> - at most 2 FIX rounds from the checker per unit
+// - checklist <log.jsonl> --plan <plan.md> - each unit's last step, and the flow faults
 // Exit 0 clean, 1 a fault named on stderr, 2 usage or unreadable input. Hand-backs are read with handoff.mjs's check.
 // A lead note is text in the record an agent writes, so these checks only log in this release; a lead-only answer file comes before they enforce.
 import fs from 'node:fs';
@@ -182,8 +182,7 @@ function reviewers(file) {
 }
 
 // rounds <unit> --dir <folder>: <unit>.checker*.jsonl, a FIX record holds a line VERDICT: FIX. The unit name matches exactly.
-// The verdict is the file's FIRST VERDICT: line: the checker's report puts its verdict first, so a later VERDICT: line is
-// text the report quotes, and L9 pins the first line as the one that counts.
+// The verdict is the FIRST VERDICT: line: the report puts its verdict first, so a later one is quoted text (L9 pins it).
 function rounds(unit, dir) {
 	const fix = fs.readdirSync(dir).filter((name) => {
 		const m = /^(.+)\.checker\d*\.jsonl$/.exec(name);
