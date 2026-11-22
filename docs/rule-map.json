@@ -609,6 +609,7 @@
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-outcome.test.mjs",
+    "tests/lanes.test.mjs",
     "tests/launcher-other-home.test.mjs"
    ],
    "workflows": []
