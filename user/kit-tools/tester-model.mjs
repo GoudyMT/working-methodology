@@ -10,6 +10,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { filesOf } from './test-budget.mjs';
 
 // R2: the guard, hook and gate paths, one data list. A name ending in "/" matches a folder anywhere in a path, a name
 // with "*" matches a file name by glob, any other name matches a file name exactly.
@@ -59,12 +60,8 @@ function afterIds(row, ids) {
 	return [...new Set(words.map((w) => w.toUpperCase()))].filter((w) => ids.has(w) && w !== row.id.toUpperCase());
 }
 
-// The paths a Files cell names: its backticked paths, or else its comma-separated names when it has no backticks.
-function filesOf(cell) {
-	const ticked = [...cell.matchAll(/`([^`]+)`/g)].map((m) => m[1]);
-	const names = ticked.length ? ticked : cell.split(',');
-	return names.map((p) => p.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '').toLowerCase()).filter(Boolean);
-}
+// One spelling per path for the guard match: forward slashes, no leading ./, lower case.
+const norm = (p) => p.replace(/\\/g, '/').replace(/^(\.\/)+/, '').toLowerCase();
 
 const globRe = (glob) => new RegExp(`^${glob.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
 
@@ -94,7 +91,7 @@ function decide(planText, unit, reviewText) {
 	const row = rows.find((r) => r.id.toUpperCase() === key);
 	if (!row) throw new InputError(`the Units table has no row for ${unit}`);
 	const after = rows.filter((r) => afterIds(r, ids).includes(key)).length;
-	const guard = filesOf(row.files).map((f) => [f, guardOf(f)]).find(([, g]) => g);
+	const guard = filesOf(row.files).map(norm).map((f) => [f, guardOf(f)]).find(([, g]) => g);
 	const reviewed = reviewText === null ? [] : statusesOf(reviewText);
 	const owner = /^(?:claude-)?(sonnet|opus)\b/.exec(row.tester.toLowerCase());
 	const criteria = [
