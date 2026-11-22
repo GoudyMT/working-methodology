@@ -100,7 +100,7 @@ Reach: "kit" means the kit's own repo; "projects" means it installs into every p
 | Orchestrator | Opus 5.5 | high | orchestrator.md (unmeasured: stays until a recorded phase run passes) | |
 | Tester | Haiku 5.5 (Sonnet by tester-model.mjs) | medium | tester.md, tester-model.mjs | |
 | Test review | Haiku 5.5 | low | test-reviewer.md | |
-| Builder | Sonnet 5.5 | low; high on a red rerun | builder.md; the brief names the rerun effort | |
+| Builder | Haiku 5.5 (Sonnet 5.5 on a red rerun, one step, by the table) | medium | builder.md; builder-model.mjs reads the run record; the Agent hook compares | |
 | Checker | Opus 5.5 | high | checker.md | yes |
 | Sweep breadth | Sonnet 5.5 | high | approve.mjs DEFAULT_MODEL | yes (no lower than Sonnet) |
 | Sweep security and novel lens | Opus 5.5 | high | approve.mjs TOP_DEFAULT | yes |
@@ -110,8 +110,13 @@ Reach: "kit" means the kit's own repo; "projects" means it installs into every p
 | Researcher and read-only lookups (K303) | Haiku 5.5 | medium | new researcher.md; project Explore.md pinned to Haiku | |
 | Fix brief drafter | Haiku 5.5 | high | new drafter.md (read-only); the lead reviews | |
 | PR body writer | Haiku 5.5 up to 10 files; Opus 5.5 medium above | medium | new writer.md; new pr-size.mjs reads `git diff --stat` | |
-| Closeout and handoff | Opus 5.5 (the lead) | medium | the lead | yes |
-| Step 6 verify, release check | script, no model | - | release-check.mjs | yes |
+| Closeout and handoff | Opus 5.5 (the lead) | medium | closeout skill | yes, until a cheaper arm carries 12 of 12 facts |
+| Step 6 verify, release check | script, no model | - | release-verify.mjs, release-check.mjs | yes |
+
+Builder row: the owner's ruling 2026-11-22 08:34Z ("haiku builds like always"); the standard was read back and
+confirmed 08:39Z. The trial never tested fit to an existing codebase, so every unit logs its builder model, reruns,
+step-ups and cost, and a Haiku miss moves the row up by the table. U1 and U2 were built on Sonnet before the ruling
+and finish on Sonnet; the run record says so.
 
 - **Agent hook.** A PreToolUse hook on the Agent tool (in the one guard process) holds a subagent call with no
   pinned model or a model that differs from the table for that role (closes MC2: Explore and general-purpose inherit
@@ -182,13 +187,14 @@ project layer, so a stale home runs with guards missing (K340 above).
 
 Design: the lead. Tests: tester role on Haiku medium (Sonnet only by section 3 once built; until then the lead runs
 the criteria by hand and names the criterion in the run record). Test review: Haiku low before any builder. Build:
-Sonnet low, high on a red rerun, tests locked. Check: Opus high. Sweep: Sonnet high breadth, Opus high security and
+Haiku medium, Sonnet on a red rerun, tests locked. Check: Opus high. Sweep: Sonnet high breadth, Opus high security and
 novel lens, fixes in K277 lanes, paired with the cloud bench (head, contract and briefs sent blind before the PC
 findings exist). Gate and scorers: Opus, fixed. PR body: writer step with the size rule. Until a role file exists
 for a step, its agent is started by hand on the table's model and effort, and the run record names the model.
 
 ## 6. Units (draft order)
 
+Order after the 08:39Z read-back: U7 first (table and role files), then the U1 and U2 checker fixes, then the rest.
 U1 K339 guard fix. U2 K300/K301 handoff.mjs and approve.mjs parser. U3 K309/K312 unit-check.mjs. U4 K308 lock and
 T3. U5 K307 tester role and tester-model.mjs. U6 K310 test review. U7 E36 table, roles, Agent hook, CI check, list
 row, pr-size.mjs. U8 K341 project override. U9 K225 hold modes. U10 K277 lanes.mjs. U11 K311 CI job. U12 K315
