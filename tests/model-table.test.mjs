@@ -24,8 +24,12 @@ const roleFile = (name, model, effort, tools = 'Read, Grep, Glob') =>
 	`---\nname: ${name}\nmodel: ${model}\neffort: ${effort}\ntools: ${tools}\n---\n\nRole body.\n`;
 
 // A small kit whose table is sound: two role steps, each matched by its role entry and its role file.
+// Each role's access lists match what soundFiles() writes: the default tools line, no disallowedTools, no skills.
 const soundConfig = () => ({
-	roles: { builder: { model: SONNET, effort: 'high' }, checker: { model: OPUS, effort: 'high' } },
+	roles: {
+		builder: { model: SONNET, effort: 'high', tools: ['Read', 'Grep', 'Glob'], denied: [], rules: [] },
+		checker: { model: OPUS, effort: 'high', tools: ['Read', 'Grep', 'Glob'], denied: [], rules: [] },
+	},
 	steps: {
 		builder: { model: SONNET, effort: 'high', enforcer: 'role:builder' },
 		checker: { model: OPUS, effort: 'high', enforcer: 'role:checker', floor: OPUS },
@@ -292,7 +296,7 @@ test('a stepUp equal to or below the model is a fault naming the step', () => {
 // why: guards rule:agent-role-table (a role entry that no step runs is a fault that names the role)
 test('a role no step names is a fault naming the role', () => {
 	const config = soundConfig();
-	config.roles.spare = { model: HAIKU, effort: 'low' };
+	config.roles.spare = { model: HAIKU, effort: 'low', tools: [], denied: [], rules: [] };
 	assertFault(faultsOf(config), 'spare');
 	delete config.roles.spare;
 	assert.deepEqual(faultsOf(config), []);
@@ -436,7 +440,11 @@ const withRole = (role, fields) => {
 	return config;
 };
 // The builder's access, set in config.roles and in its role file, against the fixture kit.
-const builderAccess = (fields, lines) => faultsOf(withRole('builder', fields), { ...soundFiles(), 'user/agents/builder.md': roleWith('builder', lines) });
+// A line-less tools default keeps the sound tools line, so a case that tests denied or rules sees no tools fault.
+const builderAccess = (fields, lines) => {
+	const withTools = lines.some((l) => l.startsWith('tools:')) ? lines : ['tools: Read, Grep, Glob', ...lines];
+	return faultsOf(withRole('builder', fields), { ...soundFiles(), 'user/agents/builder.md': roleWith('builder', withTools) });
+};
 // Passes when some fault names the role and a word matching the regex (the key, in config or in the file).
 function assertFaultLike(faults, role, re) {
 	assert.ok(faults.some((f) => f.includes(role) && re.test(f)), `no fault names ${role} + ${re} in ${JSON.stringify(faults)}`);
@@ -736,7 +744,11 @@ test('a never-drop floor naming no known family is a fault naming the step', () 
 
 // why: catches a role step whose config role has no tools, denied or rules list, which passes unchecked
 test('a role step whose config role has no tools, denied or rules list is a fault naming the role and the missing key', () => {
-	const faults = faultsOf(soundConfig(), soundFiles());
+	const config = soundConfig();
+	delete config.roles.builder.tools;
+	delete config.roles.builder.denied;
+	delete config.roles.builder.rules;
+	const faults = faultsOf(config, soundFiles());
 	assertFault(faults, 'builder', 'tools');
 	assertFault(faults, 'builder', 'denied');
 	assertFault(faults, 'builder', 'rules');
