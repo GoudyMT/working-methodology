@@ -177,7 +177,15 @@ test('B9 spec S9: a Category cell below the computed category is refused naming 
 		row('U1', { Category: 'docs' }),
 		row('U2', { Files: '`src/b.mjs`', Category: 'logic' }),
 		// Control: a guard cell on a logic file is a raise, which is allowed, so U3 is not named.
-		row('U3', { Files: '`src/c.mjs`', Category: 'guard' }),
+		row('U3', {
+			Files: '`src/c.mjs`',
+			Category: 'guard',
+			[TESTS]: [
+				'bypass: runs the guard through a wrapper and another shell -> S1',
+				'repeat: runs the guard twice and gets the same verdict -> S1',
+				'fail-closed: a broken guard blocks the call and is logged -> S1',
+			].join('<br>'),
+		}),
 	]));
 	assert.equal(res.status, 1, out(res));
 	assert.match(out(res), /U1/);
