@@ -577,3 +577,22 @@ test('agent-model reads a plugin role name as its bare role file, refusing a mis
 	assert.equal(bare && bare.hookSpecificOutput && bare.hookSpecificOutput.permissionDecision, 'deny', `checker on haiku is refused: ${run.stdout}`);
 	assert.equal(same, null, 'kit:checker on opus is not refused');
 });
+
+// why: catches a checker that exits other than 0 or 1 leaving no row, so a broken hand-back check fails with nothing logged
+test('handoff-gate logs a row with checkerExit when handoff.mjs exits with a code other than 0 or 1, and prints nothing', () => {
+	const kit = kitTemp.makeTemp('handoff-gate-exit-');
+	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
+	fs.writeFileSync(path.join(kit, 'kit-tools', 'handoff.mjs'), 'process.exit(3);\n');
+	fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), holdsText([{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode: 'enforce' }]));
+	const cwd = kitTemp.makeTemp('handoff-gate-exit-repo-');
+	spawnSync('git', ['-C', cwd, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	const message = ['Prose.', 'RECORD:', '{"role": "builder", "commit": "abc1234"}', '{"id": "F1"}'].join('\n');
+	const r = spawnSync(process.execPath, [path.join(kit, 'kit-hooks', 'handoff-gate.cjs')], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout.trim(), '', `a checker exit 3 refuses nothing: ${r.stdout}`);
+	const logFile = path.join(cwd, '.git', 'kit-guard-open.log');
+	const rows = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+	assert.equal(rows.length, 1, `one row for the checker exit: ${JSON.stringify(rows)}`);
+	assert.equal(rows[0].checkerExit, 3, JSON.stringify(rows[0]));
+});
