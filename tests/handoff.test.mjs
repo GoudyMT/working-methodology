@@ -485,7 +485,7 @@ const gateRepo = () => {
 	spawnSync('git', ['-C', repo, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
 	return repo;
 };
-const runGate = (repo, message) => spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd: repo }) });
+const runGate = (cwd, message) => spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
 const gateLog = (repo) => {
 	const f = path.join(repo, '.git', 'kit-guard-open.log');
 	return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
@@ -503,6 +503,7 @@ test('a hand-back whose RECORD block fails the check is logged with its errors, 
 	assert.equal(rows[0].hook, 'handoff-gate');
 	assert.ok(!Number.isNaN(Date.parse(rows[0].at)), 'at');
 	assert.ok(Array.isArray(rows[0].errors) && rows[0].errors.length > 0, 'errors');
+	assert.ok(rows[0].errors.some((e) => /proof/i.test(e)), JSON.stringify(rows[0].errors));
 });
 
 // why: catches the gate logging every clean record and burying the real faults in the file
@@ -523,9 +524,35 @@ test('a hand-back with no RECORD line writes nothing to kit-guard-open.log', () 
 // why: catches a gate that throws on input it cannot read and so stops a hand-back from reaching the lead
 test('the gate exits 0 and prints no decision when its input is not JSON', () => {
 	const repo = gateRepo();
-	const r = spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: 'not json at all' });
+	const r = spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: 'not json at all', cwd: repo });
 	assert.equal(r.status, 0, r.stderr);
 	assert.equal(r.stdout.trim(), '');
+});
+
+// why: catches the gate writing its line into a worktree git dir, where the lead never reads it
+test('a broken record run in a linked worktree logs to the main repo git dir and not the worktree git dir', () => {
+	const repo = gateRepo();
+	const g = (...a) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' });
+	fs.writeFileSync(path.join(repo, 'a.txt'), 'a\n');
+	g('add', 'a.txt');
+	g('commit', '-qm', 'init');
+	const wt = path.join(kitTemp.makeTemp('handoff-wt-'), 'wt');
+	g('worktree', 'add', '-q', wt, '-b', 'feat/wt');
+	const broken = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1', { proof: '' }));
+	assert.equal(runGate(wt, broken).status, 0);
+	assert.equal(gateLog(repo).length, 1, 'no line in the main repo kit-guard-open.log');
+	const wtGitDir = path.resolve(wt, spawnSync('git', ['-C', wt, 'rev-parse', '--git-dir'], { encoding: 'utf8' }).stdout.trim());
+	assert.equal(fs.existsSync(path.join(wtGitDir, 'kit-guard-open.log')), false, `a log in ${wtGitDir}`);
+});
+
+// why: catches the gate printing or failing when a hand-back arrives outside any git repository
+test('a broken record outside any git repository exits 0 with no output', () => {
+	const outside = kitTemp.makeTemp('handoff-outside-');
+	const broken = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1', { proof: '' }));
+	const r = runGate(outside, broken);
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout.trim(), '');
+	assert.equal(r.stderr.trim(), '');
 });
 
 // why: catches a builder, checker or reviewer role file that leaves the gate off its hand-back, so broken records pass unlogged
@@ -542,9 +569,11 @@ test('builder, checker and reviewer wire the gate under SubagentHandback beside 
 // why: catches a brief template that asks for findings without the RECORD line and keys the gate reads
 test('the builder and checker brief templates name the RECORD line and the seven finding keys', () => {
 	for (const f of ['builder-brief.md', 'checker-brief.md']) {
-		const text = fs.readFileSync(path.resolve('user/skills/agent-team-build/templates', f), 'utf8');
-		assert.match(text, /^RECORD:$/m, `${f}: RECORD: line`);
-		for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(text, new RegExp(`"${k}"`), `${f}: ${k}`);
+		const lines = fs.readFileSync(path.resolve('user/skills/agent-team-build/templates', f), 'utf8').split(/\r?\n/);
+		const at = lines.findIndex((l) => l === 'RECORD:');
+		assert.ok(at >= 0, `${f}: RECORD: line`);
+		const window = lines.slice(at, at + 4).join('\n');
+		for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(window, new RegExp(`"${k}"`), `${f}: ${k} within three lines after RECORD:`);
 	}
 });
 
@@ -553,5 +582,5 @@ test('the reviewer brief approve.mjs writes asks for a RECORD block with the sev
 	const line = fs.readFileSync(path.resolve('user/skills/pre-pr-sweep/approve.mjs'), 'utf8').split('\n').find((l) => l.includes('Finding format:'));
 	assert.ok(line, 'no Finding format line in approve.mjs');
 	assert.match(line, /RECORD:/);
-	for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(line, new RegExp(`\b${k}\b`), k);
+	for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(line, new RegExp(`\\b${k}\\b`), k);
 });
