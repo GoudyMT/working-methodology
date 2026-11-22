@@ -96,6 +96,7 @@ function commandCount(repo, words, rev, f) {
 		fs.writeFileSync(tmp, gitShow(repo, rev, f) || '');
 		// No shell: the command's words run as given and the file name is one argument, so it is data, never code.
 		const r = spawnSync(words[0], [...words.slice(1), tmp], { cwd: repo, shell: false, encoding: 'utf8', windowsHide: true, env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' } });
+		if (r.error) throw new Error(`countCommand could not start ${words[0]}: ${r.error.message}`);
 		if (!/^\s*\d+\s*$/.test(r.stdout)) throw new Error(`countCommand printed no integer for ${f}`);
 		return Number(r.stdout);
 	} finally {
@@ -103,13 +104,13 @@ function commandCount(repo, words, rev, f) {
 	}
 }
 
-// The tests one commit adds to one test file: its count less its parent's, a file the parent does not hold counting 0.
-// With no countCommand, the test names the commit adds.
-function addedIn(repo, words, c, f) {
-	const now = gitShow(repo, c.hash, f);
+// The tests one test file gains from the first red commit's parent (base) to the last red commit (last): its count at
+// last less its count at base, a file base does not hold counting 0. With no countCommand, the test names last adds.
+function addedAcross(repo, words, base, last, f) {
+	const now = gitShow(repo, last.hash, f);
 	if (now === null) return 0;
-	const was = c.parent === undefined ? null : gitShow(repo, c.parent, f);
-	if (words !== undefined) return commandCount(repo, words, c.hash, f) - (was === null ? 0 : commandCount(repo, words, c.parent, f));
+	const was = base === undefined ? null : gitShow(repo, base, f);
+	if (words !== undefined) return commandCount(repo, words, last.hash, f) - (was === null ? 0 : commandCount(repo, words, base, f));
 	const names = new Set(testsIn(was || '').map((t) => t.name));
 	return testsIn(now).filter((t) => !names.has(t.name)).length;
 }
@@ -125,9 +126,11 @@ export function countGate(repo, hashes, plan, id) {
 	const cmd = fs.existsSync(cfgFile) ? JSON.parse(fs.readFileSync(cfgFile, 'utf8')).countCommand : undefined;
 	const words = typeof cmd === 'string' && cmd.trim() ? cmd.trim().split(/\s+/) : undefined;
 	const files = gate.files.filter(isTestFile);
-	const perRed = reds.map((c) => files.map((f) => addedIn(repo, words, c, f)));
-	const total = perRed.flat().reduce((a, b) => a + b, 0);
+	const first = reds[0];
+	const last = reds[reds.length - 1];
+	const perFile = files.map((f) => addedAcross(repo, words, first.parent, last, f));
+	const total = perFile.reduce((a, b) => a + b, 0);
 	if (total === gate.lines) return [];
-	const byFile = files.map((f, i) => `${f}: ${perRed.reduce((sum, row) => sum + row[i], 0)}`).join(', ');
+	const byFile = files.map((f, i) => `${f}: ${perFile[i]}`).join(', ');
 	return [`${reds.map((c) => c.short).join(', ')}: ${byFile} (${total} tests), but the locked row's Tests cell has ${gate.lines} lines`];
 }
