@@ -183,7 +183,7 @@ function run(dir, keys, env, left) {
 	return red;
 }
 
-export function check(root, base, { strict = false, slice = null, budget = null, record = null, items = [], windowsPart = false } = {}) {
+export function check(root, base, { strict = false, slice = null, budget = null, record = null, items = [], sweepCommit = null, windowsPart = false } = {}) {
 	// K95 (build 12): a step that would run past the budget is not started or is stopped, and its tests are named.
 	const deadline = budget === null ? Infinity : Date.now() + budget;
 	const left = () => Math.max(0, deadline - Date.now());
@@ -505,8 +505,28 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// existing test; one that adds a new test is named unless it carries a reason (no existing test reaches its module).
 	// High, critical and security fixes may add one. Checked once, by the first slice.
 	if (record && !windowsPart && (!slice || slice.i === 0)) {
-		const named = new Set([...items.map((i) => i && i.test), ...record.map((f) => f && f.test)].filter(Boolean));
+		const named = new Set([...items.map((i) => i && i.test), ...items.flatMap((i) => (i && Array.isArray(i.tests) ? i.tests : [])), ...record.map((f) => f && f.test)].filter(Boolean));
 		for (const t of allNew) if (!named.has(t.key)) note(t.key, 'A7', 'a new test the build record does not name: name it under the item or sweep fix it serves');
+			// U22 (1.50.1 sweep): each key an item names must be a test at HEAD (a key that is not is named), and, when the
+			// record's sweep commit is a real commit, a test the sweep already had: one written after it is no fix's test.
+			// Each file is read once per commit, at HEAD and at the sweep.
+			const parsed = new Map();
+			const testsOf = (rev, file) => {
+				const k = `${rev}:${file}`;
+				if (!parsed.has(k)) { const r = git(root, 'show', k); parsed.set(k, r.status === 0 ? tests(r.stdout) : null); }
+				return parsed.get(k);
+			};
+			const hasTest = (m, name) => !!m && (m.has(name) || [...m.loops].some((l) => new RegExp(`^${l.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`).test(name)));
+			const sweepSha = typeof sweepCommit === 'string' ? git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${sweepCommit}^{commit}`).stdout.trim() : '';
+			const itemKeys = new Set(items.flatMap((i) => (i ? [i.test, ...(Array.isArray(i.tests) ? i.tests : [])] : [])).filter((k) => typeof k === 'string'));
+			for (const key of itemKeys) {
+				const cut = key.indexOf('::');
+				const file = cut > 0 ? key.slice(0, cut) : '';
+				const name = cut > 0 ? key.slice(cut + 2) : '';
+				const real = TEST_FILE.test(file) && !file.split('/').includes('..') && name.length > 0;
+				if (!real || !hasTest(testsOf('HEAD', file), name)) { note(key, 'A7', 'names no test at HEAD: name a test the file holds'); continue; }
+				if (/^[0-9a-f]{40,64}$/.test(sweepSha) && !hasTest(testsOf(sweepSha, file), name)) note(key, 'A7', 'a test added after the sweep: name it under its fix row');
+			}
 		const newKeys = new Set(allNew.map((t) => t.key));
 		for (const f of record) {
 			// The build 20 sweep: only a security flag of true counts, and a reason is a few words, not one.
@@ -547,16 +567,17 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 		const rt = args.indexOf('--record');
 		let record = null;
 		let items = [];
+		let sweepCommit = null;
 		let bad = null;
 		if (rt >= 0) {
-			try { const j = JSON.parse(fs.readFileSync(args[rt + 1] || '', 'utf8')); record = j.sweep.fixes; items = Array.isArray(j.items) ? j.items : []; } catch { /* named below */ }
+			try { const j = JSON.parse(fs.readFileSync(args[rt + 1] || '', 'utf8')); record = j.sweep.fixes; items = Array.isArray(j.items) ? j.items : []; sweepCommit = typeof j.sweep.commit === 'string' ? j.sweep.commit : null; } catch { /* named below */ }
 			if (!Array.isArray(record)) bad = `test check: cannot read the fix ledger (sweep.fixes) in "${args[rt + 1] || ''}"`;
 		}
 		const r = at >= 0 && !slice ? { code: 2, text: 'test check: --slice takes i/n, with i under n' }
 			: bt >= 0 && secs === null ? { code: 2, text: 'test check: --budget takes whole seconds' }
 				: bad ? { code: 2, text: bad }
 					: args.includes('--windows') && process.platform !== 'win32' ? { code: 2, text: 'test check: --windows measures what only Windows shows, so it runs on Windows' }
-							: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record, items, windowsPart: args.includes('--windows') });
+							: check(path.resolve(top || '.'), base, { strict: args.includes('--strict'), slice, budget: secs === null ? null : secs * 1000, record, items, sweepCommit, windowsPart: args.includes('--windows') });
 		process.stdout.write(r.text + '\n');
 		process.exitCode = r.code;
 	}

@@ -1,0 +1,128 @@
+{
+ "version": "1.50.1",
+ "date": "2026-11-22",
+ "level": "patch",
+ "area": "Kit tooling",
+ "title": "fix: a record item can name many tests",
+ "headline": "A build record item can name many tests in a tests list, so a build with hundreds of new tests names each one without a changelog line per test.",
+ "alignment": "v1.50.1 is a patch before build 24: one record field and the test check that reads it, each test seen failing first.",
+ "items": [
+  {
+   "id": "RECORD-TESTS",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "A build record item may carry a tests list of test keys; the record check refuses a list that holds anything but test keys.",
+   "evidence": "scripts/build-record.mjs",
+   "where": "A record item that names many tests",
+   "before": "One test per item",
+   "after": "A tests list of test keys, each checked",
+   "test": "tests/build-record.test.mjs::a record item names many tests as a list of test keys, and a tests value that is not such a list is refused"
+  },
+  {
+   "id": "A7-TESTS",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "CI's test check counts every test an item names in its tests list as named, and still flags a new test no item names.",
+   "evidence": "scripts/test-check.mjs",
+   "test": "tests/test-check.test.mjs::the test check counts every test an item names in its tests list, and still flags a new test no item names"
+  }
+ ],
+ "verification": [
+  "tests/build-record.test.mjs and tests/test-check.test.mjs: 41 of 41 pass at 3035f7c.",
+  "Break checks: with the 1.50.0 record and test check scripts put back, the three new tests fail and the rest pass.",
+  "Pending: CI on the PR, with its test check and its fix ledger."
+ ],
+ "decisions": [
+  {
+   "decision": "A patch release",
+   "why": "Kit tooling only; nothing a project installs behaves differently."
+  }
+ ],
+ "upgrading": "Nothing to run: the change is in the kit's own record and test check scripts.",
+ "limits": "The test check reads a record only when a PR moves VERSION, so a PR that leaves VERSION alone has no new test held to a record item (older than this patch; a build 25 list row).",
+ "tests": {
+  "before": 1155,
+  "after": 1158,
+  "flips": "declared tests at main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Fix (security-sensitive)",
+  "commit": "40193c5",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched: two kit scripts read the record and the repo; nothing leaves the machine"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched: no license or content source changed"
+   },
+   {
+    "name": "Code security",
+    "result": "Three security roles: a tests list could carry a fix row's new tests past the fix-row rule, and keys were read loosely; both fixed"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Fix root, blast radius and test value: a key naming no test, two review labels in why lines and one comment fixed; one older gap to the list"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 1,
+   "low": 7
+  },
+  "accepted": [],
+  "deferred": [
+   "low D1: the test check reads a record only when VERSION moves; older than this patch (build 25 list row)"
+  ],
+  "fixes": [
+   {
+    "id": "F1",
+    "severity": "medium",
+    "text": "A record item tests list can no longer carry a test added after the swept commit past the fix-row rule: the test check names it",
+    "commit": "3035f7c5",
+    "test": "tests/test-check.test.mjs::the test check flags a build record item that names a test added after the sweep commit",
+    "reason": "the swept-commit rule is new, so no existing test reaches it"
+   },
+   {
+    "id": "F2",
+    "severity": "low",
+    "text": "Item test keys are read exactly: a key that is not a string, has a trailing space or holds a wildcard is refused, in test as in tests",
+    "commit": "3035f7c5",
+    "test": "tests/build-record.test.mjs::a record item names many tests as a list of test keys, and a tests value that is not such a list is refused",
+    "reason": "a row in this patch's own new record test"
+   },
+   {
+    "id": "F3",
+    "severity": "low",
+    "text": "An item key that names no test at the head is named by the test check",
+    "commit": "3035f7c5",
+    "test": "tests/test-check.test.mjs::the test check counts every test an item names in its tests list, and still flags a new test no item names",
+    "reason": "a row in this patch's own new test check test"
+   },
+   {
+    "id": "F4",
+    "severity": "low",
+    "text": "Two why lines no longer carry review labels",
+    "commit": "4b426121",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F5",
+    "severity": "low",
+    "text": "A code comment no longer claims more than the test check reads",
+    "commit": "3035f7c5",
+    "test": "no test: no real input"
+   }
+  ]
+ }
+}
