@@ -68,6 +68,11 @@ const redCommit = (dir, body = RED_FILE) => commit(dir, 'test: adds two numbers'
 const featCommit = (dir, src = GOOD_SRC) => commit(dir, 'feat: add two numbers', { 'src/add.mjs': src });
 const runCheck = (dir, range = 'base..HEAD') => spawnSync(process.execPath, [MODULE, range, '--repo', dir], { encoding: 'utf8' });
 const faultLines = (r) => r.stderr.split('\n').map((s) => s.trim()).filter(Boolean);
+// The fault lines are an unordered set: exactly one line names this hash and matches this rule.
+const faultFor = (r, hash, rule) => {
+	const hits = faultLines(r).filter((l) => l.includes(hash) && rule.test(l));
+	assert.equal(hits.length, 1, `expected one line for ${hash} matching ${rule}; stderr:\n${r.stderr}`);
+};
 
 // why: catches a run with no range argument passing as a clean check.
 test('CLI: no range argument exits 2 for bad use', () => {
@@ -118,8 +123,8 @@ test('CLI: one stderr line per fault, each naming its short hash and rule', () =
 	assert.equal(r.status, 1, r.stderr);
 	const lines = faultLines(r);
 	assert.equal(lines.length, 2, r.stderr);
-	assert.ok(lines[0].includes(feat) && /no red commit before it/.test(lines[0]), lines[0]);
-	assert.ok(lines[1].includes(chore) && /mixed/.test(lines[1]), lines[1]);
+	faultFor(r, feat, /no red commit before it/);
+	faultFor(r, chore, /mixed/);
 });
 
 // why: catches a commit mixing source and test files passing unflagged.
@@ -134,22 +139,27 @@ test('classing: a chore commit touching src and a test file is mixed and exits 1
 });
 
 for (const folder of ['test', 'tests', '__tests__', 'spec']) {
-	// why: catches a file under a test folder read as source code.
-	test(`classing: a feat commit that only adds a file under ${folder}/ is test, not source`, () => {
+	// why: catches a helper under a test folder passing as test-only, not mixed.
+	test(`classing: a commit adding ${folder}/helper.mjs with a src change is mixed`, () => {
 		const dir = repo();
-		commit(dir, 'feat: add a helper under a test folder', { [`${folder}/helper.mjs`]: 'export const helper = 1;\n' });
+		const mixed = commit(dir, 'chore: add a helper under a test folder', {
+			[`${folder}/helper.mjs`]: 'export const helper = 1;\n',
+			'src/add.mjs': GOOD_SRC,
+		});
 		const r = runCheck(dir);
-		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.status, 1, r.stderr);
+		faultFor(r, mixed, /mixed/);
 	});
 }
 
 for (const file of ['src/add.spec.mjs', 'lib/add.test.js']) {
-	// why: catches a test-named file outside a test folder read as source.
-	test(`classing: a feat commit that only adds ${file} is test, not source`, () => {
+	// why: catches a spec or test named file with a src change passing as test-only.
+	test(`classing: a commit adding ${file} with a src change is mixed`, () => {
 		const dir = repo();
-		commit(dir, 'feat: add a spec-named file', { [file]: 'export const x = 1;\n' });
+		const mixed = commit(dir, 'chore: add a spec-named file', { [file]: 'export const x = 1;\n', 'src/add.mjs': GOOD_SRC });
 		const r = runCheck(dir);
-		assert.equal(r.status, 0, r.stderr);
+		assert.equal(r.status, 1, r.stderr);
+		faultFor(r, mixed, /mixed/);
 	});
 }
 
@@ -179,7 +189,7 @@ test('red-green: a fix commit with no red commit before it exits 1', () => {
 	const fix = commit(dir, 'fix: add two numbers', { 'src/add.mjs': GOOD_SRC });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(fix) && /no red commit before it/.test(l)), r.stderr);
+	faultFor(r, fix, /no red commit before it/);
 });
 
 // why: catches a test written after its code satisfying the red rule.
@@ -189,7 +199,7 @@ test('red-green: a test committed after its feat does not count as the red commi
 	redCommit(dir);
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(feat) && /no red commit before it/.test(l)), r.stderr);
+	faultFor(r, feat, /no red commit before it/);
 });
 
 // why: catches a second feature riding on the first pair's red commit.
@@ -200,7 +210,7 @@ test('red-green: a second feat after a green pair needs its own red commit', () 
 	const second = commit(dir, 'feat: document add', { 'src/add.mjs': `${GOOD_SRC}// sums\n` });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(second) && /no red commit before it/.test(l)), r.stderr);
+	faultFor(r, second, /no red commit before it/);
 });
 
 // why: catches a new test that passes on its red tree unflagged.
@@ -210,17 +220,27 @@ test('red-green: a red commit whose new test passes on its own tree is a fault',
 	featCommit(dir);
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(red) && /passed before the code/.test(l)), r.stderr);
+	faultFor(r, red, /passed before the code/);
+});
+
+// why: catches a red check reading an old failing test as red.
+test('red-green: a new passing test is a fault even when an old test in the file fails', () => {
+	const dir = repo({ 'tests/add.test.mjs': testFile(CASE_ONE, ['already failing', 'assert.equal(1, 2);']) });
+	const red = redCommit(dir, testFile(CASE_ONE, ['already failing', 'assert.equal(1, 2);'], ['passes early', 'assert.equal(add(4, 0), 4);']));
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, red, /passed before the code/);
 });
 
 // why: catches a green step that leaves a red test failing unflagged.
 test('red-green: a feat that leaves a red test failing is a fault', () => {
 	const dir = repo();
-	redCommit(dir);
+	redCommit(dir, testFile(ADDS));
 	const feat = featCommit(dir, WRONG_SRC);
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(feat) && /still fails after the code/.test(l)), r.stderr);
+	faultFor(r, feat, /still fails after the code/);
 });
 
 // why: catches a changed existing test that fails on red wrongly faulted.
@@ -239,7 +259,7 @@ test('red-green: a changed existing test that passes on its red tree is a fault'
 	featCommit(dir);
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(red) && /passed before the code/.test(l)), r.stderr);
+	faultFor(r, red, /passed before the code/);
 });
 
 // why: catches a red commit whose test cannot load faulted as untested.
@@ -258,7 +278,7 @@ test('red-green: a new test file that still cannot load after the feat is a faul
 	const feat = commit(dir, 'feat: add sum', { 'src/sum.mjs': SUM_BAD_SRC });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(feat) && /still fails after the code/.test(l)), r.stderr);
+	faultFor(r, feat, /still fails after the code/);
 });
 
 // why: catches a check that faults a unit for an untouched old failing file.
@@ -324,7 +344,7 @@ test('refactor: a refactor that changes a test file is a fault', () => {
 	});
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(refactor) && /refactor changed a test file/.test(l)), r.stderr);
+	faultFor(r, refactor, /refactor changed a test file/);
 });
 
 // why: catches a refactor that breaks a green test passing unflagged.
@@ -337,7 +357,27 @@ test('refactor: a source refactor that turns a green test red is a fault', () =>
 	});
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(refactor) && /refactor changed which tests pass/.test(l)), r.stderr);
+	faultFor(r, refactor, /refactor changed which tests pass/);
+});
+
+// why: catches a refactor that turns a red test green unflagged.
+test('refactor: a refactor that turns a previously failing test green is a fault', () => {
+	const dir = repo();
+	redCommit(dir);
+	commit(dir, 'chore: reformat the add source', { 'src/add.mjs': `${BASE_SRC}\n` });
+	const refactor = commit(dir, 'refactor: move to a plain sum', { 'src/add.mjs': GOOD_SRC });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, refactor, /refactor changed which tests pass/);
+});
+
+// why: catches a build commit mixing source and test passing unflagged.
+test('unchecked types: a build commit that mixes source and test is a mixed fault', () => {
+	const dir = repo();
+	const build = commit(dir, 'build: pin add', { 'src/add.mjs': GOOD_SRC, 'tests/add.test.mjs': RED_FILE });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, build, /mixed/);
 });
 
 // why: catches a retest commit refused for changing a test after green.
@@ -383,7 +423,7 @@ test('test-red: a test commit that rewords a passing assertion faults for use re
 	const reword = commit(dir, 'test: reword the case one assertion', { 'tests/add.test.mjs': testFile(REWORDED, ADDS) });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(reword) && /test changed without a red test; use retest:/.test(l)), r.stderr);
+	faultFor(r, reword, /test changed without a red test; use retest:/);
 });
 
 // why: guards rule:test-integrity (a retest commit that rewords a passing assertion passes and prints its owner yes line).
@@ -419,7 +459,7 @@ test('unchecked types: a docs commit that also touches a test file is a mixed fa
 	const docs = commit(dir, 'docs: describe add', { 'docs/add.md': '# add\n', 'tests/add.test.mjs': RED_FILE });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(docs) && /mixed/.test(l)), r.stderr);
+	faultFor(r, docs, /mixed/);
 });
 
 // why: catches a ci commit mixing source and test passing unflagged.
@@ -428,5 +468,5 @@ test('unchecked types: a ci commit that mixes source and test is a mixed fault',
 	const ci = commit(dir, 'ci: pin add', { 'src/add.mjs': GOOD_SRC, 'tests/add.test.mjs': RED_FILE });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(ci) && /mixed/.test(l)), r.stderr);
+	faultFor(r, ci, /mixed/);
 });
