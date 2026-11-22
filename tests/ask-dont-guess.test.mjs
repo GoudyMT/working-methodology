@@ -28,21 +28,23 @@ const gate = (text, role) => {
 	return spawnSync(process.execPath, args, { encoding: 'utf8' });
 };
 const lines = (res) => res.stderr.trim().split('\n');
+// A missing clarity is log-only in this release: the warning line is in stdout or stderr and the exit stays 0.
+const warnLines = (res) => `${res.stdout}${res.stderr}`.split('\n').filter((l) => /missing clarity \(log-only in this release\)/.test(l));
 // Splits a role file into paragraphs; the three rules must share one, so each rule is said in the same breath.
 const paragraphs = (file) => fs.readFileSync(file, 'utf8').split(/\r?\n\s*\r?\n/);
 
 // why: catches a tester role line with no clarity field passing the gate, so a guessed spec goes unflagged.
-test('A1 spec 1: a tester role line with no clarity is an error naming clarity on line 1', () => {
+test('A1 spec 1: a tester role line with no clarity warns on line 1 and exits 0', () => {
 	const res = gate(record(roleLine('tester'), finding()), 'tester');
-	assert.equal(res.status, 1, res.stderr);
-	assert.ok(lines(res).some((l) => /^line 1: .*`clarity`/.test(l)), res.stderr);
+	assert.equal(res.status, 0, res.stderr);
+	assert.ok(warnLines(res).some((l) => /line 1/.test(l)), `${res.stdout}${res.stderr}`);
 });
 
 // why: catches a test-reviewer role line with no clarity field passing the gate, so its guessed review goes unflagged.
-test('A2 spec 1: a test-reviewer role line with no clarity is an error naming clarity on line 1', () => {
+test('A2 spec 1: a test-reviewer role line with no clarity warns on line 1 and exits 0', () => {
 	const res = gate(record(roleLine('test-reviewer'), reviewFinding()), 'test-reviewer');
-	assert.equal(res.status, 1, res.stderr);
-	assert.ok(lines(res).some((l) => /^line 1: .*`clarity`/.test(l)), res.stderr);
+	assert.equal(res.status, 0, res.stderr);
+	assert.ok(warnLines(res).some((l) => /line 1/.test(l)), `${res.stdout}${res.stderr}`);
 });
 
 // why: catches a tester that reports its spec as clear being refused, which would block every clear tester record.
@@ -153,10 +155,10 @@ test('A15 spec 1: a tester with a numeric clarity is an error on line 1 that nam
 });
 
 // why: catches a tester role line with no clarity passing when the gate is run without --role, so the rule hides behind a flag.
-test('A16 spec 1: a tester role line with no clarity is an error with no --role flag passed', () => {
+test('A16 spec 1: a tester role line with no clarity warns on line 1 and exits 0 with no --role flag passed', () => {
 	const res = gate(record(roleLine('tester'), finding()));
-	assert.equal(res.status, 1, res.stderr);
-	assert.ok(lines(res).some((l) => /^line 1: .*`clarity`/.test(l)), res.stderr);
+	assert.equal(res.status, 0, res.stderr);
+	assert.ok(warnLines(res).some((l) => /line 1/.test(l)), `${res.stdout}${res.stderr}`);
 });
 
 // why: catches a checker role line demanding clarity, which would refuse every checker record that predates the field.
