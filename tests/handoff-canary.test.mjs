@@ -95,3 +95,17 @@ test('under enforce, a hand-back with no phrase and a broken RECORD block gets o
 	const ok = handBackEnforced(home, dir, 'enf2', valid);
 	assert.equal(ok.stdout.trim(), '', `a valid hand-back is not refused: ${ok.stdout}`);
 });
+
+// why: catches a numeric agent_id that makes canary's own run() throw and drops the hand-back gate's deny, so a broken record is not refused
+test('under enforce, a numeric agent_id that makes canary throw still prints the gate deny as one JSON object', () => {
+	const home = enforceHome();
+	const dir = canaryRepo();
+	const r = handBackEnforced(home, dir, 7, 'RECORD:\nnot json');
+	const out = oneObject(r.stdout);
+	assert.ok(out, `stdout is one JSON object: ${r.stdout}`);
+	assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+	assert.match(out.hookSpecificOutput.permissionDecisionReason, /RECORD: block is broken/, out.hookSpecificOutput.permissionDecisionReason);
+	// Folded control: a valid hand-back with a numeric agent_id is still not refused.
+	const valid = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'ROLE: reviewer', 'Not checked: nothing', 'RECORD:', ROLE, NOTE_CHECKED].join('\n');
+	assert.equal(handBackEnforced(home, dir, 8, valid).stdout.trim(), '', 'a valid hand-back with a numeric agent_id is not refused');
+});
