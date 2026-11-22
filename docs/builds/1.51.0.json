@@ -1,0 +1,616 @@
+{
+ "version": "1.51.0",
+ "date": "2026-11-22",
+ "level": "minor",
+ "area": "Delegation",
+ "title": "feat: handoff record, test method and one model table per step",
+ "headline": "Every hand-back ends in a checked JSONL record; tests are written, reviewed and locked before the build starts, and a commit-shape check reads the order; one model table names the model and effort of every step, with floors a project cannot lower; and the build flow, the plan and the sweep fix lanes are checked by scripts.",
+ "alignment": "v1.51.0 is build 24 of the v2.0 plan: K339, K300 and K301, E36 with K303, K309 and K312, K225, K308 with the `retest:` type, K307, K310, K341, K277, K311, K315, K294, and the flow checks U15 to U18, each unit opened by a test-only commit. The `agent-model` and `handoff-gate` holds ship log-only.",
+ "items": [
+  {
+   "id": "K339",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The test-scope guard reads a folder argument (`tests/`, `tests`, `./tests`) as the test files under it, for every runner it reads; with no distinct base it lets the run through and logs the cause.",
+   "evidence": "user/kit-hooks/test-scope.cjs",
+   "where": "A test run on a folder of changed tests",
+   "before": "Refused: the folder was read as a file the branch did not change",
+   "after": "Allowed when every test file under it changed",
+   "test": "tests/guard-dispatch.test.mjs::test-scope reads folders and a repo with no base"
+  },
+  {
+   "id": "K300",
+   "kind": "added",
+   "reach": "projects",
+   "text": "A hand-back ends with a `RECORD:` line and one JSON object per finding, and `handoff.mjs check` holds it to the schema with exact errors: exit 0 valid, 1 invalid, 2 unreadable; an empty record never passes.",
+   "evidence": "user/kit-tools/handoff.mjs",
+   "test": "tests/handoff.test.mjs::T1 spec 1: text with no RECORD line is an error"
+  },
+  {
+   "id": "K301",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "The sweep tally reads a RECORD block, keeps a `|` inside a claim and refuses a record that fails the check; the canary reads a valid block as the report; a hand-back gate logs a broken block, and the brief templates ask for one.",
+   "evidence": "user/skills/pre-pr-sweep/approve.mjs, user/kit-hooks/handoff-gate.cjs, user/kit-hooks/canary.cjs",
+   "test": "tests/kit-sweep-budget.test.mjs::the findings count reads a RECORD block, keeps a | inside a claim, and writes one ledger row per finding"
+  },
+  {
+   "id": "E36",
+   "kind": "added",
+   "reach": "projects",
+   "text": "One model table in `kit.config.json` names the model, effort, enforcer and floor of every step, with five new roles (tester, test reviewer, researcher, drafter, writer); `model-table.mjs check` fails any role file or script that disagrees.",
+   "evidence": "kit.config.json, user/kit-tools/model-table.mjs, user/agents/tester.md",
+   "test": "tests/model-table.test.mjs::rank orders opus above sonnet above haiku"
+  },
+  {
+   "id": "E36-ENFORCE",
+   "kind": "added",
+   "reach": "projects",
+   "text": "Install writes the lead model and effort to settings, a hook logs a role started on another model, session start lists roles on an unmeasured model, CI runs the table check, and `pr-size.mjs` picks the writer by file count.",
+   "evidence": "user/kit-hooks/agent-model.cjs, user/kit-tools/pr-size.mjs, scripts/kit.mjs, .github/workflows/ci.yml",
+   "test": "tests/model-table-enforcers.test.mjs::pr-size names the small writer for a change of ten files"
+  },
+  {
+   "id": "K303",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the lead model.",
+   "evidence": "user/agents/researcher.md, project/.claude/agents/Explore.md",
+   "test": "tests/kit-rules.test.mjs::each agent role file matches the role table in kit.config.json: tools, denied tools and rules at start"
+  },
+  {
+   "id": "K309",
+   "kind": "added",
+   "reach": "projects",
+   "text": "`unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. CI runs it report-only.",
+   "evidence": "user/kit-tools/unit-check.mjs",
+   "test": "tests/unit-check.test.mjs::CLI: no range argument exits 2 for bad use"
+  },
+  {
+   "id": "K308",
+   "kind": "added",
+   "reach": "projects",
+   "text": "After the red commit the lead locks a unit with `unit-lock.mjs`: the red sha and the source files it may change; the edit fence then blocks the build role from test files and the lock list.",
+   "evidence": "user/kit-tools/unit-lock.mjs, user/kit-hooks/edit-fence.cjs, user/skills/agent-team-build/templates/builder-brief.md",
+   "test": "tests/test-lock.test.mjs::unit-lock writes the source files it is given to the unit file list and prints them"
+  },
+  {
+   "id": "T3",
+   "kind": "added",
+   "reach": "projects",
+   "text": "A test changed after red is a `retest:` commit: the commit check accepts the type, and the pre-push hook holds a push that carries one until the owner's yes.",
+   "evidence": ".githooks/pre-push, project/.githooks/pre-push, project/.claude/name-check.mjs",
+   "where": "A push that changes a locked test",
+   "before": "Pushed like any other commit",
+   "after": "Held for the owner's yes",
+   "test": "tests/test-lock.test.mjs::pre-push holds a retest: range without the owner yes and lets it through with the owner yes to that push"
+  },
+  {
+   "id": "K307",
+   "kind": "added",
+   "reach": "projects",
+   "text": "`tester-model.mjs` picks Haiku or a larger tester by the approved criteria R1 to R6 read from the plan row, a missing row exits 2; `builder-model.mjs` steps the build up once on a red rerun; the batch plan gains Risk and Tester columns.",
+   "evidence": "user/kit-tools/tester-model.mjs, user/kit-tools/builder-model.mjs, user/skills/agent-team-build/templates/batch-plan.md",
+   "test": "tests/model-scripts.test.mjs::tester-model picks sonnet on R1 for a row marked Risk high"
+  },
+  {
+   "id": "K310",
+   "kind": "added",
+   "reach": "projects",
+   "text": "A read-only test reviewer checks each red commit before any build starts; `handoff.mjs check --review <unit>` passes only when every review finding has a fixed line.",
+   "evidence": "user/kit-tools/handoff.mjs, user/agents/test-reviewer.md",
+   "test": "tests/review-gate.test.mjs::U6 spec 1: a tester fix line with status fixed passes check --role tester"
+  },
+  {
+   "id": "K225",
+   "kind": "added",
+   "reach": "projects",
+   "text": "Each guard hold carries a mode, log or enforce, in `holds.json`; anything but a clean log reads as enforce, and `hold-check.mjs` fails a release that drops a hold or turns an enforced one to log.",
+   "evidence": "user/kit-hooks/holds.json, user/kit-hooks/hold-mode.cjs, user/kit-tools/hold-check.mjs",
+   "test": "tests/hold-modes.test.mjs::hold-mode returns enforce for an id not in the list, so existing holds keep blocking"
+  },
+  {
+   "id": "K341",
+   "kind": "added",
+   "reach": "projects",
+   "text": "A project may change a step's model in `.kit/models.json`; install and the project CI step refuse an override below a floor or on a never-drop step, naming it.",
+   "evidence": "project/.claude/model-override.mjs, scripts/kit.mjs, project/_Templates/ci-node.yml",
+   "where": "A project override that lowers a floor step",
+   "before": "No override file existed",
+   "after": "Refused by install and CI, the step named",
+   "test": "tests/model-override.test.mjs::install project refuses an override that names a model below a floor, naming the step and writing nothing"
+  },
+  {
+   "id": "K277",
+   "kind": "added",
+   "reach": "projects",
+   "text": "`lanes.mjs` splits a sweep's open findings into lanes that share no file; each lane is fixed test-first in its own worktree and merges on green tests, named in sweep step 5 and the batch flow.",
+   "evidence": "user/kit-tools/lanes.mjs, user/skills/pre-pr-sweep/SKILL.md",
+   "test": "tests/lanes.test.mjs::findings that share a file share a lane, and a finding on another file gets its own lane"
+  },
+  {
+   "id": "K311",
+   "kind": "added",
+   "reach": "kit",
+   "text": "A report-only CI job flips the production lines a PR adds, in four slices, and lists survivors as a missing test or code the tests do not demand; it opens with its flip count and never fails the run.",
+   "evidence": "scripts/mutation-check.mjs, .github/workflows/ci.yml",
+   "test": "tests/mutation-job.test.mjs::report mode exits 0 even when flips survive"
+  },
+  {
+   "id": "K315",
+   "kind": "added",
+   "reach": "projects",
+   "text": "Install prints each template slot a project file still holds, with the file; the sweep brief writer refuses a rules block that holds one and names it. Format examples are never slots.",
+   "evidence": "user/skills/pre-pr-sweep/slots.mjs, scripts/kit.mjs, user/skills/pre-pr-sweep/approve.mjs",
+   "where": "An install that leaves a project name slot unfilled",
+   "before": "Nothing printed",
+   "after": "One line per slot, with the file",
+   "test": "tests/slots.test.mjs::install project prints one line per unfilled slot, naming the file and the slot"
+  },
+  {
+   "id": "K294",
+   "kind": "changed",
+   "reach": "projects",
+   "text": "`AGENTS.md` gains a What holds where section, and the security standards one line: the guards hold only sessions that run the kit hooks, and git hooks and CI are the only layers that hold every other tool.",
+   "evidence": "project/AGENTS.md, rules/security.md",
+   "test": "tests/what-holds.test.mjs::the built AGENTS.md has a What holds where section that says what holds each agent, ASCII, inside the cap"
+  },
+  {
+   "id": "U15",
+   "kind": "added",
+   "reach": "projects",
+   "text": "`flow-check.mjs` checks the build flow from saved files: a fresh plan graph before a build starts, no tester that also builds, one test review per unit, a cap on check rounds and on waiting units. It logs only in this release.",
+   "evidence": "user/kit-tools/flow-check.mjs, user/kit-hooks/agent-model.cjs",
+   "test": "tests/flow-lock.test.mjs::L1: start exits 1 when the plan has no plan-graph log line"
+  },
+  {
+   "id": "U16",
+   "kind": "added",
+   "reach": "projects",
+   "text": "Tester and test reviewer records carry a clarity field; an asked question needs the lead's answer before the work goes on, and a missing field warns in this release.",
+   "evidence": "user/kit-tools/handoff.mjs, user/agents/tester.md, user/agents/test-reviewer.md",
+   "test": "tests/ask-dont-guess.test.mjs::A1 spec 1: a tester role line with no clarity warns on line 1 and exits 0"
+  },
+  {
+   "id": "U17",
+   "kind": "added",
+   "reach": "projects",
+   "text": "`plan-check.mjs` refuses a batch plan whose Units table lacks a column or a cell, or whose plan graph names a fault, and checks the saved hand-back records against it.",
+   "evidence": "user/kit-tools/plan-check.mjs, user/skills/agent-team-build/SKILL.md",
+   "test": "tests/plan-check.test.mjs::P1 spec 1: a plan with no Units table is an error that names the Units table"
+  },
+  {
+   "id": "U18",
+   "kind": "added",
+   "reach": "projects",
+   "text": "The build lead is the overwatch lead: the team build skill gains its section, and the flow checklist reads the lead's JSONL log against the plan, naming a unit merged before its tests, review or build step.",
+   "evidence": "user/skills/agent-team-build/SKILL.md, user/kit-tools/checklist.mjs, rules/agent-teams.md",
+   "test": "tests/overwatch.test.mjs::C3 spec 1: a unit merged with no tests step is an error that names the unit and tests"
+  }
+ ],
+ "verification": [
+  "Each of the 19 units opens with a test-only commit; the unit commit lists in this record let the commit-shape check read each unit, report-only in CI.",
+  "Pending: the score gate on the owner's PC runs after the sweep, since rule text changed (docs/migrations/1.51.0-reworded.json).",
+  "Pending: the one sweep, paired with the cloud run, fills the review below."
+ ],
+ "decisions": [
+  {
+   "decision": "The tester criteria R1 to R6 pick the tester model",
+   "why": "The first criterion that fires wins; none keeps Haiku; a missing plan row exits 2. The owner's pick (2026-11-22)."
+  },
+  {
+   "decision": "A test run with no distinct base is let through and logged",
+   "why": "The guard's own policy for anything it cannot read; the owner's pick."
+  },
+  {
+   "decision": "A test change after red is a `retest:` commit",
+   "why": "Kit commits are one line with no body, so no trailer can ride; the push that carries one waits for the owner's pop-up yes."
+  },
+  {
+   "decision": "New holds ship log-only",
+   "why": "They switch to enforce after one clean build 25 with the guard log read and no false hold, on the owner's yes."
+  },
+  {
+   "decision": "The minimal-code CI job only reports",
+   "why": "Four slices of 12 minutes at most, added lines only; the owner's pick."
+  },
+  {
+   "decision": "New rule text lives in the scripts, role files and templates that enforce it",
+   "why": "The team rules module was at 13,998 of 14,000 bytes; it gets pointers only."
+  },
+  {
+   "decision": "Haiku builds, with one step up on a red rerun",
+   "why": "The owner's ruling (2026-11-22 08:34Z), by script, never by hand; U1 and U2 began before it and finished on `sonnet`."
+  },
+  {
+   "decision": "Per unit: tester, one test review, build, green, next unit",
+   "why": "Per-unit `opus` check rounds looped 3 to 7 times; the owner set this flow (11:41Z) and the test review on `sonnet` medium (11:43Z)."
+  },
+  {
+   "decision": "Sweep fixes run in lanes and merge on green tests with no re-review",
+   "why": "The owner (12:12Z); lane count comes from file overlap, never a fixed number."
+  },
+  {
+   "decision": "The overwatch lead is the build lead",
+   "why": "Not an extra role; each of its steps is checked by a script, hook or guard (the owner, 12:39Z)."
+  },
+  {
+   "decision": "The one sweep is paired with a cloud run",
+   "why": "The cloud bench gets the head, the contract and each role brief before the PC findings exist; both are reported side by side (the owner)."
+  },
+  {
+   "decision": "A minor release",
+   "why": "New tools, roles, holds and checks reach every project."
+  }
+ ],
+ "upgrading": "Run install user, then install project: the new role files (tester, test reviewer, researcher, drafter, writer), the kit tools handoff.mjs, unit-check.mjs, unit-lock.mjs, tester-model.mjs, `builder-model.mjs`, model-table.mjs, pr-size.mjs, hold-check.mjs, lanes.mjs, plan-check.mjs, flow-check.mjs and checklist.mjs, the hooks `agent-model.cjs`, handoff-gate.cjs, hold-mode.cjs and record-counts.cjs with holds.json, the edit fence, the canary, the pre-push hook, the commit name check, model-override.mjs, the CI templates, `AGENTS.md` and the team and security standards change.",
+ "limits": "The `agent-model` and `handoff-gate` holds only log in this release, and the flow checks and the commit-shape check only report. The sweep tally refuses a pipe row beside a RECORD block only in one letter case, while its row reader takes any case. An installed plan-check.mjs cannot load the plan graph module. A lead note in a hand-back is text the working role writes, so it can be forged until a lead-only answer file exists. A build role keeps a shell, so a test file can change outside the edit fence; the commit checks and CI catch it, and nothing restores a deleted lock list. Some role briefs gave no canary phrase, and the role files carry it unevenly. Four flow checklist test rows pass only through the usage exit, and one folder row passes with folder matching broken. The retest push yes is not spent in the push log, so it can be replayed within its window, and a yes to a plain branch push also covers retest commits.",
+ "tests": {
+  "before": 1155,
+  "after": 1767,
+  "flips": "declared tests at main and on this branch; the PR run gives the final count"
+ },
+ "holds": {
+  "logOnly": [
+   "agent-model",
+   "handoff-gate"
+  ],
+  "enforceFrom": "build 25, on the owner's yes"
+ },
+ "units": {
+  "U1": {
+   "rows": [
+    "K339"
+   ],
+   "commits": [
+    "25ff9c3c",
+    "34305276",
+    "4561cc97",
+    "3aa34a85",
+    "2cff01fb",
+    "9b72f979",
+    "39f220e9",
+    "c91c39f7",
+    "20935778",
+    "6e2dcabe"
+   ]
+  },
+  "U2a": {
+   "rows": [
+    "K300",
+    "K301"
+   ],
+   "commits": [
+    "02f345ee",
+    "ff9faf54",
+    "e21efcf0",
+    "b419a923",
+    "9f56ec91",
+    "c7c9a694",
+    "c71e55cb",
+    "158ec541",
+    "47d614aa",
+    "24fec71d"
+   ]
+  },
+  "U7a": {
+   "rows": [
+    "E36",
+    "K303"
+   ],
+   "commits": [
+    "b9c134e9",
+    "faf9e7f8",
+    "35f6d602",
+    "0c6f1c3b",
+    "51a5c44a",
+    "5066506f",
+    "54030802",
+    "39d3657a",
+    "d854d9c7",
+    "b5f3cd1b",
+    "3c294ae5",
+    "c01a8085",
+    "302cf9e9",
+    "0d90ffc3",
+    "091283c5",
+    "f072742a",
+    "99bea366",
+    "75e3209b"
+   ]
+  },
+  "U3": {
+   "rows": [
+    "K309",
+    "K312"
+   ],
+   "commits": [
+    "6e1c2c25",
+    "722968c2",
+    "9e8daa36",
+    "b404b4a1",
+    "c76512fe",
+    "92d58947",
+    "1443048a",
+    "53dbbf1d",
+    "4b955509",
+    "e6c277f5"
+   ]
+  },
+  "U7b": {
+   "rows": [
+    "E36"
+   ],
+   "commits": [
+    "1de2995a",
+    "a674ef35",
+    "bf7707c8",
+    "0fafb0c4",
+    "70ade227",
+    "d48dfff1",
+    "7140ce9a",
+    "eb51c34c",
+    "6568afbe",
+    "97902ef4",
+    "13fc8889",
+    "342f7e21",
+    "7fecd288",
+    "0b8a8034"
+   ]
+  },
+  "U5": {
+   "rows": [
+    "K307"
+   ],
+   "commits": [
+    "b5de325d",
+    "e8f2870b",
+    "1e21ec7e",
+    "6eb84f51",
+    "ef5d49dd",
+    "f20909f4",
+    "b4193491"
+   ]
+  },
+  "U9": {
+   "rows": [
+    "K225"
+   ],
+   "commits": [
+    "ab3570dc",
+    "fe98bd3f",
+    "25fb59bc",
+    "7d08937f",
+    "948f5fc4",
+    "27a800fc",
+    "51efe44e",
+    "f898a92b",
+    "6f57f90d"
+   ]
+  },
+  "U8": {
+   "rows": [
+    "K341"
+   ],
+   "commits": [
+    "eead5c85",
+    "5f26abd9",
+    "21651681",
+    "bcde413c"
+   ]
+  },
+  "U11": {
+   "rows": [
+    "K311"
+   ],
+   "commits": [
+    "e8bb3c4e",
+    "9cb56d61",
+    "c726dbf3",
+    "a180f596",
+    "e3f2a7f4"
+   ]
+  },
+  "U13": {
+   "rows": [
+    "K294"
+   ],
+   "commits": [
+    "5c7b7576",
+    "11ba99de",
+    "64d900d7",
+    "3ed3bc12",
+    "a1637be5",
+    "a1414f52"
+   ]
+  },
+  "U4": {
+   "rows": [
+    "K308",
+    "T3"
+   ],
+   "commits": [
+    "b19767dc",
+    "3edb9fe7",
+    "e849ee40",
+    "847a38a2",
+    "bb22a344",
+    "5d40c339",
+    "876044b8",
+    "ff448495",
+    "e1a45f45",
+    "b5469225",
+    "88e785d9",
+    "c6739f99",
+    "cda65a9e",
+    "28815134",
+    "54dcb160"
+   ]
+  },
+  "U2b": {
+   "rows": [
+    "K300",
+    "K301"
+   ],
+   "commits": [
+    "d77cefaa",
+    "a420f934",
+    "bc4647ca",
+    "57cb0a9a",
+    "513f064b",
+    "340a77c3",
+    "55c75383",
+    "b934d23b",
+    "fb4b3a3f",
+    "400f7b1f",
+    "9009509d",
+    "e0248f6f"
+   ]
+  },
+  "U12": {
+   "rows": [
+    "K315"
+   ],
+   "commits": [
+    "10a52b14",
+    "29e25f81",
+    "09955e97",
+    "f2c739b3",
+    "794f1b9c",
+    "49e1d33e",
+    "628533c6"
+   ]
+  },
+  "U6": {
+   "rows": [
+    "K310"
+   ],
+   "commits": [
+    "1eb489ba",
+    "45273c7a",
+    "ce7ff4e4",
+    "13f139da",
+    "76cd2e99",
+    "cdf50409"
+   ]
+  },
+  "U15": {
+   "rows": [
+    "U15"
+   ],
+   "commits": [
+    "5558995c",
+    "5d645b3d",
+    "c0075a64",
+    "2b2c1a9a",
+    "07598070"
+   ]
+  },
+  "U10": {
+   "rows": [
+    "K277"
+   ],
+   "commits": [
+    "962b4e82",
+    "c6019b6f",
+    "9ba26df0",
+    "165651d3"
+   ]
+  },
+  "U16": {
+   "rows": [
+    "U16"
+   ],
+   "commits": [
+    "de3ecffd",
+    "25c939c2",
+    "e47b7f7c",
+    "b447e2ff"
+   ]
+  },
+  "U17": {
+   "rows": [
+    "U17"
+   ],
+   "commits": [
+    "dfed8e9a",
+    "d65aad34",
+    "6b767b29",
+    "3e0a6d38",
+    "db3b8cd4"
+   ]
+  },
+  "U18": {
+   "rows": [
+    "U18"
+   ],
+   "commits": [
+    "335b7c37",
+    "27bb8f47",
+    "055b9476",
+    "2aa681f8",
+    "22767416"
+   ]
+  }
+ },
+ "planCommits": [
+  "aeaef89d",
+  "eb18ff23",
+  "0a717a4f",
+  "8b4b7803",
+  "7a299aaa",
+  "7cdb425b",
+  "b4c1d3f4",
+  "de8ac6fb",
+  "d962a886",
+  "89c07645",
+  "5036f857",
+  "d63032dc",
+  "522d5c7d",
+  "1949efea",
+  "7e9739a6",
+  "733b3f47",
+  "f06b0067",
+  "2bc82962",
+  "dc86049d"
+ ],
+ "sweep": {
+  "tier": "Feature (security-sensitive)",
+  "commit": "dc86049",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Pending: the sweep has not run"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Pending: the sweep has not run"
+   },
+   {
+    "name": "Legal",
+    "result": "Pending: the sweep has not run"
+   },
+   {
+    "name": "Code security",
+    "result": "Pending: the sweep has not run"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Pending: the sweep has not run"
+   },
+   {
+    "name": "Alignment",
+    "result": "Pending: the sweep has not run"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "accepted": [],
+  "deferred": [],
+  "fixes": []
+ }
+}
