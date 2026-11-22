@@ -20,6 +20,11 @@ test('the canary reads a RECORD block with finding lines as the report, with no 
 	const r = handBack(dir, 'rec1', message.join('\n'));
 	const out = refusal(r);
 	if (out) assert.doesNotMatch(out.permissionDecisionReason, /one line per finding/, out.permissionDecisionReason);
+	// Folded control: a hand-back with neither pipe rows, No findings nor a RECORD block still gets the finding-shape fault.
+	const neither = refusal(handBack(dir, 'ctl1', [`${FAKE_PHRASE}`, 'I looked and I have some thoughts about the tests.'].join('\n')));
+	assert.ok(neither, 'expected a refusal');
+	assert.equal(neither.permissionDecision, 'deny');
+	assert.match(neither.permissionDecisionReason, /one line per finding/, neither.permissionDecisionReason);
 });
 
 // why: catches a clean RECORD block with only a role line and a notChecked line refused as an out-of-shape report.
@@ -28,16 +33,6 @@ test('a RECORD block with only a role line and a notChecked line is a clean repo
 	const message = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'RECORD:', ROLE, NOTE_CHECKED];
 	const r = handBack(dir, 'rec2', message.join('\n'));
 	assert.equal(refusal(r), null, r.stdout);
-});
-
-// why: catches a hand-back with no pipe rows, no No findings line and no RECORD block passing the shape check unfaulted.
-test('a hand-back with neither pipe rows, No findings nor a RECORD block still gets the finding-shape fault', () => {
-	const dir = canaryRepo();
-	const message = [`${FAKE_PHRASE}`, 'I looked and I have some thoughts about the tests.'];
-	const out = refusal(handBack(dir, 'ctl1', message.join('\n')));
-	assert.ok(out, 'expected a refusal');
-	assert.equal(out.permissionDecision, 'deny');
-	assert.match(out.permissionDecisionReason, /one line per finding/, out.permissionDecisionReason);
 });
 
 // A temp home with a copy of the kit's hooks and a kit-tools/handoff.mjs that throws on load (C1).
