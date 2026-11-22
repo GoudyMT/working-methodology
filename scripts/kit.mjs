@@ -664,7 +664,7 @@ function guardFaults(home, projectDir) {
  * Returns:
  *     'added', 'present', or a reason it was left alone
  */
-function wireGate(home, dryRun) {
+function wireGate(home, dryRun, lead) {
   const file = path.join(home, 'settings.json');
   let settings = {};
   if (fs.existsSync(file)) {
@@ -691,6 +691,10 @@ function wireGate(home, dryRun) {
     if (list.length === 1 && JSON.stringify(list[0]) === JSON.stringify(entry)) continue;
     settings.hooks[event] = [...list.filter((e) => !(e.hooks || []).some(named)), entry];
   }
+  // E36 (build 24): the lead runs on the model and effort its table step names. Only those two keys are set, so a kit
+  // with no lead step writes neither and every other key the owner set stays.
+  if (lead && lead.model) settings.model = lead.model;
+  if (lead && lead.effort) settings.effortLevel = lead.effort;
   if (JSON.stringify(settings) === before) return 'present';
   if (!dryRun) {
     fs.mkdirSync(home, { recursive: true });
@@ -961,7 +965,7 @@ export function install(ctx) {
     }
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
     if (ctx.target === 'user') {
-      const gate = wireGate(ctx.home, ctx.dryRun);
+      const gate = wireGate(ctx.home, ctx.dryRun, kitInfo.config.steps?.lead);
       if (gate !== 'added' && gate !== 'present') skipped.push({ file: 'settings.json', reason: gate });
       // Every recorded project gets this release's shims now, not at its next install project (the 1.26.0 sweep, C9).
       let names = [];
