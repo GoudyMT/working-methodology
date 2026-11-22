@@ -20,11 +20,13 @@ const family = (m) => {
 
 // The model line in a role file's frontmatter: null when the file has none, undefined when there is no role file.
 function roleModel(type) {
-	if (!/^[\w.-]+$/.test(type)) return undefined;
+	// A plugin role (kit:checker) reads as its bare name, as edit-fence reads it.
+	const name = String(type).split(':').pop();
+	if (!/^[\w.-]+$/.test(name)) return undefined;
 	const home = process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude');
 	let text;
 	try {
-		text = fs.readFileSync(path.join(home, 'agents', `${type}.md`), 'utf8');
+		text = fs.readFileSync(path.join(home, 'agents', `${name}.md`), 'utf8');
 	} catch {
 		return undefined;
 	}
