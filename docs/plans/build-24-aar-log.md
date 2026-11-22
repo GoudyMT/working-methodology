@@ -16,6 +16,7 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 12:3x | U11 | Haiku tester | Flagged: the CI job needs a test map the PR does not carry | Lead ruled: report mode exits 0 with a note; the job builds the map |
 | 12:4x | U4 | Haiku tester | Asked three open questions instead of guessing (owner-yes lift, guard vs pre-push, red sha role) | Lead answered in one message |
 | 13:0x | U6 | Haiku tester | Stopped before writing with six spec questions (file formats, the open status, reject or not) | Lead answered in one message; the lead's brief had left the file format open |
+| 13:2x | U4 | Haiku builder | Stopped on a wrong locked test (owner tap dated in the future) with proof, instead of working around it | Lead sent a retest: fix to the tester; the push waits for the owner's yes (call 3) |
 
 ## 2. Drift from L1 to L13 and how it was caught
 
