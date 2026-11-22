@@ -466,6 +466,28 @@ const LANES = here('../user/kit-tools/lanes.mjs');
 const SKILL = here('../user/skills/agent-team-build/SKILL.md');
 const fixedLine = (id) => JSON.stringify({ id, severity: 'medium', status: 'fixed', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tightened it' });
 
+// why: catches start letting a builder go ahead on a plan plan-check refuses, or on another plan.md's clean log by basename (L1).
+test('L1 start: refuses a plan plan-check refuses, matches the log by full path, and a clean run of this plan still starts', () => {
+	const PLAN_CHECK = here('../user/kit-tools/plan-check.mjs');
+	const FULL_PLAN = (category) => `# plan\n\n## Units\n\n| Id | Files | Runs | Risk | Category | Tests | Tester |\n|---|---|---|---|---|---|---|\n| U1 | \`a.txt\` | parallel | low | ${category} | check 1 -> S1 | |\n| U2 | \`b.txt\` | parallel | low | logic | check 1 -> S1 | |\n`;
+	const dir = repo();
+	const clean = put(dir, 'docs/plan.md', FULL_PLAN('logic'));
+	const bad = put(dir, 'bad/plan.md', FULL_PLAN(''));
+	const elsewhere = put(dir, 'elsewhere/plan.md', FULL_PLAN('logic'));
+	const graph = (p) => spawnSync(process.execPath, [PLAN_GRAPH, p], { cwd: dir, env: env(), encoding: 'utf8' });
+	const check = (p) => spawnSync(process.execPath, [PLAN_CHECK, p], { cwd: dir, env: env(), encoding: 'utf8' });
+	// Control: a plan plan-check accepts, with its own clean plan-graph run, starts.
+	assert.equal(check(clean).status, 0, 'the control plan passes plan-check');
+	assert.equal(graph(clean).status, 0);
+	assert.equal(start(clean).code, 0, start(clean).out);
+	// Red 1: plan-check refuses the empty Category, yet plan-graph runs clean on it, so start must still refuse it.
+	assert.equal(check(bad).status, 1, 'plan-check refuses the empty Category');
+	assert.equal(graph(bad).status, 0);
+	failed(start(bad), /Category|plan-check/i);
+	// Red 2: a plan.md at another path has no plan-graph run of its own; the clean log of the plan above must not count for it.
+	failed(start(elsewhere), NO_LOG);
+});
+
 // why: catches a documented hand-back with no agent key being skipped silently, so its tester and builder identity is never checked (H2).
 test('H2 agents: documented tester and builder role lines with no agent key are named in the output, not skipped', () => {
 	const dir = tmp('flow-agents-');
