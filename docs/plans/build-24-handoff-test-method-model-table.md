@@ -137,8 +137,8 @@ and finish on Sonnet; the run record says so.
 
 - **K277.** After triage, a new `lanes.mjs` (beside plan-graph.mjs, same shared-file logic) groups findings into
   lanes with no file in common, from each finding's `where` keys plus a Haiku scanner's list of files each fix
-  touches. One Sonnet builder per lane, test-first in its own worktree; an Opus checker reviews every lane before the
-  lead merges. Lane count comes from file overlap, never a fixed number. pre-pr-sweep step 5 and agent-team-build
+  touches. Each lane gets its own Haiku tester and Haiku builder, test-first in its own worktree; a fix merges once
+  its tests pass and CI is green, with no re-review (owner, 2026-11-22 12:12Z). Lane count comes from file overlap, never a fixed number. pre-pr-sweep step 5 and agent-team-build
   batch mode name it. This build's own sweep fixes run in lanes.
 - **K225.** A hold list in data: each guard hold has `mode: log | enforce`. A new hold ships `log` (it writes what it
   would have held to the guard log and lets the call through). A kit test fails when a hold that shipped `enforce`
