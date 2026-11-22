@@ -292,7 +292,7 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 // why: catches a new-branch push (remote sha all zeros) that skips the secret scan, so a key goes out with a new branch
 test('pre-push still scans a new-branch push whose remote sha is all zeros', () => {
 	const { dir, bare } = pushRepo();
-	put(dir, { 'src/keys.js': "export const key = 'AKIAIOSFODNN7EXAMPLE';\n" });
+	put(dir, { 'src/keys.js': `export const key = '${['AKIA', 'IOSFODNN7EXAMPLE'].join('')}';\n` });
 	const key = commit(dir, 'feat: add a key');
 	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/new ${key} refs/heads/feat/new ${ZERO}\n`);
 	assert.notEqual(r.status, 0, `the new branch was refused: ${r.stderr}`);
