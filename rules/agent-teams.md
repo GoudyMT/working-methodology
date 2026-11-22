@@ -60,6 +60,8 @@ A cloud worker does only fixed jobs: tests, builds, gate checks, research, read-
 
 Each agent role gets only the tools its job needs and starts with the rules that bind it. `kit.config.json` `roles` is the one home for that (tools, denied tools, rules at start, model, effort): `model-table.mjs check` holds each role file in `user/agents/` to it, and `kit.mjs build` writes each role's rules skill from it. Why: access widened in one file alone is invisible.
 
+The build lead of a batch is the overwatch lead: its run is in `agent-team-build`, section "The overwatch lead".
+
 The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in the Claude folder's `agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
 
 ### Agent Canary {#agent-canary}
