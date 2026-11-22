@@ -2326,11 +2326,11 @@ export function build({ kit }) {
     }
     throw new Error(`role table names an unknown rule: ${id}`);
   };
-  const teams = mods.find((m) => m.meta.id === 'agent-teams');
-  const table = teams ? teams.body.slice(teams.body.indexOf('{#agent-role-table}')) : '';
-  for (const [, role, ids] of table.matchAll(/^\| (\w+) \| [^|]+ \| [^|]+ \| [^|]+ \| ([^|]+) \|$/gm)) {
-    if (ids.trim() === 'none' || role === 'Role') continue;
-    const list = ids.split(',').map((s) => s.trim());
+  // The roles and their rules come from kit.config.json roles (rule:agent-role-table); a role with no rules gets no skill.
+  const roles = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')).roles || {};
+  for (const [role, r] of Object.entries(roles)) {
+    const list = Array.isArray(r.rules) ? r.rules : [];
+    if (!list.length) continue;
     out.set(`user/skills/${role}-rules/SKILL.md`, ['---', `name: ${role}-rules`,
       `description: The general rules a ${role} agent works under, preloaded at its start by its role file. Not for direct use.`,
       'user-invocable: false', '---', '',

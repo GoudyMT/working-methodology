@@ -6,6 +6,7 @@ effort: medium
 omitClaudeMd: true
 tools: Read, Edit, Write, Grep, Glob, Bash, PowerShell
 disallowedTools: WebFetch, WebSearch, Agent
+skills: tester-rules
 hooks:
   PreToolUse:
     - matcher: "SubagentHandback"

@@ -2,16 +2,16 @@
   "ownerName": "Max",
   "retired": { "project": { "_Working Standards.md": "AGENTS.md", ".claude/attribution.mjs": [".claude/pr-body-audit.mjs", ".claude/pr-body-audit-lean.mjs"] }, "user": { "skills/plan-feature/references/explore-and-options.md": ["skills/brainstorm/references/question-craft.md", "skills/plan-feature/SKILL.md"] } },
   "roles": {
-    "builder": { "model": "claude-haiku-5-5", "effort": "medium" },
-    "checker": { "model": "claude-opus-5-5", "effort": "high" },
-    "orchestrator": { "model": "claude-opus-5-5", "effort": "high" },
-    "reviewer": { "model": "claude-sonnet-5-5", "effort": "high" },
-    "scanner": { "model": "claude-haiku-5-5", "effort": "low" },
-    "tester": { "model": "claude-haiku-5-5", "effort": "medium" },
-    "test-reviewer": { "model": "claude-haiku-5-5", "effort": "low" },
-    "researcher": { "model": "claude-haiku-5-5", "effort": "medium" },
-    "drafter": { "model": "claude-haiku-5-5", "effort": "high" },
-    "writer": { "model": "claude-haiku-5-5", "effort": "medium" }
+    "builder": { "model": "claude-haiku-5-5", "effort": "medium", "tools": ["Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell"], "denied": ["WebFetch", "WebSearch", "Agent"], "rules": ["edit-discipline", "test-integrity", "test-value"] },
+    "checker": { "model": "claude-opus-5-5", "effort": "high", "tools": ["Read", "Grep", "Glob", "Bash", "PowerShell"], "denied": ["Edit", "Write", "WebFetch", "WebSearch", "Agent"], "rules": ["test-integrity", "test-value", "anti-hallucination", "enumerate-before-you-count"] },
+    "orchestrator": { "model": "claude-opus-5-5", "effort": "high", "tools": ["Agent", "SendMessage", "ToolSearch", "Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell", "WebSearch", "WebFetch"], "denied": [], "rules": [] },
+    "reviewer": { "model": "claude-sonnet-5-5", "effort": "high", "tools": ["Read", "Grep", "Glob", "Bash", "PowerShell", "WebFetch", "WebSearch"], "denied": ["Edit", "Write", "Agent"], "rules": ["anti-hallucination", "enumerate-before-you-count"] },
+    "scanner": { "model": "claude-haiku-5-5", "effort": "low", "tools": ["Read", "Grep", "Glob"], "denied": [], "rules": [] },
+    "tester": { "model": "claude-haiku-5-5", "effort": "medium", "tools": ["Read", "Edit", "Write", "Grep", "Glob", "Bash", "PowerShell"], "denied": ["WebFetch", "WebSearch", "Agent"], "rules": ["edit-discipline", "test-integrity", "test-value"] },
+    "test-reviewer": { "model": "claude-haiku-5-5", "effort": "low", "tools": ["Read", "Grep", "Glob"], "denied": [], "rules": ["test-integrity", "test-value"] },
+    "researcher": { "model": "claude-haiku-5-5", "effort": "medium", "tools": ["Read", "Grep", "Glob"], "denied": [], "rules": ["anti-hallucination", "enumerate-before-you-count"] },
+    "drafter": { "model": "claude-haiku-5-5", "effort": "high", "tools": ["Read", "Grep", "Glob"], "denied": [], "rules": [] },
+    "writer": { "model": "claude-haiku-5-5", "effort": "medium", "tools": ["Read", "Grep", "Glob", "Write"], "denied": [], "rules": [] }
   },
   "steps": {
     "lead": { "model": "claude-opus-5-5", "effort": "medium", "enforcer": "settings", "floor": "claude-opus-5-5" },
@@ -31,7 +31,7 @@
     "drafter": { "model": "claude-haiku-5-5", "effort": "high", "enforcer": "role:drafter" },
     "writer": { "model": "claude-haiku-5-5", "effort": "medium", "enforcer": "role:writer" },
     "closeout": { "model": "claude-opus-5-5", "effort": "medium", "enforcer": "lead", "floor": "claude-opus-5-5" },
-    "step6": { "model": "none", "effort": "-", "enforcer": "script:scripts/release-verify.mjs" },
+    "step6": { "model": "none", "effort": "-", "enforcer": "script:scripts/release-verify.mjs", "neverDrop": true },
     "reviewer": { "model": "claude-sonnet-5-5", "effort": "high", "enforcer": "role:reviewer", "floor": "claude-sonnet-5-5" }
   },
   "models": { "measured": ["claude-opus-5-5", "claude-sonnet-5-5", "claude-haiku-5-5"], "retiring": [] },

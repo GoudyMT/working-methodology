@@ -5,6 +5,7 @@ model: claude-haiku-5-5
 effort: low
 omitClaudeMd: true
 tools: Read, Grep, Glob
+skills: test-reviewer-rules
 hooks:
   PreToolUse:
     - matcher: "SubagentHandback"
