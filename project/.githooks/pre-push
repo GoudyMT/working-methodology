@@ -70,6 +70,25 @@ take_lock() {
 drop_lock() {
   [ "$(cat "$common/kit-push.lock/owner" 2>/dev/null)" = "$lock_me" ] && rm -rf "$common/kit-push.lock"
 }
+# U4 (build 24, K312): a retest: commit changes a test after its red commit, so a push that carries one needs the owner's
+# own yes. The owner's own push (KIT_OWNER_PUSH, below) checks that yes for each ref; every other push is refused here.
+# A new branch is read whole: its range is every commit the remote does not hold.
+retests=""
+while read -r lref lsha rref rsha; do
+  case "$lsha" in *[!0]*) ;; *) continue ;; esac
+  case "$rsha" in *[!0]*) below="$rsha" ;; *) below=$(git ls-remote --heads "$2" 2>/dev/null | awk '{print $1}' | tr '\n' ' ') ;; esac
+  range=$(git log --format='%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a retest: commit in them cannot be ruled out. $range" >&2; exit 1; }
+  hits=$(printf '%s\n' "$range" | awk '$2=="retest:"')
+  if [ -n "$hits" ]; then retests="$retests$hits
+"; fi
+done <<EOF
+$refs
+EOF
+if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ]; then
+  echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: the owner pushes it from their own terminal, or answers the pop-up yes to this push in the session. $OWNER_WAY" >&2
+  printf '%s' "$retests" >&2
+  exit 1
+fi
 # The push bound and the secret scan, for every pusher (K163).
 {
   common=$(git rev-parse --git-common-dir)

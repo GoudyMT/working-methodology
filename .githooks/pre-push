@@ -4,6 +4,24 @@
 # no merge), but a head armed by hand is still held. Pushes stay the owner's by the permission rules; this only stops a push
 # over a head still armed, since GitHub documents no head pin past a writer's push (rule:standing-grants).
 refs=$(cat)
+# U4 (build 24, K312): a retest: commit changes a test after its red commit, so the push that carries one needs the
+# owner's yes. This hook holds no yes to check, so it refuses the push; a new branch is read whole.
+retests=""
+while read -r lref lsha rref rsha; do
+  case "$lsha" in *[!0]*) ;; *) continue ;; esac
+  case "$rsha" in *[!0]*) below="$rsha" ;; *) below=$(git ls-remote --heads "$2" 2>/dev/null | awk '{print $1}' | tr '\n' ' ') ;; esac
+  range=$(git log --format='%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a retest: commit in them cannot be ruled out. $range" >&2; exit 1; }
+  hits=$(printf '%s\n' "$range" | awk '$2=="retest:"')
+  if [ -n "$hits" ]; then retests="$retests$hits
+"; fi
+done <<EOF
+$refs
+EOF
+if [ -n "$retests" ]; then
+  echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: ask the owner, who pushes it from their own terminal." >&2
+  printf '%s' "$retests" >&2
+  exit 1
+fi
 common=$(git rev-parse --git-common-dir)
 gatelog="$common/kit-merge-gate.log"
 if [ -f "$gatelog" ]; then
