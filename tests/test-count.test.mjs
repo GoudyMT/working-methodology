@@ -1,6 +1,7 @@
 // U20 (T-B2): the count gate at red and at review. One test per spec line C1-C10; controls are assertions inside.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
+import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -27,10 +28,15 @@ const redFile = (n, m) => [
 	...Array.from({ length: m }, (_, i) => `it('i${i}', () => assert.fail('red'));`),
 	'',
 ].join('\n');
+// The imports every test file needs, and one passing, one failing test() and it() line each.
+const HEADER = "import { test, it } from 'node:test';\nimport assert from 'node:assert/strict';";
+const passing = (name) => `test('${name}', () => {});`;
+const failing = (name) => `test('${name}', () => assert.fail('red'));`;
+const itFailing = (name) => `it('${name}', () => assert.fail('red'));`;
 // n test lines in a Tests cell, separated by <br> as the template asks.
 const lines = (n) => Array.from({ length: n }, (_, i) => `check ${i + 1} -> S1`).join('<br>');
-// A Units row for U1 that names the test file, with a Tests cell of n lines.
-const row = (n) => ({ Id: 'U1', Files: `\`${TEST_FILE}\``, Runs: 'alone', Risk: 'low', Category: 'logic', [TESTS]: lines(n), Tester: '' });
+// A Units row for U1 that names the test file, with a Tests cell of n lines (or the given cell text).
+const row = (n, cell = lines(n)) => ({ Id: 'U1', Files: `\`${TEST_FILE}\``, Runs: 'alone', Risk: 'low', Category: 'logic', [TESTS]: cell, Tester: '' });
 const planText = (rows) => ['# Batch plan - x', '', '## Units', '', `| ${HEAD.join(' | ')} |`, `|${HEAD.map(() => '---').join('|')}|`, ...rows.map((r) => `| ${HEAD.map((h) => r[h] ?? '').join(' | ')} |`), '', '## Collision list', ''].join('\n');
 const writePlan = (dir, rows) => {
 	const file = path.join(dir, 'plan.md');
@@ -38,7 +44,7 @@ const writePlan = (dir, rows) => {
 	return file;
 };
 // A temp git repo: a base commit (with an optional countCommand config), then one red commit that adds the test file.
-const fixture = ({ red, config = null }) => {
+const fixture = ({ red, base: baseFile = null, config = null }) => {
 	const dir = kitTemp.makeTemp('unit-count-');
 	const git = (args) => spawnSync('git', args, { cwd: dir, encoding: 'utf8' });
 	git(['init', '-q', '-b', 'main']);
@@ -49,10 +55,11 @@ const fixture = ({ red, config = null }) => {
 		fs.writeFileSync(path.join(dir, 'kit.config.json'), JSON.stringify({ countCommand: config.command }));
 		fs.writeFileSync(path.join(dir, 'fake-count.mjs'), config.script);
 	}
+	fs.mkdirSync(path.join(dir, 'tests'), { recursive: true });
+	if (baseFile !== null) fs.writeFileSync(path.join(dir, TEST_FILE), baseFile);
 	git(['add', '-A']);
 	git(['commit', '-q', '-m', 'chore: base']);
 	const base = git(['rev-parse', 'HEAD']).stdout.trim();
-	fs.mkdirSync(path.join(dir, 'tests'));
 	fs.writeFileSync(path.join(dir, TEST_FILE), red);
 	git(['add', '-A']);
 	git(['commit', '-q', '-m', 'test: red count']);
@@ -74,10 +81,14 @@ const handoffCheck = async (text) => {
 
 // why: C1: a count that misses it() calls, so a unit whose tests use it() is refused for a count it meets.
 test('C1 spec C1: unit-check counts the test() and it() calls the red commit adds, per file the locked row names', () => {
-	const fx = fixture({ red: redFile(1, 1) });
+	// The base holds one test; the red commit extends the file with one test() and one it(), so it adds 2.
+	const fx = fixture({
+		base: `${HEADER}\n${passing('t0')}\n`,
+		red: `${HEADER}\n${passing('t0')}\n${failing('t1')}\n${itFailing('i1')}\n`,
+	});
 	const res = runUnit(fx, writePlan(fx.dir, [row(2)]));
 	assert.equal(res.status, 0, out(res));
-	// Control: the same commit against a plan of one test is refused, so the count was read as something other than one.
+	// Control: the same commit against a plan of one test is refused, so the count was read as something other than 2.
 	const off = runUnit(fx, writePlan(fx.dir, [row(1)]));
 	assert.equal(off.status, 1, out(off));
 });
@@ -95,27 +106,18 @@ test('C2 spec C2: a countCommand in kit.config.json runs with the test file appe
 	assert.equal(kit.status, 0, out(kit));
 });
 
-// why: C3: a red commit whose count differs from its locked row passing, so a unit ships with fewer tests than planned.
-test('C3 spec C3: a red commit whose count differs from the locked row fails, naming the file and both counts', () => {
+// why: C3, C4: a red commit whose count differs from its locked row passing, so a unit ships with fewer tests than planned; or a matching count refused, which blocks a correct red commit.
+test('C3, C4 spec C3, C4: a count that differs fails on one line naming the file and both counts, and a matching count passes with exit 0', () => {
 	const fx = fixture({ red: redFile(2, 0) });
 	const res = runUnit(fx, writePlan(fx.dir, [row(3)]));
 	assert.equal(res.status, 1, out(res));
-	assert.match(out(res), /a\.test\.mjs/);
-	assert.match(out(res), /\b3\b/);
-	assert.match(out(res), /\b2\b/);
-	// Control: the same red commit against its planned count of 2 passes.
+	const line = out(res).split('\n').find((l) => /a\.test\.mjs/.test(l));
+	assert.ok(line, out(res));
+	assert.match(line, /\b3\b/);
+	assert.match(line, /\b2\b/);
+	// Control: the same red commit against its planned count of 2 passes with exit 0.
 	const same = runUnit(fx, writePlan(fx.dir, [row(2)]));
 	assert.equal(same.status, 0, out(same));
-});
-
-// why: C4: a matching count refused, so a correct red commit is blocked before its review.
-test('C4 spec C4: a red commit whose count matches the locked row passes with exit 0', () => {
-	const fx = fixture({ red: redFile(2, 0) });
-	const res = runUnit(fx, writePlan(fx.dir, [row(2)]));
-	assert.equal(res.status, 0, out(res));
-	// Control: a count of 1 against this commit's 2 is refused.
-	const off = runUnit(fx, writePlan(fx.dir, [row(1)]));
-	assert.equal(off.status, 1, out(off));
 });
 
 // why: C5: handoff refusing swap or redundant as a status, so a reviewer cannot write the two new verdicts.
@@ -133,6 +135,8 @@ test('C5 spec C5: handoff accepts the test-reviewer statuses swap and redundant,
 test('C6 spec C6: an add finding with no breaks named is refused, and one that names its break passes', async () => {
 	const bare = await handoffCheck(reviewText({ status: 'add' }));
 	assert.equal(bare.ok, false);
+	const emptyBreaks = await handoffCheck(reviewText({ status: 'add', breaks: '' }));
+	assert.equal(emptyBreaks.ok, false);
 	const named = await handoffCheck(reviewText({ status: 'add', breaks: 'a parser that drops a line' }));
 	assert.equal(named.ok, true, named.errors.join('; '));
 });
@@ -156,7 +160,7 @@ test('C8 spec C8: tester.md states one test per plan line, controls fold into th
 	const text = fs.readFileSync(TESTER, 'utf8');
 	assert.match(text, /one test per plan line/i);
 	assert.match(text, /\bcontrols?\b[^.]*\bfold/i);
-	assert.match(text, /\bfloor\b/i);
+	assert.match(text, /tests? (are|is) a floor/i);
 });
 
 // why: doc claim: test-reviewer.md names the statuses swap and redundant and says an add names its break.
@@ -165,7 +169,7 @@ test('C9 spec C9: test-reviewer.md names swap and redundant and says an add name
 	const text = fs.readFileSync(REVIEWER, 'utf8');
 	assert.match(text, /\bswap\b/);
 	assert.match(text, /\bredundant\b/);
-	assert.match(text, /\badd\b[^.]*\bbreak/i);
+	assert.match(text, /add[^.]*names? (its|the) break/i);
 });
 
 // why: doc claim: builder-brief.md says one test per plan line, tests are a floor, and the builder never adds or drops a test.
@@ -175,4 +179,22 @@ test('C10 spec C10: builder-brief.md says one test per plan line, tests are a fl
 	assert.match(text, /one test per plan line/i);
 	assert.match(text, /\bfloor\b/i);
 	assert.match(text, /never[^.]*\badd\b[^.]*\bdrop/i);
+});
+
+// why: C11: a count gate passing a plan edited after its lock, so a unit's locked Tests cell can change unseen.
+test('C11 lock: an edited locked row fails with "the locked row changed", and the unedited row passes', () => {
+	// The locked row is the unedited one; the lock file holds its sha256, as the lock writes it.
+	const fx = fixture({ red: redFile(2, 0) });
+	const plan = writePlan(fx.dir, [row(2)]);
+	const rowLine = fs.readFileSync(plan, 'utf8').split('\n').find((l) => l.startsWith('| U1 |'));
+	fs.writeFileSync(`${plan}.locks.json`, JSON.stringify({ U1: crypto.createHash('sha256').update(rowLine).digest('hex') }));
+	// The edited Tests cell keeps the same count of 2, so only the lock can fail it.
+	writePlan(fx.dir, [row(2, 'changed one -> S1<br>changed two -> S1')]);
+	const edited = runUnit(fx, plan);
+	assert.equal(edited.status, 1, out(edited));
+	assert.match(out(edited), /the locked row changed/);
+	// Control: the unedited row passes against the same lock.
+	writePlan(fx.dir, [row(2)]);
+	const unedited = runUnit(fx, plan);
+	assert.equal(unedited.status, 0, out(unedited));
 });
