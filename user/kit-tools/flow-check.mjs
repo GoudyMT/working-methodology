@@ -6,6 +6,7 @@
 //   node user/kit-tools/flow-check.mjs reviewers <ledger.jsonl>          more than 3 units waiting while at most one reviewer is active
 //   node user/kit-tools/flow-check.mjs rounds <unit> --dir <folder>      at most 2 FIX rounds from the checker per unit
 // Exit 0 clean, 1 a fault named on stderr, 2 usage or unreadable input. Hand-backs are read with handoff.mjs's check.
+// A lead note is text in the record an agent writes, so these checks only log in this release; a lead-only answer file comes before they enforce.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -161,7 +162,7 @@ function reviewers(file) {
 function rounds(unit, dir) {
 	const fix = fs.readdirSync(dir).filter((name) => {
 		const m = /^(.+)\.checker\d*\.jsonl$/.exec(name);
-		return m && m[1] === unit && /^VERDICT:\s*FIX\b/m.test(readText(path.join(dir, name)));
+		return m && m[1] === unit && (/^VERDICT:[ \t]*(\S+)/m.exec(readText(path.join(dir, name))) || [])[1] === 'FIX';
 	}).length;
 	if (fix > MAX_FIX) return fault([`${unit} has ${fix} FIX rounds from the checker, max ${MAX_FIX}: the lead decides the next step, not another round`]);
 	return say(`rounds: ${unit} has ${fix} FIX round(s), max ${MAX_FIX}`);

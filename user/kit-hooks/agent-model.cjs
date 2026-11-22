@@ -56,7 +56,7 @@ function holdMode(id) {
 }
 
 // The guard paths (R2): the same list as GUARD_PATHS in user/kit-tools/tester-model.mjs. This file loads alone from the
-// Claude folder, so it cannot import that module; the flow-lock test runs every GUARD_PATHS entry through this hook.
+// Claude folder, so it cannot import that module; the flow-lock test holds this export equal to tester-model.mjs's.
 const GUARD_PATHS = ['kit-hooks/', '.githooks/', 'guard*.cjs', 'settings.json', 'approve.mjs', 'merge-gate.mjs'];
 const globRe = (glob) => new RegExp(`^${glob.split('*').map((s) => s.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('[^/]*')}$`);
 // The first guard path a file matches (a folder anywhere in the path, a glob on the file name, or an exact name), or undefined.
@@ -131,4 +131,4 @@ function check(input) {
 	return null;
 }
 
-module.exports = { check };
+module.exports = { check, GUARD_PATHS };
