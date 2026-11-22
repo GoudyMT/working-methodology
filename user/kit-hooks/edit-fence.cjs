@@ -27,12 +27,20 @@ const norm = (p) => {
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+	agentType = input.agent_type || '';
 	const file = input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path);
 	if (!file) return 0;
 	const cwd = input.cwd || process.cwd();
 	// git from node's own folder, never the worktree (build 23).
 	const top = safeSpawn.gitRead(cwd, ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
-	if (top.status !== 0) return 0;
+	if (top.status !== 0) {
+		// No git top level means no file list to check a tester or writer against: stop it, as with a missing list.
+		if (LISTED_ROLES.includes(input.agent_type)) {
+			process.stderr.write(`Blocked: ${input.agent_type} edit has no git worktree to check its file list against. Stop and report it.\n`);
+			return 2;
+		}
+		return 0;
+	}
 	const root = real(path.resolve(top.stdout.trim()));
 	const target = real(path.resolve(cwd, file));
 	const rel = path.relative(root, target);
@@ -56,4 +64,15 @@ function main() {
 	return 0;
 }
 
-try { process.exitCode = main(); } catch { process.exitCode = 0; }
+// A listed role whose check fails stops too: an unchecked tester or writer edit never gets through.
+let agentType = '';
+try {
+	process.exitCode = main();
+} catch {
+	if (LISTED_ROLES.includes(agentType)) {
+		process.stderr.write(`Blocked: ${agentType} edit could not be checked against its file list. Stop and report it.\n`);
+		process.exitCode = 2;
+	} else {
+		process.exitCode = 0;
+	}
+}

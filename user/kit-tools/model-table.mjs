@@ -210,6 +210,17 @@ export function tableFaults(config, dir) {
 	for (const role of Object.keys(roles)) {
 		if (!used.has(role)) faults.push(`role ${role}: no step runs it`);
 	}
+	// A role file the config does not describe widens access with no row to check it against. A kit with no agents
+	// folder has no role files to check.
+	let agentFiles = [];
+	try {
+		agentFiles = fs.readdirSync(path.join(dir, 'user/agents')).filter((f) => f.endsWith('.md'));
+	} catch {
+		agentFiles = [];
+	}
+	for (const f of agentFiles) {
+		if (!Object.hasOwn(roles, f.slice(0, -3))) faults.push(`user/agents/${f} has no roles entry in kit.config.json`);
+	}
 	return faults;
 }
 

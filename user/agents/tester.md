@@ -42,4 +42,4 @@ touches code. Your tests are the spec the builder must meet, so each one must fa
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then the
 prose: what you wrote, each red run with its real counts, and any stop. Then a line `RECORD:` and JSONL: a role line
-`{"role":"tester","commit":"<hash>"}`, then one finding line per problem: `{"id":"","severity":"","status":"","where":"","claim":"","proof":"","fix":""}`.
+`{"role":"tester","commit":"<hash>"}`, then one finding line per problem: `{"id":"","severity":"","status":"","where":"","claim":"","proof":"","fix":""}`. With no findings, the record is the role line and one note line, `{"note":"no problems found","writer":"tester"}`, plus one `{"notChecked":"<what you did not check>"}` line for each thing you did not check.
