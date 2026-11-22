@@ -1,14 +1,12 @@
 #!/usr/bin/env node
-// K309 and K312 (build 24): a unit's history proves test-first only when its commits have the right shape. Prose did
-// not hold that record, so this reads a commit range: a test-only red commit before each feat or fix, red tests that
-// fail on their own tree and pass on the code's, refactors that leave tests alone, and retest commits for the owner's yes.
-//
-// Usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>]   (exit 0 pass, 1 faults, 2 bad use)
-// Covers node:test projects only; other runners come later. A range holding a merge exits 2, naming the merge.
+// K309 and K312 (build 24): a unit's history proves test-first only with the right commit shape: a red test-only commit
+// before each feat or fix, refactors that leave tests alone, retests for the owner's yes.
+// Usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>] (exit 0 pass, 1 faults, 2 bad use).
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
 import safeSpawn from './audits/safe-spawn.cjs';
 
 const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec']);
@@ -17,13 +15,17 @@ const MIXED = 'mixed: the commit touches source and test files; split it';
 const NO_RED = 'no red commit before it';
 const NO_RED_TEST = 'test changed without a red test; use retest:';
 const USAGE = 'usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>] (node:test projects only)\n';
-// A test( call on a line; its first string argument is the name, escapes still in it. A method like t.test( is no test.
-const TEST_CALL = /(?:^|[^\w.$])test\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
-// A TAP result line at any indent (a describe's tests are indented); a SKIP or TODO directive is read, not dropped.
+// A test( call in code (group 1: the char before it; t.test( is no test).
+const TEST_CALL = /(^|[^\w.$])test\(/gm;
+const NAME = /\s*(['"`])((?:\\.|(?!\1).)*)\1/y;
+// Strings, templates and comments, blanked before the search.
+const MASK = /\/\/[^\n]*|\/\*[\s\S]*?\*\/|`(?:\\[\s\S]|[^`\\])*`|'(?:\\[\s\S]|[^'\\\n])*'|"(?:\\[\s\S]|[^"\\\n])*"/g;
+const BLANK = /^\s*(\/\/|$)/;
+// A TAP result line at any indent; a SKIP or TODO directive is read.
 const TAP = /^\s*(not ok|ok) \d+ - (.*?)(?: # (SKIP|TODO)\b.*)?$/;
 const HUNK = /^@@ -\d+(?:,\d+)? \+(\d+)(?:,(\d+))? @@/;
 
-// A test file is under a folder named test, tests, __tests__ or spec, or is named *.test.* or *.spec.*.
+// A test file: in a test, tests, __tests__ or spec folder, or named *.test.* or *.spec.*.
 const isTestFile = (rel) => {
 	const parts = rel.split('/');
 	return parts.slice(0, -1).some((d) => TEST_DIRS.has(d)) || /\.(test|spec)\./.test(parts[parts.length - 1]);
@@ -42,7 +44,7 @@ const gitShow = (repo, rev, file) => {
 	return r.status === 0 ? r.stdout : null;
 };
 
-// The line where the test( call that starts at lines[at], from column col, closes: its parentheses balance again.
+// The line where the test( call at lines[at], column col, closes.
 function closeOf(lines, at, col) {
 	let depth = 0;
 	let quote = null;
@@ -63,22 +65,29 @@ function closeOf(lines, at, col) {
 	return lines.length - 1;
 }
 
-// The tests of a file's text, in order. A test's lines run from the line after the test before it (so the comment and
-// blank lines above a test belong to it) to its own closing line.
+// A file's tests in order; each runs from the comment or blank lines above it to its last line.
 function testsIn(text) {
-	const lines = String(text).split('\n');
+	const src = String(text);
+	const lines = src.split('\n');
+	const masked = src.replace(MASK, (m) => m.replace(/[^\n]/g, ' '));
 	const out = [];
-	lines.forEach((l, i) => {
-		const m = TEST_CALL.exec(l);
-		if (m) out.push({ name: m[2].replace(/\\(.)/g, '$1'), head: 0, end: closeOf(lines, i, m.index) });
-	});
-	out.forEach((t, k) => {
-		if (k) t.head = out[k - 1].end + 1;
-	});
+	for (const m of masked.matchAll(TEST_CALL)) {
+		const at = m.index + m[1].length;
+		NAME.lastIndex = at + 5;
+		const n = NAME.exec(src);
+		if (n) out.push({ name: n[2].replace(/\\(.)/g, '$1'), start: src.slice(0, at).split('\n').length - 1, col: at - (src.lastIndexOf('\n', at) + 1) });
+	}
+	let prev = -1;
+	for (const t of out) {
+		t.end = closeOf(lines, t.start, t.col);
+		t.head = t.start;
+		while (t.head - 1 > prev && BLANK.test(lines[t.head - 1])) t.head--;
+		prev = t.end;
+	}
 	return out;
 }
 
-// The new-file line numbers (1-based) a commit adds to one file.
+// The new-file line numbers a commit adds to one file.
 function addedLines(repo, hash, file) {
 	const out = new Set();
 	for (const l of gitOut(repo, ['show', '--format=', '--unified=0', hash, '--', file]).split('\n')) {
@@ -88,15 +97,16 @@ function addedLines(repo, hash, file) {
 	return out;
 }
 
-// The names of the tests a commit adds or changes in one file: a test whose lines hold an added line.
+// The tests a commit adds or changes in one file: those holding an added code line.
 function touchedTests(repo, hash, file) {
 	const names = new Set();
 	const text = gitShow(repo, hash, file);
 	if (text === null) return names;
 	const added = addedLines(repo, hash, file);
+	const lines = text.split('\n');
 	for (const t of testsIn(text)) {
 		for (let n = t.head; n <= t.end; n++) {
-			if (added.has(n + 1)) {
+			if (added.has(n + 1) && !BLANK.test(lines[n])) {
 				names.add(t.name);
 				break;
 			}
@@ -105,7 +115,7 @@ function touchedTests(repo, hash, file) {
 	return names;
 }
 
-// The test names a test file held before the commit and no longer holds.
+// The test names a file held before the commit and no longer does.
 function removedNames(repo, c) {
 	if (!c.parent) return [];
 	return c.tests.flatMap((f) => {
@@ -116,7 +126,7 @@ function removedNames(repo, c) {
 	});
 }
 
-// The state of each test name in a run's TAP: pass, skip (ok with a SKIP or TODO directive) or fail.
+// Each test's state in a run's TAP: pass, skip (SKIP or TODO) or fail.
 function parseTap(out) {
 	const states = new Map();
 	for (const line of String(out || '').split(/\r?\n/)) {
@@ -126,7 +136,7 @@ function parseTap(out) {
 	return states;
 }
 
-// The state of a test name in its file's run. A loop's name (with a ${...} in it) reads as the pattern of the names it makes.
+// A loop's name (with a ${...}) stands for the names it makes.
 function stateOf(states = new Map(), name) {
 	if (!name.includes('${')) return states.get(name) || 'fail';
 	const re = new RegExp(`^${name.split(/\$\{[^}]*\}/).map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('.*?')}$`);
@@ -135,10 +145,10 @@ function stateOf(states = new Map(), name) {
 	return made.includes('fail') ? 'fail' : made.includes('skip') ? 'skip' : 'pass';
 }
 
-// The touched names whose state in the run of their file meets keep.
+// The touched names that meet keep in their file's run.
 const pick = (touched, run, keep) => [...new Set([...touched].flatMap(([f, names]) => [...names].filter((n) => keep(stateOf(run.states.get(f), n)))))];
 
-// A commit's tree in a new temp folder, read through a temp index, so the repo and its working tree stay as they were.
+// A commit's tree in a temp folder, read through a temp index.
 function withTree(repo, rev, fn) {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unit-check-'));
 	try {
@@ -154,12 +164,12 @@ function withTree(repo, rev, fn) {
 	}
 }
 
-// Runs each file with node's test runner in the tree. A file past the time limit is listed as timed out.
+// Runs each file in the tree; one past the time limit is listed as timed out.
 function runFiles(dir, files, ms) {
 	const states = new Map();
 	const timedOut = [];
 	for (const f of files) {
-		const r = safeSpawn.tool(process.execPath, ['--test', '--test-reporter=tap', path.join(dir, f)], { encoding: 'utf8', timeout: ms, killSignal: 'SIGKILL', maxBuffer: 1 << 26, env: childEnv() });
+		const r = spawnSync(process.execPath, ['--test', '--test-reporter=tap', path.join(dir, f)], { cwd: dir, encoding: 'utf8', timeout: ms, killSignal: 'SIGKILL', maxBuffer: 1 << 26, env: childEnv() });
 		if (r.error && r.error.code === 'ETIMEDOUT') timedOut.push(f);
 		states.set(f, parseTap(r.stdout));
 	}
@@ -176,7 +186,7 @@ function commitOf(repo, hash) {
 	return { hash, short: gitOut(repo, ['rev-parse', '--short', hash]).trim(), subject, tests, cls, type, parent: p.status === 0 ? p.stdout.trim() : undefined };
 }
 
-// Runs the rules over the commits, oldest first. Returns the fault lines (stderr) and the owner yes lines (stdout).
+// Runs the rules over the commits, oldest first: fault lines (stderr), owner yes lines (stdout).
 function check(repo, hashes, ms) {
 	const commits = hashes.map((h) => commitOf(repo, h));
 	const rangeTests = [...new Set(commits.flatMap((c) => c.tests))].sort();
@@ -185,7 +195,7 @@ function check(repo, hashes, ms) {
 	const reported = new Set();
 	const memo = new Map();
 	const fault = (c, why) => faults.push(`${c.short} ${c.subject}: ${why}`);
-	// The files run in one commit's tree (memoized). A file past the limit is a fault on the commit it was run for.
+	// Files run in one commit's tree, memoized; one past the limit is a fault on that commit.
 	const runOn = (c, rev, files) => {
 		const key = `${rev}|${files.join(',')}`;
 		if (!memo.has(key)) memo.set(key, rev === undefined || files.length === 0 ? { states: new Map(), timedOut: [] } : withTree(repo, rev, (dir) => runFiles(dir, files, ms)));
@@ -199,7 +209,7 @@ function check(repo, hashes, ms) {
 		}
 		return run;
 	};
-	let window = []; // the test commits since the previous source commit: the candidates for a red commit
+	let window = []; // test commits since the last source commit: the red candidates
 	for (const c of commits) {
 		if (c.type === 'retest') notes.push(`owner yes needed: ${c.short} ${c.subject}`);
 		if (c.cls === 'mixed') {
@@ -219,13 +229,18 @@ function check(repo, hashes, ms) {
 		} else {
 			if ((c.type === 'feat' || c.type === 'fix') && window.length === 0) fault(c, NO_RED);
 			else if (c.type === 'feat' || c.type === 'fix') {
-				// Every test commit in the window is red on its own tree; every touched test is green on this one.
+				// Each window test is red on its tree; each touched test is green here.
 				const all = new Map();
 				for (const r of window) {
 					const touched = new Map(r.tests.map((f) => [f, touchedTests(repo, r.hash, f)]));
 					const early = pick(touched, runOn(r, r.hash, [...touched.keys()]), (s) => s === 'pass');
 					if (early.length) fault(r, `passed before the code: ${early.join(', ')}`);
 					for (const [f, names] of touched) all.set(f, new Set([...(all.get(f) || []), ...names]));
+				}
+				// A test the feat no longer holds (removed later in the window) is not read.
+				for (const [f, names] of all) {
+					const now = new Set(testsIn(gitShow(repo, c.hash, f) || '').map((t) => t.name));
+					all.set(f, new Set([...names].filter((n) => now.has(n))));
 				}
 				const run = runOn(c, c.hash, [...all.keys()]);
 				const late = pick(all, run, (s) => s === 'fail');
@@ -246,7 +261,7 @@ function check(repo, hashes, ms) {
 }
 
 function parseArgs(argv) {
-	const out = { range: undefined, repo: process.cwd(), timeout: 120000 };
+	const out = { repo: process.cwd(), timeout: 120000 };
 	for (let i = 0; i < argv.length; i++) {
 		const a = argv[i];
 		if (a === '--repo' || a === '--timeout') {
@@ -306,8 +321,7 @@ function main(argv) {
 	}
 }
 
-// Run only when started directly, never when a test or tool imports it.
-// Real paths on both sides, so a run through a junction or symlink still checks.
+// Runs only when started directly; real paths, so a junction or symlink still runs it.
 function runDirectly() {
 	try {
 		return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url));
