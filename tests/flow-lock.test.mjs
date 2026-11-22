@@ -135,6 +135,22 @@ test('L1: a clean log line for a different plan file name does not let this plan
 	failed(start(plan), NO_LOG);
 });
 
+// why: catches a clean run logged under the plan's path in other letter case refused on win32, so a clean plan cannot start
+test('L1: on win32 start matches a logged planPath that differs only in letter case', { skip: process.platform !== 'win32' && 'letter case folds on win32 only; other platforms skip' }, () => {
+	const { dir, plan, log } = planRepo();
+	const old = new Date(Date.now() - 60000);
+	fs.utimesSync(plan, old, old);
+	const upper = plan.replace(/\\/g, '/').toUpperCase();
+	// Control: the same path in the plan's own case is a match, and the same name in another folder is not.
+	fs.writeFileSync(log, logLine({ planPath: plan.replace(/\\/g, '/') }));
+	assert.equal(start(plan).code, 0, 'the same-case planPath is a match');
+	fs.writeFileSync(log, logLine({ planPath: path.join(dir, 'elsewhere', 'plan.md').replace(/\\/g, '/') }));
+	failed(start(plan), NO_LOG);
+	fs.writeFileSync(log, logLine({ planPath: upper }));
+	const r = start(plan);
+	assert.equal(r.code, 0, `a planPath differing only in letter case is a match: ${r.out}`);
+});
+
 // why: catches the start check and the real plan-graph disagreeing about the log they share
 test('L1: a real plan-graph run on a clean plan lets the builder start; on a shared-file plan it does not', () => {
 	assert.ok(fs.existsSync(PLAN_GRAPH), 'plan-graph.mjs exists');
