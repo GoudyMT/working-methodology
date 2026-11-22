@@ -18,6 +18,8 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 13:0x | U6 | Haiku tester | Stopped before writing with six spec questions (file formats, the open status, reject or not) | Lead answered in one message; the lead's brief had left the file format open |
 | 13:2x | U4 | Haiku builder | Stopped on a wrong locked test (owner tap dated in the future) with proof, instead of working around it | Lead sent a retest: fix to the tester; the push waits for the owner's yes (call 3) |
 
+| 14:4x | U4 | Haiku builder | Stopped when the permission check refused a break check that disabled a hook's yes check | Lead: break checks are skipped on guard files; the no-yes refusal rows stand in |
+
 ## 2. Drift from L1 to L13 and how it was caught
 
 | When (UTC) | Rule | Drift | Caught by |
