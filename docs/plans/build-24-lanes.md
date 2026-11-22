@@ -15,3 +15,6 @@
 | U8 | `scripts/kit.mjs`, `project/.github/workflows/ci.yml`, `tests/model-override.test.mjs` | parallel |
 | U12 | `scripts/kit.mjs`, `user/skills/pre-pr-sweep/approve.mjs`, `tests/slots.test.mjs` | after U8, U2b |
 | U15 | `user/skills/agent-team-build/SKILL.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/kit-tools/handoff.mjs`, `user/kit-hooks/agent-model.cjs`, `user/kit-tools/flow-check.mjs`, `rules/agent-teams.md`, `tests/flow-lock.test.mjs` | after U6, U9, U4 |
+| U16 | `user/kit-tools/handoff.mjs`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/agents/tester.md`, `user/agents/test-reviewer.md`, `tests/ask-dont-guess.test.mjs` | after U15, U10 |
+| U17 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/SKILL.md`, `tests/plan-check.test.mjs` | after U16, U5 |
+| U18 | `user/skills/agent-team-build/SKILL.md`, `user/kit-tools/flow-check.mjs`, `user/kit-tools/handoff.mjs`, `rules/agent-teams.md`, `tests/overwatch.test.mjs` | after U17 |
