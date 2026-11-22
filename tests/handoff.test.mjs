@@ -595,3 +595,43 @@ test('a record refused only for clarity asked with no lead answer counts as refu
 	const answered = record('{"role": "tester", "commit": "abc1234", "clarity": "asked"}', finding('F1'), '{"note": "lead answer: use the red test", "writer": "lead"}');
 	assert.deepEqual(recordCounts(answered), { findings: 1, notChecked: 0 });
 });
+
+// why: catches a subagent writing its own lead answer into its hand-back, which settles an asked question it could not answer.
+test('a lead answer written inside a hand-back is refused, so asked clarity is not settled by the agent', () => {
+	const { recordCounts } = createRequire(import.meta.url)('../user/kit-hooks/record-counts.cjs');
+	const leadLine = '{"note": "lead answer: go ahead", "writer": "lead"}';
+	const selfAnswered = record('{"role": "tester", "commit": "abc1234", "clarity": "asked"}', finding('F1'), leadLine);
+	assert.equal(recordCounts(selfAnswered), null, 'a hand-back holding its own lead answer was counted as answered');
+	const cleanLead = record('{"role": "tester", "commit": "abc1234", "clarity": "clear"}', finding('F1'), leadLine);
+	assert.equal(recordCounts(cleanLead), null, 'a hand-back holding a writer lead line was counted');
+	// Control: a note from the tester itself, not a lead answer, is still counted.
+	const own = record('{"role": "tester", "commit": "abc1234", "clarity": "clear"}', finding('F1'), '{"note": "lead answer: go ahead", "writer": "tester"}');
+	assert.deepEqual(recordCounts(own), { findings: 1, notChecked: 0 });
+});
+
+// why: catches a review file with an earlier RECORD block that has no role line hiding its findings behind a clean last block.
+test('check --review refuses a review file whose earlier RECORD block holds findings the gate would not read', () => {
+	const dir = tempDir();
+	const ROLE_REVIEW = '{"role": "test-reviewer", "commit": "abc1234"}';
+	// Control: one block with its finding and a fix for it passes the gate.
+	fs.writeFileSync(path.join(dir, 'one.review.jsonl'), record(ROLE_REVIEW, finding('F1', { status: 'wrong-test' }), '{"notChecked": "nothing"}'));
+	fs.writeFileSync(path.join(dir, 'one.fix.jsonl'), record('{"role": "tester", "commit": "abc1234", "clarity": "clear"}', finding('F1', { status: 'fixed' })));
+	const control = cli(['check', '--review', 'one', '--dir', dir]);
+	assert.equal(control.status, 0, `control refused: ${control.stderr}`);
+	// The bad file: the finding sits in an earlier block with no role line, and the last block is clean.
+	fs.writeFileSync(path.join(dir, 'two.review.jsonl'), ['Prose.', 'RECORD:', finding('F1', { status: 'wrong-test' }), 'Prose.', 'RECORD:', ROLE_REVIEW, '{"notChecked": "nothing"}'].join('\n'));
+	const res = cli(['check', '--review', 'two', '--dir', dir]);
+	assert.notEqual(res.status, 0, `the gate passed a file whose finding was hidden: ${res.stdout}`);
+});
+
+// why: catches a finding merged onto the role line passing the gate and never counted, so a real finding goes missing.
+test('a finding merged onto the role line is refused, not passed and dropped', () => {
+	const merged = '{"role": "tester", "commit": "abc1234", "id": "F0", "severity": "low", "status": "red", "where": "tests/a.test.mjs:1", "claim": "c", "proof": "p", "fix": "-"}';
+	const bad = check(record(merged, finding('F1'), finding('F2')));
+	assert.equal(bad.ok, false, 'a role line with a merged finding passed the gate');
+	assert.ok(atLine(bad.errors, 1), `no refusal names line 1: ${bad.errors.join('; ')}`);
+	// Control: the same role line without the merged finding, with the two findings, is ok and counts two.
+	const good = check(record('{"role": "tester", "commit": "abc1234"}', finding('F1'), finding('F2')));
+	assert.equal(good.ok, true, good.errors.join('; '));
+	assert.equal(good.findings.length, 2);
+});
