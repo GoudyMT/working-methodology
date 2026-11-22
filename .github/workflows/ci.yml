@@ -369,6 +369,36 @@ jobs:
           mapfile -t slow < <(find tests/slow -type f -name '*.test.mjs')
           node scripts/test-run.mjs "${slow[@]}"
 
+  # K311 (owner call 5): the minimal-code job. On a PR it flips the production lines the PR added and names every flip no
+  # test catches. Report only: it never fails the run, and it builds its own coverage map at the PR head first.
+  minimal-code:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    continue-on-error: true
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Coverage map at the PR head
+        run: node scripts/test-run.mjs --map
+
+      - name: Survivors in this slice (report only)
+        run: node scripts/mutation-check.mjs --base ${{ github.event.pull_request.base.sha }} --report --slice ${{ matrix.slice }}/4
+
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
   kit-tests:
