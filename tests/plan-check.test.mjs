@@ -144,3 +144,64 @@ test('P12 spec 3: SKILL.md has one paragraph that says every build has a written
 	const hit = paragraphs.some((p) => /every build/i.test(p) && /plan file/i.test(p) && /every agent/i.test(p) && /\bread/i.test(p));
 	assert.ok(hit, 'no paragraph says every build has a written plan file every agent reads');
 });
+
+// The records part (lead ruling): each record file is a whole hand-back, prose then RECORD: then JSONL. A record names
+// its unit only by unit on its role line; a record with no unit is skipped, not an error.
+const RECORD_FIELDS = { id: 'K1', severity: 'low', status: 'red', where: '-', claim: 'c', proof: 'p', fix: '-' };
+const handBack = (role, unit, clarity) => {
+	const roleLine = { role, commit: '158ec54' };
+	if (unit !== undefined) roleLine.unit = unit;
+	if (clarity !== undefined) roleLine.clarity = clarity;
+	return ['Prose the hand-back holds.', 'RECORD:', JSON.stringify(roleLine), JSON.stringify(RECORD_FIELDS)].join('\n');
+};
+// Runs plan-check with --records on a folder of .jsonl hand-backs, each written under its name.
+const runWithRecords = (text, records) => {
+	assert.ok(fs.existsSync(CHECK), 'user/kit-tools/plan-check.mjs is missing');
+	const dir = kitTemp.makeTemp('plan-check-rec-');
+	spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+	const file = path.join(dir, 'plan.md');
+	fs.writeFileSync(file, text);
+	const recDir = path.join(dir, 'records');
+	fs.mkdirSync(recDir);
+	for (const [name, body] of Object.entries(records)) fs.writeFileSync(path.join(recDir, name), body);
+	return spawnSync(process.execPath, [CHECK, file, '--records', recDir], { cwd: dir, encoding: 'utf8' });
+};
+
+// why: catches a builder hand-back naming a unit the plan does not hold passing, so work outside the plan goes unseen.
+test('R1 spec 1: a builder record naming a unit the plan does not hold is an error that names that unit', () => {
+	const res = runWithRecords(planText([unit('U1')]), { 'builder-u9.jsonl': handBack('builder', 'U9') });
+	assert.equal(res.status, 1, out(res));
+	assert.match(out(res), /U9/);
+});
+
+// why: catches a tester hand-back naming a unit the plan does not hold passing, so a review of a missing unit goes unseen.
+test('R2 spec 1: a tester record naming a unit the plan does not hold is an error that names that unit', () => {
+	const res = runWithRecords(planText([unit('U1')]), { 'tester-u9.jsonl': handBack('tester', 'U9', 'clear') });
+	assert.equal(res.status, 1, out(res));
+	assert.match(out(res), /U9/);
+});
+
+// why: catches a builder that built U1 with no tester record for U1 passing, so an unreviewed unit ships untested.
+test('R3 spec 1: a builder record for a unit with no tester record is an error that names the unit and the tester', () => {
+	const res = runWithRecords(planText([unit('U1')]), { 'builder-u1.jsonl': handBack('builder', 'U1') });
+	assert.equal(res.status, 1, out(res));
+	assert.match(out(res), /U1/);
+	assert.match(out(res), /tester/i);
+});
+
+// why: catches a complete set of builder and tester records for every unit being refused, which would block every good build.
+test('R4 spec 1: a builder and a tester record for each unit in the plan is ok', () => {
+	const res = runWithRecords(planText([unit('U1'), unit('U2')]), {
+		'builder-u1.jsonl': handBack('builder', 'U1'),
+		'tester-u1.jsonl': handBack('tester', 'U1', 'clear'),
+		'builder-u2.jsonl': handBack('builder', 'U2'),
+		'tester-u2.jsonl': handBack('tester', 'U2', 'clear'),
+	});
+	assert.equal(res.status, 0, out(res));
+});
+
+// why: catches a hand-back with no unit on its role line being refused as a fault, when the lead ruled it is skipped.
+test('R5 spec 1: a builder record with no unit on its role line is skipped, not an error', () => {
+	const res = runWithRecords(planText([unit('U1')]), { 'builder-anon.jsonl': handBack('builder', undefined) });
+	assert.equal(res.status, 0, out(res));
+});
