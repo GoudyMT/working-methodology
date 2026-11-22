@@ -100,15 +100,27 @@ function finalReport(input) {
 // What a reviewer's report lacks against the shape its brief gives: a "ROLE:" line, one line per finding in five
 // fields (severity | CONFIRMED or PLAUSIBLE | claim | file:line | evidence) or "No findings", and a "Not checked:" line.
 const SEVERITY_ROW = /^\s*(critical|high|medium|low)\s*\|/i;
+// A report that holds a valid RECORD: block meets the same shape in JSON: its role line is the ROLE line, its findings
+// are the rows and its notChecked line is the "Not checked:" line. The block is checked by kit-tools/handoff.mjs in its
+// own program, from node's own folder, as handoff-gate.cjs does. Null when there is no such block.
+function recordCounts(report) {
+	const checker = path.join(__dirname, '..', 'kit-tools', 'handoff.mjs');
+	if (!fs.existsSync(checker) || !String(report).split(/\r?\n/).some((l) => l.trim() === 'RECORD:')) return null;
+	const r = safeSpawn.tool(process.execPath, [checker, 'check', '-'], { input: String(report), encoding: 'utf8' });
+	const m = r.status === 0 ? /^ok: (\d+) findings, (\d+) notChecked/m.exec(String(r.stdout)) : null;
+	return m ? { findings: Number(m[1]), notChecked: Number(m[2]) } : null;
+}
 function reportFaults(report) {
 	const lines = String(report).split(/\r?\n/);
 	const faults = [];
-	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) faults.push('a "ROLE: <your role>" line');
+	const record = recordCounts(report);
+	if (!record && !lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) faults.push('a "ROLE: <your role>" line');
 	const rows = lines.filter((l) => SEVERITY_ROW.test(l));
-	if (!rows.length && !lines.some((l) => /^\s*No findings\b/i.test(l))) faults.push('one line per finding, or "No findings"');
+	if (!record && !rows.length && !lines.some((l) => /^\s*No findings\b/i.test(l))) faults.push('one line per finding, or "No findings"');
 	const loose = rows.filter((l) => { const f = l.split('|').map((x) => x.trim()); return f.length < 5 || f.slice(0, 5).some((x) => !x) || !/^(CONFIRMED|PLAUSIBLE)$/i.test(f[1]); });
 	if (loose.length) faults.push(`each finding in five fields, "<severity> | <CONFIRMED or PLAUSIBLE> | <claim> | <file:line> | <evidence>" (${loose.length} line(s) are not)`);
-	if (!lines.some((l) => /^\s*Not checked:/i.test(l))) faults.push('a "Not checked:" line (what you did not get to, or "nothing")');
+	const noted = lines.some((l) => /^\s*Not checked:/i.test(l)) || (record !== null && record.notChecked > 0);
+	if (!noted) faults.push('a "Not checked:" line (what you did not get to, or "nothing")');
 	return faults;
 }
 
