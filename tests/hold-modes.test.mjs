@@ -160,8 +160,8 @@ function agentLogText(dir) {
 	return fs.readFileSync(path.join(common, 'kit-agent-model.log'), 'utf8');
 }
 
-// why: guards rule:kit-standards (a log-only guard refuses when its list is damaged)
-test('agent-model never refuses in build 24, even when its hold reads enforce', () => {
+// why: guards rule:kit-standards (an enforce hold that never refuses leaves a model mismatch unstopped)
+test('agent-model refuses a model-mismatch call under enforce, and never a call with no role file', () => {
 	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-enforce-');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
@@ -170,7 +170,9 @@ test('agent-model never refuses in build 24, even when its hold reads enforce', 
 	const dir = repo();
 	const run = checkCalls(hookDir, dir, [{ subagent_type: 'no-such-role' }, { subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
 	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
-	assert.deepEqual(JSON.parse(run.stdout), [null, null], 'neither the no-role-file call nor the model-mismatch call is refused');
+	const decisions = JSON.parse(run.stdout);
+	assert.equal(decisions[0], null, 'the no-role-file call is not refused');
+	assert.equal(decisions[1] && decisions[1].hookSpecificOutput && decisions[1].hookSpecificOutput.permissionDecision, 'deny', `the model-mismatch call is refused: ${run.stdout}`);
 	assert.match(agentLogText(dir), /"mode":"enforce"/);
 });
 
