@@ -5,7 +5,8 @@
 //   a run with no file (the whole suite), test-run.mjs --changed without --pick (it widens to every test the change
 //   reaches), a test file the branch did not change, and the kit's CI-only checks.
 // Allowed with no question: CI itself, no git repository, a detached HEAD exactly on a tag (a throwaway clone of a
-// release, where a proof reproduces a bug with an unchanged test). It is a cost guard, not a security gate: anything unexpected lets the
+// release, where a proof reproduces a bug with an unchanged test), and a repo with no remote-tracking ref, on its own
+// base branch (nothing to compare with; logged). A folder argument is every test file under it, all of them changed. It is a cost guard, not a security gate: anything unexpected lets the
 // call through, and says why in <git common dir>/kit-guard-open.log (one line, the cause, never the command).
 const fs = require('fs');
 const path = require('path');
@@ -15,9 +16,9 @@ const { spawnSync } = require('child_process');
 // a folder of its own, as guard-outward.cjs runs it.
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 const posix = (p) => String(p).split(path.sep).join('/');
-const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.(py|go)$/i;
+const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.(py|go)$|([-_]test|(^|\/)test|(^|\/)test-[^/]*)\.[cm]?js$/i;
 // Options whose value is the next word, so it is never read as a file.
-const VALUED = /^(--test-name-pattern|--test-skip-pattern|--test-reporter|--test-reporter-destination|--test-concurrency|--test-timeout|--import|--require|-r|--shards|--slice|--always|-k|-m|-p|--config|-c|--project|--testNamePattern|-t|--reporter|--rootdir|-n|--tb|--maxfail|--cov|--cov-report|--maxWorkers|-w|-run|-count|-timeout|--durations|--deselect|--ignore|--grep|-g|--timeout|--env|--environment|--testTimeout)$/;
+const VALUED = /^(--test-name-pattern|--test-skip-pattern|--test-reporter|--test-reporter-destination|--test-concurrency|--test-timeout|--import|--require|-r|--shards|--slice|--always|-k|-m|-p|--config|-c|--project|--testNamePattern|-t|--reporter|--rootdir|-n|--tb|--maxfail|--cov|--cov-report|--maxWorkers|-w|-run|-count|-timeout|--durations|--deselect|--ignore|--grep|-g|--timeout|--env|--environment|--testTimeout|--test-coverage-include|--test-coverage-exclude|--watch-path)$/;
 // Options of a package manager or npx whose value is the next word (a folder, a package).
 const PM_VALUED = /^(--prefix|-C|--dir|--cwd|--filter|-F|--workspace|-w|--package|-p)$/;
 
@@ -114,7 +115,7 @@ function changeSet(cwd) {
 	let base = git(cwd, 'symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD').stdout.trim();
 	if (!base) base = ['origin/main', 'origin/master', 'main', 'master'].find((b) => git(cwd, 'rev-parse', '-q', '--verify', b).status === 0) || '';
 	// A local base that is the branch itself (no remote, on main) leaves nothing to compare with: let the call through.
-	if (base && !base.includes('/') && git(cwd, 'symbolic-ref', '-q', '--short', 'HEAD').stdout.trim() === base) {
+	if (base && !base.includes('/') && git(cwd, 'symbolic-ref', '-q', '--short', 'HEAD').stdout.trim() === base && !git(cwd, 'for-each-ref', 'refs/remotes').stdout.trim()) {
 		logOpen(cwd, `no base to compare with: ${base} is the branch HEAD is on`);
 		return null;
 	}
@@ -166,7 +167,12 @@ function check(input) {
 				// A word that is a folder on disk stands for every test file under it, tracked or not.
 				const isDir = (f) => { try { return fs.statSync(path.resolve(r.from, f)).isDirectory(); } catch { return false; } };
 				const folderOut = (f) => {
-					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', rel(r.from, f) || '.');
+					// A folder outside the repo cannot be listed: refuse it, unless the repo is inside it (then read the root).
+					const at = rel(r.from, f);
+					const outside = /^\.\.(\/|$)/.test(at) || path.isAbsolute(at);
+					const apart = /^\.\.(\/|$)/.test(posix(path.relative(path.resolve(r.from, f), root)));
+					if (outside && apart) return [`${posix(path.resolve(r.from, f))}/ (outside the repo)`];
+					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', outside ? '.' : at || '.');
 					if (ls.status !== 0) throw new Error('git ls-files failed');
 					const tests = ls.stdout.split('\n').map((x) => x.trim()).filter((x) => x && TEST_FILE.test(x));
 					const unchanged = tests.filter((x) => !changed.has(x));
