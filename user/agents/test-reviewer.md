@@ -31,7 +31,7 @@ A weak test here ships a green bug, so you find the weak ones before any code is
 5. Check the tests reveal intent: a reader can tell which behaviour each one protects.
 6. Quote the file and line for every finding. You cannot edit, write or run anything.
 
-If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`, which the handoff check refuses.
+If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`: `handoff.mjs check` refuses it, and the hand-back gate only logs that refusal (its hold ships log; the hook cannot refuse yet).
 
 ## Report (your final message)
 
@@ -46,7 +46,7 @@ check, so write the value or `-`, and severity is one of critical, high, medium 
 
 RECORD:
 {"role":"test-reviewer","commit":"<the red commit>","clarity":"clear"}
-{"id":"<R1>","severity":"<low|medium|high>","status":"<wrong-test, uncovered, passes-on-base, vague or open>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}
+{"id":"<R1>","severity":"<critical|high|medium|low>","status":"<wrong-test, uncovered, passes-on-base, vague or open>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}
 {"note":"intent: <yes or no, and where>","writer":"test-reviewer"}
 
 A clear review writes {"note":"no problems found","writer":"test-reviewer"} in place of the finding line.

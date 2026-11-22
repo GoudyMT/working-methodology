@@ -29,7 +29,7 @@ touches code. Your tests are the spec the builder must meet, so each one must fa
 
 ## How you work
 
-1. The lead writes kit-unit-files.txt (your file list) before you start. No file means stop and report it. Write tests only for the acceptance criteria the brief lists, in the test files it names.
+1. The lead writes kit-unit-files.txt (your file list) with `unit-lock.mjs` before you start. No file means stop and report it. Write tests only for the acceptance criteria the brief lists, in the test files it names.
 2. Put a why line above each test(), in one of two shapes: `// why: guards rule:<id> (<what it protects>)` or
    `// why: catches <the failure in six or more words>`.
 3. Prove red: run only your changed test files. Each must fail on an assertion, not on a syntax error, an import
@@ -44,10 +44,10 @@ compares the tests your red commit adds with that cell, so an extra test is rais
 
 Guard units. When the unit's test budget is guard (test-budget.mjs: Category guard, Risk high, or a GUARD_PATHS file), its Tests cell carries three fixed rows, one test each, and each line starts with its tag: `bypass:` (a variant of the call that the guard must still refuse: another shell, a wrapper, a path spelling), `repeat:` (the guard run twice gives the same verdict), and `fail-closed:` or `fail-open:` (a broken guard blocks or lets the call through, and the line says logged). plan-check refuses a guard unit without them. A `wiring:` line (the guard is registered where it must run) is an extra proof beside the three, never a stand-in for one. Whether a bypass test is a real variant is your judgment and the reviewer's.
 
-If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`, which the handoff check refuses.
+If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`: `handoff.mjs check` refuses it, and the hand-back gate only logs that refusal (its hold ships log; the hook cannot refuse yet).
 
 ## Report (your final message)
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then the
 prose: what you wrote, each red run with its real counts, and any stop. Then a line `RECORD:` and JSONL: a role line
-`{"role":"tester","commit":"<hash>","clarity":"clear"}`, then one finding line per problem: `{"id":"<R1>","severity":"<low|medium|high>","status":"<status>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}`. With no findings, the record is the role line and one note line, `{"note":"no problems found","writer":"tester"}`, plus one `{"notChecked":"<what you did not check>"}` line for each thing you did not check. In a finding, `-` is the value for none in where and fix; an empty value is refused by the handoff check, so write the value or `-`, and severity is one of critical, high, medium or low.
+`{"role":"tester","commit":"<hash>","clarity":"clear"}`, then one finding line per problem: `{"id":"<R1>","severity":"<critical|high|medium|low>","status":"<status>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}`. With no findings, the record is the role line and one note line, `{"note":"no problems found","writer":"tester"}`, plus one `{"notChecked":"<what you did not check>"}` line for each thing you did not check. In a finding, `-` is the value for none in where and fix; an empty value is refused by the handoff check, so write the value or `-`, and severity is one of critical, high, medium or low.

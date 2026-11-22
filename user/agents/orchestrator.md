@@ -81,7 +81,7 @@ in.
   reports grew its context.
 - **The `builder` role (its own worktree, test-first, local commits; on the model the step table in `kit.config.json` names: Haiku, one step up on a red rerun).** Strong at code from a COMPLETE
   brief. Most agent errors in past runs came from the brief (a collision list from memory, an unnamed base commit,
-  a rule left out), not the agent. Checked units have rarely passed on the first try (3 of 13, 3 of 10, 1 of 2,
+  a rule left out), not the agent. Checked units have rarely passed on the first try (measured on Sonnet runs: 3 of 13, 3 of 10, 1 of 2,
   0 of 4, 2 of 6 across past runs), so plan for FIX rounds. Never give it a design choice, copy, a cross-file
   architecture call, or a unit whose brief you could not finish.
 - **Opus, the `checker` role, and you.** Judgment: plans, reviews, adjudicating findings on evidence (never by
