@@ -160,6 +160,9 @@ export function tableFaults(config, dir) {
 				} else {
 					if (r.model !== s.model) faults.push(where(`model ${s.model} differs from roles.${arg}.model ${r.model}`));
 					if (r.effort !== s.effort) faults.push(where(`effort ${s.effort} differs from roles.${arg}.effort ${r.effort}`));
+					for (const key of ['tools', 'denied', 'rules']) {
+						if (!Array.isArray(r[key])) faults.push(where(`roles.${arg} has no ${key} list`));
+					}
 				}
 				checkFile(where, `user/agents/${arg}.md`, s, r && typeof r === 'object' ? r : null, arg);
 			} else if (kind === 'file') {
@@ -194,7 +197,9 @@ export function tableFaults(config, dir) {
 			if (isScript) faults.push(where('never-drop floor on a script step the check cannot read'));
 			else if (!meetsFloor(s.model, s.floor)) faults.push(where(`never-drop floor ${s.floor} is not met by model ${s.model}`));
 		}
-		if (s.neverDrop === true && s.floor === undefined && !isScript) {
+		if (s.neverDrop !== undefined && s.neverDrop !== true) {
+			faults.push(where(`never-drop flag must be true or absent, not ${JSON.stringify(s.neverDrop)}`));
+		} else if (s.neverDrop === true && s.floor === undefined && !isScript) {
 			faults.push(where('never-drop flag on a model step needs a floor'));
 		}
 		if (s.stepUp !== undefined && rank(s.stepUp) !== rank(s.model) + 1) {
