@@ -38,6 +38,19 @@ test('a build record that is not whole names each gap, and an ASCII-clean whole 
 	for (const gap of [/item 1 kind "tweaked"/, /item 2 \(S1\) has no evidence/, /title is not "type: subject"/, /non-ASCII character \(code 8212\)/, /no low count/]) assert.match(found, gap);
 });
 
+// why: catches a record whose item tests field is a bare string or holds a non-key, so CI counts a test no key names (R2)
+test('a record item names many tests as a list of test keys, and a tests value that is not such a list is refused', () => {
+	const good = record();
+	good.items[0].tests = ['tests/x.test.mjs::a', 'tests/x.test.mjs::b check'];
+	assert.deepEqual(problems(good), []);
+	const bare = record();
+	bare.items[0].tests = 'tests/x.test.mjs::a';
+	assert.match(problems(bare).join('\n'), /item 1 \(T1\)[^\n]*tests/);
+	const nonKey = record();
+	nonKey.items[0].tests = ['tests/x.test.mjs::a', 'not a test key'];
+	assert.match(problems(nonKey).join('\n'), /item 1 \(T1\)[^\n]*tests/);
+});
+
 // why: catches a changelog and a PR body that drift from the record they are written from.
 test('the record writes the changelog in kind order and the PR body with its summary row and review', () => {
 	const log = changelog(record());
