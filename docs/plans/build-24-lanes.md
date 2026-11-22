@@ -45,3 +45,5 @@ script, hook or guard.
 - Builders keep a shell, so a test file can change outside the edit fence; commit checks and CI catch it, and
   nothing restores a deleted lock list (build 25 list row).
 - Some builder briefs gave no canary phrase; the role files' rules carry it unevenly (check the brief templates).
+- flow-check checklist: C19-C22 pass only through the usage exit 2, and C11's folder entries pass with folder
+  matching broken (builder doubt).
