@@ -719,10 +719,11 @@ test('the project settings keep each shell command starting in the project folde
 // 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no
 // hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
 // why: guards the owner's pick "Roles user, Explore per project" (MC2, MC5)
-test('the kit ships a read-only Explore on Sonnet into each kit project, and none into the Claude folder', () => {
+test('the kit ships a read-only Explore on the table\'s lookup model into each kit project, and none into the Claude folder', () => {
+  const lookupModel = JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps.lookup.model;
   const fm = front(path.resolve('project/.claude/agents/Explore.md'));
   assert.equal(fm.name, 'Explore');
-  assert.equal(fm.model, 'claude-sonnet-5-5');
+  assert.equal(fm.model, lookupModel);
   for (const t of ['Edit', 'Write', 'NotebookEdit', 'Agent']) assert.ok(!fm.tools.split(/,\s*/).includes(t), `Explore takes no ${t}`);
   assert.doesNotMatch(read(path.resolve('project/.claude/agents/Explore.md')), /hooks:/, 'a project agent file\'s hooks are skipped in -p, so it carries none');
   const home = makeTemp('explore-home-');
@@ -730,7 +731,7 @@ test('the kit ships a read-only Explore on Sonnet into each kit project, and non
   install({ kit: path.resolve('.'), home, target: 'user' });
   install({ kit: path.resolve('.'), home, target: 'project', projectDir: proj });
   assert.equal(fs.existsSync(path.join(home, 'agents', 'Explore.md')), false);
-  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, 'claude-sonnet-5-5');
+  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps.lookup.model);
 });
 
 // why: guards rule:sweep-auto-approval

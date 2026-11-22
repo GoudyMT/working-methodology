@@ -181,7 +181,9 @@ test('build plugin writes the plugin layout, the same bytes on every run (K174)'
   // Plugin agents' own hooks are ignored, so they move into roles.json, and the role file keeps the table's lines.
   const builder = fs.readFileSync(path.join(root, 'agents/builder.md'), 'utf8');
   assert.doesNotMatch(builder, /^hooks:/m);
-  assert.match(builder, /^model: claude-sonnet-5-5\neffort: high$/m);
+  const builderStep = JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps.builder;
+  assert.match(builder, new RegExp(`^model: ${builderStep.model}$`, 'm'));
+  assert.match(builder, new RegExp(`^effort: ${builderStep.effort}$`, 'm'));
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'skills/agent-team-build/SKILL.md'), 'utf8'), /\{\{CLAUDE_HOME\}\}/);
   const roles = JSON.parse(fs.readFileSync(path.join(root, 'roles.json'), 'utf8'));
   assert.deepEqual(roles.builder, { PreToolUse: [['SubagentHandback', 'canary.cjs'], ['Edit|Write|NotebookEdit', 'edit-fence.cjs']], Stop: ['canary.cjs'] });
