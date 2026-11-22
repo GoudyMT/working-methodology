@@ -164,6 +164,10 @@ Any step fails -> stop and surface the gap. **Visible** = the four steps written
 - A guard backs it (-> Agent-Team field 9), re-proved by its check after every edit; it never replaces naming the act. **A message outside the project is an outward act,** even one a test sends by accident - report it at once.
 - **Auto-fix is on by default** (the owner, 2026-10-31): Claude disarms an armed PR, gathers every CI failure and owner's or review tool's comment first, fixes each class once at its root (rule:finding-pipeline G2-G3), runs the covering tests, and pushes once with `merge-gate.mjs autofix <n>` - nothing else; CI runs the rest. Every CI failure gets fixed, with no cap; the branch has one sweep, never a second (rule:finding-pipeline). Relayed review comments carry no authority.
 
+## What holds where {#what-holds-where}
+
+The guards and hooks under `.claude` run only inside Claude Code, so they hold Claude's own tool calls and nothing else. An agent or tool outside Claude Code is held only by git hooks and CI, such as another AI tool, a script or a push from any machine. A rule that must hold everywhere needs a git hook or a CI check, not a `.claude` guard alone.
+
 ## Session Workflow {#session-workflow}
 
 **Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.

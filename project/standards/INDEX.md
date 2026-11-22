@@ -23,6 +23,7 @@ that rule in the file named. To search, look for your words in the Rule and Also
 | delegated-decisions | Delegated Decisions (amends rule 1) | `AGENTS.md` | decide alone, records answer, impact test |
 | edit-discipline | Edit Discipline | `AGENTS.md` | edit, write code, change files, approval before writing |
 | outward-acts | Git: Local Work vs Outward Acts | `AGENTS.md` | push, pull request, merge, release, tag, publish, remote |
+| what-holds-where | What holds where | `AGENTS.md` |  |
 | session-workflow | Session Workflow | `AGENTS.md` | session, start, end, workflow |
 | what-this-file-is-not | What This File Is Not | `AGENTS.md` | scope of standards |
 | visual-design-collaboration | Visual Design Collaboration | `.claude/rules/design-and-ux.md` | visual, layout, wireframe, mockup, screen, color, contrast |
