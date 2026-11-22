@@ -21,7 +21,11 @@ const swapOk = (r) => isObject(r) && filled(r.test) && Array.isArray(r.keeps) &&
 // U16: a tester or test-reviewer states whether its spec was clear, asked (a lead answer must follow) or assumed (refused).
 // A missing clarity is a warning in this release (log-only), so only the values are checked as errors.
 const CLARITY = ['clear', 'asked', 'assumed'];
-const CLARITY_ROLES = ['tester', 'test-reviewer'];
+// tester or test-reviewer as a word part of the role, in any case.
+const CLARITY_ROLE = /(^|[^a-z0-9])(tester|test-reviewer)([^a-z0-9]|$)/i;
+// A finding key, plain or decoded from \u escapes.
+const FINDING_KEY_RE = new RegExp(`"(${FINDING_KEYS.join('|')})"\\s*:`);
+const decodeEscapes = (t) => String(t).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
 
 // A key error names the key in backticks, so a retry prompt can point at exactly the field to repair.
 function keyErrors(obj, keys) {
@@ -80,7 +84,11 @@ export function check(text, expect = {}) {
 				const c = expect.commit;
 				if (c !== undefined && !obj.commit.startsWith(c) && !c.startsWith(obj.commit)) errs.push(`\`commit\` is ${obj.commit}, the brief named ${c}`);
 			}
-			if (isObject(obj) && CLARITY_ROLES.includes(obj.role)) {
+			if (isObject(obj)) out.roleLine = obj;
+				// A finding's keys go on their own line.
+				const merged = isObject(obj) ? FINDING_KEYS.filter((k) => k in obj) : [];
+				if (merged.length) errs.push(`the role line holds finding key ${merged.join(', ')}: a finding goes on its own line`);
+				if (isObject(obj) && typeof obj.role === 'string' && CLARITY_ROLE.test(obj.role)) {
 				roleObj = obj;
 				if (!('clarity' in obj)) out.warnings.push(`line ${n}: missing clarity (log-only in this release)`);
 				else if (!CLARITY.includes(obj.clarity)) fail(`bad \`clarity\` ${JSON.stringify(obj.clarity)}, want one of ${CLARITY.join(', ')}`);
@@ -133,7 +141,28 @@ export function check(text, expect = {}) {
 	return out;
 }
 
-const UNIT_BAD = /[\\/]|\.\./;
+// Ids of the findings in each RECORD block but the last; null when one has no id.
+function earlierIds(text) {
+	const lines = String(text).split(/\r?\n/);
+	const marks = lines.flatMap((l, i) => (l.trim() === 'RECORD:' ? [i] : []));
+	const ids = [];
+	for (let k = 0; k < marks.length - 1; k++) {
+		const body = decodeEscapes(lines.slice(marks[k] + 1, marks[k + 1]).join('\n'));
+		if (!FINDING_KEY_RE.test(body)) continue;
+		const found = [...body.matchAll(/"id"\s*:\s*"([^"]*)"/g)].map((m) => m[1]);
+		if (!found.length) return null;
+		ids.push(...found);
+	}
+	return ids;
+}
+
+// A finding above the last RECORD: line, in any shape.
+export const findingAbove = (text) => /^\s*(critical|high|medium|low)\s*\|/m.test(text) || FINDING_KEY_RE.test(decodeEscapes(text));
+
+// The role line names the brief's role (any case) and its head (a case-insensitive prefix).
+export const namedBy = (line, want) => Boolean(line && want.role !== undefined && want.commit) && String(line.role).toLowerCase() === String(want.role).toLowerCase() && String(want.commit).toLowerCase().startsWith(String(line.commit).toLowerCase());
+
+const UNIT_BAD =/[\\/]|\.\./;
 
 // The review folder: kit-reviews under the git common dir, so a linked worktree reads the main repo's. Git is launched
 // as pr-size.mjs launches it: from node's own folder, with a git.exe left in the folder never run in its place.
@@ -190,10 +219,17 @@ function reviewGate(unit, dirArg) {
 		return 1;
 	}
 	const fixed = new Set(fx.findings.filter((f) => f.status === 'fixed').map((f) => f.id));
-	const unfixed = rv.findings.filter((f) => !fixed.has(f.id));
-	for (const f of unfixed) console.error(`unfixed: review finding ${f.id} (${f.status}) has no fixed line in ${unit}.fix.jsonl`);
+	// Every RECORD block counts, not only the last.
+		const early = earlierIds(review);
+		if (early === null) {
+			console.error('an earlier RECORD: block has a finding with no `id`');
+			return 1;
+		}
+		const ids = [...rv.findings.map((f) => f.id), ...early];
+		const unfixed = ids.filter((id) => !fixed.has(id));
+	for (const id of unfixed) console.error(`unfixed: review finding ${id} has no fixed line in ${unit}.fix.jsonl`);
 	if (unfixed.length) return 1;
-	console.log(`ok: ${rv.findings.length} review findings, all fixed`);
+	console.log(`ok: ${ids.length} review findings, all fixed`);
 	return 0;
 }
 
