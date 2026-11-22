@@ -33,6 +33,8 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 13:1x | - | The read-only Sonnet reviewer wrote a temp test copy into the lead's checkout, deleted it and reported it | Its own report (no tool fence on a general-purpose agent; the test-reviewer role file would have blocked Write) |
 | 12:1x | L3 | The commit-shape fix went to the U7b builder (its own builder had been stopped) | Lead, by choice: warm agent, under 3 units |
 
+| 14:1x | L6, L16 | A lead note (second review, lead answer) is text in the agent's own record, so an agent can forge it | Opus check on U15; ruled a log-stage limit, a lead-only file is a build 25 item |
+
 ## 3. Lead context and handoffs
 
 | When (UTC) | Stage | Lead context | Handoff |
