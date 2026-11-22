@@ -165,7 +165,7 @@ const gitRepo = () => {
   return dir;
 };
 
-// why: catches a plugin build that differs between two runs on the same release, so no pinned build can be checked
+// why: guards rule:agent-role-table (a plugin build whose bytes change between runs cannot be pinned or checked)
 test('build plugin writes the plugin layout, the same bytes on every run (K174)', () => {
   const root = plugin();
   const again = path.join(makeTemp('plugin-out-'), 'kit-plugin');

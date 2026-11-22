@@ -344,7 +344,7 @@ test('each real step carries its table model, effort, enforcer and floor', () =>
 	assert.deepEqual(actual, expected);
 });
 
-// why: catches a script step given a floor it cannot be checked against
+// why: guards rule:agent-role-table (a script step that carries a floor key is checked against a floor it cannot meet)
 test('the step6 entry has no floor key at all', () => {
 	assert.equal('floor' in realSteps().step6, false);
 });
@@ -442,7 +442,7 @@ function assertFaultLike(faults, role, re) {
 	assert.ok(faults.some((f) => f.includes(role) && re.test(f)), `no fault names ${role} + ${re} in ${JSON.stringify(faults)}`);
 }
 
-// why: catches a junction run of the CLI that skips its main block and exits 0 with no check
+// why: guards rule:agent-role-table (a junction run of the CLI that skips its main block passes as a clean check)
 test('the CLI run through a Windows junction exits 2 on a folder with no kit.config.json', { windows: 'also', skip: process.platform !== 'win32' && 'junction is Windows only' }, () => {
 	const linkDir = path.join(kitTemp.makeTemp('model-table-link-'), 'link');
 	fs.symlinkSync(path.dirname(MODULE), linkDir, 'junction');
@@ -708,4 +708,49 @@ test('a const named only inside a block comment is a fault, not a definition', (
 test('a const named only inside a template literal is a fault, not a definition', () => {
 	const text = 'const HELP = `\nconst DEFAULT_MODEL = \'' + SONNET + '\';\n`;\nexport const OTHER = 1;\n';
 	assertFault(faultsOf(sweepConfig(SONNET), { 'scripts/approve.mjs': text }), 'sweep', 'DEFAULT_MODEL');
+});
+
+// why: guards rule:agent-role-table (a correct const with a stale definition inside a block comment passes as the real line)
+test('a correct top-level const beside a stale definition inside a block comment gives no fault', () => {
+	const files = { 'scripts/approve.mjs': `/*\nconst DEFAULT_MODEL = '${HAIKU}';\n*/\nconst DEFAULT_MODEL = '${SONNET}';\n` };
+	assert.deepEqual(faultsOf(sweepConfig(SONNET), files), []);
+});
+
+// why: guards rule:agent-role-table (a correct const with a stale definition inside a template literal passes as the real line)
+test('a correct top-level const beside a stale definition inside a template literal gives no fault', () => {
+	const text = 'const HELP = `\nconst DEFAULT_MODEL = \'' + HAIKU + '\';\n`;\nconst DEFAULT_MODEL = \'' + SONNET + '\';\n';
+	assert.deepEqual(faultsOf(sweepConfig(SONNET), { 'scripts/approve.mjs': text }), []);
+});
+
+// why: guards rule:agent-role-table (a matching const inside a comment does not hide a real let definition of another model)
+test('a matching const inside a block comment beside a real let definition of another model is a fault', () => {
+	const files = { 'scripts/approve.mjs': `/*\nconst DEFAULT_MODEL = '${SONNET}';\n*/\nlet DEFAULT_MODEL = '${HAIKU}';\n` };
+	assertFault(faultsOf(sweepConfig(SONNET), files), 'sweep', 'DEFAULT_MODEL');
+});
+
+// why: guards rule:agent-role-table (a floor naming no known model family is never met, so it is a fault, not a pass)
+test('a never-drop floor naming no known family is a fault naming the step', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead', floor: 'claude-sonet-5-5' } } };
+	assertFault(faultsOf(config, {}), 'gate', 'never-drop');
+});
+
+// why: catches a role step whose config role has no tools, denied or rules list, which passes unchecked
+test('a role step whose config role has no tools, denied or rules list is a fault naming the role and the missing key', () => {
+	const faults = faultsOf(soundConfig(), soundFiles());
+	assertFault(faults, 'builder', 'tools');
+	assertFault(faults, 'builder', 'denied');
+	assertFault(faults, 'builder', 'rules');
+});
+
+// why: catches a neverDrop flag that is the string yes rather than true, which the check reads as no flag at all
+test('neverDrop given as the string yes is a fault naming the step', () => {
+	const config = { roles: {}, steps: { gate: { model: OPUS, effort: 'high', enforcer: 'lead', neverDrop: 'yes' } } };
+	assertFault(faultsOf(config, {}), 'gate');
+});
+
+// why: guards rule:agent-role-table (a kit config that is JSON null is an unreadable config, so the CLI exits 2)
+test('the CLI exits 2 when kit.config.json holds null', () => {
+	const dir = kit(null, {});
+	const run = spawnSync(process.execPath, [MODULE, 'check', dir], { encoding: 'utf8' });
+	assert.equal(run.status, 2, run.stderr);
 });
