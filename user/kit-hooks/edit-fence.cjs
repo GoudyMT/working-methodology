@@ -9,7 +9,9 @@ const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
 
 // Roles whose edits need the lead's file list (their role bodies say so); a builder without one edits its worktree as before.
-const LISTED_ROLES = ['tester', 'writer'];
+// A plugin role is named kit:builder, so a role matches by its last name after a colon, as sweep-guard matches it.
+const LISTED_ROLE = /(^|:)(tester|writer)$/i;
+const BUILDER_ROLE = /(^|:)builder$/i;
 // U4 (build 24): the unit list's name, and unit-check's test-file rule (a test folder, or *.test.* / *.spec.*): a builder
 // edits neither, whatever list there is.
 const LIST = 'kit-unit-files.txt';
@@ -43,7 +45,7 @@ function main() {
 	const top = safeSpawn.gitRead(cwd, ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 	if (top.status !== 0) {
 		// No git top level means no file list to check a tester or writer against: stop it, as with a missing list.
-		if (LISTED_ROLES.includes(input.agent_type)) {
+		if (LISTED_ROLE.test(String(input.agent_type))) {
 			process.stderr.write(`Blocked: ${input.agent_type} edit has no git worktree to check its file list against. Stop and report it.\n`);
 			return 2;
 		}
@@ -56,7 +58,7 @@ function main() {
 		process.stderr.write(`Blocked: ${target} is outside this builder's worktree (${root}). Edit only files of your unit, in your worktree.\n`);
 		return 2;
 	}
-	if (input.agent_type === 'builder' && (isTestFile(rel) || path.basename(rel) === LIST)) {
+	if (BUILDER_ROLE.test(String(input.agent_type)) && (isTestFile(rel) || path.basename(rel) === LIST)) {
 		process.stderr.write(`Blocked: ${rel} is a test file or the unit list, which a builder does not edit. Report it to the lead instead of editing it.\n`);
 		return 2;
 	}
@@ -68,7 +70,7 @@ function main() {
 			process.stderr.write(`Blocked: ${rel} is not in this unit's file list (git rev-parse --git-path kit-unit-files.txt). Report it to the lead instead of editing it.\n`);
 			return 2;
 		}
-	} else if (LISTED_ROLES.includes(input.agent_type)) {
+	} else if (LISTED_ROLE.test(String(input.agent_type))) {
 		// A tester or writer edits only what the lead listed, so with no list it stops (a builder keeps its worktree edits).
 		process.stderr.write(`Blocked: ${input.agent_type} has no file list. The lead writes kit-unit-files.txt before the unit starts; stop and report it.\n`);
 		return 2;
@@ -81,7 +83,7 @@ let agentType = '';
 try {
 	process.exitCode = main();
 } catch {
-	if (LISTED_ROLES.includes(agentType)) {
+	if (LISTED_ROLE.test(agentType)) {
 		process.stderr.write(`Blocked: ${agentType} edit could not be checked against its file list. Stop and report it.\n`);
 		process.exitCode = 2;
 	} else {

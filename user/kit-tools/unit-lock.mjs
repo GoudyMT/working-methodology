@@ -4,6 +4,8 @@
 // then the source files the unit may change. The builder's edit fence then keeps it to those files. Usage:
 // node unit-lock.mjs <red sha> --files a.js,b.js. Exit 0 and print the list; exit 1 naming each test file given (a lock
 // takes source files only, and writes nothing); exit 2 when the red point is not a commit, or the arguments are wrong.
+// node unit-lock.mjs --tester --files a.test.mjs,... writes the tester's list: the test files only, with no red line,
+// since the tester writes the red commit's tests before any lock exists. A source file is refused, naming it (exit 1).
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
@@ -25,7 +27,40 @@ const git = (args) => spawnSync('git', ['-C', process.cwd(), '-c', 'core.fsmonit
 	env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' },
 });
 
+// The file list's path in this worktree's git folder, written in full; 0 on success, 2 when git cannot name the path.
+function writeList(text) {
+	const where = git(['rev-parse', '--path-format=absolute', '--git-path', LIST]);
+	if (where.status !== 0) {
+		console.error(`unit-lock: cannot find ${LIST}: ${String(where.stderr).trim()}`);
+		return 2;
+	}
+	fs.writeFileSync(where.stdout.trim(), text);
+	process.stdout.write(text);
+	return 0;
+}
+
+// The tester's list: test files only, refused as a whole when any named file is not a test file.
+function tester(argv) {
+	const [flag, list] = argv;
+	if (flag !== '--files' || list === undefined) {
+		console.error('usage: node unit-lock.mjs --tester --files a.test.mjs,b.test.mjs');
+		return 2;
+	}
+	const files = list.split(',').map((f) => f.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '')).filter(Boolean);
+	if (files.length === 0) {
+		console.error('unit-lock: --files names no test file');
+		return 2;
+	}
+	const source = files.filter((f) => !isTestFile(f));
+	if (source.length > 0) {
+		for (const s of source) console.error(`unit-lock: ${s} is not a test file; the tester's list takes test files only, and nothing was written`);
+		return 1;
+	}
+	return writeList(`${files.join('\n')}\n`);
+}
+
 function main(argv) {
+	if (argv[0] === '--tester') return tester(argv.slice(1));
 	const [sha, flag, list] = argv;
 	if (!sha || sha.startsWith('-') || flag !== '--files' || list === undefined) {
 		console.error('usage: node unit-lock.mjs <red sha> --files a.js,b.js');
