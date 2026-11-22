@@ -126,11 +126,13 @@ function reviews(unit, dir) {
 	if (!files.length) return fault([`no review for ${unit} in ${dir}: the test-reviewer writes ${unit}.review.jsonl`]);
 	const out = [];
 	let findings = 0;
+	const ids = [];
 	files.forEach(({ name }, i) => {
 		const text = readText(path.join(dir, name));
 		const r = check(text, { role: 'test-reviewer' });
 		if (!r.ok) { out.push(`${name}: ${r.errors.join('; ')}`); return; }
 		findings += r.findings.length;
+		ids.push(...r.findings.map((f) => f.id));
 		if (i > 0 && !notesOf(text).some((o) => o.writer === 'lead' && /^second review:/.test(o.note))) {
 			out.push(`${name} is a second review of ${unit} with no lead note: a line {"note":"second review: <why>","writer":"lead"}`);
 		}
@@ -140,6 +142,10 @@ function reviews(unit, dir) {
 	if (hasFix) {
 		const fx = check(readText(path.join(dir, fixName)), { role: 'tester' });
 		if (!fx.ok) out.push(`${fixName}: ${fx.errors.join('; ')}`);
+		// A finding passes only with a fixed line for its id; a note saying "fixed" does not mark it.
+		const fixed = new Set(fx.findings.filter((f) => f.status === 'fixed').map((f) => f.id));
+		const missing = ids.filter((id) => !fixed.has(id));
+		if (missing.length) out.push(`${unit} review finding(s) with no fixed line in ${fixName}: ${missing.join(', ')}`);
 	}
 	if (findings && !hasFix) out.push(`${unit} has ${findings} review finding(s) and no fix record: ${fixName} holds the tester's fixes`);
 	return out.length ? fault(out) : say(`reviews: ${unit} ok, ${files.length} review record(s), ${findings} finding(s)`);
