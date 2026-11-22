@@ -171,7 +171,7 @@ function check(input) {
 				const folderOut = (f) => {
 					// A folder outside the repo cannot be listed, and one holding the repo runs its sibling folders too: refuse every one.
 					const at = rel(r.from, f);
-					if (/^\.\.(\/|$)/.test(at) || path.isAbsolute(at)) return [`${posix(path.resolve(r.from, f))}/ (outside the repo)`];
+					if (/^\.\.(\/|$)/.test(at) || path.isAbsolute(at)) return [`${posix(path.resolve(r.from, f)).replace(/\/$/, '')}/ (outside the repo)`];
 					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', at || '.');
 					if (ls.status !== 0) throw new Error('git ls-files failed');
 					const tests = ls.stdout.split('\n').map((x) => x.trim()).filter((x) => x && FOLDER_TEST.test(x));
@@ -186,8 +186,8 @@ function check(input) {
 			}
 			if (what) {
 				const mine = [...changed].filter((f) => TEST_FILE.test(f)).slice(0, 3);
-				const hint = mine.length ? ` Run only the tests you changed (${mine.join(', ')}); CI runs the rest after you push.` : ' CI runs the suite after you push.';
-				return { kitWhat: `a local test run past the changed tests: ${what}.${hint}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Owner's yes needed: a local test run past the changed tests (${what}).${hint}` } };
+				const hint = mine.length ? ` Run only the tests you changed (${mine.join(', ')}); CI runs the rest after you push` : ' CI runs the suite after you push';
+				return { kitWhat: `a local test run past the changed tests: ${what}.${hint}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Owner's yes needed: a local test run past the changed tests (${what}).${hint}.` } };
 			}
 		}
 		return null;
