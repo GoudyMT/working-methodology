@@ -238,10 +238,10 @@ test('settings, lead and script enforcers alone raise no fault', () => {
 		steps: {
 			lead: { model: OPUS, effort: 'medium', enforcer: 'lead' },
 			gate: { model: OPUS, effort: 'high', enforcer: 'settings' },
-			run: { model: 'none', effort: '-', enforcer: 'script:scripts/missing.mjs' },
+			run: { model: 'none', effort: '-', enforcer: 'script:scripts/present.mjs' },
 		},
 	};
-	assert.deepEqual(faultsOf(config, {}), []);
+	assert.deepEqual(faultsOf(config, { 'scripts/present.mjs': 'export {};\n' }), []);
 });
 
 // why: guards rule:agent-role-table (a never-drop step below its floor is a fault that names the step as never-drop)
