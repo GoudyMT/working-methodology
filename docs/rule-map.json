@@ -72,7 +72,8 @@
    "tests": [
     "tests/kit-hooks.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep.test.mjs"
+    "tests/kit-sweep.test.mjs",
+    "tests/slots.test.mjs"
    ],
    "workflows": []
   },
