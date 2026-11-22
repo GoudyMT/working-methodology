@@ -138,7 +138,7 @@ test('mutation-check --value exits 0 and names a survivor', () => {
 	assert.match(r.stdout + r.stderr, /src\/calc\.mjs:\d+/, 'the survivor is named by its file and line');
 });
 
-// why: catches the project test-value step not running the mutationCommand from kit.config.json or not printing its stdout (V4).
+// why: catches the project test-value step not running the mutationCommand from kit.config.json or not printing its stdout; also the step printing not measured and exiting 0 with no tool named (V4, V5).
 test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its report', () => {
 	assert.ok(fs.existsSync(KIT_VALUE), 'the project step exists');
 	const dir = kitTemp.makeTemp('value-gate-');
@@ -148,18 +148,14 @@ test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its 
 	const r = spawnSync(process.execPath, [KIT_VALUE], { cwd: dir, encoding: 'utf8' });
 	assert.equal(r.status, 0, r.stdout + r.stderr);
 	assert.match(r.stdout, new RegExp(SENTINEL), 'the stub output is printed');
+	// Control (folded from V5): with no tool named, the step prints "not measured" and exits 0.
+	const bare = kitTemp.makeTemp('value-gate-');
+	const none = spawnSync(process.execPath, [KIT_VALUE], { cwd: bare, encoding: 'utf8' });
+	assert.equal(none.status, 0, none.stdout + none.stderr);
+	assert.match(none.stdout, /not measured/);
 });
 
-// why: catches the project step failing to print "not measured" and exit 0 when no mutation tool is named (V5).
-test('user/kit-tools/test-value.mjs prints "not measured" and exits 0 with no tool named', () => {
-	assert.ok(fs.existsSync(KIT_VALUE), 'the project step exists');
-	const dir = kitTemp.makeTemp('value-gate-');
-	const r = spawnSync(process.execPath, [KIT_VALUE], { cwd: dir, encoding: 'utf8' });
-	assert.equal(r.status, 0, r.stdout + r.stderr);
-	assert.match(r.stdout, /not measured/);
-});
-
-// why: catches the agent-team-build skill omitting the rule to fold or drop a test that catches nothing before merge (V6).
+// why: doc claim: the agent-team-build skill tells the lead to fold or drop a test that catches nothing before merge
 test('agent-team-build SKILL.md says the lead folds or drops a test that catches nothing before merge', () => {
 	const src = fs.readFileSync(SKILL, 'utf8');
 	assert.match(src, /catches nothing/, 'the skill names a test that catches nothing');

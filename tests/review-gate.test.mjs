@@ -76,6 +76,7 @@ test('U6 spec 3: test-reviewer.md body names all five statuses', () => {
 test('U6 spec 3: kit.config.json roles.test-reviewer.tools is exactly Read, Grep and Glob', () => {
 	assert.ok(fs.existsSync(CONFIG_FILE), 'kit.config.json exists');
 	const config = JSON.parse(read(CONFIG_FILE));
+	assert.ok(config.roles && config.roles['test-reviewer'], 'kit.config.json has a roles.test-reviewer entry');
 	assert.deepEqual(config.roles['test-reviewer'].tools, ['Read', 'Grep', 'Glob']);
 });
 

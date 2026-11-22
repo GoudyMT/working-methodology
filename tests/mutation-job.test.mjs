@@ -106,7 +106,7 @@ const flipsOf = (out) => Number(out.split('\n')[0].replace('flips: ', ''));
 // 1. scripts/mutation-check.mjs report mode
 // ---------------------------------------------------------------------------------------------------------------
 
-// why: catches a report that names the asserted line as a survivor, sending the owner to fix a line that is covered
+// why: catches a report that names the asserted line as a survivor, sending the owner to fix a line that is covered; also a test-file line counted as a production flip, and a base-commit line flipped
 test('report mode names the unasserted survivor and not the asserted line', () => {
 	const r = unsliced();
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
@@ -114,6 +114,12 @@ test('report mode names the unasserted survivor and not the asserted line', () =
 	const out = survivorsOf(r.stdout);
 	assert.ok(out.includes(SURVIVOR(lineOf(src, 'return x === 7;'))), `no survivor for the unasserted line:\n${r.stdout}`);
 	assert.ok(!out.some((l) => l.startsWith(`survivor: ${SRC}:${lineOf(src, 'return x === 1;')}:`)), 'the asserted line is named as a survivor');
+	// Folded from "report mode opens with the production flip count and counts no test-file line".
+	assert.equal(r.stdout.split('\n')[0], `flips: ${FUNCS}`, r.stdout);
+	// Folded from "report mode never flips a base-commit line that a test reaches".
+	assert.equal(flipsOf(r.stdout), FUNCS, r.stdout);
+	const oldLine = lineOf(BASE_SRC, 'return x === 0;');
+	assert.ok(!out.some((l) => l.startsWith(`survivor: ${SRC}:${oldLine}:`)), 'the base line is named as a survivor');
 });
 
 // why: guards rule:test-value (the job reports survivors and must never fail the run on them, so report mode exits 0)
@@ -121,20 +127,6 @@ test('report mode exits 0 even when flips survive', () => {
 	const r = unsliced();
 	assert.ok(survivorsOf(r.stdout).length > 0, 'the fixture has no survivor to test the exit code against');
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
-});
-
-// why: catches a test-file line counted as a production flip, so the job reports flips the branch did not make in src
-test('report mode opens with the production flip count and counts no test-file line', () => {
-	const r = unsliced();
-	assert.equal(r.stdout.split('\n')[0], `flips: ${FUNCS}`, r.stdout);
-});
-
-// why: catches a base-commit line mapped to a test being flipped, so the job measures code this branch never changed
-test('report mode never flips a base-commit line that a test reaches', () => {
-	const r = unsliced();
-	assert.equal(flipsOf(r.stdout), FUNCS, r.stdout);
-	const oldLine = lineOf(BASE_SRC, 'return x === 0;');
-	assert.ok(!survivorsOf(r.stdout).some((l) => l.startsWith(`survivor: ${SRC}:${oldLine}:`)), 'the base line is named as a survivor');
 });
 
 // why: catches a report against the branch's own head, which has no change to flip, still flipping lines from the base

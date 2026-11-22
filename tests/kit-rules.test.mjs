@@ -537,11 +537,20 @@ test('no rule pointer in the kit names a heading by its words', () => {
   assert.deepEqual(byWords, []);
 });
 
-// why: guards rule:agent-role-table (a role file the config does not describe widens access unseen)
+// why: guards rule:agent-role-table (a role file whose tools, denied tools or preloaded rules differ from its config row widens access unseen)
 test('each agent role file matches the role table in kit.config.json: tools, denied tools and rules at start', () => {
   const config = JSON.parse(read(path.resolve('kit.config.json')));
+  assert.ok(config.roles, 'kit.config.json has a roles table');
   const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
   assert.deepEqual(files.filter((r) => !config.roles[r]), [], 'role files with no roles entry');
+  for (const r of files) {
+    const row = config.roles[r];
+    assert.ok(row && row.tools, `roles.${r}.tools is set in kit.config.json`);
+    const fm = front(path.resolve('user/agents', `${r}.md`));
+    assert.equal(fm.tools, row.tools.join(', '), `${r} tools`);
+    assert.equal(fm.disallowedTools || 'none', (row.denied || []).join(', ') || 'none', `${r} denied tools`);
+    assert.equal(fm.skills || 'none', (row.rules || []).length ? `${r}-rules` : 'none', `${r} preloaded rules`);
+  }
 });
 
 // why: guards rule:agent-role-table (a markdown row kept beside the config would be a second home that drifts)

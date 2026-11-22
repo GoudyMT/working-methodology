@@ -13,7 +13,7 @@ const NOTE_CHECKED = '{"notChecked":"the scan of tests"}';
 const handBack = (dir, agent, message) => canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_type: 'reviewer', agent_id: agent, tool_input: { message } });
 const refusal = (r) => (r.stdout || '').trim() ? JSON.parse(r.stdout).hookSpecificOutput : null;
 
-// why: catches a RECORD block with finding lines refused for having no pipe rows, which blocks every JSON hand-back.
+// why: catches a RECORD block with finding lines refused for having no pipe rows, which blocks every JSON hand-back; also canary.cjs growing past its 14000 byte cap.
 test('the canary reads a RECORD block with finding lines as the report, with no finding-shape fault', () => {
 	const dir = canaryRepo();
 	const message = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'RECORD:', ROLE, FINDING];
@@ -25,6 +25,8 @@ test('the canary reads a RECORD block with finding lines as the report, with no 
 	assert.ok(neither, 'expected a refusal');
 	assert.equal(neither.permissionDecision, 'deny');
 	assert.match(neither.permissionDecisionReason, /one line per finding/, neither.permissionDecisionReason);
+	// Folded from "user/kit-hooks/canary.cjs is under 14000 bytes": the canary stays under its size cap.
+	assert.ok(fs.statSync('user/kit-hooks/canary.cjs').size < 14000, `canary.cjs is ${fs.statSync('user/kit-hooks/canary.cjs').size} bytes`);
 });
 
 // why: catches a clean RECORD block with only a role line and a notChecked line refused as an out-of-shape report.
@@ -53,9 +55,4 @@ test('with a handoff checker that throws on load, a ROLE and Not checked hand-ba
 	const message = [`${FAKE_PHRASE}`, 'ROLE: reviewer', 'Not checked: nothing', 'RECORD:', ROLE, NOTE_CHECKED];
 	const r = handBackFrom(home, dir, 'c1', message.join('\n'));
 	assert.equal(refusal(r), null, r.stdout);
-});
-
-// why: guards rule:size-budgets (canary.cjs grows to 14000 bytes or more)
-test('user/kit-hooks/canary.cjs is under 14000 bytes', () => {
-	assert.ok(fs.statSync('user/kit-hooks/canary.cjs').size < 14000, `canary.cjs is ${fs.statSync('user/kit-hooks/canary.cjs').size} bytes`);
 });

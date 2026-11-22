@@ -220,7 +220,7 @@ test('B10 spec S10: --lock writes the sha256 of the row line, and a later run re
 	assert.equal(unlocked.status, 0, out(unlocked));
 });
 
-// why: catches a Units template or adapter missing its Category, Tests or testCategories entry, so a plan cannot set a budget (S11).
+// why: doc claim: the batch-plan Units table and the project adapter name Category, Tests and testCategories (S11)
 test('B11 spec S11: the batch-plan Units table has Category and Tests columns, and project-adapter documents the testCategories row', () => {
 	assert.ok(fs.existsSync(TEMPLATE), 'batch-plan.md is missing');
 	const lines = fs.readFileSync(TEMPLATE, 'utf8').split(/\r?\n/);
