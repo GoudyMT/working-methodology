@@ -373,6 +373,7 @@ const whys = (rows) => rows.map((r) => r.why);
 
 // why: catches a checker spent on a unit that touches no guard path
 test('L9: a checker call naming a unit with no guard file logs "checker on a non-risky unit" and is not refused', () => {
+	assert.match(fs.readFileSync(AGENT_MODEL, 'utf8'), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
 	const plan = planWith(['src/app.js', 'docs/readme.md']);
 	assert.ok(whys(runHook(`Review this.\nUnit: U1\nPlan: ${plan}\n`)).includes('checker on a non-risky unit'));
 });
@@ -380,6 +381,7 @@ test('L9: a checker call naming a unit with no guard file logs "checker on a non
 // why: catches the risky-unit list in the hook drifting from the R2 guard list
 for (const g of GUARD_PATHS) {
 	test(`L9: a checker call on a unit whose file hits the guard entry ${g} logs no non-risky row`, () => {
+		assert.match(fs.readFileSync(AGENT_MODEL, 'utf8'), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
 		const plan = planWith(['src/app.js', guardFile(g)]);
 		const w = whys(runHook(`Unit: U1\nPlan: ${plan}\n`));
 		assert.ok(!w.includes('checker on a non-risky unit'));
@@ -389,12 +391,14 @@ for (const g of GUARD_PATHS) {
 
 // why: catches a plan with only a source file being judged risky by the hook
 test('L9: a plan whose only file is src/app.js logs the non-risky row for a checker call', () => {
+	assert.match(fs.readFileSync(AGENT_MODEL, 'utf8'), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
 	const plan = planWith(['src/app.js']);
 	assert.ok(whys(runHook(`Unit: U1\nPlan: ${plan}\n`)).includes('checker on a non-risky unit'));
 });
 
 // why: catches the non-risky row firing for roles other than the checker
 test('L9: on one non-risky unit the checker call logs the row and the builder call does not', () => {
+	assert.match(fs.readFileSync(AGENT_MODEL, 'utf8'), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
 	const plan = planWith(['src/app.js']);
 	const prompt = `Unit: U1\nPlan: ${plan}\n`;
 	assert.ok(whys(runHook(prompt, { type: 'checker' })).includes('checker on a non-risky unit'));
@@ -403,6 +407,7 @@ test('L9: on one non-risky unit the checker call logs the row and the builder ca
 
 // why: catches a checker call with no plan named passing unseen
 test('L9: a checker call with no Plan line logs "checker with no plan named" and is not refused', () => {
+	assert.match(fs.readFileSync(AGENT_MODEL, 'utf8'), /checker with no plan named/, 'agent-model.cjs holds the no-plan checker row');
 	assert.ok(whys(runHook('Review this.\nUnit: U1\n')).includes('checker with no plan named'));
 });
 
@@ -416,29 +421,34 @@ const rounds = (dir, unit = 'U1') => flow(['rounds', unit, '--dir', dir]);
 
 // why: catches a third fix round on one unit, which means the unit needs the lead, not another loop
 test('L9: rounds exits 1 when a third FIX checker record exists for the unit', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	failed(rounds(checkerDir(['FIX', 'FIX', 'FIX'])));
 });
 
 // why: catches the round cap being set one too low and stopping a legal second fix
 test('L9: rounds exits 0 with two FIX checker records', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	const r = rounds(checkerDir(['FIX', 'FIX']));
 	assert.equal(r.code, 0, r.out);
 });
 
 // why: catches PASS records counting as fix rounds
 test('L9: rounds exits 0 with three checker records of which only two are FIX', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	const r = rounds(checkerDir(['FIX', 'PASS', 'FIX']));
 	assert.equal(r.code, 0, r.out);
 });
 
 // why: catches another unit's FIX records counting against this unit
 test('L9: rounds for U2 ignores three FIX records of U1', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	const r = rounds(checkerDir(['FIX', 'FIX', 'FIX']), 'U2');
 	assert.equal(r.code, 0, r.out);
 });
 
 // why: catches three U10 FIX records counted against unit U1 because the names share a prefix
 test('L9: rounds U1 ignores three FIX records of U10', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	const dir = checkerDir(['FIX', 'FIX']);
 	for (const n of [1, 2, 3]) put(dir, `U10.checker${n}.jsonl`, `VERDICT: FIX\nRECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n`);
 	const r = rounds(dir);
@@ -447,6 +457,7 @@ test('L9: rounds U1 ignores three FIX records of U10', () => {
 
 // why: catches VERDICT: FIXED or a mid-line VERDICT: FIX being counted as a FIX round
 test('L9: rounds exits 0 with three records holding VERDICT: FIXED or a mid-line VERDICT: FIX', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	const dir = tmp('flow-rounds-');
 	const body = `RECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n${NOTE('checked', 'checker')}\n`;
 	put(dir, 'U1.checker1.jsonl', `VERDICT: FIXED\n${body}`);
@@ -458,12 +469,14 @@ test('L9: rounds exits 0 with three records holding VERDICT: FIXED or a mid-line
 
 // why: catches the hook's GUARD_PATHS list drifting from the tester-model copy
 test('L9: the hook GUARD_PATHS equals tester-model GUARD_PATHS', () => {
+	assert.ok('GUARD_PATHS' in createRequire(import.meta.url)(AGENT_MODEL), 'agent-model.cjs exports GUARD_PATHS');
 	const hook = createRequire(import.meta.url)(AGENT_MODEL);
 	assert.deepEqual(hook.GUARD_PATHS, GUARD_PATHS);
 });
 
 // why: catches a PASS record quoting a FIX verdict being counted as a fix round
 test('L9: rounds exits 0 when a PASS record quotes an earlier VERDICT: FIX line', () => {
+	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
 	const dir = checkerDir(['FIX', 'FIX']);
 	put(dir, 'U1.checker3.jsonl', `VERDICT: PASS\nThe earlier checker wrote:\nVERDICT: FIX\nRECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n${NOTE('checked', 'checker')}\n`);
 	const r = rounds(dir);
