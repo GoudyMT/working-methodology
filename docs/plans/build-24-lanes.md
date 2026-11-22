@@ -33,3 +33,15 @@ script, hook or guard.
    exist; the PC report follows. Both results are reported side by side (owner, 2026-11-22).
 3. Fixes in lanes from lanes.mjs; a high, critical, security or owner-rule fix gets a failing test first.
 4. CI, the score gate (rule text changed), then the owner's yes for merge, tag and release.
+
+## Sweep inputs (found during the build, fixed in the sweep lanes)
+
+- approve.mjs: the pipe-row refusal beside a RECORD block is case-sensitive (`High | CONFIRMED` passes); the row
+  parser is case-insensitive. Add /i (automated security review).
+- plan-check.mjs: an installed copy cannot import project/.claude/plan-graph.mjs (builder doubt).
+- agent-model.cjs duplicates GUARD_PATHS; a test now holds the two lists equal (closed in U15 round 1).
+- A lead note (second review, lead answer) is text an agent writes: a log-stage limit; a lead-only answer file
+  comes before these checks enforce (build 25 list row).
+- Builders keep a shell, so a test file can change outside the edit fence; commit checks and CI catch it, and
+  nothing restores a deleted lock list (build 25 list row).
+- Some builder briefs gave no canary phrase; the role files' rules carry it unevenly (check the brief templates).
