@@ -17,8 +17,10 @@ const { spawnSync } = require('child_process');
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 const posix = (p) => String(p).split(path.sep).join('/');
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.(py|go)$/i;
-// What a folder run counts: also node's default names (*-test, *_test, test-*, test), which a hint never offers.
-const FOLDER_TEST = new RegExp(`${TEST_FILE.source}|([-_]test|(^|/)test|(^|/)test-[^/]*)\\.[cm]?[jt]s$`, 'i');
+// What a folder run counts: a file under a test folder named as a test (*.test.*, *.spec.*, or a .js/.mjs/.cjs/.ts file),
+// a test named anywhere, and node's default names (*-test, *_test, test-*, test), which a hint never offers. A JSON
+// fixture under tests/ is no test, so the folder alternative never reads every file there.
+const FOLDER_TEST = new RegExp(`(^|/)(tests?|__tests__|spec)/.*(\\.(test|spec)\\.[^/]*|\\.[cm]?[jt]sx?)$|\\.(test|spec)\\.[cm]?[jt]sx?$|(^|/)test_[^/]*\\.py$|_test\\.(py|go)$|([-_]test|(^|/)test|(^|/)test-[^/]*)\\.[cm]?[jt]s$`, 'i');
 // Options whose value is the next word, so it is never read as a file.
 const VALUED = /^(--test-name-pattern|--test-skip-pattern|--test-reporter|--test-reporter-destination|--test-concurrency|--test-timeout|--import|--require|-r|--shards|--slice|--always|-k|-m|-p|--config|-c|--project|--testNamePattern|-t|--reporter|--rootdir|-n|--tb|--maxfail|--cov|--cov-report|--maxWorkers|-w|-run|-count|-timeout|--durations|--deselect|--ignore|--grep|-g|--timeout|--env|--environment|--testTimeout|--test-coverage-include|--test-coverage-exclude|--watch-path)$/;
 // Options of a package manager or npx whose value is the next word (a folder, a package).

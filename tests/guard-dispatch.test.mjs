@@ -48,8 +48,8 @@ function setup({ drop = null, userHooks = false, oldHook = null } = {}) {
 }
 
 // why: guards rule:outward-acts. T16b, the rest of build 2b: the shared reader's second reading (git or gh by any path,
-// suffix or script wrapper written as the bare name) is read by every guard, not the push guard alone, so a delete or
-// commit spelled git.ps1 is held as git is; and a reader that cannot load holds every call (the plan check's P15).
+// suffix or script wrapper written as the bare name) is read by every guard, not the push guard alone, so a delete
+// spelled git.ps1 is held as git is; and a reader that cannot load holds every call (the plan check's P15).
 test('every guard reads the shared second reading, and a missing reader holds every call', () => {
 	const run = setup();
 	assert.match(run('Bash', { command: 'git clean -fdx' }).permissionDecisionReason || '', /delete/, 'the plain spelling');
@@ -114,6 +114,8 @@ test('the strictest answer wins and every reason and note is kept', () => {
 	// The mutation check: an allow after a deny, or after an ask, never loosens it.
 	assert.equal(merge([['a', o('deny', 'held')], ['b', o('allow', 'owner yes')]]).hookSpecificOutput.permissionDecision, 'deny');
 	assert.equal(merge([['a', o('ask', 'asks')], ['b', o('allow', 'owner yes')]]).hookSpecificOutput.permissionDecision, 'ask');
+	// An ask before a deny is held as a deny: the ask-deny pair a merge that ranks ask above deny gets wrong.
+	assert.equal(merge([['a', o('ask', 'asks')], ['b', o('deny', 'held')]]).hookSpecificOutput.permissionDecision, 'deny');
 });
 
 // The teardown (T2): a 98 KB command took 21 s in owner-proof and 7 s in the delete guard, past the hook's 10 s
@@ -269,6 +271,12 @@ test('a local test run reaches only the tests the branch changed; the rest waits
 	const mark = path.join(repo, 'fsmonitor-ran');
 	fs.writeFileSync(path.join(repo, 'fsm.cjs'), `require('fs').writeFileSync(${JSON.stringify(mark)}, 'x');\n`);
 	g('config', 'core.fsmonitor', `node "${path.join(repo, 'fsm.cjs').split(path.sep).join('/')}"`);
+	// Control: a plain git read of this repo runs the program, so an absent marker below means the check kept it off.
+	g('status', '--porcelain');
+	assert.equal(fs.existsSync(mark), true, 'a plain git status runs the program, so the marker can show it');
+	fs.rmSync(mark, { force: true });
+	// The check read this repo's git: the unchanged a.test.mjs is refused only after its git reads ran.
+	assert.equal(at('node --test tests/a.test.mjs'), 'deny', 'the check read the repo');
 	at('node --test tests/b.test.mjs');
 	assert.equal(fs.existsSync(mark), false, 'fsmonitor ran from the check');
 	g('config', '--unset', 'core.fsmonitor');
@@ -284,7 +292,7 @@ test('a local test run reaches only the tests the branch changed; the rest waits
 // why: guards the owner's rule "never just item codes to pick from" (E18, build 20). The 60-second overview scored 0 of
 // 4 as rule text in 1.19.0, so the choice pop-up itself is checked: codes need plain words, and a plan asked for opens
 // with its overview.
-test('a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude', () => {
+test('a choice pop-up that offers item codes with no plain words, or a plan with no overview, goes back to Claude', (t) => {
 	const run = setup({ userHooks: true });
 	const dir = kitTemp.makeTemp('ground-');
 	fs.mkdirSync(path.join(dir, 'docs', 'plans'), { recursive: true });
@@ -313,7 +321,8 @@ test('a choice pop-up that offers item codes with no plain words, or a plan with
 	const linked = path.join(dir, 'docs', 'plans', 'linked.md');
 	let linkMade = true;
 	try { fs.symlinkSync(path.join(outside, 'bare.md'), linked, 'file'); } catch { linkMade = false; }
-	if (linkMade) assert.equal(ask('Approve docs/plans/linked.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', 'a link out of the project');
+	if (!linkMade) t.skip('this account cannot create a file symlink, so the link case did not run');
+	else assert.equal(ask('Approve docs/plans/linked.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', 'a link out of the project');
 });
 
 // why: guards the owner's starred rule "locally run only the changed test" (K339, build 24): a test folder is read as the test files under it, a folder outside the repo is refused even when every test in the repo is changed, Node's default test names (JS and TypeScript) count as tests, the refusal hint names only real test files, a refusal text names an outside path with one slash and no two periods, a repo with no base is read as the rule says, and a remote not named origin counts as a base.
@@ -386,13 +395,16 @@ test('test-scope reads folders and a repo with no base', () => {
 
 	// The refusal text for a folder above the repo has no two periods in a row.
 	assert.doesNotMatch(reasonOf(folders, 'node --test ..'), /\.\.\s+[A-Z]/, 'the refusal text for a folder above the repo');
-	// The refusal text for a relative path to a file outside the repo has no two periods in a row.
+	// The refusal text for a relative path to a file outside the repo has no two periods in a row. reasonOf is '' on an
+	// allow, so the refusal is asserted first: the text check would pass on nothing otherwise.
+	assert.equal(at(folders, `node --test ${relOutsideFile}`), 'deny', 'the relative outside file is refused');
 	assert.doesNotMatch(reasonOf(folders, `node --test ${relOutsideFile}`), /\.\.\s+[A-Z]/, 'the refusal text for a relative path to an outside file');
 	// The refusal text for an absolute folder with a trailing slash has one slash between parts.
 	assert.doesNotMatch(reasonOf(folders, `node --test ${absOutside}/`), /\/\//, 'the refusal text for an absolute folder with a trailing slash');
 	// On Windows, a drive root is outside the repo, and its refusal text has one slash too.
 	if (process.platform === 'win32') {
 		const drive = path.parse(outside).root.split(path.sep).join('/');
+		assert.equal(at(folders, `node --test ${drive}`), 'deny', 'the drive root is refused, so its refusal text is read');
 		assert.doesNotMatch(reasonOf(folders, `node --test ${drive}`), /\/\//, 'the refusal text for a drive root');
 	}
 
@@ -430,6 +442,17 @@ test('test-scope reads folders and a repo with no base', () => {
 	write(lib2, 'lib2/test.mjs', 't\n');
 	write(lib2, 'lib2/foo-test.mjs', 'f\n');
 	assert.equal(at(lib2, 'node --test lib2/'), 'allow', 'a folder with only new default-named tests (test.mjs, foo-test.mjs)');
+
+	// Over-broad FOLDER_TEST: its first alternative counts every file under tests/, so an unchanged JSON fixture there is
+	// read as a test. node runs only the JS tests in that folder, and those are all new, so the folder run is allowed.
+	const fixt = kitTemp.makeTemp('scope-fixture-');
+	const fxg = gitIn(fixt);
+	fxg('init', '-q', '-b', 'main');
+	write(fixt, 'tests/fixtures/data.json', '{}\n');
+	commit(fxg, 'base');
+	fxg('switch', '-qc', 'feat/x');
+	write(fixt, 'tests/c.test.mjs', 'c\n');
+	assert.equal(at(fixt, 'node --test tests/'), 'allow', 'a folder whose only unchanged file is a JSON fixture');
 
 	// The refusal hint names only real test files: scripts/test-run.mjs is a script, not a test.
 	const hintRepo = kitTemp.makeTemp('scope-hint-');
