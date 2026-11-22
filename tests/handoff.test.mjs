@@ -476,3 +476,82 @@ test('a claim with angle brackets inside its text is not an unfilled placeholder
 	const r = check(record(ROLE, finding('K1', { claim: 'a <b> c' })));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
+
+// K301 (build 25): the log-only gate on SubagentHandback. It writes one line when a RECORD: block fails the check, and
+// never refuses or throws, so a hand-back always reaches the lead.
+const GATE = path.resolve('user/kit-hooks/handoff-gate.cjs');
+const gateRepo = () => {
+	const repo = kitTemp.makeTemp('handoff-gate-');
+	spawnSync('git', ['-C', repo, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	return repo;
+};
+const runGate = (repo, message) => spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd: repo }) });
+const gateLog = (repo) => {
+	const f = path.join(repo, '.git', 'kit-guard-open.log');
+	return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+};
+
+// why: catches a broken RECORD block passing the gate with no line in kit-guard-open.log to show why
+test('a hand-back whose RECORD block fails the check is logged with its errors, and never refused', () => {
+	const repo = gateRepo();
+	const broken = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1', { proof: '' }));
+	const r = runGate(repo, broken);
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout.trim(), '', 'the gate printed a decision; it must only log');
+	const rows = gateLog(repo);
+	assert.equal(rows.length, 1);
+	assert.equal(rows[0].hook, 'handoff-gate');
+	assert.ok(!Number.isNaN(Date.parse(rows[0].at)), 'at');
+	assert.ok(Array.isArray(rows[0].errors) && rows[0].errors.length > 0, 'errors');
+});
+
+// why: catches the gate logging every clean record and burying the real faults in the file
+test('a valid RECORD block writes no line to kit-guard-open.log', () => {
+	const repo = gateRepo();
+	const good = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1'));
+	assert.equal(runGate(repo, good).status, 0);
+	assert.deepEqual(gateLog(repo), []);
+});
+
+// why: catches a prose-only hand-back logged as a broken record on every ask, with no RECORD line to check
+test('a hand-back with no RECORD line writes nothing to kit-guard-open.log', () => {
+	const repo = gateRepo();
+	assert.equal(runGate(repo, 'Prose only, no record here.').status, 0);
+	assert.deepEqual(gateLog(repo), []);
+});
+
+// why: catches a gate that throws on input it cannot read and so stops a hand-back from reaching the lead
+test('the gate exits 0 and prints no decision when its input is not JSON', () => {
+	const repo = gateRepo();
+	const r = spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: 'not json at all' });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(r.stdout.trim(), '');
+});
+
+// why: catches a builder, checker or reviewer role file that leaves the gate off its hand-back, so broken records pass unlogged
+test('builder, checker and reviewer wire the gate under SubagentHandback beside canary.cjs', () => {
+	for (const role of ['builder', 'checker', 'reviewer']) {
+		const text = fs.readFileSync(path.resolve('user/agents', `${role}.md`), 'utf8');
+		const block = text.slice(text.indexOf('matcher: "SubagentHandback"'));
+		const own = block.slice(0, block.indexOf('- matcher:', 1) === -1 ? block.length : block.indexOf('- matcher:', 1));
+		assert.match(own, /canary\.cjs/, `${role}: canary.cjs`);
+		assert.match(own, /handoff-gate\.cjs/, `${role}: handoff-gate.cjs`);
+	}
+});
+
+// why: catches a brief template that asks for findings without the RECORD line and keys the gate reads
+test('the builder and checker brief templates name the RECORD line and the seven finding keys', () => {
+	for (const f of ['builder-brief.md', 'checker-brief.md']) {
+		const text = fs.readFileSync(path.resolve('user/skills/agent-team-build/templates', f), 'utf8');
+		assert.match(text, /^RECORD:$/m, `${f}: RECORD: line`);
+		for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(text, new RegExp(`"${k}"`), `${f}: ${k}`);
+	}
+});
+
+// why: catches the reviewer's generated brief asking for the old pipe rows, which the record check would then refuse
+test('the reviewer brief approve.mjs writes asks for a RECORD block with the seven finding keys', () => {
+	const line = fs.readFileSync(path.resolve('user/skills/pre-pr-sweep/approve.mjs'), 'utf8').split('\n').find((l) => l.includes('Finding format:'));
+	assert.ok(line, 'no Finding format line in approve.mjs');
+	assert.match(line, /RECORD:/);
+	for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(line, new RegExp(`\b${k}\b`), k);
+});

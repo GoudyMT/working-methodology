@@ -720,6 +720,62 @@ test('the findings count reads only delivered reports, skips out-of-role notes, 
   assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
 });
 
+// K301 (build 25): a reviewer's hand-back may carry its findings as a RECORD: block of JSON lines. The count reads it
+// the way it reads the pipe rows: one ledger row per finding, and a | inside a claim stays inside the claim.
+// why: guards rule:finding-pipeline
+test('the findings count reads a RECORD block, keeps a | inside a claim, and writes one ledger row per finding', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const record = (findings) => ['Prose the reviewer wrote.', 'RECORD:', JSON.stringify({ role: 'reviewer', commit: 'abc1234' }),
+    ...findings.map((f, i) => JSON.stringify({ id: `F${i + 1}`, severity: 'high', status: 'confirmed', where: 'src/import.ts:12', claim: `an import a | b writes outside ${i}`, proof: 'ran it', fix: 'guard it' })),
+    JSON.stringify({ notChecked: 'nothing' })].join('\n');
+  const none = (role) => ({ handback: ['Prose.', 'RECORD:', JSON.stringify({ role, commit: 'abc1234' }), JSON.stringify({ notChecked: 'nothing' })].join('\n') });
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const spec = (findings) => transcripts({ [ids[0]]: [[10000, 0, 0, 0], { handback: record(findings) }], [ids[1]]: [[10000, 0, 0, 0], none('a role')], [ids[2]]: [[10000, 0, 0, 0], none('a role')], [ids[3]]: [[10000, 0, 0, 0], none('a role')], [ids[4]]: [[10000, 0, 0, 0], none('a role')] });
+  const run = (findings, n) => approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', String(n), '--real', '2', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: spec(findings) });
+  const wrong = run(['a', 'b'], 3);
+  assert.equal(wrong.status, 1, wrong.stdout);
+  const ok = run(['a', 'b'], 2);
+  assert.equal(ok.status, 0, ok.stdout);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findings, 2);
+  const ledger = read(path.join(dir, 'sweeps', 'contract-ledger.md'));
+  assert.equal(ledger.split('\n').filter((l) => /^\| \d/.test(l)).length, 2);
+  assert.match(ledger, /^\| 1 \| high \| CONFIRMED \| an import a \/ b writes outside 0 \|/m, 'the claim stays whole, in the one cell');
+});
+
+// K301 (build 25): a RECORD block that fails the record check is not tallied, the same as a report that cannot be read.
+// The count is then not checked and the role is named, never a silent count.
+// why: guards rule:finding-pipeline
+test('a RECORD block that fails the record check is not tallied, and the count is named as not checked', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const broken = ['Prose.', 'RECORD:', JSON.stringify({ role: 'reviewer', commit: 'abc1234' }), JSON.stringify({ id: 'F1', severity: 'high', status: 'confirmed', where: 'src/a.ts:1', claim: 'a claim', fix: 'guard it' })].join('\n');
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const cfg = transcripts({ [ids[0]]: [[10000, 0, 0, 0], { handback: broken }], ...Object.fromEntries(ids.slice(1).map((id) => [id, [[10000, 0, 0, 0], { handback: ['Prose.', 'RECORD:', JSON.stringify({ role: 'a role', commit: 'abc1234' }), JSON.stringify({ notChecked: 'nothing' })].join('\n') }]])) });
+  const res = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '4', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /--findings[^\n]*not checked/);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
+});
+
+// K301 (build 25): a finding whose status is neither confirmed nor plausible is refused the same way: the count is not
+// tallied, even though the record check itself passes a status it does not name.
+// why: guards rule:finding-pipeline
+test('a RECORD finding whose status is not confirmed or plausible is not tallied', () => {
+  const dir = sweepRepo();
+  const r = approveRun(featureContract(), dir);
+  assert.equal(r.status, 0, r.stdout);
+  const red = ['Prose.', 'RECORD:', JSON.stringify({ role: 'reviewer', commit: 'abc1234' }), JSON.stringify({ id: 'F1', severity: 'high', status: 'red', where: 'src/a.ts:1', claim: 'a claim', proof: 'ran it', fix: 'guard it' })].join('\n');
+  const ids = Array(5).fill(0).map(() => `t${++agentSeq}`);
+  const cfg = transcripts({ [ids[0]]: [[10000, 0, 0, 0], { handback: red }], ...Object.fromEntries(ids.slice(1).map((id) => [id, [[10000, 0, 0, 0], { handback: ['Prose.', 'RECORD:', JSON.stringify({ role: 'a role', commit: 'abc1234' }), JSON.stringify({ notChecked: 'nothing' })].join('\n') }]])) });
+  const res = approveIn(dir, [r.f, '--outcome', '--agents', ids.join(','), '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(res.status, 0, res.stdout);
+  assert.match(res.stdout, /--findings[^\n]*not checked/);
+  assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
+});
+
 // The 1.23.0 sweep's findings on the drift signals.
 // why: guards rule:sweep-auto-approval
 test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
