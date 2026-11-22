@@ -58,6 +58,12 @@ function briefRepo(text) {
 
 const briefFile = (dir) => path.join(dir, 'sweeps', 'contract-brief-1.md');
 
+// A refusal says what it refused and why, with no stack trace or raw error prefix on stderr.
+const assertCleanRefusal = (r) => {
+	assert.doesNotMatch(r.stderr, /\n\s+at /, 'the refusal printed a stack frame');
+	assert.doesNotMatch(r.stderr, /^Error:/m, 'the refusal printed a raw Error: prefix');
+};
+
 // why: catches an install that leaves a template slot unnamed, so an unfilled project looks finished
 test('install project prints one line per unfilled slot, naming the file and the slot', () => {
 	const ctx = slotKit({ 'AGENTS.md': '# Agents\nProject: <PROJECT NAME>\nOwner notes: <fill in>\n' });
@@ -69,12 +75,37 @@ test('install project prints one line per unfilled slot, naming the file and the
 	assert.ok(!(r.stdout + r.stderr).includes(ctx.proj), 'a slot line names the absolute project folder, not the file');
 });
 
+// why: catches two slots in two files reported as one line, or a nested file's line naming the wrong path
+test('install project prints exactly one line per slot across two files, the nested one by its relative path', () => {
+	const ctx = slotKit({ 'AGENTS.md': 'Project: <PROJECT NAME>\n', 'standards/x.md': 'Owner: <fill in>\n' });
+	const r = installProject(ctx);
+	assert.equal(r.status, 0, r.stderr);
+	const out = (r.stdout + r.stderr).split(/\r?\n/);
+	const agents = out.filter((l) => l.includes('<PROJECT NAME>'));
+	const nested = out.filter((l) => l.includes('<fill in>'));
+	assert.equal(agents.length, 1, `lines for <PROJECT NAME>: ${agents.length}`);
+	assert.equal(nested.length, 1, `lines for <fill in>: ${nested.length}`);
+	assert.match(nested[0], /standards[\\/]x\.md/, 'the nested line does not name standards/x.md');
+	assert.ok(!nested[0].includes(ctx.proj), 'the nested line names the absolute project folder');
+});
+
 // why: catches a format example such as <feature branch> reported as an unfilled slot, so every install shouts
 test('install project never reports a format example as a slot', () => {
 	const ctx = slotKit({ 'standards/examples.md': 'Branch: <feature branch>\nDate: <YYYY-MM-DD>\n' });
 	const r = installProject(ctx);
 	assert.equal(r.status, 0, r.stderr);
 	assert.ok(!(r.stdout + r.stderr).includes('examples.md'), 'a format example was reported as an unfilled slot');
+});
+
+// why: catches a file with a format example and one real slot printing a line per token, so the example is reported
+test('install project prints one line for a file holding two examples and one slot, naming only the slot', () => {
+	const ctx = slotKit({ 'standards/mixed.md': 'Branch: <feature branch>\nDate: <YYYY-MM-DD>\nOwner: <fill in>\n' });
+	const r = installProject(ctx);
+	assert.equal(r.status, 0, r.stderr);
+	const out = (r.stdout + r.stderr).split(/\r?\n/).filter((l) => /mixed\.md/.test(l));
+	assert.equal(out.length, 1, `lines naming mixed.md: ${out.length}`);
+	assert.ok(out[0].includes('<fill in>'), 'the one line does not name <fill in>');
+	assert.ok(!/<feature branch>|<YYYY-MM-DD>/.test(out[0]), 'the line names a format example');
 });
 
 // why: catches a slot list wider than the two named slots, so kit prose with angle brackets gets reported
@@ -91,6 +122,42 @@ test('install project prints no slot line when every slot is filled', () => {
 	const r = installProject(ctx);
 	assert.equal(r.status, 0, r.stderr);
 	assert.ok(!/<PROJECT NAME>|<fill in>/.test(r.stdout + r.stderr), 'a slot line printed for a filled project');
+	assert.ok(!(r.stdout + r.stderr).split(/\r?\n/).some((l) => /AGENTS\.md/.test(l)), 'a line names AGENTS.md for a filled project');
+});
+
+// why: catches the named slot list copied into a second file that then drifts from the one the install reads
+test('the named slot list lives in one non-test script that approve.mjs reads rather than copies', () => {
+	const roots = ['scripts', 'user/skills'].map((d) => path.resolve(d));
+	const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {
+		const p = path.join(d, e.name);
+		return e.isDirectory() ? walk(p) : [p];
+	});
+	const holders = roots.flatMap(walk)
+		.filter((f) => /\.(mjs|cjs)$/.test(f) && !/\.test\.(mjs|cjs)$/.test(f))
+		.filter((f) => fs.readFileSync(f, 'utf8').includes('<PROJECT NAME>'));
+	assert.equal(holders.length, 1, `files holding the literal: ${holders.map((f) => path.relative(process.cwd(), f)).join(', ')}`);
+	const approve = path.resolve('user/skills/pre-pr-sweep/approve.mjs');
+	assert.notEqual(holders[0], approve, 'the slot list is written in approve.mjs itself');
+	const base = path.basename(holders[0]);
+	assert.ok(fs.readFileSync(approve, 'utf8').includes(base), `approve.mjs does not import or read ${base}`);
+});
+
+// why: catches a brief writer that refuses a clean block because a slot-like text sits in prose above it
+test('the brief writer ignores a <fill in> in prose above a clean block', () => {
+	const text = `Prose note: leave <fill in> for later.\n${rulesText('   Owner: Pat')}`;
+	const dir = briefRepo(text);
+	const r = approveRun(featureContract(), dir);
+	assert.equal(r.status, 0, `refused: ${r.stdout} ${r.stderr}`);
+	assert.ok(fs.existsSync(briefFile(dir)), 'no brief was written');
+});
+
+// why: catches a brief writer that refuses a clean block because a slot sits after the block's last line
+test('the brief writer ignores a <PROJECT NAME> after a clean block', () => {
+	const text = `${rulesText('   Owner: Pat')}Trailing note: <PROJECT NAME>\n`;
+	const dir = briefRepo(text);
+	const r = approveRun(featureContract(), dir);
+	assert.equal(r.status, 0, `refused: ${r.stdout} ${r.stderr}`);
+	assert.ok(fs.existsSync(briefFile(dir)), 'no brief was written');
 });
 
 // why: catches a brief written with an unfilled <fill in> slot, so a reviewer reads a placeholder as a rule
@@ -99,6 +166,7 @@ test('the brief writer refuses a rules block that still holds <fill in>, naming 
 	const r = approveRun(featureContract(), dir);
 	assert.notEqual(r.status, 0, 'a block with <fill in> wrote a brief');
 	assert.match(r.stdout + r.stderr, /<fill in>/, 'the refusal does not name the slot');
+	assertCleanRefusal(r);
 	assert.ok(!fs.existsSync(briefFile(dir)), 'a brief file was written');
 });
 
@@ -108,6 +176,7 @@ test('the brief writer refuses a rules block that still holds <PROJECT NAME>, na
 	const r = approveRun(featureContract(), dir);
 	assert.notEqual(r.status, 0, 'a block with <PROJECT NAME> wrote a brief');
 	assert.match(r.stdout + r.stderr, /<PROJECT NAME>/, 'the refusal does not name the slot');
+	assertCleanRefusal(r);
 	assert.ok(!fs.existsSync(briefFile(dir)), 'a brief file was written');
 });
 
@@ -125,6 +194,7 @@ test('the brief writer finds a slot in the block when prose lines sit above it',
 	const r = approveRun(featureContract(), dir);
 	assert.notEqual(r.status, 0, 'a slot below 40 added lines was missed');
 	assert.match(r.stdout + r.stderr, /<fill in>/, 'the refusal does not name the slot');
+	assertCleanRefusal(r);
 });
 
 // why: catches a clean block refused because it sits below extra prose, so a fixed offset would fail a filled project
@@ -141,4 +211,5 @@ test('the brief writer refuses a block holding <fill in> after a format example,
 	const r = approveRun(featureContract(), dir);
 	assert.notEqual(r.status, 0, 'a block with a named slot after an example wrote a brief');
 	assert.match(r.stdout + r.stderr, /<fill in>/, 'the refusal does not name the slot');
+	assertCleanRefusal(r);
 });
