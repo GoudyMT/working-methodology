@@ -52,14 +52,18 @@ const NO_LOG = /no .*log|plan-graph/i;
 const handBack = (role, ...lines) => ['Prose.', 'RECORD:', JSON.stringify(role), ...lines].join('\n') + '\n';
 const finding = (id) => JSON.stringify({ id, severity: 'medium', status: 'open', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tighten it' });
 const NOTE = (text, writer = 'lead') => JSON.stringify({ note: text, writer });
+// A fix line that marks review finding <id> fixed; a fix record holding only a note does not pass.
+const fixedLine = (id) => JSON.stringify({ id, severity: 'medium', status: 'fixed', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tightened it' });
 
 // ---------------------------------------------------------------------------------------------------------------
 // L1: a builder start needs the plan's latest plan-graph run to have exited 0, with the plan unchanged since.
 // Choice: plan-graph logs {at, plan: basename, units, faults} and no hash, so "unchanged" is the log line's time against
 // the plan file's mtime, and "exited 0" is faults == 0.
 // ---------------------------------------------------------------------------------------------------------------
-const PLAN_OK = '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n| U2 | `b.txt` | parallel |\n';
-const PLAN_BAD = '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n| U2 | `a.txt` | parallel |\n';
+// A full plan: start runs plan-check first, so the plan carries the Risk, Category and Tests columns it reads.
+const fullPlan = (u2File) => `# plan\n\n## Units\n\n| Id | Files | Runs | Risk | Category | Tests | Tester |\n|---|---|---|---|---|---|---|\n| U1 | \`a.txt\` | parallel | low | logic | check 1 -> S1 | |\n| U2 | \`${u2File}\` | parallel | low | logic | check 1 -> S1 | |\n`;
+const PLAN_OK = fullPlan('b.txt');
+const PLAN_BAD = fullPlan('a.txt');
 function planRepo(text = PLAN_OK) {
 	const dir = repo();
 	const plan = put(dir, 'docs/plan.md', text);
@@ -260,7 +264,7 @@ test('L6: reviews exits 1 when the review has findings and there is no fix recor
 
 // why: catches a finished review and fix pair being refused so the builder never starts
 test('L6: reviews exits 0 with one review record that has findings and one fix record', () => {
-	const r = reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed R1', 'tester')] }));
+	const r = reviews(reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] }));
 	assert.equal(r.code, 0, r.out);
 });
 
@@ -272,25 +276,25 @@ test('L6: reviews exits 0 with a review that has no findings and no fix record',
 
 // why: catches a second review slipping in with no reason, which hides a repeat loop
 test('L6: reviews exits 1 on a second review record with no second-review note', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], second: [finding('R2')], fix: [NOTE('fixed', 'tester')] })));
+	failed(reviews(reviewDir({ review: [finding('R1')], second: [finding('R2')], fix: [fixedLine('R1'), fixedLine('R2')] })));
 });
 
 // why: catches the lead's reasoned second review being refused
 test('L6: reviews exits 0 on a second review record that holds the lead second-review note', () => {
-	const r = reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: the fix changed the test shape'), finding('R2')], fix: [NOTE('fixed', 'tester')] }));
+	const r = reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: the fix changed the test shape'), finding('R2')], fix: [fixedLine('R1'), fixedLine('R2')] }));
 	assert.equal(r.code, 0, r.out);
 });
 
 // why: catches a note written by someone other than the lead opening the second review
 test('L6: reviews exits 1 when the second-review note is written by the tester, not the lead', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: I want one', 'tester'), finding('R2')], fix: [NOTE('fixed', 'tester')] })));
+	failed(reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: I want one', 'tester'), finding('R2')], fix: [fixedLine('R1'), fixedLine('R2')] })));
 });
 
 // why: catches another unit's review record counting for this unit
 test('L6: reviews for U2 ignores the U1 records', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] }), 'U2'));
+	failed(reviews(reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] }), 'U2'));
 	// Folded control: U10 records do not count for U1, including an unexplained second U10 review.
-	const dir = reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] });
+	const dir = reviewDir({ review: [finding('R1')], fix: [fixedLine('R1')] });
 	put(dir, 'U10.review.jsonl', handBack(REVIEW_ROLE, finding('R9')));
 	put(dir, 'U10.review2.jsonl', handBack(REVIEW_ROLE, finding('R10')));
 	const ok = reviews(dir);
@@ -464,7 +468,6 @@ test('L9: the hook GUARD_PATHS equals tester-model GUARD_PATHS', async () => {
 // ---------------------------------------------------------------------------------------------------------------
 const LANES = here('../user/kit-tools/lanes.mjs');
 const SKILL = here('../user/skills/agent-team-build/SKILL.md');
-const fixedLine = (id) => JSON.stringify({ id, severity: 'medium', status: 'fixed', where: 'tests/x.test.mjs:1', claim: 'a weak test here', proof: 'the run', fix: 'tightened it' });
 
 // why: catches start letting a builder go ahead on a plan plan-check refuses, or on another plan.md's clean log by basename (L1).
 test('L1 start: refuses a plan plan-check refuses, matches the log by full path, and a clean run of this plan still starts', () => {
