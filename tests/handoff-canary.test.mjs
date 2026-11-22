@@ -18,8 +18,10 @@ test('the canary reads a RECORD block with finding lines as the report, with no 
 	const dir = canaryRepo();
 	const message = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'RECORD:', ROLE, FINDING];
 	const r = handBack(dir, 'rec1', message.join('\n'));
+	// Unconditional: no refusal at all, or a refusal whose reason is not the finding-shape fault, passes.
 	const out = refusal(r);
-	if (out) assert.doesNotMatch(out.permissionDecisionReason, /one line per finding/, out.permissionDecisionReason);
+	const reason = out ? out.permissionDecisionReason : '';
+	assert.doesNotMatch(reason, /one line per finding/, reason);
 	// Folded control: a hand-back with neither pipe rows, No findings nor a RECORD block still gets the finding-shape fault.
 	const neither = refusal(handBack(dir, 'ctl1', [`${FAKE_PHRASE}`, 'I looked and I have some thoughts about the tests.'].join('\n')));
 	assert.ok(neither, 'expected a refusal');
