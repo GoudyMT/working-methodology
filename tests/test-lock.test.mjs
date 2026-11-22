@@ -641,3 +641,115 @@ test('pre-push holds a push whose test edit sits mid-range, and a new branch car
 	}
 });
 
+// Commits the index as it is: no git add -A, which would drop index-only paths the disk does not hold.
+function indexCommit(dir, message) {
+	git(dir, ['commit', '-q', '--allow-empty', '-m', message]);
+	return git(dir, ['rev-parse', 'HEAD']);
+}
+
+// A blob written into the index only: a path no Windows file can hold (a newline) still reaches git and the hook.
+function indexPut(dir, mode, rel, text) {
+	const blob = spawnSync('git', ['hash-object', '-w', '--stdin'], { cwd: dir, env: isolatedEnv(GIT_ID), input: text, encoding: 'utf8' });
+	assert.equal(blob.status, 0, blob.stderr);
+	git(dir, ['update-index', '--add', '--cacheinfo', `${mode},${blob.stdout.trim()},${rel}`]);
+}
+
+// why: catches a merge that resolves a test file to a third version pushed unheld, since only the merge's own diff against both parents shows it
+test('pre-push holds a merge whose resolution changes a test file away from both parents, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		// Both sides' edits are on the remote already, so the push's range holds only the merge.
+		git(dir, ['checkout', '-q', '-b', 'topic']);
+		put(dir, { 'tests/add.test.mjs': 'test("topic", () => {});\n' });
+		const topic = commit(dir, 'test: tighten the topic case');
+		git(dir, ['push', '-q', 'origin', `${topic}:refs/heads/feat/topic`]);
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("main", () => {});\n' });
+		const main = commit(dir, 'test: tighten the main case');
+		git(dir, ['push', '-q', 'origin', `${main}:refs/heads/feat/main`]);
+		const m = spawnSync('git', ['merge', '--no-ff', '--no-edit', 'topic'], { cwd: dir, env: isolatedEnv(GIT_ID), encoding: 'utf8' });
+		assert.notEqual(m.status, 0, 'the two test edits conflict');
+		put(dir, { 'tests/add.test.mjs': 'test("resolved", () => {});\n' });
+		const merge = commit(dir, 'merge topic');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge that changes a test file away from both parents: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
+// why: catches a merge that only brings in a test file one parent already holds being held, the control for the merge hold
+test('pre-push passes a merge that only brings in a test file one parent already holds, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, bare } = pushRepo();
+		git(dir, ['checkout', '-q', '-b', 'topic']);
+		put(dir, { 'tests/new.test.mjs': 'test("new", () => {});\n' });
+		commit(dir, 'feat: add the new case');
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
+		commit(dir, 'feat: tune util');
+		const m = spawnSync('git', ['merge', '--no-ff', '--no-edit', 'topic'], { cwd: dir, env: isolatedEnv(GIT_ID), encoding: 'utf8' });
+		assert.equal(m.status, 0, `the merge is clean: ${m.stderr}`);
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
+		assert.equal(r.status, 0, `${hook} held a merge that brings in a test file one parent holds: ${r.stderr}`);
+	}
+});
+
+// why: catches a test path with a space pushed unheld, since the hold's path split could read the name as two paths
+test('pre-push holds an edit of a test file whose name has a space, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		indexPut(dir, '100644', 'tests/add case.test.mjs', 'test("a", () => {});\n');
+		const base = indexCommit(dir, 'test: add the spaced case');
+		git(dir, ['push', '-q', 'origin', `${base}:refs/heads/feat/base`]);
+		indexPut(dir, '100644', 'tests/add case.test.mjs', 'test("b", () => {});\n');
+		const edit = indexCommit(dir, 'fix: tighten the spaced case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed an edit of tests/add case.test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
+// why: catches a test path with a newline in its name pushed unheld. Index-only, since git refuses such a path on Windows.
+test('pre-push holds an edit of a test file whose name has a newline, in both hooks', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows' }, () => {
+	const name = 'tests/add\ncase.test.mjs';
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		indexPut(dir, '100644', name, 'test("a", () => {});\n');
+		const base = indexCommit(dir, 'test: add the newline case');
+		git(dir, ['push', '-q', 'origin', `${base}:refs/heads/feat/base`]);
+		indexPut(dir, '100644', name, 'test("b", () => {});\n');
+		const edit = indexCommit(dir, 'fix: tighten the newline case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed an edit of a test file with a newline in its name: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
+// why: catches a test path in capitals pushed unheld, since the hold lowercases the path but a case-sensitive match would miss Tests/
+test('pre-push holds an edit of Tests/X.Test.mjs in upper case, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		indexPut(dir, '100644', 'Tests/X.Test.mjs', 'test("a", () => {});\n');
+		const base = indexCommit(dir, 'test: add the upper case');
+		git(dir, ['push', '-q', 'origin', `${base}:refs/heads/feat/base`]);
+		indexPut(dir, '100644', 'Tests/X.Test.mjs', 'test("b", () => {});\n');
+		const edit = indexCommit(dir, 'fix: tighten the upper case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed an edit of Tests/X.Test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
+// why: catches a test file replaced by a symlink (type change, T) pushed unheld, since only edits and deletes were read
+test('pre-push holds a type change of a test file, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		indexPut(dir, '120000', 'tests/add.test.mjs', 'src/add.js');
+		const change = indexCommit(dir, 'fix: point the add test at source');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${change} refs/heads/feat/x ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a type change of a test file: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+	}
+});
+
