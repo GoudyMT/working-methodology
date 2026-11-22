@@ -5,6 +5,7 @@
 // (a record, a by). Pure: flow-check.mjs reads the two files and prints the result.
 
 import { GUARD_PATHS } from './tester-model.mjs';
+import { filesOf } from './test-budget.mjs';
 
 export const STEPS = ['tests', 'review', 'build', 'check', 'fix', 'merged'];
 const REQUIRED = ['tests', 'review', 'build'];
@@ -33,8 +34,8 @@ export function planUnits(text) {
 		if (cells.every((c) => /^:?-+:?$/.test(c))) continue;
 		const id = (cells[head.findIndex((h) => h.startsWith('id'))] || '').replace(/[*_`]/g, '').trim();
 		if (!id) continue;
-		const filesCell = cells[head.findIndex((h) => h.startsWith('files'))] || '';
-		units.push({ id, files: [...filesCell.matchAll(/`([^`]+)`/g)].map((m) => m[1].trim()) });
+		const cell = (key) => cells[head.findIndex((h) => h.startsWith(key))] || '';
+		units.push({ id, files: filesOf(cell('files')), risk: cell('risk').trim().toLowerCase(), category: cell('category').trim().toLowerCase() });
 	}
 	if (!head) throw new InputError('the plan has no ## Units table');
 	return units;
@@ -97,7 +98,8 @@ export function checklist(planText, logText) {
 		for (const need of REQUIRED) {
 			if (!before.includes(need)) faults.push(`${u.id} is merged with no ${need} step before it`);
 		}
-		if (u.files.some(guarded) && !before.includes('check')) faults.push(`${u.id} touches a guard path and is merged with no check step before it`);
+		const guard = u.files.some(guarded) || u.risk === 'high' || u.category === 'guard';
+		if (guard && !before.includes('check')) faults.push(`${u.id} is a guard unit (a guard path, Risk high or Category guard) and is merged with no check step before it`);
 	}
 	return { lines, faults };
 }
