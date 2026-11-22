@@ -58,3 +58,40 @@ test('with a handoff checker that throws on load, a ROLE and Not checked hand-ba
 	const r = handBackFrom(home, dir, 'c1', message.join('\n'));
 	assert.equal(refusal(r), null, r.stdout);
 });
+
+// A copy of the kit's hooks and tools with holds.json set so handoff-gate reads enforce; canary.cjs loads that list beside itself.
+function enforceHome() {
+	const home = makeTemp('canary-enforce-');
+	fs.cpSync('user/kit-hooks', path.join(home, 'kit-hooks'), { recursive: true });
+	fs.cpSync('user/kit-tools', path.join(home, 'kit-tools'), { recursive: true });
+	fs.writeFileSync(path.join(home, 'kit-hooks', 'holds.json'), JSON.stringify({ holds: [{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'log' }, { id: 'handoff-gate', hook: 'handoff-gate.cjs', mode: 'enforce' }] }));
+	return home;
+}
+// The canary run from the enforce copy, as a reviewer's hand-back call.
+const handBackEnforced = (home, dir, agent, message) => runHook(path.join(home, 'kit-hooks', 'canary.cjs'), { cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_type: 'reviewer', agent_id: agent, tool_input: { message } }, { HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: home, KIT_CLAUDE_HOME: home });
+// The stdout of one hook run as a single JSON object, or null when it is not one.
+function oneObject(stdout) {
+	try {
+		const v = JSON.parse(stdout);
+		return v && typeof v === 'object' ? v : null;
+	} catch {
+		return null;
+	}
+}
+
+// why: catches a hand-back with no phrase and a broken RECORD block refused twice under enforce, so stdout holds two JSON objects and no reader parses it
+test('under enforce, a hand-back with no phrase and a broken RECORD block gets one deny naming both reasons', () => {
+	const home = enforceHome();
+	const dir = canaryRepo();
+	const r = handBackEnforced(home, dir, 'enf1', 'RECORD:\nnot json');
+	const out = oneObject(r.stdout);
+	assert.ok(out, `stdout is one JSON object: ${r.stdout}`);
+	assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+	const reason = out.hookSpecificOutput.permissionDecisionReason;
+	assert.match(reason, /RECORD: block is broken/, reason);
+	assert.match(reason, /rule:agent-canary/, reason);
+	// Folded control: a valid hand-back with the phrase gives no deny under the same enforce hold.
+	const valid = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'ROLE: reviewer', 'Not checked: nothing', 'RECORD:', ROLE, NOTE_CHECKED].join('\n');
+	const ok = handBackEnforced(home, dir, 'enf2', valid);
+	assert.equal(ok.stdout.trim(), '', `a valid hand-back is not refused: ${ok.stdout}`);
+});

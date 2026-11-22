@@ -29,35 +29,45 @@ function recordIsCRLF(message) {
 	return at >= 0 && lines.slice(at).some((l) => l.endsWith('\r'));
 }
 
+// The decision for a hand-back: the PreToolUse deny object under enforce, else null. The caller decides what to print.
+// A checker that exits other than 0 or 1 is logged as a row and passes the hand-back.
 function run(input) {
 	const message = String((input.tool_input || {}).message || '');
-	if (!message.split(/\r?\n/).some((l) => l.trim() === 'RECORD:')) return;
+	if (!message.split(/\r?\n/).some((l) => l.trim() === 'RECORD:')) return null;
 	const cwd = input.cwd || process.cwd();
 	const common = git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir');
-	if (common.status !== 0) return;
+	if (common.status !== 0) return null;
 	const checker = path.join(__dirname, '..', 'kit-tools', 'handoff.mjs');
-	if (!fs.existsSync(checker)) return;
+	if (!fs.existsSync(checker)) return null;
 	const r = spawnSync(process.execPath, [checker, 'check', '-'], { input: message, encoding: 'utf8', timeout: 5000, cwd: path.dirname(process.execPath) });
-	if (r.status !== 0 && r.status !== 1) return;
-	const lines = String(r.stderr || '').split(/\r?\n/).filter(Boolean);
-	const errors = r.status === 1 ? lines : [];
-	if (recordIsCRLF(message)) errors.push('CRLF line endings in the RECORD: block: end each line with LF');
 	const hold = holdMode();
 	const log = path.join(common.stdout.trim(), 'kit-guard-open.log');
 	const row = { at: new Date().toISOString(), hook: 'handoff-gate', mode: hold.mode, ...(hold.missing ? { holdModeMissing: true } : {}) };
+	if (r.status !== 0 && r.status !== 1) {
+		fs.appendFileSync(log, `${JSON.stringify({ ...row, checkerExit: r.status === null ? String(r.signal) : r.status })}\n`);
+		return null;
+	}
+	const lines = String(r.stderr || '').split(/\r?\n/).filter(Boolean);
+	const errors = r.status === 1 ? lines : [];
+	if (recordIsCRLF(message)) errors.push('CRLF line endings in the RECORD: block: end each line with LF');
 	if (errors.length) {
 		fs.appendFileSync(log, `${JSON.stringify({ ...row, errors })}\n`);
 		if (hold.mode === 'enforce') {
-			process.stdout.write(JSON.stringify({ hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Your hand-back's RECORD: block is broken, so the lead cannot count it. Send it again with the record fixed: ${errors.join('; ')}.` } }));
+			return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Your hand-back's RECORD: block is broken, so the lead cannot count it. Send it again with the record fixed: ${errors.join('; ')}.` } };
 		}
 	} else if (lines.length) {
 		fs.appendFileSync(log, `${JSON.stringify({ ...row, warnings: lines })}\n`);
 	}
+	return null;
 }
 
-// canary.cjs calls run() from the role files' hand-back hook, so a role's hook table keeps one entry per matcher.
+// canary.cjs calls run() from the role files' hand-back hook, so a role's hook table keeps one entry per matcher. Run
+// alone, this prints its decision.
 if (require.main === module) {
-	try { run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* a log that fails never blocks the hand-back */ }
+	try {
+		const out = run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}'));
+		if (out) process.stdout.write(JSON.stringify(out));
+	} catch { /* a log that fails never blocks the hand-back */ }
 	process.exitCode = 0;
 }
 

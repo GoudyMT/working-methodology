@@ -321,7 +321,7 @@ test('a choice pop-up that offers item codes with no plain words, or a plan with
 	const linked = path.join(dir, 'docs', 'plans', 'linked.md');
 	let linkMade = true;
 	try { fs.symlinkSync(path.join(outside, 'bare.md'), linked, 'file'); } catch { linkMade = false; }
-	if (!linkMade) t.skip('this account cannot create a file symlink, so the link case did not run');
+	if (!linkMade) t.skip('this account cannot create a file symlink, so the link case did not run here; the Linux unit-tests job in .github/workflows/ci.yml runs it');
 	else assert.equal(ask('Approve docs/plans/linked.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', 'a link out of the project');
 });
 

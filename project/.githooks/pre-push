@@ -1,6 +1,6 @@
 #!/bin/sh
-# Pushes are the owner's (rule:outward-acts) but for a feature branch, which goes without a yes. Every push is scanned
-# for secrets and logged. KIT_OWNER_PUSH=1 (the owner's own push) passes the bound only; the other checks still run.
+# Feature-branch pushes go without a yes (rule:outward-acts). Every push is scanned for secrets and logged;
+# KIT_OWNER_PUSH=1 passes the bound only.
 # The refs being pushed, from stdin.
 refs=$(cat)
 # Branch names (rule:branching).
@@ -12,24 +12,27 @@ if [ -f "$names" ]; then
   done
 fi
 OWNER_WAY="The owner's own push from their own terminal has its own way (rule:outward-acts)."
-# A url.insteadOf rewrite of the push URL would point every ls-remote below at a decoy, so it is refused.
+# A url.insteadOf rewrite of the push URL would send every ls-remote to a decoy: refused, whoever runs it. Keys and
+# values are read NUL-split, so a value with spaces counts whole, and an empty one matches every URL.
 if git config -z --get-regexp '^url\..*\.insteadof$' 2>/dev/null | KIT_URL="$2" node -e 'let s="";process.stdin.on("data",(d)=>{s+=d;}).on("end",()=>{process.exit(s.split("\0").some((r)=>{const n=r.indexOf("\n");const v=r.slice(n+1);return n>=0&&process.env.KIT_URL.startsWith(v);})?0:1);})'; then
   echo "Push blocked: a url.insteadOf setting rewrites $2, so the hook cannot ask the real remote what it holds. Push to the remote's own URL with that setting out of the way." >&2
   exit 1
 fi
-# The remote's own answer for its default branch, asked by URL; with branches there and none named, it prints ?.
+# The remote's default branch, asked of the remote by URL (a local origin/HEAD is any command's to move). With branches
+# there and no default line, it prints ?.
 remote_default() {
   if out=$(git ls-remote --symref "$2" HEAD 2>/dev/null); then
     d=$(printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1)
-    # Named none: the local origin/HEAD is not asked, since a tool can move it. A new repo has no default yet.
+    # Named none: origin/HEAD is not asked, since a tool can move it. A new repo has no default yet.
     if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
   else
-    # A remote that cannot be asked: the default is unknown, so ?.
+    # Cannot be asked: it may be the default branch, so ?.
     d="?"
   fi
   printf '%s\n' "$d"
 }
-# Two pushes on one yes would race: a stale lock (over 10 minutes, owner gone) is taken over.
+# Two pushes on one yes would race. A lock over 10 minutes old, whose owner (pid and nonce) is gone, is taken over;
+# only its owner removes it.
 lock_me="$$ $(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
 take_lock() {
   l="$common/kit-push.lock"
@@ -51,38 +54,29 @@ take_lock() {
 drop_lock() {
   [ "$(cat "$common/kit-push.lock/owner" 2>/dev/null)" = "$lock_me" ] && rm -rf "$common/kit-push.lock"
 }
-# A test change needs the owner's yes: a retest: commit, or a non-A change to a test path (a merge: from every parent).
+# A test change needs the owner's yes; the helper names each test path and retest. An unreadable history is held too,
+# and no yes lifts that.
+scan_tests="$(dirname "$0")/../.claude/test-push-scan.mjs"
+if [ ! -f "$scan_tests" ]; then
+  echo "Push blocked: the test-change scan (.claude/test-push-scan.mjs) is missing; reinstall the kit." >&2
+  exit 1
+fi
 retests=""
-while read -r lref lsha rref rsha; do
-  case "$lsha" in *[!0]*) ;; *) continue ;; esac
-  below=$(git ls-remote --heads "$2" 2>/dev/null | while read -r s _; do git cat-file -e "$s^{commit}" 2>/dev/null && printf '%s ' "$s"; done)
-  case "$rsha" in *[!0]*) below="$below$rsha" ;; esac
-  shas=$(git rev-list "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a test change in them cannot be ruled out. $shas" >&2; exit 1; }
-  for c in $shas; do
-    if git rev-parse -q --verify "$c^2" >/dev/null; then d=-c; else d='-M -m --first-parent'; fi
-    git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id "$c" >/dev/null 2>&1 || { echo "Push blocked: $c cannot be read, so its test changes are unknown." >&2; exit 1; }
-    hit=$(git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id --name-status "$c" | awk 'BEGIN{RS="\0"}
-      function istest(p,   q) { q = tolower(p); return q ~ /(^|\/)(test|tests|__tests__|spec)\// || q ~ /\.(test|spec)\.[^\/]*$/ }
-      { n++; if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
-      END { r = held ? 1 : 0; if (n > 0 && (need != 0 || n < 2)) r = 2; print r }')
-    case "$hit" in 0) ;; 1) ;; *) echo "Push blocked: $c could not be parsed for test changes, so it is held." >&2; exit 1 ;; esac
-    if [ "$hit" = 1 ] || git log -1 --format=%s "$c" | grep -Eiq '^(fixup! |squash! )?retest(\([^)]*\))?!?:'; then
-      retests="$retests$(git log -1 --format='%h %s' "$c")
-"
-    fi
-  done
-done <<EOF
-$refs
-EOF
+held=$(printf '%s\n' "$refs" | node "$scan_tests" "$2"); scan_rc=$?
+case "$scan_rc" in
+  0) ;;
+  10) if printf '%s\n' "$held" | grep -Eq '^  [0-9a-f]{7} '; then retests=$held; else echo "Push blocked: the test-change scan gave no result, so the push is held." >&2; exit 1; fi ;;
+  *) printf '%s\n' "${held:-Push blocked: the test-change scan did not finish (exit $scan_rc), so the push is held.}" >&2; exit 1 ;;
+esac
 if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
-  echo "Push blocked: this push holds a test change (named below). The owner's yes is needed: after the pop-up yes, run it with KIT_PUSH_APPROVED=1, or the owner pushes it. $OWNER_WAY" >&2
-  printf '%s' "$retests" >&2
+  printf '%s\n' "$retests" >&2
   exit 1
 fi
 # The push bound and the secret scan, for every pusher.
 {
   common=$(git rev-parse --git-common-dir)
-  # The owner's marker counts only with neither AI marker set.
+  # The owner's marker is a variable a run-time-built name could set past the guard, so it counts only in a shell with
+  # neither AI marker; the guard holds a command that clears those.
   if [ "$KIT_OWNER_PUSH" = "1" ] && [ -n "$AI_AGENT$CLAUDECODE" ]; then
     echo "Push blocked: KIT_OWNER_PUSH is the owner's own, from their own terminal; this shell is an AI's. Ask the owner; after a yes, run the push with KIT_PUSH_APPROVED=1." >&2
     exit 1
@@ -116,7 +110,7 @@ fi
           exit 1
         fi
       elif [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1" 10; then
-        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref, Answer Yes in that session's pop-up first, or push from your own terminal with no session." >&2
+        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref. Answer Yes in that session's pop-up first, or push from your own terminal with no session." >&2
         exit 1
       fi
     done <<EOF
@@ -189,7 +183,7 @@ EOF
       esac
       if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1"; then
         echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first. $OWNER_WAY" >&2
-        if [ -n "$retests" ]; then echo "This push holds a test change (named below). The owner's yes is needed: after the pop-up yes, run it with KIT_PUSH_APPROVED=1." >&2; printf '%s' "$retests" >&2; fi
+        if [ -n "$retests" ]; then printf '%s\n' "$retests" >&2; fi
         exit 1
       fi
     done <<EOF
@@ -211,7 +205,7 @@ if [ ! -f "$common/kit-first-push-done" ]; then
   if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
     : > "$common/kit-first-push-done"
   else
-    # What the remote holds, asked of the remote itself: a local remote-tracking ref can be faked.
+    # Asked of the remote: a local remote-tracking ref can be faked.
     have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
     while read -r lref lsha rref rsha; do
       case "$lsha" in *[!0]*) ;; *) continue ;; esac
