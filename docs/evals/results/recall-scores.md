@@ -1163,3 +1163,40 @@ gate: b22-1.48.0 median 14 baseline 12 brief v2 keys v12 owner-accepted
 behaviour: b22-1.48.0 median 14 baseline 14 suite v2 control 5
 behaviour worse: none
 scored: 02d3478c9a53c22f8d461df824b9c8a8be03bbbb
+
+## Recall v12 - 1.50.0, cloud worker runner, plugin build and one-time owner grant (2026-11-21)
+
+Candidate: the branch frozen at 93b14fc in a clone, its user layer installed into its own throwaway Claude folder. Baseline: the released 1.49.0, from a clone of its tag, on its own throwaway Claude folder, run the same day (candidate 22:40Z to 23:00Z, release 23:00Z to 23:28Z). Control: no kit, on the release's throwaway folder. Every arm used one probe login, copied only between the throwaway folders and run one arm after another.
+
+Scored under the fixed gate (K198): two fresh blind scorers read all eleven runs together, a run's score is their average with no rounding up, the floor is 14, and a question that sums lower than the release is asked again alone before it can count as worse.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 0, 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 14, 14, 14, 14, 14 | 14, 13, 14, 14, 14 | 0 |
+
+- **Scored: five-run median 14 of 14, same-day baseline 14, control 0.** The two scorers gave the same mark on every answer; borderline calls were named on Q6, Q10, Q13 and Q7, none changing a mark between them. No question sums lower than the release, so none was asked again.
+- **Two release runs stopped and were run again:** one at question 14 and one at question 8, each on the session's 8-turn limit; no answer from a stopped run was scored. The five release runs scored are its runs 2, 3, 4, 5 and 7.
+- **Behaviour (suite v2, floor 14):** the branch 14, 14, 14, 14, 14; the released 1.49.0 runs 14, 14, 14, 14, 14 the same day; control 8 (a first control run was cut off at scenario 8 by a session restart and was run again whole). No scenario worse.
+- **Not measured:** the user layer. Each arm carried its own global instructions into its probe, beside the owner's own ~/.claude/CLAUDE.md, which loads in every folder under the home folder.
+
+scorers: 2
+worse: none
+control: 0
+gate: b23-1.50.0 median 14 baseline 14 brief v2 keys v12
+behaviour: b23-1.50.0 median 14 baseline 14 suite v2 control 8
+behaviour worse: none
+scored: 93b14fc34e310f2a35e3375b4fb6945155c398cf
