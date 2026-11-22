@@ -179,6 +179,8 @@ function reviewers(file) {
 }
 
 // rounds <unit> --dir <folder>: <unit>.checker*.jsonl, a FIX record holds a line VERDICT: FIX. The unit name matches exactly.
+// The verdict is the file's FIRST VERDICT: line: the checker's report puts its verdict first, so a later VERDICT: line is
+// text the report quotes, and L9 pins the first line as the one that counts.
 function rounds(unit, dir) {
 	const fix = fs.readdirSync(dir).filter((name) => {
 		const m = /^(.+)\.checker\d*\.jsonl$/.exec(name);
