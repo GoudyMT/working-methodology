@@ -99,7 +99,7 @@ Reach: "kit" means the kit's own repo; "projects" means it installs into every p
 | Lead (main session) | Opus 5.5 | medium | install user writes settings.json | yes |
 | Orchestrator | Opus 5.5 | high | orchestrator.md (unmeasured: stays until a recorded phase run passes) | |
 | Tester | Haiku 5.5 (Sonnet by tester-model.mjs) | medium | tester.md, tester-model.mjs | |
-| Test review | Haiku 5.5 | low | test-reviewer.md | |
+| Test review | Sonnet 5.5 | medium | test-reviewer.md | |
 | Builder | Haiku 5.5 (Sonnet 5.5 on a red rerun, one step, by the table) | medium | builder.md; builder-model.mjs reads the run record; the Agent hook compares | |
 | Checker | Opus 5.5 | high | checker.md | yes |
 | Sweep breadth | Sonnet 5.5 | high | approve.mjs DEFAULT_MODEL | yes (no lower than Sonnet) |
@@ -186,7 +186,7 @@ project layer, so a stale home runs with guards missing (K340 above).
 ## 5. How this build runs (on its own table)
 
 Design: the lead. Tests: tester role on Haiku medium (Sonnet only by section 3 once built; until then the lead runs
-the criteria by hand and names the criterion in the run record). Test review: Haiku low before any builder. Build:
+the criteria by hand and names the criterion in the run record). Test review: Sonnet medium before any builder (owner, 11:43Z). Build:
 Haiku medium, Sonnet on a red rerun, tests locked. Check: Opus high. Sweep: Sonnet high breadth, Opus high security and
 novel lens, fixes in K277 lanes, paired with the cloud bench (head, contract and briefs sent blind before the PC
 findings exist). Gate and scorers: Opus, fixed. PR body: writer step with the size rule. Until a role file exists
