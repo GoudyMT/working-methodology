@@ -15,7 +15,7 @@ while read -r lref lsha rref rsha; do
   for c in $shas; do
     if git rev-parse -q --verify "$c^2" >/dev/null; then d=-c; else d='-M -m --first-parent'; fi
     git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id "$c" >/dev/null 2>&1 || { echo "Push blocked: the changes of $c cannot be read, so a test change in it cannot be ruled out." >&2; exit 1; }
-    hit=$(git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id --name-status "$c" | tr '\0' '\n' | awk '
+    hit=$(git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id --name-status "$c" | awk 'BEGIN{RS="\0"}
       function istest(p,   q) { q = tolower(p); return q ~ /(^|\/)(test|tests|__tests__|spec)\// || q ~ /\.(test|spec)\.[^\/]*$/ }
       { if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
       END { if (held) print 1 }')
