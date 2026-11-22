@@ -8,6 +8,7 @@ import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
+import { createRequire } from 'node:module';
 import { check } from '../user/kit-tools/handoff.mjs';
 
 kitTemp.sessionRoot();
@@ -572,4 +573,25 @@ test('the reviewer brief approve.mjs writes asks for a RECORD block with the sev
 	assert.ok(line, 'no Finding format line in approve.mjs');
 	assert.match(line, /RECORD:/);
 	for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(line, new RegExp(`\\b${k}\\b`), k);
+});
+
+// why: catches a tester renamed by case or suffix passing with an assumed spec, which skips the stop-and-ask rule.
+test('a clarity of assumed is refused for any tester-named role, not only the exact word', () => {
+	const control = check(record('{"role": "tester", "commit": "abc1234", "clarity": "assumed"}', finding('F1')));
+	assert.equal(control.ok, false, 'control: tester with assumed passed');
+	for (const role of ['Tester', 'tester-u20']) {
+		const r = check(record(`{"role": "${role}", "commit": "abc1234", "clarity": "assumed"}`, finding('F1')));
+		assert.equal(r.ok, false, `role ${role} with clarity assumed passed the gate`);
+		assert.ok(atLine(r.errors, 1), `no refusal names line 1 for ${role}: ${r.errors.join('; ')}`);
+	}
+});
+
+// why: catches a record refused for a missing lead answer counted as one open notChecked, so the canary fails open.
+test('a record refused only for clarity asked with no lead answer counts as refused, not open', () => {
+	const { recordCounts } = createRequire(import.meta.url)('../user/kit-hooks/record-counts.cjs');
+	const asked = record('{"role": "tester", "commit": "abc1234", "clarity": "asked"}', finding('F1'));
+	assert.equal(recordCounts(asked), null, 'a record refused for clarity asked was counted as open');
+	// Control: the same record with the lead's answer is counted as one finding and no open notChecked.
+	const answered = record('{"role": "tester", "commit": "abc1234", "clarity": "asked"}', finding('F1'), '{"note": "lead answer: use the red test", "writer": "lead"}');
+	assert.deepEqual(recordCounts(answered), { findings: 1, notChecked: 0 });
 });

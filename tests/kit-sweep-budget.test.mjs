@@ -797,6 +797,49 @@ test('a pipe row beside a valid empty RECORD block is not tallied: the findings 
 	assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
 });
 
+// The sweep's head commit, which a reviewer's record must name.
+const headOf = (dir) => spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+
+// why: catches a reviewer's record for another role or another commit counted as this round's review.
+test('a RECORD from another role or another commit is refused, and this round\'s record is tallied', () => {
+	const dir = sweepRepo();
+	const r = approveRun(featureContract(), dir);
+	assert.equal(r.status, 0, r.stdout);
+	const head = headOf(dir);
+	const role = featureContract().roles[0].role;
+	const recordFor = (roleName, commit) => ['Prose.', 'RECORD:', JSON.stringify({ role: roleName, commit }), JSON.stringify(k301Finding('F1')), JSON.stringify({ notChecked: 'nothing' })].join('\n');
+	const tallied = () => approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked;
+	// Control: this round's role and head commit are tallied, so the refusals below are for their own fault.
+	const control = k301Outcome(dir, r, [recordFor(role, head), k301Clean, k301Clean, k301Clean, k301Clean], 1);
+	assert.equal(control.status, 0, control.stdout);
+	assert.equal(tallied(), true, 'this round\'s record is not tallied');
+	for (const [name, commit, what] of [['lead', head, 'another role'], [role, 'deadbee', 'another commit']]) {
+		const res = k301Outcome(dir, r, [recordFor(name, commit), k301Clean, k301Clean, k301Clean, k301Clean], 1);
+		assert.equal(res.status, 0, res.stdout);
+		assert.equal(tallied(), false, `a record from ${what} was tallied`);
+	}
+});
+
+// why: catches a second finding above the record, pretty-printed or key-escaped, dropped with no word from the gate.
+test('a finding above the RECORD line in another shape is refused, not silently dropped', () => {
+	const dir = sweepRepo();
+	const r = approveRun(featureContract(), dir);
+	assert.equal(r.status, 0, r.stdout);
+	const tail = ['RECORD:', JSON.stringify({ role: featureContract().roles[0].role, commit: headOf(dir) }), JSON.stringify(k301Finding('F1')), JSON.stringify({ notChecked: 'nothing' })];
+	const tallied = () => approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked;
+	const pretty = ['Prose.', '{', '  "id": "F0",', '  "severity": "high",', '  "status": "confirmed"', '}', ...tail].join('\n');
+	const escaped = ['Prose.', '{"id": "F0", "\\u0073everity": "high", "status": "confirmed"}', ...tail].join('\n');
+	// Control: the record alone is tallied, so the refusals below come from the finding above it.
+	const control = k301Outcome(dir, r, [['Prose.', ...tail].join('\n'), k301Clean, k301Clean, k301Clean, k301Clean], 1);
+	assert.equal(control.status, 0, control.stdout);
+	assert.equal(tallied(), true, 'the record alone is not tallied');
+	for (const [name, msg] of [['pretty-printed', pretty], ['key-escaped', escaped]]) {
+		const res = k301Outcome(dir, r, [msg, k301Clean, k301Clean, k301Clean, k301Clean], 1);
+		assert.equal(res.status, 0, res.stdout);
+		assert.equal(tallied(), false, `a ${name} finding above the record was dropped and the record tallied`);
+	}
+});
+
 // The 1.23.0 sweep's findings on the drift signals.
 // why: guards rule:sweep-auto-approval
 test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
