@@ -956,3 +956,48 @@ test('pre-push holds a merge that deletes an existing test file although a remot
 		assert.doesNotMatch(ok.stderr, HOLD_RE);
 	}
 });
+
+// A sandbox copy of one pre-push hook beside its test-change helper. The kit hook reads the helper at project/.claude, the
+// project hook at .claude. helper is { code, out } for a fake helper that prints out and exits with code, or null for none.
+function hookSandbox(hook, helper) {
+	const box = kitTemp.makeTemp('lock-scan-');
+	const claude = path.join(box, hook === KIT_PRE_PUSH ? 'project/.claude' : '.claude');
+	fs.mkdirSync(path.join(box, '.githooks'), { recursive: true });
+	fs.mkdirSync(claude, { recursive: true });
+	fs.copyFileSync(hook, path.join(box, '.githooks', 'pre-push'));
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(claude, f));
+	if (helper) fs.writeFileSync(path.join(claude, 'test-push-scan.mjs'), `process.stdout.write(${JSON.stringify(helper.out)});\nprocess.exitCode = ${helper.code};\n`);
+	return path.join(box, '.githooks', 'pre-push');
+}
+
+// why: catches a test-change helper exit the hook misreads, since a no-result exit 10 or a missing helper can let a test change through
+test('pre-push reads the test-change helper exit: 10 holds with or without a named commit, 1, 2 and 3 hold, 0 passes, a missing helper holds, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		const tip = commit(dir, 'feat: tune add');
+		const input = `refs/heads/feat/x ${tip} refs/heads/feat/x ${ZERO}\n`;
+		// The helper's own hold text, as the real helper prints it: the header, the owner's yes, then the named commit.
+		const NAMED = `Push blocked: this push holds a test change (named below). The owner's yes is needed for it.\n  ${red.slice(0, 7)} M tests/add.test.mjs\n`;
+		const run = (helper) => pushRun(hookSandbox(hook, helper), dir, bare, input);
+		let r = run({ code: 10, out: NAMED });
+		assert.notEqual(r.status, 0, `${hook} passed an exit 10 that names a test change: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+		assert.match(r.stderr, new RegExp(red.slice(0, 7)));
+		r = run({ code: 10, out: '' });
+		assert.notEqual(r.status, 0, `${hook} passed an exit 10 that names nothing: ${r.stderr}`);
+		assert.match(r.stderr, /the test-change scan gave no result/);
+		r = run({ code: 1, out: NAMED });
+		assert.notEqual(r.status, 0, `${hook} passed an exit 1 that names a test change: ${r.stderr}`);
+		assert.match(r.stderr, OWNER_YES);
+		for (const code of [2, 3]) {
+			r = run({ code, out: '' });
+			assert.notEqual(r.status, 0, `${hook} passed a helper exit ${code}: ${r.stderr}`);
+		}
+		r = run({ code: 0, out: '' });
+		assert.equal(r.status, 0, `${hook} held a helper exit 0: ${r.stderr}`);
+		r = run(null);
+		assert.notEqual(r.status, 0, `${hook} passed a push with its test-change helper missing: ${r.stderr}`);
+	}
+});
