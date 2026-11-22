@@ -199,6 +199,40 @@ test('edit fence blocks a builder edit of a test file under the lock and allows 
 	assert.equal(source.code, 0, source.out);
 	const test = fence(dir, 'builder', path.join(dir, 'tests', 'add.test.mjs'));
 	assert.equal(test.code, 2, test.out);
+	assert.match(test.out, /test file or the unit list/, 'the test-file rule names the block');
+	// Folded control: catches a fence that lets a builder edit an unlisted source file, so the list would bind nothing.
+	const unlisted = fence(dir, 'builder', path.join(dir, 'src', 'util.js'));
+	assert.equal(unlisted.code, 2, unlisted.out);
+	assert.match(unlisted.out, /not in this unit's file list/, 'the list rule names the block');
+	// Folded control: catches a fence that blocks a tester's edit of the test file its list names, so the tester cannot write its tests.
+	fs.writeFileSync(listPath(dir), `# red ${red}\nsrc/add.js\ntests/add.test.mjs\n`);
+	const tester = fence(dir, 'tester', path.join(dir, 'tests', 'add.test.mjs'));
+	assert.equal(tester.code, 0, tester.out);
+});
+
+// why: catches a builder edit of a test file that the unit list names, which the test-file rule must still block
+test('edit fence blocks a builder edit of a test file that IS on the unit list', () => {
+	const { dir, red } = redRepo();
+	fs.writeFileSync(listPath(dir), `# red ${red}\nsrc/add.js\ntests/add.test.mjs\n`);
+	const source = fence(dir, 'builder', path.join(dir, 'src', 'add.js'));
+	assert.equal(source.code, 0, source.out);
+	const test = fence(dir, 'builder', path.join(dir, 'tests', 'add.test.mjs'));
+	assert.equal(test.code, 2, test.out);
+	assert.match(test.out, /test file or the unit list/, 'the test-file rule blocks it, not the list rule');
+});
+
+// why: catches a fence that reads a builder's worktree under .claude/worktrees against the main repo's list, not its own
+test('edit fence checks a builder edit in a worktree under .claude/worktrees against that worktree list', () => {
+	const { dir, red } = redRepo();
+	const wt = path.join(dir, '.claude', 'worktrees', 'build-1');
+	git(dir, ['worktree', 'add', '-q', wt, '-b', 'feat/w1']);
+	assert.equal(lock(wt, red, ['src/add.js']).code, 0);
+	const source = fence(wt, 'builder', path.join(wt, 'src', 'add.js'));
+	assert.equal(source.code, 0, source.out);
+	const unlisted = fence(wt, 'builder', path.join(wt, 'src', 'util.js'));
+	assert.equal(unlisted.code, 2, unlisted.out);
+	const test = fence(wt, 'builder', path.join(wt, 'tests', 'add.test.mjs'));
+	assert.equal(test.code, 2, test.out);
 });
 
 // why: catches a builder rewriting kit-unit-files.txt, which would widen its own file list past the lock
@@ -256,12 +290,20 @@ test('pre-push refuses a push whose range holds a retest: commit, names it and s
 		assert.equal(ok.status, 0, ok.stderr);
 		assert.doesNotMatch(ok.stderr, /retest/);
 		assert.doesNotMatch(ok.stderr, OWNER_YES);
+		// Near-miss control: catches a push held because a word like retesting, or retest: in a body, sits in the range, which the subject-only match must not do.
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		git(dir, ['add', '-A']);
+		git(dir, ['commit', '-q', '-m', 'feat: retesting the add case', '-m', 'retest: named in the body only']);
+		const near = git(dir, ['rev-parse', 'HEAD']);
+		const nearOk = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${near} refs/heads/feat/x ${feat}\n`);
+		assert.equal(nearOk.status, 0, nearOk.stderr);
+		assert.doesNotMatch(nearOk.stderr, /retest/);
 	}
 });
 
 
-// why: guards rule:test-integrity (retest: commit at the start of a longer push passes)
-test('pre-push refuses a three-commit push whose first commit is a retest:, naming that commit', () => {
+// why: guards rule:test-integrity (a retest: starting a longer push is held and named, and an update push of a retest the remote holds is not re-refused)
+test('pre-push refuses a three-commit push whose first commit is a retest:, naming that commit, and lets an update push pass when the remote holds that retest', () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 	const retest = commit(dir, 'retest: tighten the add case');
@@ -305,7 +347,7 @@ test('the builder brief template does not tell the builder to write its own file
 	for (const line of joined.split('\n')) {
 		assert.doesNotMatch(line, /\b(you|builder)\b[^.\n]*\b(write|create)\b[^.\n]*kit-unit-files/i, `a line tells the builder to write the list: ${line}`);
 	}
-	assert.match(body, /\blead\b[^\n]{0,80}kit-unit-files\.txt/, 'the brief names the lead as the writer of kit-unit-files.txt');
+	assert.match(joined, /the lead writes `kit-unit-files\.txt` with `unit-lock\.mjs` once the red commit lands/, 'the brief names the lead as the writer of kit-unit-files.txt');
 });
 
 // why: guards rule:test-integrity (retest(scope): commit slips past the exact match)
@@ -320,8 +362,8 @@ test('pre-push refuses a retest(scope): commit in both the kit and the project h
 	}
 });
 
-// why: guards rule:security-standards (new branch carrying a retest: commit goes out unheld)
-test('pre-push refuses a new branch whose range holds a retest: commit', () => {
+// why: guards rule:security-standards (a new branch holding a retest: is held, a key on a new branch is scanned, an unfetched remote head is not misread)
+test('pre-push refuses a new branch with a retest: commit, refuses a key on a new branch, and passes a clean push whose remote head this repo never fetched', () => {
 	const { dir, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 	const retest = commit(dir, 'retest: tighten the add case');
