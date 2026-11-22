@@ -13,6 +13,8 @@ hooks:
       hooks:
         - type: command
           command: node "{{CLAUDE_HOME}}/kit-hooks/canary.cjs"
+        - type: command
+          command: node "{{CLAUDE_HOME}}/kit-hooks/handoff-gate.cjs"
     - matcher: "Bash|PowerShell"
       hooks:
         - type: command
