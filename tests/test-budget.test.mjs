@@ -51,8 +51,8 @@ const runCheck = (text) => {
 // why: catches a unit with no category line, or the wrong one, so the lead cannot read its test budget from its files (S1).
 test('B1 spec S1: test-budget prints one category line with its ceiling, and the highest category of any file wins', () => {
 	const map = mapFile({ 'docs/*.md': 'docs', 'src/*.mjs': 'logic' });
-	// Three files in the order logic, docs, guard-list: the guard file is the highest, whatever the order.
-	const three = runBudget(['--files', 'src/b.mjs,docs/a.md,user/kit-tools/approve.mjs', '--map', map]);
+	// Three files with the guard file first: a rule that keeps the last file's category would print logic or docs and fail here.
+	const three = runBudget(['--files', 'user/kit-tools/approve.mjs,src/b.mjs,docs/a.md', '--map', map]);
 	assert.equal(three.status, 0, out(three));
 	assert.match(three.stdout, /^category: guard \(ceiling 25; /m);
 	const res = runBudget(['--files', 'docs/a.md,src/b.mjs', '--map', map]);
