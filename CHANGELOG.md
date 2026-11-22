@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.51.0 - 2026-11-22
+
+Every hand-back ends in a checked JSONL record; tests are written, reviewed and locked before the build starts, and a commit-shape check reads the order; one model table names the model and effort of every step, with floors a project cannot lower; and the build flow, the plan and the sweep fix lanes are checked by scripts.
+
+### Added
+- A hand-back ends with a `RECORD:` line and one JSON object per finding, and `handoff.mjs check` holds it to the schema with exact errors: exit 0 valid, 1 invalid, 2 unreadable; an empty record never passes.
+- One model table in `kit.config.json` names the model, effort, enforcer and floor of every step, with five new roles (tester, test reviewer, researcher, drafter, writer); `model-table.mjs check` fails any role file or script that disagrees.
+- Install writes the lead model and effort to settings, a hook logs a role started on another model, session start lists roles on an unmeasured model, CI runs the table check, and `pr-size.mjs` picks the writer by file count.
+- `unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. CI runs it report-only.
+- After the red commit the lead locks a unit with `unit-lock.mjs`: the red sha and the source files it may change; the edit fence then blocks the build role from test files and the lock list.
+- A test changed after red is a `retest:` commit: the commit check accepts the type, and the pre-push hook holds a push that carries one until the owner's yes.
+- `tester-model.mjs` picks Haiku or a larger tester by the approved criteria R1 to R6 read from the plan row, a missing row exits 2; `builder-model.mjs` steps the build up once on a red rerun; the batch plan gains Risk and Tester columns.
+- A read-only test reviewer checks each red commit before any build starts; `handoff.mjs check --review <unit>` passes only when every review finding has a fixed line.
+- Each guard hold carries a mode, log or enforce, in `holds.json`; anything but a clean log reads as enforce, and `hold-check.mjs` fails a release that drops a hold or turns an enforced one to log.
+- A project may change a step's model in `.kit/models.json`; install and the project CI step refuse an override below a floor or on a never-drop step, naming it.
+- `lanes.mjs` splits a sweep's open findings into lanes that share no file; each lane is fixed test-first in its own worktree and merges on green tests, named in sweep step 5 and the batch flow.
+- A report-only CI job flips the production lines a PR adds, in four slices, and lists survivors as a missing test or code the tests do not demand; it opens with its flip count and never fails the run.
+- Install prints each template slot a project file still holds, with the file; the sweep brief writer refuses a rules block that holds one and names it. Format examples are never slots.
+- `flow-check.mjs` checks the build flow from saved files: a fresh plan graph before a build starts, no tester that also builds, one test review per unit, a cap on check rounds and on waiting units. It logs only in this release.
+- Tester and test reviewer records carry a clarity field; an asked question needs the lead's answer before the work goes on, and a missing field warns in this release.
+- `plan-check.mjs` refuses a batch plan whose Units table lacks a column or a cell, or whose plan graph names a fault, and checks the saved hand-back records against it.
+- The build lead is the overwatch lead: the team build skill gains its section, and the flow checklist reads the lead's JSONL log against the plan, naming a unit merged before its tests, review or build step.
+
+### Changed
+- The sweep tally reads a RECORD block, keeps a `|` inside a claim and refuses a record that fails the check; the canary reads a valid block as the report; a hand-back gate logs a broken block, and the brief templates ask for one.
+- Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the lead model.
+- `AGENTS.md` gains a What holds where section, and the security standards one line: the guards hold only sessions that run the kit hooks, and git hooks and CI are the only layers that hold every other tool.
+
+### Fixed
+- The test-scope guard reads a folder argument (`tests/`, `tests`, `./tests`) as the test files under it, for every runner it reads; with no distinct base it lets the run through and logs the cause.
+
 ## 1.50.0 - 2026-11-21
 
 Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm carries its own global instructions into its probe.
