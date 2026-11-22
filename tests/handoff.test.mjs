@@ -5,7 +5,7 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 import { check } from '../user/kit-tools/handoff.mjs';
@@ -113,14 +113,14 @@ test('T12 spec 2: an empty commit is an error naming commit on line 1', () => {
 // why: catches a finding that is missing a field being counted as complete and passed on by the gate.
 for (const k of KEYS) {
 	// why: catches a partial finding passing as complete when its key is missing from the line.
-	test(`R1 spec 3: a finding missing \`${k}\` is an error on line 2`, () => {
+	test(`R1 spec 3: a finding missing '${k}' is an error on line 2`, () => {
 		const r = check(record(ROLE, without(k)));
 		assert.equal(r.ok, false);
 		assert.ok(r.errors.some((e) => new RegExp(`^line 2: missing \`${k}\``).test(e)), JSON.stringify(r.errors));
 	});
 
 	// why: catches a blank field passing as filled in when the key is there but its value is empty.
-	test(`R1 spec 3: a finding with an empty \`${k}\` is an error on line 2`, () => {
+	test(`R1 spec 3: a finding with an empty '${k}' is an error on line 2`, () => {
 		const r = check(record(ROLE, finding('K1', { [k]: '' })));
 		assert.equal(r.ok, false);
 		assert.ok(r.errors.some((e) => new RegExp(`^line 2: empty \`${k}\``).test(e)), JSON.stringify(r.errors));
@@ -324,7 +324,7 @@ test('T37 spec 9: CLI check - reads the record from stdin', () => {
 });
 
 // why: catches the gate failing on a Windows junction path to handoff.mjs, which the hooks use on Windows.
-test('N1 spec 9: CLI run through a Windows junction still checks a malformed record', { windows: 'also', skip: process.platform !== 'win32' ? 'a Windows junction; elsewhere there is no junction to check' : false }, () => {
+test('N1 spec 9: CLI run through a Windows junction still checks a malformed record', { windows: 'also' }, () => {
 	const linkDir = path.join(tempDir(), 'link');
 	fs.symlinkSync(path.dirname(CLI), linkDir, 'junction');
 	const res = spawnSync(process.execPath, [path.join(linkDir, 'handoff.mjs'), 'check', writeRecord(record(ROLE, 'not json'))], { encoding: 'utf8' });
@@ -398,4 +398,27 @@ test('N10 spec 6: a duplicate id holding a newline gives a single-line error on 
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
 	assert.ok(r.errors.every((e) => !e.includes('\n')), JSON.stringify(r.errors));
+});
+
+// why: catches a text with two complete RECORD blocks being accepted, which hides the second hand-back.
+test('N11 spec 4: two RECORD: blocks that both hold a role line are refused as two records', () => {
+	const text = ['Prose.', 'RECORD:', ROLE, finding('K1'), 'Then again:', 'RECORD:', ROLE, finding('K2')].join('\n');
+	const r = check(text);
+	assert.equal(r.ok, false);
+	assert.ok(r.errors.some((e) => /(two|2|more than one) records?/i.test(e)), JSON.stringify(r.errors));
+});
+
+// why: catches the handoff module printing or failing on import, which would break every caller that loads it.
+test('N12 spec 9: importing the module prints nothing and exits 0', () => {
+	const res = spawnSync(process.execPath, ['-e', `import(${JSON.stringify(pathToFileURL(CLI).href)})`], { encoding: 'utf8' });
+	assert.equal(res.status, 0, res.stderr);
+	assert.equal(res.stdout, '');
+	assert.equal(res.stderr, '');
+});
+
+// why: catches a role line with one note line being refused as empty when the note is a complete record entry.
+test('N13 spec 4: a record holding only a role line and one note line passes', () => {
+	const r = check(record(ROLE, '{"note": "looks fine", "writer": "tester"}'));
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+	assert.equal(r.notes, 1);
 });
