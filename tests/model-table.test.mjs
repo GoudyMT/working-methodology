@@ -56,9 +56,6 @@ function faultsOf(config, files = soundFiles()) {
 function assertFault(faults, ...words) {
 	assert.ok(faults.some((f) => words.every((w) => f.includes(w))), `no fault names ${words.join(' + ')} in ${JSON.stringify(faults)}`);
 }
-function assertNoFault(faults, word) {
-	assert.equal(faults.filter((f) => f.includes(word)).length, 0, `a fault names ${word}: ${JSON.stringify(faults)}`);
-}
 // The frontmatter block of a role file: the lines between its first two --- lines.
 function frontmatter(text) {
 	const parts = text.split('---');
@@ -81,6 +78,7 @@ test('rank orders opus above sonnet above haiku', () => {
 test('rank ignores case in a model name', () => {
 	assert.equal(rank('Claude-OPUS-5-5'), 3);
 	assert.equal(rank('CLAUDE-Sonnet-5-5'), 2);
+	assert.equal(rank('CLAUDE-HAIKU-5-5'), 1);
 });
 
 // why: guards rule:agent-role-table (a step with no model, or an unknown id, never passes as a tier)
@@ -144,6 +142,39 @@ test('a role step whose role is missing from roles is a fault naming the role', 
 	assertFault(faultsOf(config), 'builder');
 });
 
+// why: catches a step with no model line that installs with a blank model
+test('a step missing its model is a fault naming the step and the key', () => {
+	const config = soundConfig();
+	delete config.steps.builder.model;
+	assertFault(faultsOf(config), 'builder', 'model');
+});
+
+// why: guards rule:agent-role-table (a role step whose role file is gone is a fault naming the step and the path)
+test('a role step whose role file is missing is a fault naming the step and the path', () => {
+	const files = soundFiles();
+	delete files['user/agents/builder.md'];
+	assertFault(faultsOf(soundConfig(), files), 'builder', 'user/agents/builder.md');
+});
+
+// why: guards rule:agent-role-table (a role entry changed alone is a fault that names the role's step)
+test('a role entry whose model changes alone is a fault naming builder', () => {
+	const config = soundConfig();
+	config.roles.builder.model = HAIKU;
+	assertFault(faultsOf(config), 'builder');
+});
+
+// why: catches a lookup file deleted while its table row stays, which crashes the check
+test('a file step whose target file is missing is a fault naming the step and the path', () => {
+	const config = { roles: {}, steps: { lookup: { model: HAIKU, effort: 'medium', enforcer: 'file:project/.claude/agents/Explore.md' } } };
+	assertFault(faultsOf(config, {}), 'lookup', 'project/.claude/agents/Explore.md');
+});
+
+// why: catches a script file deleted while its const row stays, which crashes the check
+test('a const step whose target file is missing is a fault naming the step and the path', () => {
+	const config = { roles: {}, steps: { sweep: { model: SONNET, effort: 'high', enforcer: 'const:scripts/approve.mjs#DEFAULT_MODEL' } } };
+	assertFault(faultsOf(config, {}), 'sweep', 'scripts/approve.mjs');
+});
+
 // why: guards rule:agent-role-table (a lookup file whose model and effort agree with its step raises no fault)
 test('a file step whose frontmatter matches the step gives no fault', () => {
 	const config = { roles: {}, steps: { lookup: { model: HAIKU, effort: 'medium', enforcer: 'file:project/.claude/agents/Explore.md' } } };
@@ -193,6 +224,13 @@ test('a const step whose named constant is missing is a fault naming the step an
 	assertFault(faultsOf(config, files), 'sweep', 'DEFAULT_MODEL');
 });
 
+// why: catches a sweep constant renamed to a near-match that the exact name check reads as absent
+test('a const step whose file holds only a near-match name is a fault naming DEFAULT_MODEL', () => {
+	const config = { roles: {}, steps: { sweep: { model: HAIKU, effort: 'high', enforcer: 'const:scripts/approve.mjs#DEFAULT_MODEL' } } };
+	const files = { 'scripts/approve.mjs': `const DEFAULT_MODEL_OLD = '${HAIKU}';\n` };
+	assertFault(faultsOf(config, files), 'sweep', 'DEFAULT_MODEL');
+});
+
 // why: guards rule:agent-role-table (steps the check does not read raise no fault from their enforcer alone)
 test('settings, lead and script enforcers alone raise no fault', () => {
 	const config = {
@@ -228,7 +266,7 @@ test('a step at or above its never-drop floor raises no floor fault', () => {
 // why: catches a script step given a floor it cannot meet
 test('a script step given a floor is a fault naming the step', () => {
 	const config = { roles: {}, steps: { step6: { model: 'none', effort: '-', enforcer: 'script:scripts/release-verify.mjs', floor: OPUS } } };
-	assertFault(faultsOf(config, {}), 'step6');
+	assertFault(faultsOf(config, {}), 'never-drop', 'step6');
 });
 
 // why: guards rule:agent-role-table (a retry one tier above the model is the one allowed step up)
@@ -292,9 +330,9 @@ const shape = (s) => ({ model: s.model, effort: s.effort, enforcer: s.enforcer, 
 const realSteps = () => JSON.parse(fs.readFileSync(path.join(REAL_DIR, 'kit.config.json'), 'utf8')).steps;
 
 // why: guards rule:agent-role-table (a step dropped or renamed silently leaves its model unchecked)
-test('the real steps table names the eighteen steps', () => {
+test('the real steps table names the nineteen steps', () => {
 	const names = Object.keys(realSteps()).sort();
-	assert.equal(names.length, 18);
+	assert.equal(names.length, 19);
 	assert.deepEqual(names, Object.keys(EXPECTED).sort());
 });
 
@@ -363,9 +401,15 @@ test('check exits 1 with each fault on its own stderr line', () => {
 
 // why: guards rule:agent-role-table (a run from a kit folder checks that kit when no folder is given)
 test('check defaults to the current folder when no folder is given', () => {
-	const dir = kit(soundConfig(), soundFiles());
+	const files = soundFiles();
+	files['user/agents/builder.md'] = roleFile('builder', HAIKU, 'high');
+	const config = soundConfig();
+	const dir = kit(config, files);
+	const faults = tableFaults(config, dir);
+	assert.equal(faults.length, 1, 'the fixture needs exactly one fault');
 	const run = spawnSync(process.execPath, [MODULE, 'check'], { cwd: dir, encoding: 'utf8' });
-	assert.equal(run.status, 0, run.stderr);
+	assert.equal(run.status, 1);
+	assert.deepEqual(run.stderr.split('\n').filter(Boolean), faults);
 });
 
 // why: catches a missing config read as a clean table
