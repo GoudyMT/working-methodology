@@ -146,6 +146,7 @@ test('hold-mode returns enforce and does not throw for holds.json of the wrong s
 
 // why: catches agent-model ignoring holds.json, so its log mode can never be changed by the list
 test('agent-model reads its mode through hold-mode.cjs, then logs the call in log mode and returns null', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-hook-');
 	const callRecord = path.join(hookDir, 'mode-calls.txt');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
@@ -189,6 +190,7 @@ function agentLogText(dir) {
 
 // why: catches a log-only guard that refuses when its list is damaged
 test('agent-model never refuses in build 24, even when its hold reads enforce', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-enforce-');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
 	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nmodule.exports = { mode() { return 'enforce'; } };\n`);
@@ -202,6 +204,7 @@ test('agent-model never refuses in build 24, even when its hold reads enforce', 
 
 // why: catches a missing helper file turning the guard into a refusal
 test('agent-model logs and returns null when hold-mode.cjs is missing', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-alone-');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
 	const config = roleConfig({ 'opus-role': 'opus' });
