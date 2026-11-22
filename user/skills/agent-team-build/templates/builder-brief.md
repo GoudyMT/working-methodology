@@ -24,7 +24,7 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 - **Files you may change:** <exact list>
 - **Files you may create:** <exact list> | none
 - **Read first:** <files, tests and docs, each with why>
-- **Tests to write first, and the failure each must show:** <...>
+- **Red tests (the tester's red commit <sha>; never edit them), and the failure each must show:** <...>
 - If a test looks wrong, stop and report it; never work around a test.
 - **Done when:** <observable conditions>; within this unit's size-budget share: <each budget and the bytes this
   unit may add> | no size budget touched
