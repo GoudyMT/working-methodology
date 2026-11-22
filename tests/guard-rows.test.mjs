@@ -1,9 +1,9 @@
-// U22 (T-B4): a guard unit's Tests cell carries three fixed rows. One test per spec line G1-G7; controls are assertions inside.
+// U22 (T-B4): a guard unit's Tests cell carries three fixed rows. One test per spec line G1-G4, G6 and G7 (the spec has no G5 line); controls are assertions inside.
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
@@ -11,6 +11,7 @@ kitTemp.sessionRoot();
 const CHECK = fileURLToPath(new URL('../user/kit-tools/plan-check.mjs', import.meta.url));
 const BRIEF = fileURLToPath(new URL('../user/skills/agent-team-build/templates/batch-plan.md', import.meta.url));
 const TESTER = fileURLToPath(new URL('../user/agents/tester.md', import.meta.url));
+const GUARD_ROWS = fileURLToPath(new URL('../user/kit-tools/guard-rows.mjs', import.meta.url));
 
 const TESTS = 'Tests to write first, and the failure each must show';
 const HEAD = ['Id', 'Files', 'Runs', 'Risk', 'Category', TESTS, 'Tester'];
@@ -37,7 +38,7 @@ const runCheck = (text) => {
 	return spawnSync(process.execPath, [CHECK, file], { cwd: dir, encoding: 'utf8' });
 };
 
-// why: catches a guard unit with no bypass row passing, so a guard a wrapper or another shell gets past is never tested; or a complete guard unit beside a plain logic unit wrongly refused (G1, G5).
+// why: catches a guard unit with no bypass row passing, so a guard a wrapper or another shell gets past is never tested; or a complete guard unit beside a plain logic unit wrongly refused (G1).
 test('G1 spec G1: a guard unit with no bypass: row is refused naming that unit, and a complete guard unit beside a plain logic unit passes', () => {
 	const noBypass = runCheck(planText([guardRow([REPEAT, FAIL_CLOSED])]));
 	assert.equal(noBypass.status, 1, out(noBypass));
@@ -52,9 +53,15 @@ test('G1 spec G1: a guard unit with no bypass: row is refused naming that unit, 
 	// Control: a complete guard unit U1 beside a plain logic unit U2 passes.
 	const pair = runCheck(planText([guardRow([BYPASS, REPEAT, FAIL_CLOSED]), logicRow('U2')]));
 	assert.equal(pair.status, 0, out(pair));
+	// Two guard units in one plan: each is checked on its own rows, so a second guard unit with no bypass: row is refused by its name.
+	const guardTwo = { ...guardRow([REPEAT, FAIL_CLOSED]), Id: 'U3', Files: '`user/kit-hooks/call-cap.cjs`' };
+	const twoGuards = runCheck(planText([guardRow([BYPASS, REPEAT, FAIL_CLOSED]), guardTwo]));
+	assert.equal(twoGuards.status, 1, out(twoGuards));
+	assert.match(out(twoGuards), /unit U3 is a guard unit with no bypass: row/);
+	assert.doesNotMatch(out(twoGuards), /unit U1 is a guard unit/);
 });
 
-// why: catches a guard unit with no repeat row passing, so a guard whose verdict flips on a second run is never caught; or a complete guard unit wrongly refused (G2, G5).
+// why: catches a guard unit with no repeat row passing, so a guard whose verdict flips on a second run is never caught; or a complete guard unit wrongly refused (G2).
 test('G2 spec G2: a guard unit with no repeat: row is refused naming repeat, and a complete guard unit passes', () => {
 	const noRepeat = runCheck(planText([guardRow([BYPASS, FAIL_CLOSED])]));
 	assert.equal(noRepeat.status, 1, out(noRepeat));
@@ -67,7 +74,7 @@ test('G2 spec G2: a guard unit with no repeat: row is refused naming repeat, and
 	assert.equal(withRepeat.status, 0, out(withRepeat));
 });
 
-// why: catches a guard unit with no fail row, or one whose outcome is not logged, passing, so a guard that fails silently ships; or a complete guard unit wrongly refused (G3, G5).
+// why: catches a guard unit with no fail row, or one whose outcome is not logged, passing, so a guard that fails silently ships; or a complete guard unit wrongly refused (G3).
 test('G3 spec G3: a guard unit with no fail-closed or fail-open row is refused, a fail row without "logged" is refused, and a complete guard unit with a logged fail-open row passes', () => {
 	const noFail = runCheck(planText([guardRow([BYPASS, REPEAT])]));
 	assert.equal(noFail.status, 1, out(noFail));
@@ -84,6 +91,16 @@ test('G3 spec G3: a guard unit with no fail-closed or fail-open row is refused, 
 	// Control: a fail-open row that does not say logged is refused, even with valid bypass and repeat rows.
 	const openNotLogged = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-open: lets through, not logged -> S1'])]));
 	assert.equal(openNotLogged.status, 1, out(openNotLogged));
+	// Denials: never, nothing, and "no ... logged" each say the outcome is not logged, so each row is refused.
+	for (const denial of ['fail-closed: a broken guard blocks the call and is never logged -> S1', 'fail-closed: a broken guard blocks the call, nothing logged -> S1', 'fail-closed: a broken guard blocks the call, no outcome is logged -> S1']) {
+		const denied = runCheck(planText([guardRow([BYPASS, REPEAT, denial])]));
+		assert.equal(denied.status, 1, `${denial}: ${out(denied)}`);
+		assert.match(out(denied), /says the outcome is not logged/, denial);
+	}
+	// Limit: a denial word only counts within its clause, so a comma ends it. "not" in the first clause does not make the
+	// "logged" in the second a denial, and the row passes.
+	const clauseLimit = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-closed: it does not run the check, blocks the call and is logged -> S1'])]));
+	assert.equal(clauseLimit.status, 0, out(clauseLimit));
 	// Control: a complete guard unit whose fail-open row says logged passes.
 	const open = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-open: a broken guard lets the call through, logged -> S1'])]));
 	assert.equal(open.status, 0, out(open));
@@ -101,27 +118,41 @@ test('G4 spec G4: a wiring: row is accepted alongside the three rows, and wiring
 	const repeatSwap = runCheck(planText([guardRow([BYPASS, WIRING, FAIL_CLOSED])]));
 	assert.equal(repeatSwap.status, 1, out(repeatSwap));
 	assert.match(out(repeatSwap), /repeat/);
+	// Control: wiring: in place of the fail row is refused for lacking a fail-closed or fail-open row.
+	const failSwap = runCheck(planText([guardRow([BYPASS, REPEAT, WIRING])]));
+	assert.equal(failSwap.status, 1, out(failSwap));
+	assert.match(out(failSwap), /fail-closed: or fail-open: row/);
 });
 
-// why: guards rule:agent-team-adapter (batch-plan.md guard example shows the three fixed rows)
-test('G6 spec G6: batch-plan.md shows the bypass:, repeat: and fail-closed or fail-open rows near the word guard', () => {
+// why: guards rule:agent-team-adapter (the batch-plan.md guard example is a Tests cell plan-check accepts as a complete guard unit)
+test('G6 spec G6: the batch-plan.md guard example, read as a Tests cell, passes plan-check, and drops refused without its bypass row', () => {
 	assert.ok(fs.existsSync(BRIEF), 'batch-plan.md is missing');
 	const text = fs.readFileSync(BRIEF, 'utf8');
-	assert.match(text, /guard/i);
-	// Each row's tag starts a line, a cell or a <br>-separated line, and sits within 1000 characters of the word guard.
-	const windows = [...text.matchAll(/guard/gi)].map((m) => text.slice(Math.max(0, m.index - 1000), m.index + 1000));
-	for (const tag of ['bypass:', 'repeat:', 'fail-(closed|open):']) {
-		const re = new RegExp(`(^|<br>|\\|)\\s*${tag}`, 'm');
-		assert.ok(windows.some((w) => re.test(w)), `no ${tag} row near the word guard in batch-plan.md`);
-	}
+	const example = /Example Tests cell: `([^`]+)`/.exec(text);
+	assert.ok(example, 'batch-plan.md holds an example guard Tests cell');
+	// The cell spans two lines in the template; its <br> separators split the three rows, and <S1> is the spec id.
+	const lines = example[1].replace(/\s+/g, ' ').replace(/^\|\s*/, '').replace(/\s*\|$/, '').split('<br>').map((l) => l.trim().replace(/<(S\d+)>/g, '$1'));
+	assert.equal(lines.length, 3, `three rows: ${lines.join(' | ')}`);
+	const whole = runCheck(planText([guardRow(lines)]));
+	assert.equal(whole.status, 0, out(whole));
+	// Control: the same example without its bypass: row is refused for lacking one, so the example is not passing by accident.
+	const noBypass = runCheck(planText([guardRow(lines.filter((l) => !l.startsWith('bypass:')))]));
+	assert.equal(noBypass.status, 1, out(noBypass));
+	assert.match(out(noBypass), /bypass: row/);
 });
 
-// why: guards rule:agent-role-table (tester.md tells the tester to write the three fixed rows for a guard unit)
-test('G7 spec G7: tester.md tells the tester to write the bypass:, repeat: and fail-closed or fail-open rows for a guard unit', () => {
+// why: guards rule:agent-role-table (the tags tester.md names for a guard unit are the rows guard-rows.mjs accepts)
+test('G7 spec G7: the tags tester.md names for a guard unit are the rows guardRowFaults accepts, and dropping bypass: is a fault', async () => {
 	assert.ok(fs.existsSync(TESTER), 'user/agents/tester.md is missing');
+	assert.ok(fs.existsSync(GUARD_ROWS), 'user/kit-tools/guard-rows.mjs is missing');
 	const text = fs.readFileSync(TESTER, 'utf8');
-	assert.match(text, /guard/i);
-	assert.match(text, /bypass:/);
-	assert.match(text, /repeat:/);
-	assert.match(text, /fail-(closed|open):/);
+	const para = text.split('\n').find((l) => /^Guard units\./.test(l));
+	assert.ok(para, 'tester.md has a Guard units paragraph');
+	const tags = [...para.matchAll(/`([a-z-]+):`/g)].map((m) => `${m[1]}:`);
+	for (const tag of ['bypass:', 'repeat:', 'fail-closed:', 'fail-open:']) assert.ok(tags.includes(tag), `tester.md names ${tag}`);
+	const { guardRowFaults } = await import(pathToFileURL(GUARD_ROWS).href);
+	const rows = ['bypass: runs it through a wrapper -> S1', 'repeat: runs it twice -> S1', 'fail-closed: blocks the call and is logged -> S1'];
+	assert.deepEqual(guardRowFaults('U1', rows), [], 'the three named rows are accepted');
+	const faults = guardRowFaults('U1', rows.filter((r) => !r.startsWith('bypass:')));
+	assert.ok(faults.some((f) => /bypass:/.test(f)), `dropping bypass: is a fault: ${faults.join('; ')}`);
 });

@@ -161,17 +161,22 @@ function agentLogText(dir) {
 }
 
 // why: guards rule:kit-standards (a log-only guard refuses when its list is damaged)
-test('agent-model never refuses in build 24, even when its hold reads enforce', () => {
+test('agent-model never refuses in build 24, in log mode or when its hold reads enforce', () => {
 	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
-	const hookDir = kitTemp.makeTemp('agent-model-enforce-');
-	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
-	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nmodule.exports = { mode() { return 'enforce'; } };\n`);
 	const config = roleConfig({ 'opus-role': 'opus' });
-	const dir = repo();
-	const run = checkCalls(hookDir, dir, [{ subagent_type: 'no-such-role' }, { subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
-	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
-	assert.deepEqual(JSON.parse(run.stdout), [null, null], 'neither the no-role-file call nor the model-mismatch call is refused');
-	assert.match(agentLogText(dir), /"mode":"enforce"/);
+	// One repo per mode, so each log holds only that run's rows; the rows must record the mode the hold read.
+	for (const mode of ['enforce', 'log']) {
+		const hookDir = kitTemp.makeTemp(`agent-model-${mode}-`);
+		fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+		fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nmodule.exports = { mode() { return '${mode}'; } };\n`);
+		const dir = repo();
+		const run = checkCalls(hookDir, dir, [{ subagent_type: 'no-such-role' }, { subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
+		assert.equal(run.status, 0, `${mode}: agent-model.cjs check ran: ${run.stderr}`);
+		assert.deepEqual(JSON.parse(run.stdout), [null, null], `${mode}: neither the no-role-file call nor the model-mismatch call is refused`);
+		const rows = agentLogText(dir).trim().split('\n').map((l) => JSON.parse(l));
+		assert.equal(rows.length, 2, `${mode}: one log row per logged call`);
+		for (const row of rows) assert.equal(row.mode, mode, `${mode}: the row records the hold's mode`);
+	}
 });
 
 
@@ -320,6 +325,74 @@ test('hold-check reads the kit dir it is given, not the folder it is run from', 
 	});
 	const elsewhere = kitTemp.makeTemp('hold-elsewhere-');
 	const r = runCheck(elsewhere, [kit, '--base', 'v1.0.0']);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /alpha-hold/);
+});
+
+// why: catches a hook named by a path that climbs out of user/kit-hooks or nests in it, which passes because the file exists
+test('hold-check exits 1 when a hold names its hook by a path, even when that path is a real file', () => {
+	const dir = scenario({
+		before: undefined,
+		after: [
+			{ id: 'beta-hold', hook: '../escape.cjs', mode: 'log' },
+			{ id: 'gamma-hold', hook: 'sub/nested.cjs', mode: 'log' },
+			{ id: 'ok-hold', hook: 'ok.cjs', mode: 'log' },
+		],
+		hooks: ['ok.cjs'],
+	});
+	put(dir, { 'user/escape.cjs': hookText('escape.cjs'), 'user/kit-hooks/sub/nested.cjs': hookText('nested.cjs') });
+	const r = runCheck(dir, [dir, '--base', 'v1.0.0']);
+	assert.equal(r.code, 1, r.out);
+	assert.match(r.out, /beta-hold/);
+	assert.match(r.out, /gamma-hold/);
+	// Control: a plain file name that exists is not named.
+	assert.doesNotMatch(r.out, /ok-hold/);
+});
+
+// why: catches a duplicate hold id read by its first entry, so a log entry beside an enforce one drops the enforce hold unnoticed
+test('hold-check reads a duplicate hold id as enforce unless every entry for it says log', () => {
+	const mixed = scenario({
+		before: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }],
+		hooks: ['alpha.cjs'],
+		after: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }, { id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }],
+	});
+	const kept = runCheck(mixed, [mixed, '--base', 'v1.0.0']);
+	assert.equal(kept.code, 0, kept.out);
+	const allLog = scenario({
+		before: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }],
+		hooks: ['alpha.cjs'],
+		after: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }, { id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }],
+	});
+	const dropped = runCheck(allLog, [allLog, '--base', 'v1.0.0']);
+	assert.equal(dropped.code, 1, dropped.out);
+	assert.match(dropped.out, /alpha-hold/);
+});
+
+// why: catches a bad --base, a base holds.json that is no holds list, or a bad argument passing as a clean check
+test('hold-check exits 2 for a base that is no commit, a base holds.json that is no list, and a bad argument', () => {
+	const dir = scenario({
+		before: [{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }],
+		hooks: ['alpha.cjs'],
+	});
+	assert.equal(runCheck(dir, [dir, '--base', 'v9.9.9']).code, 2, 'a base that is no commit');
+	assert.equal(runCheck(dir, [dir, '--base']).code, 2, '--base with no ref');
+	assert.equal(runCheck(dir, [dir, '--no-such-flag']).code, 2, 'an unknown argument');
+	const bad = repo();
+	put(bad, { 'user/kit-hooks/holds.json': '{"holds":"x"}\n' });
+	save(bad, 'release 1.0.0', 'v1.0.0');
+	const r = runCheck(bad, [bad, '--base', 'v1.0.0']);
+	assert.equal(r.code, 2, r.out);
+	assert.match(r.out, /does not read as a holds list/);
+});
+
+// why: catches the default base picked by tag creation date, so a v1.9.0 tagged after v1.10.0 reads as the latest release
+test('hold-check with no --base takes the highest v* version when a lower one was tagged later', () => {
+	const dir = repo();
+	put(dir, { 'user/kit-hooks/alpha.cjs': hookText('alpha.cjs'), 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'enforce' }]) });
+	save(dir, 'release 1.10.0', 'v1.10.0');
+	put(dir, { 'user/kit-hooks/holds.json': holdsText([{ id: 'alpha-hold', hook: 'alpha.cjs', mode: 'log' }]) });
+	save(dir, 'release 1.9.0', 'v1.9.0');
+	const r = runCheck(dir, [dir]);
 	assert.equal(r.code, 1, r.out);
 	assert.match(r.out, /alpha-hold/);
 });

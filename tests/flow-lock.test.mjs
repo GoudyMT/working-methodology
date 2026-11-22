@@ -45,7 +45,8 @@ function flow(args, cwd = tmp('flow-cwd-')) {
 	assert.ok(!/node:internal|MODULE_NOT_FOUND|SyntaxError/.test(out), `flow-check ran without crashing: ${out}`);
 	return { code: r.status, out };
 }
-const failed = (r, cause = /\S/) => { assert.equal(r.code, 1, r.out); assert.match(r.out, cause, 'a failure names its cause'); };
+// A failure must name its cause: every caller passes the message flow-check prints for that fault.
+const failed = (r, cause) => { assert.equal(r.code, 1, r.out); assert.match(r.out, cause, 'a failure names its cause'); };
 const NO_LOG = /no .*log|plan-graph/i;
 
 // A hand-back as the lead saves it: prose, RECORD:, the role line, then the lines after it.
@@ -68,15 +69,11 @@ function planRepo(text = PLAN_OK) {
 const logLine = (over = {}) => `${JSON.stringify({ at: new Date().toISOString(), plan: 'plan.md', units: 2, faults: 0, ...over })}\n`;
 const start = (plan) => flow(['start', plan, '--role', 'builder']);
 
-// why: catches a builder start going ahead when plan-graph never ran on the plan
-test('L1: start exits 1 when the plan has no plan-graph log line', () => {
-	const { plan } = planRepo();
-	failed(start(plan), NO_LOG);
-});
-
-// why: catches a clean plan-graph run being refused so no builder can ever start
-test('L1: start exits 0 when the latest log line has no faults and is newer than the plan file', () => {
+// why: catches a builder start going ahead when plan-graph never ran, and a clean run refused so no builder can start
+test('L1: start exits 1 when the plan has no plan-graph log line, and 0 once a clean line is logged', () => {
 	const { plan, log } = planRepo();
+	failed(start(plan), NO_LOG);
+	// Control: a clean line, newer than the plan file, lets the start through.
 	const old = new Date(Date.now() - 60000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine());
@@ -112,20 +109,14 @@ test('L1: start exits 1 when the plan file changed after the plan-graph run', ()
 	failed(start(plan), /changed|newer|after/i);
 });
 
-// why: catches an older clean line hiding a newer faulty run
-test('L1: the latest log line for the plan wins over an older clean one', () => {
+// why: catches an older clean line hiding a newer faulty run, and an older faulty line blocking a start after a clean re-run
+test('L1: the latest log line for the plan wins, whichever of two lines is older', () => {
 	const { plan, log } = planRepo();
 	const old = new Date(Date.now() - 120000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine({ at: new Date(Date.now() - 60000).toISOString() }) + logLine({ faults: 1 }));
 	failed(start(plan), /fault/i);
-});
-
-// why: catches an older faulty line blocking a start after the plan was fixed and re-run
-test('L1: a later clean line wins over an older faulty one', () => {
-	const { plan, log } = planRepo();
-	const old = new Date(Date.now() - 120000);
-	fs.utimesSync(plan, old, old);
+	// Control: the faulty line older, the clean one newer, lets the start through.
 	fs.writeFileSync(log, logLine({ at: new Date(Date.now() - 60000).toISOString(), faults: 3 }) + logLine());
 	const r = start(plan);
 	assert.equal(r.code, 0, r.out);
@@ -172,30 +163,22 @@ function records(specs) {
 }
 const agents = (dir) => flow(['agents', dir]);
 
-// why: catches one agent writing the tests and the code, which removes the second pair of eyes
-test('L3: agents exits 1 when one agent id is both tester and builder', () => {
+// why: catches one agent writing the tests and the code, and a fresh clean team refused by the role-split check
+test('L3: agents exits 1 when one agent id is both tester and builder, and 0 when the ids differ or one builds two units', () => {
 	const r = agents(records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a1', role: 'builder', unit: 'U1', lane: 'A' }]));
-	failed(r);
-	assert.match(r.out, /a1/);
-});
-
-// why: catches a fresh clean team being refused by the role-split check
-test('L3: agents exits 0 when testers and builders are different agent ids', () => {
-	const r = agents(records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]));
-	assert.equal(r.code, 0, r.out);
-});
-
-// why: catches one agent id repeating a role across units being read as a mix of two roles
-test('L3: agents exits 0 when one agent is a builder on two units', () => {
-	const r = agents(records([{ agent: 'a2', unit: 'U1', lane: 'A' }, { agent: 'a2', unit: 'U2', lane: 'A' }]));
-	assert.equal(r.code, 0, r.out);
+	failed(r, /agent a1 is both tester and builder/);
+	// Control: testers and builders under different agent ids pass.
+	const split = agents(records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]));
+	assert.equal(split.code, 0, split.out);
+	// Control: one agent id as builder on two units is one role repeated, not a mix of two roles, so it passes.
+	const twoUnits = agents(records([{ agent: 'a2', unit: 'U1', lane: 'A' }, { agent: 'a2', unit: 'U2', lane: 'A' }]));
+	assert.equal(twoUnits.code, 0, twoUnits.out);
 });
 
 // why: catches an agent piling up units until its context is stale
 test('L4: agents exits 1 when one agent holds 4 units', () => {
 	const r = agents(records(['U1', 'U2', 'U3', 'U4'].map((unit) => ({ agent: 'a3', unit, lane: 'A' }))));
-	failed(r);
-	assert.match(r.out, /a3/);
+	failed(r, /agent a3 holds 4 units, max 3/);
 });
 
 // why: catches the unit cap being set one too low and refusing a legal 3 units
@@ -213,8 +196,7 @@ test('L4: agents counts distinct units, so four records on 3 units pass', () => 
 // why: catches an agent spread over three lanes, which no one can follow
 test('L4: agents exits 1 when one agent holds 3 lanes', () => {
 	const r = agents(records(['A', 'B', 'C'].map((lane, i) => ({ agent: 'a4', unit: `U${i}`, lane }))));
-	failed(r);
-	assert.match(r.out, /a4/);
+	failed(r, /agent a4 works 3 lanes, max 2/);
 });
 
 // why: catches the lane cap being set one too low and refusing a legal 2 lanes
@@ -226,7 +208,7 @@ test('L4: agents exits 0 when one agent holds exactly 2 lanes', () => {
 // why: catches the check reading only the first file in the folder
 test('L3: agents finds the fault in the last of several saved hand-backs', () => {
 	const r = agents(records([{ agent: 'b1', role: 'builder', unit: 'U1' }, { agent: 'b2', role: 'builder', unit: 'U2' }, { agent: 'b3', role: 'tester', unit: 'U3' }, { agent: 'b3', role: 'builder', unit: 'U4' }]));
-	failed(r);
+	failed(r, /agent b3 is both tester and builder/);
 	// Folded control: a .jsonl with no RECORD block and a non-jsonl file are ignored.
 	const clean = records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]);
 	put(clean, 'stray.jsonl', `${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U9' })}\n`);
@@ -272,7 +254,7 @@ test('L6: reviews exits 0 with a review that has no findings and no fix record',
 
 // why: catches a second review slipping in with no reason, which hides a repeat loop
 test('L6: reviews exits 1 on a second review record with no second-review note', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], second: [finding('R2')], fix: [NOTE('fixed', 'tester')] })));
+	failed(reviews(reviewDir({ review: [finding('R1')], second: [finding('R2')], fix: [NOTE('fixed', 'tester')] })), /second review of U1 with no lead note/);
 });
 
 // why: catches the lead's reasoned second review being refused
@@ -283,12 +265,12 @@ test('L6: reviews exits 0 on a second review record that holds the lead second-r
 
 // why: catches a note written by someone other than the lead opening the second review
 test('L6: reviews exits 1 when the second-review note is written by the tester, not the lead', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: I want one', 'tester'), finding('R2')], fix: [NOTE('fixed', 'tester')] })));
+	failed(reviews(reviewDir({ review: [finding('R1')], second: [NOTE('second review: I want one', 'tester'), finding('R2')], fix: [NOTE('fixed', 'tester')] })), /second review of U1 with no lead note/);
 });
 
 // why: catches another unit's review record counting for this unit
 test('L6: reviews for U2 ignores the U1 records', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] }), 'U2'));
+	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] }), 'U2'), /no review for U2/);
 	// Folded control: U10 records do not count for U1, including an unexplained second U10 review.
 	const dir = reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] });
 	put(dir, 'U10.review.jsonl', handBack(REVIEW_ROLE, finding('R9')));
@@ -310,7 +292,7 @@ const reviewers = (file) => flow(['reviewers', file]);
 // why: catches a review queue growing behind one reviewer with no alarm
 test('L7: reviewers exits 1 and names the time when a 4th unit waits while one reviewer is active', () => {
 	const r = reviewers(ledger([ev(0, 'U1', 'review-start'), ev(1, 'U2', 'review-wait'), ev(2, 'U3', 'review-wait'), ev(3, 'U4', 'review-wait'), ev(4, 'U5', 'review-wait')]));
-	failed(r);
+	failed(r, /4 units wait for review \(U2, U3, U4, U5\) with 1 active reviewer/);
 	assert.ok(r.out.includes(T(4)) || r.out.includes('10:04'), `names the time of the fourth waiting unit: ${r.out}`);
 });
 
@@ -335,13 +317,13 @@ test('L7: reviewers exits 0 when each waiting unit starts review before the queu
 // why: catches a queue with no active reviewer at all passing as quiet
 test('L7: reviewers exits 1 when no reviewer is active and 4 units are waiting', () => {
 	const r = reviewers(ledger([ev(0, 'U1', 'review-start'), ev(1, 'U1', 'review-done'), ev(2, 'U2', 'review-wait'), ev(3, 'U3', 'review-wait'), ev(4, 'U4', 'review-wait'), ev(5, 'U5', 'review-wait')]));
-	failed(r);
+	failed(r, /4 units wait for review \(U2, U3, U4, U5\) with 0 active reviewer/);
 });
 
 // why: catches a reviewer that finished still being counted as active, hiding a one-reviewer queue
 test('L7: reviewers exits 1 when r1 and r2 started, r2 finished, and 4 units are waiting', () => {
 	const r = reviewers(ledger([ev(0, 'U1', 'review-start', 'r1'), ev(0, 'U6', 'review-start', 'r2'), ev(1, 'U6', 'review-done', 'r2'), ev(2, 'U2', 'review-wait'), ev(3, 'U3', 'review-wait'), ev(4, 'U4', 'review-wait'), ev(5, 'U5', 'review-wait')]));
-	failed(r);
+	failed(r, /4 units wait for review \(U2, U3, U4, U5\) with 1 active reviewer/);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -379,13 +361,16 @@ const whys = (rows) => rows.map((r) => r.why);
 
 
 
-// why: guards rule:agent-team-adapter (non-risky row fires for roles other than the checker)
-test('L9: on one non-risky unit the checker call logs the row and the builder call does not', () => {
+// why: guards rule:agent-team-adapter (the non-risky row fires only for a checker on a non-risky unit, never for a builder or a Risk high unit)
+test('L9: on one non-risky unit the checker call logs the row; a builder call and a Risk high unit log nothing', () => {
 	assert.match(hookText(), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
 	const plan = planWith(['src/app.js']);
 	const prompt = `Unit: U1\nPlan: ${plan}\n`;
 	assert.ok(whys(runHook(prompt, { type: 'checker' })).includes('checker on a non-risky unit'));
 	assert.ok(!whys(runHook(prompt, { type: 'builder' })).includes('checker on a non-risky unit'));
+	// Risk high unit: its Files cell names a guard path, so the checker call logs no non-risky row and no other row.
+	const risky = put(tmp('flow-plan-'), 'plan.md', '# plan\n\n## Units\n\n| Id | Files | Risk | Runs |\n|---|---|---|---|\n| U1 | `user/kit-hooks/agent-model.cjs` | high | parallel |\n');
+	assert.deepEqual(whys(runHook(`Unit: U1\nPlan: ${risky}\n`, { type: 'checker' })), [], 'a risky checker call logs nothing');
 });
 
 // why: guards rule:agent-team-adapter (checker call with no plan passes unseen)
@@ -405,7 +390,7 @@ const rounds = (dir, unit = 'U1') => flow(['rounds', unit, '--dir', dir]);
 // why: catches a third fix round on one unit, which means the unit needs the lead, not another loop
 test('L9: rounds exits 1 when a third FIX checker record exists for the unit', () => {
 	assert.ok(fs.existsSync(FLOW), 'user/kit-tools/flow-check.mjs exists');
-	failed(rounds(checkerDir(['FIX', 'FIX', 'FIX'])));
+	failed(rounds(checkerDir(['FIX', 'FIX', 'FIX'])), /U1 has 3 FIX rounds from the checker, max 2/);
 });
 
 // why: catches the round cap being set one too low and stopping a legal second fix
@@ -448,6 +433,8 @@ test('L9: rounds exits 0 with three records holding VERDICT: FIXED or a mid-line
 	put(dir, 'U1.checker3.jsonl', `VERDICT: FIXED\n${body}`);
 	const r = rounds(dir);
 	assert.equal(r.code, 0, r.out);
+	// Exact count: one record read as FIX would still exit 0 under the cap of 2, so the printed count of 0 is the proof.
+	assert.match(r.out, /rounds: U1 has 0 FIX round\(s\), max 2/);
 });
 
 // why: guards rule:agent-team-adapter (hook GUARD_PATHS drifts from the tester-model copy)
