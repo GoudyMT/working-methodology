@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { rank, tableFaults } from '../user/kit-tools/model-table.mjs';
+import { rank, skillFaults, tableFaults } from '../user/kit-tools/model-table.mjs';
 
 kitTemp.sessionRoot();
 
@@ -772,4 +772,42 @@ test('the CLI exits 2 when kit.config.json holds null', () => {
 test('a role file with no config.roles entry is a fault naming the file', () => {
 	const files = { ...soundFiles(), 'user/agents/stray.md': roleFile('stray', SONNET, 'high') };
 	assertFault(faultsOf(soundConfig(), files), 'user/agents/stray.md');
+});
+
+// why: catches a step or role on a model the owner has not measured, or one that is retiring, passing the table unseen
+test('a step or role model not in models.measured, or in models.retiring, is a fault naming it', () => {
+	// Control: with every model measured and none retiring, the sound table gives no fault.
+	const measured = { ...soundConfig(), models: { measured: [OPUS, SONNET, HAIKU], retiring: [] } };
+	assert.deepEqual(faultsOf(measured), []);
+	// SONNET is not measured: the builder step and its role entry are both faults.
+	const unmeasured = { ...soundConfig(), models: { measured: [OPUS], retiring: [] } };
+	const notMeasured = faultsOf(unmeasured);
+	assertFault(notMeasured, 'step builder', 'not in models.measured');
+	assertFault(notMeasured, 'role builder', 'not in models.measured');
+	// SONNET is measured but retiring: the same two faults, worded as retiring.
+	const retiring = { ...soundConfig(), models: { measured: [OPUS, SONNET, HAIKU], retiring: [SONNET] } };
+	const isRetiring = faultsOf(retiring);
+	assertFault(isRetiring, 'step builder', 'retiring in models.retiring');
+	assertFault(isRetiring, 'role builder', 'retiring in models.retiring');
+});
+
+// why: catches a role whose rules skill folder is missing passing the table, since the table alone does not read the skills folder
+test('a role whose rules skill file is missing is a fault naming the role and the path, and a present one is not', () => {
+	const config = withRole('builder', { rules: ['verify'] });
+	const files = { ...soundFiles(), 'user/agents/builder.md': roleWith('builder', ['tools: Read, Grep, Glob', 'skills: builder-rules']) };
+	// The table itself is sound: the role file names the rules skill its config row names.
+	const dir = kit(config, files);
+	assert.deepEqual(tableFaults(config, dir), []);
+	const missing = skillFaults(config, dir);
+	assert.ok(missing.some((f) => f.includes('role builder') && f.includes('user/skills/builder-rules/SKILL.md')), `no skill fault in ${JSON.stringify(missing)}`);
+	// Control: the same role with its skill file written is not a fault.
+	write(dir, 'user/skills/builder-rules/SKILL.md', '---\nname: builder-rules\n---\n\nRules body.\n');
+	assert.deepEqual(skillFaults(config, dir), []);
+});
+
+// why: guards rule:agent-role-table (control: the real kit's models and rules skill folders pass both checks)
+test('the real kit passes the model-list and rules-skill checks', () => {
+	const config = JSON.parse(fs.readFileSync(path.join(REAL_DIR, 'kit.config.json'), 'utf8'));
+	assert.deepEqual(tableFaults(config, REAL_DIR), []);
+	assert.deepEqual(skillFaults(config, REAL_DIR), []);
 });
