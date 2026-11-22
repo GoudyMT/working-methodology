@@ -7,6 +7,8 @@
 //   --timeout <ms>      per flip (default 120000); a flip that hangs its tests counts as caught
 //   --json <file>       also write every flip, the tests that reach it and the tests that caught it (T15 Part B)
 //   --slice <i>/<n>     only every n-th flip from the i-th, so CI can split the run over n jobs
+//   --report            with --base: flip only the production lines the range added, print "flips: <n>" and one
+//                       "survivor:" line per flip no test catches, and exit 0 (the minimal-code job, report only)
 //   --count             only say how many flips the run would make ("flips: <n>"), and run nothing (K41)
 //   --until-caught      a test that caught one flip runs on no later flip, and the run ends once every test has caught
 //                       one: for a check that asks only whether each test catches some flip (the test check's A2, K131)
@@ -24,6 +26,10 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 const { makeTemp, removeTemp } = kitTemp;
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 const posix = (p) => p.split(path.sep).join('/');
+// Report mode flips production lines only: a test file's lines are not the change's code to judge.
+const isTest = (f) => /(^|\/)tests?\/|\.test\.[cm]?js$/.test(f);
+// --slice i/n: report mode counts i from 1 to n; the other modes take i below n, from 0 (their tests pin that).
+const sliceOk = (o) => (o.report ? o.slice[0] >= 1 && o.slice[0] <= o.slice[1] : o.slice[0] < o.slice[1]);
 
 // One flip per line, the first that applies, in this fixed order, so a rerun flips the same thing.
 const OPS = [
@@ -40,17 +46,18 @@ function flip(line) {
 }
 
 function parseArgs(argv) {
-	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false, untilCaught: false, whole: false };
+	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false, untilCaught: false, whole: false, report: false };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--base') o.base = argv[++i];
 		else if (argv[i] === '--json') o.json = argv[++i];
 		else if (argv[i] === '--slice') {
 			const m = /^(\d+)\/(\d+)$/.exec(argv[++i] || '');
-			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
+			o.slice = m ? [Number(m[1]), Number(m[2])] : 'bad';
 		}
 		else if (argv[i] === '--count') o.count = true;
 		else if (argv[i] === '--until-caught') o.untilCaught = true;
 		else if (argv[i] === '--whole') o.whole = true;
+		else if (argv[i] === '--report') o.report = true;
 		else if (argv[i] === '--also') o.also.push(argv[++i]);
 		else if (argv[i] === '--timeout') o.timeout = Number(argv[++i]) || o.timeout;
 		else o.files.push(posix(argv[i]));
@@ -109,19 +116,27 @@ function runTests(copy, keys, timeout, home) {
 
 export async function main(argv) {
 	const o = parseArgs(argv);
+	if (o.slice && (o.slice === 'bad' || !sliceOk(o))) { process.stderr.write(`mutation-check: --slice takes i/n${o.report ? ' with 1 <= i <= n' : ' with i below n'}\n`); return 2; }
 	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
 	if (top.status !== 0) { process.stderr.write('mutation-check: run it inside a git repo\n'); return 2; }
 	const root = path.resolve(top.stdout.trim());
 	const mapFile = path.join(root, 'tests', '.map.json');
 	const make = 'make one with node scripts/test-run.mjs --map on a clean tree';
-	if (!fs.existsSync(mapFile)) { process.stderr.write(`mutation-check: no coverage map (tests/.map.json): ${make}\n`); return 2; }
-	const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
 	const head = git(root, 'rev-parse', 'HEAD').stdout.trim();
+	// Report mode (the CI job) never fails: a run it cannot measure says so as flips: 0 and a note, and exits 0.
+	const note = (why) => { process.stdout.write(`flips: 0\nnote: ${why}\n`); return 0; };
+	if (o.report && !o.base) return note('--report needs --base <sha>');
+	if (!fs.existsSync(mapFile)) { if (o.report) return note(`no test map for ${head}`); process.stderr.write(`mutation-check: no coverage map (tests/.map.json): ${make}\n`); return 2; }
+	const map = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
 	// The map's line numbers are its commit's, so a flip is placed only on that commit's lines.
-	if (map.sha !== head) { process.stderr.write(`mutation-check: the map is for ${String(map.sha).slice(0, 12)}, not HEAD ${head.slice(0, 12)}: ${make}\n`); return 2; }
+	if (map.sha !== head) { if (o.report) return note(`no test map for ${head}`); process.stderr.write(`mutation-check: the map is for ${String(map.sha).slice(0, 12)}, not HEAD ${head.slice(0, 12)}: ${make}\n`); return 2; }
 	const scope = o.base ? changedLines(root, o.base) : null;
-	if (o.base && !scope) { process.stderr.write(`mutation-check: base "${o.base}" is not a commit this repo can diff against HEAD\n`); return 2; }
-	if (scope && scope.overflow) { process.stderr.write(`mutation-check: the diff from "${o.base}" adds more than 256 MB of lines, past what it reads; measure fewer files by name\n`); return 2; }
+	if (o.base && (!scope || scope.overflow)) {
+		const why = scope ? `the diff from "${o.base}" adds more than 256 MB of lines, past what it reads; measure fewer files by name` : `base "${o.base}" is not a commit this repo can diff against HEAD`;
+		if (o.report) return note(why);
+		process.stderr.write(`mutation-check: ${why}\n`);
+		return 2;
+	}
 	const byLine = new Map();
 	for (const [key, t] of Object.entries(map.tests || {})) {
 		for (const [file, lines] of Object.entries(t.lines || {})) {
@@ -153,15 +168,15 @@ export async function main(argv) {
 	let caught = 0;
 	const survived = [];
 	const record = [];
-	if (o.slice === 'bad') { removeTemp(copy); removeTemp(claudeDir); removeTemp(userHome); process.stderr.write('mutation-check: --slice takes i/n with i below n\n'); return 2; }
 	try {
 		// Only lines that flip are counted, so the slices split the real work: slice i takes every n-th flip from i.
 		const every = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
-			.filter((s) => flip((fs.readFileSync(path.join(copy, s.file), 'utf8').split('\n')[s.line - 1]) ?? ''));
-		const spots = every.filter((s, k) => !o.slice || k % o.slice[1] === o.slice[0]);
+			.filter((s) => (!o.report || !isTest(s.file)) && flip((fs.readFileSync(path.join(copy, s.file), 'utf8').split('\n')[s.line - 1]) ?? ''));
+		const spots = every.filter((s, k) => !o.slice || k % o.slice[1] === o.slice[0] - (o.report ? 1 : 0));
 		if (o.count) { process.stdout.write(`flips: ${spots.length}\n`); return 0; }
+		if (o.report) process.stdout.write(`flips: ${spots.length}\n`);
 		// A scoped run with no flip measured nothing: said as that, never as a clean pass.
-		if (o.base && spots.length === 0) {
+		if (o.base && spots.length === 0 && !o.report) {
 			if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, base: o.base, flips: [] }, null, 1) + '\n');
 			process.stdout.write(every.length ? `mutation check: no flip in this slice (${every.length} in the whole run)\n` : `mutation check: nothing measured: no line changed since ${o.base} has a flip a test reaches\n`);
 			return 0;
@@ -203,8 +218,8 @@ export async function main(argv) {
 				for (const cmd of o.also) if (!r.caught) r = { caught: spawnSync(cmd, { cwd: copy, shell: true, encoding: 'utf8', timeout: o.timeout, env: { ...process.env, ...home } }).status !== 0, caughtBy: [] };
 				record.push({ file: s.file, line: s.line, op: f.op, tests, caughtBy: r.caughtBy || [], caught: r.caught, ...(r.timedOut && !r.caught ? { timedOut: true } : {}) });
 				for (const k of r.caughtBy || []) done.add(k);
-				if (r.caught) { caught++; process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}${byWhole ? ' (by the whole file)' : ''}\n`); }
-				else { survived.push(s); process.stdout.write(`SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }
+				if (r.caught) { caught++; if (!o.report) process.stdout.write(`caught ${s.file}:${s.line} ${f.op}${r.timedOut ? ' (timed out)' : ''}${byWhole ? ' (by the whole file)' : ''}\n`); }
+				else { survived.push(s); process.stdout.write(o.report ? `survivor: ${s.file}:${s.line}: missing test or code the tests do not demand\n` : `SURVIVED ${s.file}:${s.line} ${f.op}: ${lines[s.line - 1].trim()} was ${original.split('\n')[s.line - 1].trim()} (tests: ${s.tests.join(', ')})\n`); }
 			} finally {
 				fs.writeFileSync(file, original);
 			}
@@ -215,8 +230,8 @@ export async function main(argv) {
 		removeTemp(userHome);
 	}
 	if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, ...(o.base ? { base: o.base } : {}), flips: record }, null, 1) + '\n');
-	process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
-	return survived.length ? 1 : 0;
+	if (!o.report) process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
+	return survived.length && !o.report ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
