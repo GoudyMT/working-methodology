@@ -73,12 +73,6 @@ jobs:
           S="$RUNNER_TEMP/base/scripts/spawn-check.mjs"; [ -f "$S" ] || { echo "the base has no spawn-check.mjs: this PR's copy runs"; S=scripts/spawn-check.mjs; }
           node "$S" .
 
-      # E36 (build 24): each step's model, effort and floor must agree with its role file and script, so a drifted role
-      # file fails the PR. This runs the PR's own copy of the table; kit-tests runs none of the PR's code.
-      - name: Model table check
-        shell: bash
-        run: node user/kit-tools/model-table.mjs check .
-
       # Push to main: every test, through the guarded runner, recording the coverage map, kept with this run.
       - name: Every test, with the coverage map
         if: github.event_name != 'pull_request'
@@ -121,6 +115,19 @@ jobs:
           # The base's own selection rule, never the PR's copy, which could drop itself from the risky list (K9).
           git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("scope=full\nwhy=the base has no pr-scope\n")' > "$RUNNER_TEMP/pr-scope.mjs"
           node "$RUNNER_TEMP/pr-scope.mjs" "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
+
+      # E36 (build 24): each step's model, effort and floor must agree with its role file and script, so a drifted role
+      # file fails the PR. This runs the PR's own copy of the table, so a PR can edit the table it is checked against. It
+      # sits below the step that holds GH_TOKEN, so no PR code runs with that token in its environment.
+      - name: Model table check
+        shell: bash
+        run: node user/kit-tools/model-table.mjs check .
+
+      # E36/U9 (build 24): a release may not drop an enforced hold; this reads the holds against the latest release tag.
+      # Report only, as the minimal-code job is: a failing hold prints its line, and this job still passes.
+      - name: Hold check, report only
+        shell: bash
+        run: node user/kit-tools/hold-check.mjs . || echo "hold-check exit $? is report only, so this job still passes"
 
       - name: Every test
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
