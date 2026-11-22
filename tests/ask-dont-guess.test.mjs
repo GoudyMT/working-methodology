@@ -181,12 +181,14 @@ test('A19 spec 3: a builder role line with clarity "assumed" is ok', () => {
 
 // why: catches the tester and test-reviewer role files dropping one of the three rules, so a guessing tester has no written stop.
 test('A20 spec 4: user/agents/tester.md has one paragraph that says stop and ask the lead, never guess, and clarity', () => {
+	assert.ok(fs.existsSync(TESTER_MD), 'user/agents/tester.md exists');
 	const hit = paragraphs(TESTER_MD).some((p) => /stop and ask the lead/i.test(p) && /never guess/i.test(p) && /\bclarity\b/.test(p));
 	assert.ok(hit, 'no single paragraph holds all three rules');
 });
 
 // why: catches the test-reviewer role file dropping one of the three rules, so a guessing reviewer has no written stop.
 test('A21 spec 4: user/agents/test-reviewer.md has one paragraph that says stop and ask the lead, never guess, and clarity', () => {
+	assert.ok(fs.existsSync(TEST_REVIEWER_MD), 'user/agents/test-reviewer.md exists');
 	const hit = paragraphs(TEST_REVIEWER_MD).some((p) => /stop and ask the lead/i.test(p) && /never guess/i.test(p) && /\bclarity\b/.test(p));
 	assert.ok(hit, 'no single paragraph holds all three rules');
 });
