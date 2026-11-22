@@ -16,7 +16,8 @@
 //                       misses code reached through a child it never traced (K126)
 //   --value             the value check (U21): the tests that catch nothing, a covering set, each reached test's seconds
 //                       (its duration_ms) and dollars (kit.config.json ciRatePerMinute, else "not priced"), and the functions
-//                       by approx complexity (1 + branches, over 10 first). Report only: exits 0 whatever it finds.
+//                       by approx complexity (1 + branches, over 10 first). Report only: exits 0 whatever it finds; a
+//                       usage error (a refused or unknown flag) exits 2 with the reason on stderr.
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
@@ -176,10 +177,23 @@ function valueReport(root, map, record, timing) {
 	return out.join('\n') + '\n';
 }
 
+// U21: the usage error a --value run makes, as its reason, or null. --value measures every flip of the kit, so it takes
+// none of the flags that narrow a run, and no flag it does not know.
+const VALUE_REFUSED = ['--base', '--slice', '--report', '--count'];
+const VALUE_FLAGS = ['--value', '--json', '--also', '--timeout', '--whole', '--until-caught'];
+function valueUsage(argv) {
+	if (!argv.includes('--value')) return null;
+	const refused = argv.filter((a) => VALUE_REFUSED.includes(a));
+	if (refused.length) return `mutation-check: --value measures every flip of the kit: it takes no ${refused.join(', ')}`;
+	const unknown = argv.filter((a) => a.startsWith('--') && !VALUE_FLAGS.includes(a));
+	return unknown.length ? `mutation-check: --value takes no ${unknown.join(', ')}: its flags are --json, --also, --timeout, --whole and --until-caught` : null;
+}
+
 export async function main(argv) {
 	const o = parseArgs(argv);
 	if (o.slice && (o.slice === 'bad' || !sliceOk(o))) { process.stderr.write(`mutation-check: --slice takes i/n${o.report ? ' with 1 <= i <= n' : ' with i below n'}\n`); return 2; }
-	if (o.value && (o.base || o.slice || o.report || o.count)) { process.stderr.write('mutation-check: --value measures every flip of the kit: it takes no --base, --slice, --report or --count\n'); return 2; }
+	const usage = valueUsage(argv);
+	if (usage) { process.stderr.write(`${usage}\n`); return 2; }
 	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
 	if (top.status !== 0) { process.stderr.write('mutation-check: run it inside a git repo\n'); return 2; }
 	const root = path.resolve(top.stdout.trim());
@@ -300,7 +314,8 @@ export async function main(argv) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-	const code = await main(process.argv.slice(2));
-	// U21: the value check only reports, so it exits 0 whatever it finds or cannot run.
-	process.exitCode = process.argv.includes('--value') ? 0 : code;
+	const argv = process.argv.slice(2);
+	const code = await main(argv);
+	// U21: the value check only reports, so it exits 0 whatever it finds or cannot run; a usage error is 2.
+	process.exitCode = argv.includes('--value') ? (valueUsage(argv) ? 2 : 0) : code;
 }
