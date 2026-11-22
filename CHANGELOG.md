@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.50.2 - 2026-11-22
+
+The commit check accepts a `retest:` subject, the type for a test changed after its red commit, so a branch that uses it passes the name check.
+
+### Fixed
+- The commit check accepts the `retest:` type in the kit and the project copy of the name check.
+
 ## 1.50.1 - 2026-11-22
 
 A build record item can name many tests in a tests list, so a build with hundreds of new tests names each one without a changelog line per test.

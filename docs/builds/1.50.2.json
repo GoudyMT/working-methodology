@@ -1,0 +1,57 @@
+{
+ "version": "1.50.2",
+ "date": "2026-11-22",
+ "level": "patch",
+ "area": "Kit tooling",
+ "title": "fix: the commit check accepts the retest type",
+ "headline": "The commit check accepts a `retest:` subject, the type for a test changed after its red commit, so a branch that uses it passes the name check.",
+ "alignment": "v1.50.2 is a patch before build 24: one commit type added to both copies of the name check, its test seen failing first.",
+ "items": [
+  {
+   "id": "RETEST-TYPE",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The commit check accepts the `retest:` type in the kit and the project copy of the name check.",
+   "evidence": "user/kit-tools/audits/name-check.mjs, project/.claude/name-check.mjs",
+   "where": "A commit whose subject starts with retest:",
+   "before": "Refused by the name check",
+   "after": "Accepted",
+   "test": "tests/kit-hooks.test.mjs::the commit check accepts the retest type in both copies of the name check"
+  }
+ ],
+ "verification": [
+  "Pending: written after the sweep and CI."
+ ],
+ "decisions": [
+  {
+   "decision": "A patch release",
+   "why": "One commit type added; nothing else changes."
+  }
+ ],
+ "upgrading": "Run install user, then install project: the name check changes.",
+ "limits": "Pending: the fix-tier sweep has not run.",
+ "tests": {
+  "before": 1158,
+  "after": 1159,
+  "flips": "declared tests at main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Fix",
+  "commit": "pending",
+  "dimensions": [
+   {
+    "name": "Code security",
+    "result": "Pending: the sweep has not run"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "accepted": [],
+  "deferred": [],
+  "fixes": []
+ }
+}
