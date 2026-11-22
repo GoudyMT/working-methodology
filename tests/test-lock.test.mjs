@@ -403,6 +403,52 @@ test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes a
 	assert.match(r.stderr, OWNER_YES);
 });
 
+// why: catches an approved agent push of a retest commit refused even with the owner's pop-up yes to that push
+test('pre-push lets a retest: push through on KIT_PUSH_APPROVED=1 with the owner\'s pop-up yes to that push', () => {
+	const { dir, red, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
+	const cfg = kitTemp.makeTemp('lock-approved-');
+	ownerTaps(cfg, dir, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, input, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
+	assert.equal(r.status, 0, `the approved push with the owner's yes goes through: ${r.stderr}`);
+});
+
+// why: catches an approved retest push going through with no owner pop-up yes, so the marker alone lifts the hold
+test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes, naming it and the owner\'s yes', () => {
+	const { dir, red, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: TAP_SID });
+	assert.notEqual(r.status, 0, `the marker alone did not lift the hold: ${r.stderr}`);
+	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
+	assert.match(r.stderr, OWNER_YES);
+});
+
+// why: catches the kit's own pre-push refusing an approved retest push even with the owner's pop-up yes to that push
+test("the kit's own pre-push lets a retest: push through on KIT_PUSH_APPROVED=1 with the owner's pop-up yes to that push", () => {
+	const { dir, red, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
+	const cfg = kitTemp.makeTemp('lock-approved-kit-');
+	ownerTaps(cfg, dir, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+	const r = pushRun(KIT_PRE_PUSH, dir, bare, input, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
+	assert.equal(r.status, 0, `the approved push with the owner's yes goes through the kit hook: ${r.stderr}`);
+});
+
+// why: catches the kit's own pre-push passing an approved retest push with no owner pop-up yes, so the marker alone lifts it
+test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes and names the owner's yes", () => {
+	const { dir, red, bare } = pushRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: TAP_SID });
+	assert.notEqual(r.status, 0, `the kit hook refused on the marker alone: ${r.stderr}`);
+	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
+	assert.match(r.stderr, OWNER_YES);
+});
+
 // why: catches the builder brief keeping the test-first line or not naming the tester's red commit as never edited
 test('the builder brief drops the test-first line and says the tester red commit is never edited', () => {
 	const body = fs.readFileSync(BRIEF, 'utf8');
