@@ -31,6 +31,14 @@ Every hand-back ends in a checked JSONL record; tests are written, reviewed and 
 ### Fixed
 - The test-scope guard reads a folder argument (`tests/`, `tests`, `./tests`) as the test files under it, for every runner it reads; with no distinct base it lets the run through and logs the cause.
 
+## 1.50.1 - 2026-11-22
+
+A build record item can name many tests in a tests list, so a build with hundreds of new tests names each one without a changelog line per test.
+
+### Changed
+- A build record item may carry a tests list of test keys; the record check refuses a list that holds anything but test keys.
+- CI's test check counts every test an item names in its tests list as named, and still flags a new test no item names.
+
 ## 1.50.0 - 2026-11-21
 
 Cloud workers run only five fixed jobs through a runner that stops them at a wrong start; the owner's card yes becomes a one-time grant for one held call; the release builds into a guarded plugin; and each score gate arm carries its own global instructions into its probe.

@@ -38,6 +38,41 @@ test('a build record that is not whole names each gap, and an ASCII-clean whole 
 	for (const gap of [/item 1 kind "tweaked"/, /item 2 \(S1\) has no evidence/, /title is not "type: subject"/, /non-ASCII character \(code 8212\)/, /no low count/]) assert.match(found, gap);
 });
 
+// why: catches a record whose item tests field is a bare string or holds a non-key, so CI counts a test no key names
+test('a record item names many tests as a list of test keys, and a tests value that is not such a list is refused', () => {
+	const good = record();
+	good.items[0].tests = ['tests/x.test.mjs::a', 'tests/x.test.mjs::b check'];
+	assert.deepEqual(problems(good), []);
+	const bare = record();
+	bare.items[0].tests = 'tests/x.test.mjs::a';
+	assert.match(problems(bare).join('\n'), /item 1 \(T1\)[^\n]*tests/);
+	const nonKey = record();
+	nonKey.items[0].tests = ['tests/x.test.mjs::a', 'not a test key'];
+	assert.match(problems(nonKey).join('\n'), /item 1 \(T1\)[^\n]*tests/);
+	const keyShaped = record();
+	keyShaped.items[0].tests = ['tests/x.test.mjs::a', 'src/x.mjs::a'];
+	assert.match(problems(keyShaped).join('\n'), /item 1 \(T1\)[^\n]*tests/, 'a key-shaped entry outside tests/ was accepted');
+	// An entry that is not a string, or whose String() is odd, must be refused by name, never read as a key.
+	const arrayEntry = record();
+	arrayEntry.items[0].tests = [['tests/x.test.mjs::a']];
+	assert.match(problems(arrayEntry).join('\n'), /item 1 \(T1\)[^\n]*tests/, 'an array entry was read as a test key');
+	// A JSON object whose toString is a string makes String() throw, so it is read in a try: a throw is a failed assertion here.
+	const objectEntry = record();
+	objectEntry.items[0].tests = JSON.parse('[{"toString":"tests/x.test.mjs::a"}]');
+	let objectFound = '';
+	try { objectFound = problems(objectEntry).join('\n'); } catch (e) { objectFound = `crash: ${e.message}`; }
+	assert.match(objectFound, /item 1 \(T1\)[^\n]*tests/, 'an object entry crashed the check or was read as a key');
+	const trailing = record();
+	trailing.items[0].tests = ['tests/x.test.mjs::a '];
+	assert.match(problems(trailing).join('\n'), /item 1 \(T1\)[^\n]*tests/, 'a key with a trailing space was accepted');
+	const star = record();
+	star.items[0].tests = ['tests/*.test.mjs::a'];
+	assert.match(problems(star).join('\n'), /item 1 \(T1\)[^\n]*tests/, 'a key with a * in its path was accepted');
+	const single = record();
+	single.items[0].test = 'not a test key';
+	assert.match(problems(single).join('\n'), /item 1 \(T1\)[^\n]*test/, 'a bad singular test value was accepted');
+});
+
 // why: catches a changelog and a PR body that drift from the record they are written from.
 test('the record writes the changelog in kind order and the PR body with its summary row and review', () => {
 	const log = changelog(record());

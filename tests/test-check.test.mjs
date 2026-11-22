@@ -343,6 +343,43 @@ test('the test check states the verdict of each test the fix ledger names', () =
 	assert.equal(spawnSync(process.execPath, [CHECK, 'HEAD~1', '--record', path.join(dir, 'none.json')], { cwd: dir, encoding: 'utf8' }).status, 2, 'a record it cannot read');
 });
 
+// why: catches a build record item that names many tests in its tests list and has only its first counted, so the rest are flagged A7 as unnamed
+test('the test check counts every test an item names in its tests list, and still flags a new test no item names', () => {
+	const dir = repo();
+	const rec = path.join(dir, 'record.json');
+	fs.writeFileSync(rec, JSON.stringify({ items: [
+		{ id: 'I1', text: 'two tests', tests: ['tests/a.test.mjs::zero is not positive', 'tests/a.test.mjs::a browser one'] },
+		{ id: 'I2', text: 'a test that is gone', tests: ['tests/a.test.mjs::no such test'] },
+	], sweep: { fixes: [] } }));
+	const r = spawnSync(process.execPath, [CHECK, 'HEAD~1', '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.doesNotMatch(r.stdout, /A7 tests\/a\.test\.mjs::zero is not positive/, 'a test named in an item tests list was flagged A7');
+	assert.doesNotMatch(r.stdout, /A7 tests\/a\.test\.mjs::a browser one/, 'a second test named in an item tests list was flagged A7');
+	assert.match(r.stdout, /A7 tests\/a\.test\.mjs::a pattern one: [^\n]*build record does not name/, 'a new test no item names was not flagged A7');
+	assert.match(r.stdout, /A7 tests\/a\.test\.mjs::no such test: [^\n]*names no test/, 'an item key that names no test at HEAD was not flagged');
+});
+
+// why: catches a sweep fix dodging the one-fix-one-row rule by naming a test written after the sweep
+test('the test check flags a build record item that names a test added after the sweep commit', () => {
+	const dir = repo();
+	const base = sh(dir, 'rev-parse', 'HEAD~1');
+	const sweep = sh(dir, 'rev-parse', 'HEAD');
+	fs.appendFileSync(path.join(dir, 'tests', 'a.test.mjs'), [
+		'// why: catches zero read as positive, a real bug',
+		"test('a late one', () => { assert.equal(a.isPos(0), false); });",
+		''].join('\n'));
+	sh(dir, 'commit', '-qam', 'late');
+	const rec = path.join(dir, 'record.json');
+	fs.writeFileSync(rec, JSON.stringify({ items: [
+		{ id: 'I1', text: 'a late test', tests: ['tests/a.test.mjs::a late one'] },
+		{ id: 'I2', text: 'a test that was there at the sweep', tests: ['tests/a.test.mjs::zero is not positive'] },
+	], sweep: { commit: sweep, fixes: [] } }));
+	const r = spawnSync(process.execPath, [CHECK, base, '--record', rec], { cwd: dir, encoding: 'utf8' });
+	assert.equal(r.status, 0, r.stdout + r.stderr);
+	assert.match(r.stdout, /A7 tests\/a\.test\.mjs::a late one: [^\n]*added after the sweep/, 'an item named a test added after the sweep and was not flagged');
+	assert.doesNotMatch(r.stdout, /A7 tests\/a\.test\.mjs::zero is not positive/, 'an item naming a test that existed at the sweep was flagged');
+});
+
 // The build 14 sweep (role 2): results were keyed by bare name across every file run, so a passing test took the red
 // result of a same-named test in another file, and a loop took one whose name fit its pattern; a new file that only
 // exited non-zero, or was made unable to load on purpose, read as failing first for a fix.
