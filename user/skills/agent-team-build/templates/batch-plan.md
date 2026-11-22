@@ -15,10 +15,14 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
 
 ## Units
 
-| Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Risk | Tester | Runs | Built by |
-|---|---|---|---|---|---|---|---|---|
-| U1 | | | | | low / medium / high | | parallel / alone / after Ux | builder / lead |
+| Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Risk | Category | Tester | Runs | Built by |
+|---|---|---|---|---|---|---|---|---|---|
+| U1 | | | | | low / medium / high | guard / logic / glue / data / docs | | parallel / alone / after Ux | builder / lead |
 
+- **Category and Tests** set the unit's test budget. Print the computed category with the kit's test-budget.mjs
+  (`--files` with the unit's paths, `--risk` with its Risk, `--map` with the project's kit.config.json); the Category
+  cell may raise it, never lower it. Each Tests line reads `<what it checks> -> <spec line or rule id>`, the lines split
+  by `<br>`. plan-check refuses a unit whose test lines pass its category's ceiling: split the unit.
 - **Risk and Tester** set the tester's model: "high" in Risk puts the tester on Sonnet; "sonnet" in Tester, written by
   the owner at approval, does too. Blank Tester keeps the default Haiku. Print the model and the criterion that fired
   with the kit's tester-model.mjs (its path is on the "Kit tools this session" start-up line), giving this plan and the unit.

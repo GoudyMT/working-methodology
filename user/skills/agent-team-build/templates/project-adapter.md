@@ -52,3 +52,9 @@
       prints, the meter.
     - **Readiness status:** the last prong against `orchestrated.md` "Readiness for more than one prong" - which
       items failed, and so whether the next prong runs alone.
+12. **Test categories** (the `testCategories` key of `kit.config.json`, read by `test-budget.mjs` and by plan-check):
+    <the map, or "none: every file counts as logic">
+
+| Key | Value |
+|---|---|
+| `testCategories` | <each path or glob -> guard, logic, glue, data or docs, one entry per line of the JSON object; `*` matches within one name; a file the map does not name counts as logic> |
