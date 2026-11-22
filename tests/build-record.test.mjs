@@ -49,6 +49,9 @@ test('a record item names many tests as a list of test keys, and a tests value t
 	const nonKey = record();
 	nonKey.items[0].tests = ['tests/x.test.mjs::a', 'not a test key'];
 	assert.match(problems(nonKey).join('\n'), /item 1 \(T1\)[^\n]*tests/);
+	const keyShaped = record();
+	keyShaped.items[0].tests = ['tests/x.test.mjs::a', 'src/x.mjs::a'];
+	assert.match(problems(keyShaped).join('\n'), /item 1 \(T1\)[^\n]*tests/, 'a key-shaped entry outside tests/ was accepted');
 });
 
 // why: catches a changelog and a PR body that drift from the record they are written from.
