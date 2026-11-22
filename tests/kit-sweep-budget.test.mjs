@@ -849,6 +849,25 @@ test('a finding above the RECORD line in another shape is refused, not silently 
 	}
 });
 
+// why: catches a finding above the record with every key escaped and no plain id key, which the gate would drop with no word
+test('a finding above the RECORD line with every key escaped, and no plain id key, is refused', () => {
+	const dir = sweepRepo();
+	const r = approveRun(featureContract(), dir);
+	assert.equal(r.status, 0, r.stdout);
+	const tail = ['RECORD:', JSON.stringify({ role: featureContract().roles[0].role, commit: headOf(dir) }), JSON.stringify(k301Finding('F1')), JSON.stringify({ notChecked: 'nothing' })];
+	const tallied = () => approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked;
+	// Every key is written as \u escapes, so "id", "severity" and "status" appear in the text only once decoded.
+	const allEscaped = ['Prose.', '{"\\u0069d": "F0", "\\u0073everity": "high", "\\u0073tatus": "confirmed"}', ...tail].join('\n');
+	// Control: the record alone is tallied, so the refusal below comes from the finding above it.
+	const control = k301Outcome(dir, r, [['Prose.', ...tail].join('\n'), k301Clean, k301Clean, k301Clean, k301Clean], 1);
+	assert.equal(control.status, 0, control.stdout);
+	assert.equal(tallied(), true, 'the record alone is not tallied');
+	const res = k301Outcome(dir, r, [allEscaped, k301Clean, k301Clean, k301Clean, k301Clean], 1);
+	assert.equal(res.status, 0, res.stdout);
+	assert.match(res.stdout, /--findings[^\n]*not checked/, 'an all-escaped finding above the record gave no refusal reason in the outcome');
+	assert.equal(tallied(), false, 'an all-escaped finding above the record was dropped and the record tallied');
+});
+
 // The 1.23.0 sweep's findings on the drift signals.
 // why: guards rule:sweep-auto-approval
 test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
