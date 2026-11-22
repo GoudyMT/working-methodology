@@ -8,7 +8,7 @@ Every hand-back ends in a checked JSONL record; tests are written, reviewed and 
 - A hand-back ends with a `RECORD:` line and one JSON object per finding, and `handoff.mjs check` holds it to the schema with exact errors: exit 0 valid, 1 invalid, 2 unreadable; an empty record never passes.
 - One model table in `kit.config.json` names the model, effort, enforcer and floor of every step, with five new roles (tester, test reviewer, researcher, drafter, writer); `model-table.mjs check` fails any role file or script that disagrees.
 - Install writes the lead model and effort to settings, a hook logs a role started on another model, session start lists roles on an unmeasured model, CI runs the table check, and `pr-size.mjs` picks the writer by file count.
-- `unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. CI runs it report-only.
+- `unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. No CI job runs it yet.
 - After the red commit the lead locks a unit with `unit-lock.mjs`: the red sha and the source files it may change; the edit fence then blocks the build role from test files and the lock list.
 - A test changed after red is a `retest:` commit: the commit check accepts the type, and the pre-push hook holds a push that carries one until the owner's yes.
 - `tester-model.mjs` picks Haiku or a larger tester by the approved criteria R1 to R6 read from the plan row, a missing row exits 2; `builder-model.mjs` steps the build up once on a red rerun; the batch plan gains Risk and Tester columns.
@@ -29,7 +29,7 @@ Every hand-back ends in a checked JSONL record; tests are written, reviewed and 
 
 ### Changed
 - The sweep tally reads a RECORD block, keeps a `|` inside a claim and refuses a record that fails the check; the canary reads a valid block as the report; a hand-back gate logs a broken block, and the brief templates ask for one.
-- Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the lead model.
+- Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the middle model tier.
 - `AGENTS.md` gains a What holds where section, and the security standards one line: the guards hold only sessions that run the kit hooks, and git hooks and CI are the only layers that hold every other tool.
 
 ### Fixed

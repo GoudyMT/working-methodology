@@ -271,7 +271,7 @@
    "id": "K303",
    "kind": "changed",
    "reach": "projects",
-   "text": "Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the lead model.",
+   "text": "Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the middle model tier.",
    "evidence": "user/agents/researcher.md, project/.claude/agents/Explore.md",
    "tests": [
     "tests/kit-rules.test.mjs::each agent role file matches the role table in kit.config.json: tools, denied tools and rules at start"
@@ -281,7 +281,7 @@
    "id": "K309",
    "kind": "added",
    "reach": "projects",
-   "text": "`unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. CI runs it report-only.",
+   "text": "`unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. No CI job runs it yet.",
    "evidence": "user/kit-tools/unit-check.mjs",
    "tests": [
     "tests/unit-check.test.mjs::CLI: a folder that is not a git repo exits 2 for bad use",
@@ -840,7 +840,7 @@
   }
  ],
  "verification": [
-  "Each of the 19 units opens with a test-only commit; the unit commit lists in this record let the commit-shape check read each unit when it is run by hand; no CI job runs it yet.",
+  "Of the 24 unit entries in the units map, 23 open with a test-only commit (U14, the version commit, does not); the unit commits let the commit-shape check read each unit when run by hand; no CI job runs it yet.",
   "Pending: the score gate on the owner's PC runs after the sweep, since rule text changed (docs/migrations/1.51.0-reworded.json).",
   "Pending: the one sweep, paired with the cloud run, fills the review below."
  ],
