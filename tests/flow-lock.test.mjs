@@ -7,13 +7,15 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
-const FLOW = path.resolve('user/kit-tools/flow-check.mjs');
-const AGENT_MODEL = path.resolve('user/kit-hooks/agent-model.cjs');
-const PLAN_GRAPH = path.resolve('project/.claude/plan-graph.mjs');
-const TESTER_MODEL = path.resolve('user/kit-tools/tester-model.mjs');
+const here = (rel) => fileURLToPath(new URL(rel, import.meta.url));
+const FLOW = here('../user/kit-tools/flow-check.mjs');
+const AGENT_MODEL = here('../user/kit-hooks/agent-model.cjs');
+const PLAN_GRAPH = here('../project/.claude/plan-graph.mjs');
+const TESTER_MODEL = here('../user/kit-tools/tester-model.mjs');
 
 const tmp = (p) => kitTemp.makeTemp(p);
 const GIT_ID = { GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.invalid', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.invalid' };
@@ -42,7 +44,8 @@ function flow(args, cwd = tmp('flow-cwd-')) {
 	assert.ok(!/node:internal|MODULE_NOT_FOUND|SyntaxError/.test(out), `flow-check ran without crashing: ${out}`);
 	return { code: r.status, out };
 }
-const failed = (r) => { assert.equal(r.code, 1, r.out); assert.ok(r.out.trim().length > 0, 'a failure names its cause'); };
+const failed = (r, cause = /\S/) => { assert.equal(r.code, 1, r.out); assert.match(r.out, cause, 'a failure names its cause'); };
+const NO_LOG = /no .*log|plan-graph/i;
 
 // A hand-back as the lead saves it: prose, RECORD:, the role line, then the lines after it.
 const handBack = (role, ...lines) => ['Prose.', 'RECORD:', JSON.stringify(role), ...lines].join('\n') + '\n';
@@ -67,7 +70,7 @@ const start = (plan) => flow(['start', plan, '--role', 'builder']);
 // why: catches a builder start going ahead when plan-graph never ran on the plan
 test('L1: start exits 1 when the plan has no plan-graph log line', () => {
 	const { plan } = planRepo();
-	failed(start(plan));
+	failed(start(plan), NO_LOG);
 });
 
 // why: catches a clean plan-graph run being refused so no builder can ever start
@@ -80,13 +83,23 @@ test('L1: start exits 0 when the latest log line has no faults and is newer than
 	assert.equal(r.code, 0, r.out);
 });
 
+// why: catches a plan saved in the same instant as its clean run being refused by a strict comparison
+test('L1: start exits 0 when the plan mtime equals the log line time', () => {
+	const { plan, log } = planRepo();
+	const at = new Date(Date.now() - 60000);
+	fs.utimesSync(plan, at, at);
+	fs.writeFileSync(log, logLine({ at: at.toISOString() }));
+	const r = start(plan);
+	assert.equal(r.code, 0, r.out);
+});
+
 // why: catches a builder starting on a plan whose graph still shows shared files
 test('L1: start exits 1 when the latest plan-graph run reported faults', () => {
 	const { plan, log } = planRepo();
 	const old = new Date(Date.now() - 60000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine({ faults: 2 }));
-	failed(start(plan));
+	failed(start(plan), /fault/i);
 });
 
 // why: catches a plan edited after its graph run still passing on the old clean result
@@ -95,7 +108,7 @@ test('L1: start exits 1 when the plan file changed after the plan-graph run', ()
 	fs.writeFileSync(log, logLine());
 	const later = new Date(Date.now() + 120000);
 	fs.utimesSync(plan, later, later);
-	failed(start(plan));
+	failed(start(plan), /changed|newer|after/i);
 });
 
 // why: catches an older clean line hiding a newer faulty run
@@ -104,7 +117,7 @@ test('L1: the latest log line for the plan wins over an older clean one', () => 
 	const old = new Date(Date.now() - 120000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine({ at: new Date(Date.now() - 60000).toISOString() }) + logLine({ faults: 1 }));
-	failed(start(plan));
+	failed(start(plan), /fault/i);
 });
 
 // why: catches an older faulty line blocking a start after the plan was fixed and re-run
@@ -123,7 +136,7 @@ test('L1: a clean log line for a different plan file name does not let this plan
 	const old = new Date(Date.now() - 60000);
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine({ plan: 'other-plan.md' }));
-	failed(start(plan));
+	failed(start(plan), NO_LOG);
 });
 
 // why: catches the start check and the real plan-graph disagreeing about the log they share
@@ -139,7 +152,7 @@ test('L1: a real plan-graph run on a clean plan lets the builder start; on a sha
 	fs.utimesSync(bad.plan, old, old);
 	const g2 = spawnSync(process.execPath, [PLAN_GRAPH, bad.plan], { env: env(), encoding: 'utf8' });
 	assert.equal(g2.status, 1, g2.stdout + g2.stderr);
-	failed(start(bad.plan));
+	failed(start(bad.plan), /fault/i);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -230,12 +243,12 @@ const reviews = (dir, unit = 'U1') => flow(['reviews', unit, '--dir', dir]);
 
 // why: catches a builder starting with no test review at all
 test('L6: reviews exits 1 when the unit has no review record', () => {
-	failed(reviews(reviewDir()));
+	failed(reviews(reviewDir()), /review/i);
 });
 
 // why: catches a builder starting before the tester fixed the review findings
 test('L6: reviews exits 1 when the review has findings and there is no fix record', () => {
-	failed(reviews(reviewDir({ review: [finding('R1')] })));
+	failed(reviews(reviewDir({ review: [finding('R1')] })), /fix/i);
 });
 
 // why: catches a finished review and fix pair being refused so the builder never starts
@@ -306,17 +319,22 @@ test('L7: reviewers exits 0 when each waiting unit starts review before the queu
 	assert.equal(r.code, 0, r.out);
 });
 
-// why: catches a reviewer that finished still being counted as active
-test('L7: reviewers exits 1 when the one reviewer finished and 4 units are waiting', () => {
+// why: catches a queue with no active reviewer at all passing as quiet
+test('L7: reviewers exits 1 when no reviewer is active and 4 units are waiting', () => {
 	const r = reviewers(ledger([ev(0, 'U1', 'review-start'), ev(1, 'U1', 'review-done'), ev(2, 'U2', 'review-wait'), ev(3, 'U3', 'review-wait'), ev(4, 'U4', 'review-wait'), ev(5, 'U5', 'review-wait')]));
-	// With no reviewer active the queue is not served at all; the fault is at least as bad as one reviewer.
+	failed(r);
+});
+
+// why: catches a reviewer that finished still being counted as active, hiding a one-reviewer queue
+test('L7: reviewers exits 1 when r1 and r2 started, r2 finished, and 4 units are waiting', () => {
+	const r = reviewers(ledger([ev(0, 'U1', 'review-start', 'r1'), ev(0, 'U6', 'review-start', 'r2'), ev(1, 'U6', 'review-done', 'r2'), ev(2, 'U2', 'review-wait'), ev(3, 'U3', 'review-wait'), ev(4, 'U4', 'review-wait'), ev(5, 'U5', 'review-wait')]));
 	failed(r);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
 // L9: the checker is for risky units only (a unit whose Files hit GUARD_PATHS), and a unit gets at most 2 FIX rounds.
 // ---------------------------------------------------------------------------------------------------------------
-const { GUARD_PATHS } = await import(`file://${TESTER_MODEL.replace(/\\/g, '/')}`);
+const { GUARD_PATHS } = await import(pathToFileURL(TESTER_MODEL).href);
 // A file path that the GUARD_PATHS entry matches.
 const guardFile = (g) => (g.endsWith('/') ? `x/${g}f.js` : g.includes('*') ? `x/${g.replace('*', 'x')}` : `x/${g}`);
 
@@ -350,14 +368,24 @@ test('L9: a checker call naming a unit with no guard file logs "checker on a non
 for (const g of GUARD_PATHS) {
 	test(`L9: a checker call on a unit whose file hits the guard entry ${g} logs no non-risky row`, () => {
 		const plan = planWith(['src/app.js', guardFile(g)]);
-		assert.ok(!whys(runHook(`Unit: U1\nPlan: ${plan}\n`)).includes('checker on a non-risky unit'));
+		const w = whys(runHook(`Unit: U1\nPlan: ${plan}\n`));
+		assert.ok(!w.includes('checker on a non-risky unit'));
+		assert.ok(!w.includes('checker with no plan named'));
 	});
 }
 
-// why: catches the non-risky row firing for roles other than the checker
-test('L9: a builder call naming a non-risky unit logs no non-risky row', () => {
+// why: catches a plan with only a source file being judged risky by the hook
+test('L9: a plan whose only file is src/app.js logs the non-risky row for a checker call', () => {
 	const plan = planWith(['src/app.js']);
-	assert.ok(!whys(runHook(`Unit: U1\nPlan: ${plan}\n`, { type: 'builder' })).includes('checker on a non-risky unit'));
+	assert.ok(whys(runHook(`Unit: U1\nPlan: ${plan}\n`)).includes('checker on a non-risky unit'));
+});
+
+// why: catches the non-risky row firing for roles other than the checker
+test('L9: on one non-risky unit the checker call logs the row and the builder call does not', () => {
+	const plan = planWith(['src/app.js']);
+	const prompt = `Unit: U1\nPlan: ${plan}\n`;
+	assert.ok(whys(runHook(prompt, { type: 'checker' })).includes('checker on a non-risky unit'));
+	assert.ok(!whys(runHook(prompt, { type: 'builder' })).includes('checker on a non-risky unit'));
 });
 
 // why: catches a checker call with no plan named passing unseen
@@ -393,5 +421,42 @@ test('L9: rounds exits 0 with three checker records of which only two are FIX', 
 // why: catches another unit's FIX records counting against this unit
 test('L9: rounds for U2 ignores three FIX records of U1', () => {
 	const r = rounds(checkerDir(['FIX', 'FIX', 'FIX']), 'U2');
+	assert.equal(r.code, 0, r.out);
+});
+
+// why: catches unit U10 records read as U1 records because the names share a prefix
+test('L6: reviews U1 ignores the U10 records, including an unexplained second U10 review', () => {
+	const dir = reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] });
+	put(dir, 'U10.review.jsonl', handBack(REVIEW_ROLE, finding('R9')));
+	put(dir, 'U10.review2.jsonl', handBack(REVIEW_ROLE, finding('R10')));
+	const r = reviews(dir);
+	assert.equal(r.code, 0, r.out);
+});
+
+// why: catches three U10 FIX records counted against unit U1 because the names share a prefix
+test('L9: rounds U1 ignores three FIX records of U10', () => {
+	const dir = checkerDir(['FIX', 'FIX']);
+	for (const n of [1, 2, 3]) put(dir, `U10.checker${n}.jsonl`, `VERDICT: FIX\nRECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n`);
+	const r = rounds(dir);
+	assert.equal(r.code, 0, r.out);
+});
+
+// why: catches a stray file in the records folder crashing or failing the agents check
+test('L3: agents ignores a .jsonl with no RECORD block and a non-jsonl file', () => {
+	const dir = records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]);
+	put(dir, 'stray.jsonl', `${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U9' })}\n`);
+	put(dir, 'notes.txt', handBack({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U8' }, NOTE('x')));
+	const r = agents(dir);
+	assert.equal(r.code, 0, r.out);
+});
+
+// why: catches VERDICT: FIXED or a mid-line VERDICT: FIX being counted as a FIX round
+test('L9: rounds exits 0 with three records holding VERDICT: FIXED or a mid-line VERDICT: FIX', () => {
+	const dir = tmp('flow-rounds-');
+	const body = `RECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n${NOTE('checked', 'checker')}\n`;
+	put(dir, 'U1.checker1.jsonl', `VERDICT: FIXED\n${body}`);
+	put(dir, 'U1.checker2.jsonl', `The checker said VERDICT: FIX in prose.\n${body}`);
+	put(dir, 'U1.checker3.jsonl', `VERDICT: FIXED\n${body}`);
+	const r = rounds(dir);
 	assert.equal(r.code, 0, r.out);
 });
