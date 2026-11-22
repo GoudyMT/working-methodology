@@ -65,3 +65,4 @@ assertion, not a test; over a ceiling splits at planning. Then the build's own n
 - mutation-check.mjs is 20911 bytes (16181 at base) and test-check.mjs 40216 (40039 at base), both over the 14000 module size; the size test does not cover scripts/. Decide split or exemption (U21 builder flag).
 - --value covering set is greedy ("near the smallest"); test-value groups from scripts/test-value.mjs are not reused, because kit tools install without scripts/.
 - U21 fix: no test asserts the --value usage exit 2 or the six-word floor on exempt why lines (builder doubt); test-format covers the shapes on real tests only.
+- count-gate.mjs (automated security review, medium, security): countCommand is run as a shell string with the temp path built from the test file basename, so a file name with $() or quotes runs code. Fix: write the temp copy under a fixed safe name (file + sanitised extension), with a failing test first.
