@@ -982,6 +982,17 @@ test('the commit message check passes the house style and names each fault', () 
   assert.equal(nameRun(['message', msgFile(`fix: ${'x'.repeat(67)}\n`)]).status, 0, '72 characters pass');
 });
 
+// why: guards rule:commit-message-format (retest is the type for test-only commits that need the owner's yes)
+test('the commit check accepts the retest type in both copies of the name check', () => {
+  for (const script of [NAMES, path.resolve('user/kit-tools/audits/name-check.mjs')]) {
+    const ok = spawnSync('node', [script, 'message', msgFile('retest: the owner yes on a test-only commit\n')], { encoding: 'utf8' });
+    assert.equal(ok.status, 0, `retest passes in ${script}: ${ok.stderr}`);
+    // Control: an unknown type is still refused.
+    const bad = spawnSync('node', [script, 'message', msgFile('wip: x\n')], { encoding: 'utf8' });
+    assert.equal(bad.status, 1, `wip is refused in ${script}`);
+  }
+});
+
 // T13 (the owner, 2026-11-10: "type: subject"): the PR title is the squash commit's subject on main, so it is held to
 // the same rule, and a script can group the changelog from main's history.
 // why: guards rule:pr-body
