@@ -24,3 +24,12 @@ run: plan and split into lanes; the owner's stated intent plus the plan is appro
 start the teams and watch them; answer lane questions and keep the JSONL checklist; spin teams down as lanes finish;
 merge the lanes; run the one sweep; fix in lanes; then CI, the gate and the owner's yes. Each step is checked by a
 script, hook or guard.
+
+## After the lanes
+
+1. U14: VERSION 1.51.0, the build record with per-unit commit lists, the changelog.
+2. The one sweep on this PC, under an approved contract. The same sweep runs in the cloud as the paired sweep: the
+   bench thread gets the pushed covered head sha, the contract and each role brief verbatim before the PC findings
+   exist; the PC report follows. Both results are reported side by side (owner, 2026-11-22).
+3. Fixes in lanes from lanes.mjs; a high, critical, security or owner-rule fix gets a failing test first.
+4. CI, the score gate (rule text changed), then the owner's yes for merge, tag and release.
