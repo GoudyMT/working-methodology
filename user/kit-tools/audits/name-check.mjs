@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 
-const TYPES = ['feat', 'fix', 'refactor', 'test', 'docs', 'chore', 'security', 'perf'];
+const TYPES = ['feat', 'fix', 'refactor', 'test', 'docs', 'chore', 'security', 'perf', 'retest'];
 // T13 (the owner, 2026-11-10): one change per line; a longer subject packs a list that belongs in the PR body.
 const SUBJECT_MAX = 72;
 // A tracking code (K61, E12, A27, S23-4) tells a reader outside the project nothing, and a subject, title or repo name
