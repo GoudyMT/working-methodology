@@ -4,30 +4,16 @@
 # no merge), but a head armed by hand is still held. Pushes stay the owner's by the permission rules; this only stops a push
 # over a head still armed, since GitHub documents no head pin past a writer's push (rule:standing-grants).
 refs=$(cat)
-# A test change needs the owner's yes: a retest: commit (any case), or a non-A change to a test path; a merge counts
-# only where it differs from every parent.
+# A test change needs the owner's yes. The helper holds each test path a push changes, by net effect, and each retest:
+# subject; a history it cannot read, or a shallow repo, is held too, and no yes lifts that.
+scan_tests="$(dirname "$0")/../project/.claude/test-push-scan.mjs"
 retests=""
-while read -r lref lsha rref rsha; do
-  case "$lsha" in *[!0]*) ;; *) continue ;; esac
-  below=$(git ls-remote --heads "$2" 2>/dev/null | while read -r s _; do git cat-file -e "$s^{commit}" 2>/dev/null && printf '%s ' "$s"; done)
-  case "$rsha" in *[!0]*) below="$below$rsha" ;; esac
-  shas=$(git rev-list "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a test change in them cannot be ruled out. $shas" >&2; exit 1; }
-  for c in $shas; do
-    if git rev-parse -q --verify "$c^2" >/dev/null; then d=-c; else d='-M -m --first-parent'; fi
-    git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id "$c" >/dev/null 2>&1 || { echo "Push blocked: the changes of $c cannot be read, so a test change in it cannot be ruled out." >&2; exit 1; }
-    hit=$(git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id --name-status "$c" | awk 'BEGIN{RS="\0"}
-      function istest(p,   q) { q = tolower(p); return q ~ /(^|\/)(test|tests|__tests__|spec)\// || q ~ /\.(test|spec)\.[^\/]*$/ }
-      { n++; if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
-      END { r = held ? 1 : 0; if (n > 0 && (need != 0 || n < 2)) r = 2; print r }')
-    case "$hit" in 0) ;; 1) ;; *) echo "Push blocked: $c could not be parsed for test changes, so it is held." >&2; exit 1 ;; esac
-    if [ "$hit" = 1 ] || git log -1 --format=%s "$c" | grep -Eiq '^(fixup! |squash! )?retest(\([^)]*\))?!?:'; then
-      retests="$retests$(git log -1 --format='%h %s' "$c")
-"
-    fi
-  done
-done <<EOF
-$refs
-EOF
+held=$(printf '%s\n' "$refs" | node "$scan_tests" "$2"); scan_rc=$?
+case "$scan_rc" in
+  0) ;;
+  1) retests=$held ;;
+  *) printf '%s\n' "${held:-Push blocked: the test-change scan did not finish (exit $scan_rc), so the push is held.}" >&2; exit 1 ;;
+esac
 if [ -n "$retests" ]; then
   # F4 (owner ruling): the owner's own push lifts the hold when the owner tapped Yes on a pop-up quoting the push. It is
   # read as project/.githooks/pre-push reads it: the same owner-yes.cjs, one check per ref, with the kind it reads.
@@ -52,8 +38,7 @@ if [ -n "$retests" ]; then
 $refs
 EOF
   if [ "$owned" != 1 ]; then
-    echo "Push blocked: this push holds a test change, a retest: commit or an edit, delete or rename of a test file (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal." >&2
-    printf '%s' "$retests" >&2
+    printf '%s\n' "$retests" >&2
     exit 1
   fi
 fi
