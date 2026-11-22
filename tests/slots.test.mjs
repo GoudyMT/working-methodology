@@ -72,7 +72,8 @@ test('install project prints one line per unfilled slot, naming the file and the
 	const out = (r.stdout + r.stderr).split(/\r?\n/);
 	assert.ok(out.some((l) => /AGENTS\.md/.test(l) && l.includes('<PROJECT NAME>')), 'no line names AGENTS.md and <PROJECT NAME>');
 	assert.ok(out.some((l) => /AGENTS\.md/.test(l) && l.includes('<fill in>')), 'no line names AGENTS.md and <fill in>');
-	assert.ok(!(r.stdout + r.stderr).includes(ctx.proj), 'a slot line names the absolute project folder, not the file');
+	const slotLines = out.filter((l) => l.includes('<PROJECT NAME>') || l.includes('<fill in>'));
+	assert.ok(slotLines.every((l) => !l.includes(ctx.proj)), 'a slot line names the absolute project folder, not the file');
 });
 
 // why: catches two slots in two files reported as one line, or a nested file's line naming the wrong path
