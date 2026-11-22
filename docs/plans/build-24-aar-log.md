@@ -26,6 +26,8 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 12:1x | L11 | U2b tests went into shared test files (written before the lanes rule) | Lead, accepted as in flight |
 | 12:2x | - | U7b builder wrote a temp file through a linkable folder and ran project code | Automated security review, then the Opus check |
 | 12:1x | - | The test-check step in CI reported tests "not measured" while red tests sat on the branch | Lead (expected mid-build; clears when green) |
+| 12:4x | - | A queued fix-round message to a busy agent never started; found 30 min later | Lead, by checking the worktree (a floor-manager moment: a checklist would have shown it) |
+| 12:4x | L10 | U9 builder added an untested enforce branch that refused every built-in agent when holds.json was damaged | Opus check on the risky unit (probe) |
 | 12:1x | L3 | The commit-shape fix went to the U7b builder (its own builder had been stopped) | Lead, by choice: warm agent, under 3 units |
 
 ## 3. Lead context and handoffs
