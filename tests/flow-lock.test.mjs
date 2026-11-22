@@ -227,6 +227,12 @@ test('L4: agents exits 0 when one agent holds exactly 2 lanes', () => {
 test('L3: agents finds the fault in the last of several saved hand-backs', () => {
 	const r = agents(records([{ agent: 'b1', role: 'builder', unit: 'U1' }, { agent: 'b2', role: 'builder', unit: 'U2' }, { agent: 'b3', role: 'tester', unit: 'U3' }, { agent: 'b3', role: 'builder', unit: 'U4' }]));
 	failed(r);
+	// Folded control: a .jsonl with no RECORD block and a non-jsonl file are ignored.
+	const clean = records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]);
+	put(clean, 'stray.jsonl', `${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U9' })}\n`);
+	put(clean, 'notes.txt', handBack({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U8' }, NOTE('x')));
+	const ok = agents(clean);
+	assert.equal(ok.code, 0, ok.out);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -283,6 +289,12 @@ test('L6: reviews exits 1 when the second-review note is written by the tester, 
 // why: catches another unit's review record counting for this unit
 test('L6: reviews for U2 ignores the U1 records', () => {
 	failed(reviews(reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] }), 'U2'));
+	// Folded control: U10 records do not count for U1, including an unexplained second U10 review.
+	const dir = reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] });
+	put(dir, 'U10.review.jsonl', handBack(REVIEW_ROLE, finding('R9')));
+	put(dir, 'U10.review2.jsonl', handBack(REVIEW_ROLE, finding('R10')));
+	const ok = reviews(dir);
+	assert.equal(ok.code, 0, ok.out);
 });
 
 // ---------------------------------------------------------------------------------------------------------------
@@ -425,29 +437,11 @@ test('L9: rounds for U2 ignores three FIX records of U1', () => {
 	assert.equal(r.code, 0, r.out);
 });
 
-// why: catches unit U10 records read as U1 records because the names share a prefix
-test('L6: reviews U1 ignores the U10 records, including an unexplained second U10 review', () => {
-	const dir = reviewDir({ review: [finding('R1')], fix: [NOTE('fixed', 'tester')] });
-	put(dir, 'U10.review.jsonl', handBack(REVIEW_ROLE, finding('R9')));
-	put(dir, 'U10.review2.jsonl', handBack(REVIEW_ROLE, finding('R10')));
-	const r = reviews(dir);
-	assert.equal(r.code, 0, r.out);
-});
-
 // why: catches three U10 FIX records counted against unit U1 because the names share a prefix
 test('L9: rounds U1 ignores three FIX records of U10', () => {
 	const dir = checkerDir(['FIX', 'FIX']);
 	for (const n of [1, 2, 3]) put(dir, `U10.checker${n}.jsonl`, `VERDICT: FIX\nRECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n`);
 	const r = rounds(dir);
-	assert.equal(r.code, 0, r.out);
-});
-
-// why: catches a stray file in the records folder crashing or failing the agents check
-test('L3: agents ignores a .jsonl with no RECORD block and a non-jsonl file', () => {
-	const dir = records([{ agent: 'a1', role: 'tester', unit: 'U1', lane: 'A' }, { agent: 'a2', role: 'builder', unit: 'U1', lane: 'A' }]);
-	put(dir, 'stray.jsonl', `${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U9' })}\n`);
-	put(dir, 'notes.txt', handBack({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U8' }, NOTE('x')));
-	const r = agents(dir);
 	assert.equal(r.code, 0, r.out);
 });
 
