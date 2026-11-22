@@ -160,23 +160,21 @@ function agentLogText(dir) {
 	return fs.readFileSync(path.join(common, 'kit-agent-model.log'), 'utf8');
 }
 
-// why: guards rule:kit-standards (a log-only guard refuses when its list is damaged)
-test('agent-model never refuses in build 24, in log mode or when its hold reads enforce', () => {
+// why: guards rule:kit-standards (an enforce hold that refuses a call with no role file stops every new agent type)
+test('agent-model never refuses a call with no role file under enforce, and logs the enforce mode', () => {
 	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
 	const config = roleConfig({ 'opus-role': 'opus' });
-	// One repo per mode, so each log holds only that run's rows; the rows must record the mode the hold read.
-	for (const mode of ['enforce', 'log']) {
-		const hookDir = kitTemp.makeTemp(`agent-model-${mode}-`);
-		fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
-		fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nmodule.exports = { mode() { return '${mode}'; } };\n`);
-		const dir = repo();
-		const run = checkCalls(hookDir, dir, [{ subagent_type: 'no-such-role' }, { subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
-		assert.equal(run.status, 0, `${mode}: agent-model.cjs check ran: ${run.stderr}`);
-		assert.deepEqual(JSON.parse(run.stdout), [null, null], `${mode}: neither the no-role-file call nor the model-mismatch call is refused`);
-		const rows = agentLogText(dir).trim().split('\n').map((l) => JSON.parse(l));
-		assert.equal(rows.length, 2, `${mode}: one log row per logged call`);
-		for (const row of rows) assert.equal(row.mode, mode, `${mode}: the row records the hold's mode`);
-	}
+	const hookDir = kitTemp.makeTemp('agent-model-enforce-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';
+module.exports = { mode() { return 'enforce'; } };
+`);
+	const dir = repo();
+	const run = checkCalls(hookDir, dir, [{ subagent_type: 'no-such-role' }, { subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
+	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
+	const decisions = JSON.parse(run.stdout);
+	assert.equal(decisions[0], null, 'the no-role-file call is not refused');
+	assert.match(agentLogText(dir), /"mode":"enforce"/);
 });
 
 
@@ -395,4 +393,168 @@ test('hold-check with no --base takes the highest v* version when a lower one wa
 	const r = runCheck(dir, [dir]);
 	assert.equal(r.code, 1, r.out);
 	assert.match(r.out, /alpha-hold/);
+});
+
+// why: catches an enforce hold that agent-model logs and passes, so a model mismatch is never stopped under enforce
+test('agent-model refuses a model-mismatch call when its hold reads enforce, and passes and logs it under log', () => {
+	const hookDir = kitTemp.makeTemp('agent-model-modes-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const calls = [{ subagent_type: 'opus-role', model: 'haiku' }, { subagent_type: 'opus-role', model: 'opus' }];
+	const setMode = (mode) => fs.writeFileSync(path.join(hookDir, 'holds.json'), holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode }]));
+	const dir = repo();
+	setMode('enforce');
+	const enforced = checkCalls(hookDir, dir, calls, env);
+	assert.equal(enforced.status, 0, enforced.stderr);
+	const decisions = JSON.parse(enforced.stdout);
+	assert.equal(decisions[0] && decisions[0].hookSpecificOutput && decisions[0].hookSpecificOutput.permissionDecision, 'deny', `the mismatch call is refused: ${enforced.stdout}`);
+	assert.equal(decisions[1], null, 'the same-family call is not refused');
+	setMode('log');
+	const logged = checkCalls(hookDir, dir, calls, env);
+	assert.equal(logged.status, 0, logged.stderr);
+	assert.deepEqual(JSON.parse(logged.stdout), [null, null], 'under log neither call is refused');
+	assert.match(agentLogText(dir), /"mode":"log"/);
+});
+
+// why: catches a hook copied without hold-mode.cjs logging a plain log row that hides the unread hold; the miss is logged and the call is not refused
+test('agent-model marks a log row holdModeMissing when hold-mode.cjs is absent, and not when it is present', () => {
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const call = [{ subagent_type: 'opus-role', model: 'haiku' }];
+	const bare = kitTemp.makeTemp('agent-model-nohold-');
+	fs.copyFileSync(AGENT_MODEL, path.join(bare, 'agent-model.cjs'));
+	const dirBare = repo();
+	const missing = checkCalls(bare, dirBare, call, env);
+	assert.equal(missing.status, 0, missing.stderr);
+	assert.deepEqual(JSON.parse(missing.stdout), [null], 'the fallback to log does not refuse the mismatch call');
+	const rowBare = JSON.parse(agentLogText(dirBare).trim().split('\n')[0]);
+	assert.equal(rowBare.mode, 'log');
+	assert.equal(rowBare.holdModeMissing, true, JSON.stringify(rowBare));
+	const full = kitTemp.makeTemp('agent-model-withhold-');
+	fs.copyFileSync(AGENT_MODEL, path.join(full, 'agent-model.cjs'));
+	fs.copyFileSync(HOLD_MODE, path.join(full, 'hold-mode.cjs'));
+	fs.writeFileSync(path.join(full, 'holds.json'), holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'log' }]));
+	const dirFull = repo();
+	assert.equal(checkCalls(full, dirFull, call, env).status, 0);
+	const rowFull = JSON.parse(agentLogText(dirFull).trim().split('\n')[0]);
+	assert.equal('holdModeMissing' in rowFull, false, JSON.stringify(rowFull));
+});
+
+// why: catches a broken RECORD that handoff-gate only logs under enforce, so the hand-back reaches the lead with no refusal
+test('handoff-gate refuses a broken RECORD block under enforce, and stays silent for a valid one or under log', () => {
+	const kit = kitTemp.makeTemp('handoff-gate-kit-');
+	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/kit-tools/handoff.mjs'), path.join(kit, 'kit-tools', 'handoff.mjs'));
+	const gate = path.join(kit, 'kit-hooks', 'handoff-gate.cjs');
+	const setMode = (mode) => fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), holdsText([{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode }]));
+	const cwd = kitTemp.makeTemp('handoff-gate-repo-');
+	spawnSync('git', ['-C', cwd, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	const ROLE = '{"role": "builder", "commit": "abc1234"}';
+	const FIELDS = { id: 'F1', severity: 'low', status: 'red', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
+	const broken = ['Prose.', 'RECORD:', ROLE, JSON.stringify({ ...FIELDS, proof: '' })].join('\n');
+	const valid = ['Prose.', 'RECORD:', ROLE, JSON.stringify(FIELDS)].join('\n');
+	const send = (message) => spawnSync(process.execPath, [gate], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
+	setMode('enforce');
+	const refused = send(broken);
+	assert.equal(refused.status, 0, refused.stderr);
+	let out = null;
+	assert.doesNotThrow(() => { out = JSON.parse(refused.stdout); }, `enforce prints a decision: ${refused.stdout}`);
+	assert.equal(out && out.hookSpecificOutput && out.hookSpecificOutput.permissionDecision, 'deny', `the broken record is refused: ${refused.stdout}`);
+	assert.equal(send(valid).stdout.trim(), '', 'a valid record is not refused');
+	setMode('log');
+	assert.equal(send(broken).stdout.trim(), '', 'under log the gate prints nothing');
+});
+
+// why: catches handoff.mjs warning about a missing clarity that the gate never logs, so the warning reaches no log
+test('handoff-gate logs the missing-clarity warning for a valid tester record, and not once clarity is given', () => {
+	const cwd = kitTemp.makeTemp('handoff-warn-repo-');
+	spawnSync('git', ['-C', cwd, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	const FIELDS = { id: 'F1', severity: 'low', status: 'red', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
+	const noClarity = ['Prose.', 'RECORD:', '{"role": "tester", "commit": "abc1234"}', JSON.stringify(FIELDS)].join('\n');
+	const clear = ['Prose.', 'RECORD:', '{"role": "tester", "commit": "abc1234", "clarity": "clear"}', JSON.stringify(FIELDS)].join('\n');
+	const send = (message) => spawnSync(process.execPath, [path.resolve('user/kit-hooks/handoff-gate.cjs')], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
+	const logFile = path.join(cwd, '.git', 'kit-guard-open.log');
+	const rows = () => (fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+	const warned = send(noClarity);
+	assert.equal(warned.status, 0, warned.stderr);
+	assert.equal(warned.stdout.trim(), '', 'a warning is logged, never printed as a decision');
+	assert.equal(rows().length, 1, 'one row for the missing clarity');
+	assert.match(JSON.stringify(rows()[0].warnings), /missing clarity/);
+	assert.equal(send(clear).status, 0);
+	assert.equal(rows().length, 1, 'a record with clarity adds no row');
+});
+
+// why: catches a model named in full or in capitals passing the family check under enforce, and a repeat call changing its verdict
+test('agent-model denies a full or capitalised model name of another family, passes its own full id, and repeats its verdict', () => {
+	const hookDir = kitTemp.makeTemp('agent-model-bypass-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
+	fs.writeFileSync(path.join(hookDir, 'holds.json'), holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'enforce' }]));
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const calls = [{ subagent_type: 'opus-role', model: 'claude-haiku-4-5' }, { subagent_type: 'opus-role', model: 'HAIKU' }, { subagent_type: 'opus-role', model: 'claude-opus-4-5' }];
+	const verdicts = () => {
+		const r = checkCalls(hookDir, repo(), calls, env);
+		assert.equal(r.status, 0, r.stderr);
+		return JSON.parse(r.stdout).map((o) => (o && o.hookSpecificOutput ? o.hookSpecificOutput.permissionDecision : null));
+	};
+	const first = verdicts();
+	assert.deepEqual(first, ['deny', 'deny', null], `a full id and a capitalised name of haiku are refused against opus: ${first}`);
+	assert.deepEqual(verdicts(), first, 'a repeat run gives the same verdict');
+});
+
+// why: catches a corrupt holds list or an unknown mode read as log under enforce, so a damaged list stops nothing and the row hides it
+test('agent-model reads a corrupt holds.json or an unknown mode as enforce, and logs the mode it read', () => {
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	const damaged = ['{oops', holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'warn' }])];
+	for (const text of damaged) {
+		const hookDir = kitTemp.makeTemp('agent-model-failclosed-');
+		fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+		fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
+		fs.writeFileSync(path.join(hookDir, 'holds.json'), text);
+		const dir = repo();
+		const r = checkCalls(hookDir, dir, [{ subagent_type: 'opus-role', model: 'haiku' }], env);
+		assert.equal(r.status, 0, r.stderr);
+		const d = JSON.parse(r.stdout)[0];
+		assert.equal(d && d.hookSpecificOutput && d.hookSpecificOutput.permissionDecision, 'deny', `a damaged list stops the mismatch: ${text}`);
+		assert.equal(JSON.parse(agentLogText(dir).trim().split('\n')[0]).mode, 'enforce', `the row logs enforce: ${text}`);
+	}
+});
+
+// why: catches a damaged hand-back record that handoff-gate logs but never refuses under enforce, and a repeat changing its verdict
+test('handoff-gate refuses a non-JSON line, a missing role line, a missing field, and a CRLF broken record under enforce', () => {
+	const kit = kitTemp.makeTemp('handoff-gate-bypass-');
+	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/kit-tools/handoff.mjs'), path.join(kit, 'kit-tools', 'handoff.mjs'));
+	fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), holdsText([{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode: 'enforce' }]));
+	const gate = path.join(kit, 'kit-hooks', 'handoff-gate.cjs');
+	const cwd = kitTemp.makeTemp('handoff-gate-bypass-repo-');
+	spawnSync('git', ['-C', cwd, 'init', '-q', '-b', 'main'], { encoding: 'utf8' });
+	const ROLE = '{"role": "builder", "commit": "abc1234"}';
+	const FIELDS = { id: 'F1', severity: 'low', status: 'red', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
+	const send = (message) => spawnSync(process.execPath, [gate], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
+	const verdict = (message) => {
+		const r = send(message);
+		assert.equal(r.status, 0, r.stderr);
+		const d = r.stdout.trim() ? JSON.parse(r.stdout) : null;
+		return d && d.hookSpecificOutput ? d.hookSpecificOutput.permissionDecision : null;
+	};
+	const cases = {
+		'a non-JSON line': ['Prose.', 'RECORD:', ROLE, 'not json'].join('\n'),
+		'a missing role line': ['Prose.', 'RECORD:', JSON.stringify(FIELDS)].join('\n'),
+		'a missing field': ['Prose.', 'RECORD:', ROLE, JSON.stringify({ ...FIELDS, proof: undefined })].join('\n'),
+		'a CRLF broken record': ['Prose.', 'RECORD:', ROLE, JSON.stringify({ ...FIELDS, proof: '' })].join('\r\n'),
+	};
+	for (const [name, message] of Object.entries(cases)) {
+		const first = verdict(message);
+		assert.equal(first, 'deny', `${name} is refused under enforce`);
+		assert.equal(verdict(message), first, `${name} gives the same verdict on a repeat`);
+	}
+	// Folded control (was its own test): a valid record is not refused.
+	assert.equal(verdict(['Prose.', 'RECORD:', ROLE, JSON.stringify(FIELDS)].join('\n')), null, 'a valid record is not refused');
 });
