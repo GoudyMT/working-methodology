@@ -242,7 +242,7 @@ test('one run line runs the report for its slice against the PR base sha', () =>
 	}
 });
 
-// why: catches a job that measures the branch against a map it never built, so the flip list describes stale coverage
+// why: guards rule:ci-gate (flip list measured against a map never built)
 test('the minimal-code job builds its map on a full checkout before the run line', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');

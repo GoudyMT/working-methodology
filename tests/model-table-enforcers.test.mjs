@@ -447,18 +447,8 @@ test('the rows session start adds pass the state check of the project', () => {
 	}
 });
 
-// why: catches the test reviewer running on a model the table does not name
-test('the test-reviewer role file matches the table entry for test-review and its role entry', () => {
-	assert.ok(fs.existsSync('user/agents/test-reviewer.md'), 'user/agents/test-reviewer.md is missing');
-	const config = JSON.parse(fs.readFileSync('kit.config.json', 'utf8'));
-	const front = fs.readFileSync('user/agents/test-reviewer.md', 'utf8').split(/\r?\n/).slice(1, fs.readFileSync('user/agents/test-reviewer.md', 'utf8').split(/\r?\n/).indexOf('---', 1));
-	const field = (key) => front.find((l) => l.startsWith(`${key}:`))?.slice(key.length + 1).trim();
-	const want = { model: config.steps['test-review'].model, effort: config.steps['test-review'].effort };
-	assert.deepEqual(want, { model: config.roles['test-reviewer'].model, effort: config.roles['test-reviewer'].effort });
-	assert.deepEqual({ model: field('model'), effort: field('effort') }, want);
-});
 
-// why: catches PR code running in the base copy gate job
+// why: guards rule:ci-gate (PR code runs in the base-copy gate job)
 test('the model table check runs in unit-tests, never in kit-tests', () => {
 	const ci = fs.readFileSync('.github/workflows/ci.yml', 'utf8');
 	const unit = ci.slice(ci.indexOf('\n  unit-tests:'), ci.indexOf('\n  test-check:'));

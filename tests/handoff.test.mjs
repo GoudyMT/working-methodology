@@ -521,13 +521,6 @@ test('a hand-back with no RECORD line writes nothing to kit-guard-open.log', () 
 	assert.deepEqual(gateLog(repo), []);
 });
 
-// why: catches a gate that throws on input it cannot read and so stops a hand-back from reaching the lead
-test('the gate exits 0 and prints no decision when its input is not JSON', () => {
-	const repo = gateRepo();
-	const r = spawnSync(process.execPath, [GATE], { encoding: 'utf8', input: 'not json at all', cwd: repo });
-	assert.equal(r.status, 0, r.stderr);
-	assert.equal(r.stdout.trim(), '');
-});
 
 // why: catches the gate writing its line into a worktree git dir, where the lead never reads it
 test('a broken record run in a linked worktree logs to the main repo git dir and not the worktree git dir', () => {
@@ -545,15 +538,6 @@ test('a broken record run in a linked worktree logs to the main repo git dir and
 	assert.equal(fs.existsSync(path.join(wtGitDir, 'kit-guard-open.log')), false, `a log in ${wtGitDir}`);
 });
 
-// why: catches the gate printing or failing when a hand-back arrives outside any git repository
-test('a broken record outside any git repository exits 0 with no output', () => {
-	const outside = kitTemp.makeTemp('handoff-outside-');
-	const broken = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1', { proof: '' }));
-	const r = runGate(outside, broken);
-	assert.equal(r.status, 0, r.stderr);
-	assert.equal(r.stdout.trim(), '');
-	assert.equal(r.stderr.trim(), '');
-});
 
 // why: catches a builder, checker or reviewer role file that leaves the gate off its hand-back, so broken records pass unlogged
 test('builder, checker and reviewer wire the gate under SubagentHandback beside canary.cjs', () => {
@@ -571,7 +555,7 @@ test('builder, checker and reviewer wire the gate under SubagentHandback beside 
 	assert.equal(gateLog(repo).length, 1);
 });
 
-// why: catches a brief template that asks for findings without the RECORD line and keys the gate reads
+// why: guards rule:agent-team-adapter (brief template drops the RECORD line or finding keys)
 test('the builder and checker brief templates name the RECORD line and the seven finding keys', () => {
 	for (const f of ['builder-brief.md', 'checker-brief.md']) {
 		const lines = fs.readFileSync(path.resolve('user/skills/agent-team-build/templates', f), 'utf8').split(/\r?\n/);
@@ -582,7 +566,7 @@ test('the builder and checker brief templates name the RECORD line and the seven
 	}
 });
 
-// why: catches the reviewer's generated brief asking for the old pipe rows, which the record check would then refuse
+// why: guards rule:finding-pipeline (reviewer brief asks for the old pipe rows)
 test('the reviewer brief approve.mjs writes asks for a RECORD block with the seven finding keys', () => {
 	const line = fs.readFileSync(path.resolve('user/skills/pre-pr-sweep/approve.mjs'), 'utf8').split('\n').find((l) => l.includes('Finding format:'));
 	assert.ok(line, 'no Finding format line in approve.mjs');

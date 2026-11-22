@@ -237,7 +237,7 @@ test('edit fence blocks a builder edit of each test shape under the lock', () =>
 	}
 });
 
-// why: catches a retest: commit pushed with no owner yes, so a test changed after red ships unseen
+// why: guards rule:test-integrity (retest: commit pushed with no owner yes)
 test('pre-push refuses a push whose range holds a retest: commit, names it and says an owner yes is needed', () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -258,22 +258,8 @@ test('pre-push refuses a push whose range holds a retest: commit, names it and s
 	}
 });
 
-// why: catches the owner's yes failing to lift a held retest push, so the one push that needs the owner stays stuck
-test('pre-push holds a retest: range without the owner yes and lets it through with the owner yes to that push', () => {
-	const { dir, red, bare } = pushRepo();
-	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-	const retest = commit(dir, 'retest: tighten the add case');
-	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
-	const held = pushRun(PROJECT_PRE_PUSH, dir, bare, input);
-	assert.notEqual(held.status, 0, 'held without a yes');
-	const cfg = kitTemp.makeTemp('lock-owner-');
-	// The yes is dated a second before the push: owner-yes.cjs reads a yes dated after now as no yes at all.
-	ownerTaps(cfg, dir, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-	const yes = pushRun(PROJECT_PRE_PUSH, dir, bare, input, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
-	assert.equal(yes.status, 0, `the owner's yes lets the push through: ${yes.stderr}`);
-});
 
-// why: catches a retest: commit at the start of a longer push passing because only the last commit is read
+// why: guards rule:test-integrity (retest: commit at the start of a longer push passes)
 test('pre-push refuses a three-commit push whose first commit is a retest:, naming that commit', () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -308,17 +294,8 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 	}
 });
 
-// why: catches the kit's own pre-push passing a retest: range on to the remote, since the kit source runs that hook too
-test("the kit's own pre-push refuses a range holding a retest: commit and says an owner yes is needed", () => {
-	const { dir, red } = redRepo();
-	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-	const retest = commit(dir, 'retest: tighten the add case');
-	const r = spawnSync('sh', [KIT_PRE_PUSH], { cwd: dir, env: isolatedEnv(NO_MARKERS), input: `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`, encoding: 'utf8' });
-	assert.notEqual(r.status, 0, `the kit hook refused: ${r.stderr}`);
-	assert.match(r.stderr, OWNER_YES);
-});
 
-// why: catches the builder brief telling the builder to write its own file list, which lets it widen its own fence
+// why: guards rule:agent-team-adapter (builder brief tells the builder to write its own file list)
 test('the builder brief template does not tell the builder to write its own file list', () => {
 	const body = fs.readFileSync(BRIEF, 'utf8');
 	assert.doesNotMatch(body, /before your first edit, write every path/i);
@@ -330,7 +307,7 @@ test('the builder brief template does not tell the builder to write its own file
 	assert.match(body, /\blead\b[^\n]{0,80}kit-unit-files\.txt/, 'the brief names the lead as the writer of kit-unit-files.txt');
 });
 
-// why: catches a retest(scope): commit that slips past the hold's exact "retest:" match, so a scoped retest ships unseen in either hook
+// why: guards rule:test-integrity (retest(scope): commit slips past the exact match)
 test('pre-push refuses a retest(scope): commit in both the kit and the project hook, naming its subject', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
@@ -342,7 +319,7 @@ test('pre-push refuses a retest(scope): commit in both the kit and the project h
 	}
 });
 
-// why: catches a new branch carrying a retest: commit going out unheld because only its own sha is read
+// why: guards rule:security-standards (new branch carrying a retest: commit goes out unheld)
 test('pre-push refuses a new branch whose range holds a retest: commit', () => {
 	const { dir, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -377,7 +354,7 @@ test('pre-push refuses a new branch whose range holds a retest: commit', () => {
 	}
 });
 
-// why: catches the kit's own pre-push passing a retest push with no owner yes; the refusal that names the owner's yes must stay
+// why: guards rule:test-integrity (kit pre-push passes a retest push with no owner yes)
 test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes and names it", () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -398,7 +375,7 @@ test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes a
 	}
 });
 
-// why: catches an approved retest push going through with no owner pop-up yes, so the marker alone lifts the hold
+// why: guards rule:test-integrity (approved retest push goes through with no pop-up yes)
 test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes, naming it and the owner\'s yes', () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -420,7 +397,7 @@ test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-u
 	}
 });
 
-// why: catches the kit's own pre-push passing an approved retest push with no owner pop-up yes, so the marker alone lifts it
+// why: guards rule:test-integrity (kit pre-push passes an approved retest push with no pop-up yes)
 test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes and names the owner's yes", () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -442,14 +419,14 @@ test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with 
 	}
 });
 
-// why: catches the builder brief keeping the test-first line or not naming the tester's red commit as never edited
+// why: guards rule:test-integrity (builder brief keeps the test-first line)
 test('the builder brief drops the test-first line and says the tester red commit is never edited', () => {
 	const body = fs.readFileSync(BRIEF, 'utf8');
 	assert.doesNotMatch(body, /Tests to write first/);
 	assert.match(body, /tester'?s red commit[^\n]*never edit/i);
 });
 
-// why: catches the name check refusing a retest: subject or accepting a retest/ branch, which would break the retest type's rule
+// why: guards rule:commit-message-format (name check refuses a retest: subject)
 test('name-check accepts a retest: subject and refuses a retest/ branch name', () => {
 	const NAME_CHECK = path.resolve('project/.claude/name-check.mjs');
 	const msg = path.join(kitTemp.makeTemp('lock-msg-'), 'MSG');

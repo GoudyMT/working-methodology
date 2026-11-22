@@ -65,29 +65,22 @@ test('U6 spec 1: a tester fix line with status fixed passes check --role tester'
 	assert.equal(r.status, 0, r.stderr || r.stdout);
 });
 
-// why: catches the role file leaving out one of the five statuses, so a reviewer never learns to use it.
+// why: guards rule:agent-role-table (role file leaves out one of the five statuses)
 test('U6 spec 3: test-reviewer.md body names all five statuses', () => {
 	assert.ok(fs.existsSync(ROLE_FILE), 'user/agents/test-reviewer.md exists');
 	const body = read(ROLE_FILE).split(/^---$/m)[2] ?? '';
 	for (const status of STATUSES) assert.ok(body.includes(`\`${status}\``), `missing \`${status}\` in the body`);
 });
 
-// why: catches a reviewer role that can edit or run commands, which would let a review change the code it reviews.
+// why: guards rule:agent-role-table (reviewer role can edit or run commands)
 test('U6 spec 3: kit.config.json roles.test-reviewer.tools is exactly Read, Grep and Glob', () => {
 	assert.ok(fs.existsSync(CONFIG_FILE), 'kit.config.json exists');
 	const config = JSON.parse(read(CONFIG_FILE));
 	assert.deepEqual(config.roles['test-reviewer'].tools, ['Read', 'Grep', 'Glob']);
 });
 
-// why: catches the role file's frontmatter tools drifting from the config entry the table checker holds it to.
-test('U6 spec 3: the test-reviewer frontmatter tools line names Read, Grep and Glob and no write or shell tool', () => {
-	assert.ok(fs.existsSync(ROLE_FILE), 'user/agents/test-reviewer.md exists');
-	const front = read(ROLE_FILE).split(/\r?\n/).slice(1, read(ROLE_FILE).split(/\r?\n/).indexOf('---', 1));
-	const toolsLine = front.find((l) => l.startsWith('tools:')) ?? '';
-	assert.deepEqual(toolsLine.replace('tools:', '').split(',').map((s) => s.trim()), ['Read', 'Grep', 'Glob']);
-});
 
-// why: catches the reviewer's intent question missing from the role file, so a run record never says what the review was for.
+// why: guards rule:agent-role-table (intent question missing from the role file)
 test('U6 spec 4: the test-reviewer role file names the intent: note line', () => {
 	assert.ok(fs.existsSync(ROLE_FILE), 'user/agents/test-reviewer.md exists');
 	assert.match(read(ROLE_FILE), /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);

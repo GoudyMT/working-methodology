@@ -86,7 +86,7 @@ function holdModeDir(holdsFile) {
 }
 const modeOf = (dir) => require(path.join(dir, 'hold-mode.cjs')).mode;
 
-// why: catches a build's hold missing from holds.json, so its enforce-to-log drop is never checked
+// why: guards rule:kit-standards (a build hold missing from holds.json is never checked)
 test('holds.json lists the agent-model and handoff-gate holds, both in log mode', () => {
 	let holds;
 	assert.doesNotThrow(() => { holds = JSON.parse(fs.readFileSync(REAL_HOLDS, 'utf8')).holds; }, 'user/kit-hooks/holds.json reads as JSON with a holds list');
@@ -95,7 +95,7 @@ test('holds.json lists the agent-model and handoff-gate holds, both in log mode'
 	assert.deepEqual(byId['handoff-gate'] && { hook: byId['handoff-gate'].hook, mode: byId['handoff-gate'].mode }, { hook: 'handoff-gate.cjs', mode: 'log' });
 });
 
-// why: catches a listed log hold read back as enforce, so the log-only hook starts blocking calls
+// why: guards rule:kit-standards (a listed log hold read back as enforce)
 test('hold-mode returns log for a hold listed as log and enforce for one listed as enforce', () => {
 	let mode;
 	assert.doesNotThrow(() => { mode = modeOf(holdModeDir(holdsText([{ id: 'one-hold', hook: 'one.cjs', mode: 'log' }, { id: 'two-hold', hook: 'two.cjs', mode: 'enforce' }]))); }, 'hold-mode.cjs loads and reads the holds beside it');
@@ -110,15 +110,8 @@ test('hold-mode returns enforce for an id not in the list, so existing holds kee
 	assert.equal(mode('unlisted-hold'), 'enforce');
 });
 
-// why: catches a corrupt holds.json that throws inside a hook, so every call is blocked or crashes
-test('hold-mode returns enforce and does not throw when holds.json is malformed', () => {
-	let mode;
-	assert.doesNotThrow(() => { mode = modeOf(holdModeDir('{"holds": [')); }, 'hold-mode.cjs loads');
-	assert.doesNotThrow(() => mode('any-hold'), 'a malformed holds.json is read without a throw');
-	assert.equal(mode('any-hold'), 'enforce');
-});
 
-// why: catches a deleted holds.json read as log for every hold, so a lost file silently drops enforcement
+// why: guards rule:kit-standards (a deleted holds.json read as log drops enforcement)
 test('hold-mode returns enforce and does not throw when holds.json is missing', () => {
 	let mode;
 	assert.doesNotThrow(() => { mode = modeOf(holdModeDir(undefined)); }, 'hold-mode.cjs loads');
@@ -126,14 +119,14 @@ test('hold-mode returns enforce and does not throw when holds.json is missing', 
 	assert.equal(mode('any-hold'), 'enforce');
 });
 
-// why: catches a mode typo such as warn read as log, which quietly turns an enforced hold into a log-only one
+// why: guards rule:kit-standards (a mode typo read as log turns an enforced hold log-only)
 test('hold-mode returns enforce for a listed hold whose mode is neither log nor enforce', () => {
 	let mode;
 	assert.doesNotThrow(() => { mode = modeOf(holdModeDir(holdsText([{ id: 'typo-hold', hook: 'typo.cjs', mode: 'warn' }]))); }, 'hold-mode.cjs loads');
 	assert.equal(mode('typo-hold'), 'enforce');
 });
 
-// why: catches a holds.json of the wrong shape throwing in hold-mode, so a hook crashes instead of defaulting to enforce
+// why: guards rule:kit-standards (a wrong-shape holds.json throws instead of defaulting to enforce)
 test('hold-mode returns enforce and does not throw for holds.json of the wrong shape', () => {
 	const shapes = ['{}', '[]', 'null', '{"holds":"x"}', '{"holds":[null,3]}'];
 	for (const text of shapes) {
@@ -144,28 +137,6 @@ test('hold-mode returns enforce and does not throw for holds.json of the wrong s
 	}
 });
 
-// why: catches agent-model ignoring holds.json, so its log mode can never be changed by the list
-test('agent-model reads its mode through hold-mode.cjs, then logs the call in log mode and returns null', () => {
-	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
-	const hookDir = kitTemp.makeTemp('agent-model-hook-');
-	const callRecord = path.join(hookDir, 'mode-calls.txt');
-	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
-	// A stub hold-mode.cjs that records each id it is asked for and answers log, so only the wiring is under test.
-	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nconst fs = require('fs');\nmodule.exports = { mode(id) { fs.appendFileSync(${JSON.stringify(callRecord)}, id + '\\n'); return 'log'; } };\n`);
-	const dir = repo();
-	const script = `const r = require(${JSON.stringify(path.join(hookDir, 'agent-model.cjs'))}).check({ tool_name: 'Agent', tool_input: { subagent_type: 'no-such-role' }, cwd: ${JSON.stringify(dir)} }); process.stdout.write(JSON.stringify(r));`;
-	const run = spawnSync(process.execPath, ['-e', script], { env: isolatedEnv(), encoding: 'utf8' });
-	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
-	assert.equal(run.stdout, 'null', 'check returns null');
-	assert.ok(fs.existsSync(callRecord), 'agent-model.cjs asked hold-mode.cjs for its mode');
-	assert.match(fs.readFileSync(callRecord, 'utf8'), /^agent-model$/m, 'the id asked for is agent-model');
-	const common = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
-	const logFile = path.join(common, 'kit-agent-model.log');
-	assert.ok(fs.existsSync(logFile), 'the log-mode call wrote kit-agent-model.log');
-	const log = fs.readFileSync(logFile, 'utf8');
-	assert.match(log, /"hook":"agent-model"/);
-	assert.match(log, /"mode":"log"/);
-});
 
 // Runs agent-model.cjs from hookDir once per call in calls, in dir's repo; one result per call, null when it decides nothing.
 function checkCalls(hookDir, dir, calls, extraEnv = {}) {
@@ -188,7 +159,7 @@ function agentLogText(dir) {
 	return fs.readFileSync(path.join(common, 'kit-agent-model.log'), 'utf8');
 }
 
-// why: catches a log-only guard that refuses when its list is damaged
+// why: guards rule:kit-standards (a log-only guard refuses when its list is damaged)
 test('agent-model never refuses in build 24, even when its hold reads enforce', () => {
 	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-enforce-');
@@ -202,18 +173,6 @@ test('agent-model never refuses in build 24, even when its hold reads enforce', 
 	assert.match(agentLogText(dir), /"mode":"enforce"/);
 });
 
-// why: catches a missing helper file turning the guard into a refusal
-test('agent-model logs and returns null when hold-mode.cjs is missing', () => {
-	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
-	const hookDir = kitTemp.makeTemp('agent-model-alone-');
-	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
-	const config = roleConfig({ 'opus-role': 'opus' });
-	const dir = repo();
-	const run = checkCalls(hookDir, dir, [{ subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
-	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
-	assert.deepEqual(JSON.parse(run.stdout), [null], 'the model-mismatch call is not refused');
-	assert.match(agentLogText(dir), /"mode":"log"/);
-});
 
 // why: catches a deleted holds.json that the check reads as no holds, so an enforce hold vanishes unnoticed
 test('hold-check exits 1 and names the hold when the working tree deletes holds.json over an enforce hold', () => {

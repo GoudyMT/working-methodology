@@ -20,7 +20,7 @@ function whatHoldsSection(agents) {
   return (start[0] + (next ? rest.slice(0, next.index) : rest)).trimEnd();
 }
 
-// why: catches an AGENTS.md that never says git hooks and CI are the only layers outside Claude Code
+// why: guards rule:what-holds-where (AGENTS.md never says hooks and CI are the only outside layers)
 test('the built AGENTS.md has a What holds where section that says what holds each agent, ASCII, inside the cap', () => {
   const agents = BUILT.get('project/AGENTS.md');
   const section = whatHoldsSection(agents);

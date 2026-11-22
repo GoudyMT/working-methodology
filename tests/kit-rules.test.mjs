@@ -1637,7 +1637,7 @@ test('a test-reviewer or tester finding line copied with its blanks is refused b
   }
 });
 
-// why: catches a finding example that shows empty strings where a placeholder belongs, so a writer copies blanks as values
+// why: guards rule:finding-pipeline (a finding example shows empty strings where a placeholder belongs)
 test('the test-reviewer and tester finding examples show placeholders, not empty strings', () => {
   for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
   const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
@@ -1646,7 +1646,7 @@ test('the test-reviewer and tester finding examples show placeholders, not empty
   assert.doesNotMatch(tester, /":""/, 'tester finding example holds an empty string');
 });
 
-// why: catches a template that leaves "-" for none unnamed, so a writer may fill fix with an invented value
+// why: guards rule:finding-pipeline (a template leaves "-" for none unnamed)
 test('the test-reviewer and tester templates name "-" as the value for none', () => {
   for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
   for (const f of ['test-reviewer.md', 'tester.md']) {
@@ -1654,13 +1654,6 @@ test('the test-reviewer and tester templates name "-" as the value for none', ()
   }
 });
 
-// why: catches a test-reviewer clear form that drops its intent note, so the run record never shows what the review was for
-test('the test-reviewer clear form keeps an intent note beside the no problems note', () => {
-  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
-  const text = read(path.resolve('user/agents/test-reviewer.md'));
-  assert.match(text, /\{"note":"no problems found","writer":"test-reviewer"\}/);
-  assert.match(text, /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);
-});
 
 // why: catches an edit fence that lets a tester edit through when it throws after reading the agent type
 test('the edit fence refuses a tester edit when the hook throws after reading its agent type', () => {

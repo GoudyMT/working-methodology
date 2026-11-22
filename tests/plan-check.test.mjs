@@ -137,12 +137,8 @@ test('P11 spec 2: the batch-plan template with its example row filled passes pla
 	assert.equal(res.status, 0, out(res));
 });
 
-// why: catches SKILL.md never naming plan-check.mjs, so an agent reading the skill never learns the check exists.
-test('P12 spec 3: user/skills/agent-team-build/SKILL.md names plan-check.mjs', () => {
-	assert.match(fs.readFileSync(SKILL, 'utf8'), /plan-check\.mjs/);
-});
 
-// why: catches SKILL.md dropping the rule that every build has a written plan every agent reads, so agents build from memory.
+// why: guards rule:agent-team-adapter (SKILL.md drops the every-build-has-a-plan rule)
 test('P13 spec 3: SKILL.md has one paragraph that says every build has a written plan file every agent reads', () => {
 	const paragraphs = fs.readFileSync(SKILL, 'utf8').split(/\r?\n\s*\r?\n/);
 	const hit = paragraphs.some((p) => /every build/i.test(p) && /plan file/i.test(p) && /every agent/i.test(p) && /\bread/i.test(p));

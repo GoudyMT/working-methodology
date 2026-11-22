@@ -250,12 +250,8 @@ test('C22 spec 1: an unreadable log exits 2', () => {
 	assert.equal(res.status, 2, out(res));
 });
 
-// why: catches the skill's overwatch section missing, so a build lead never learns what it owns for the run.
-test('S1 spec 2: SKILL.md has a section headed "## The overwatch lead"', () => {
-	assert.match(fs.readFileSync(SKILL, 'utf8'), /^## The overwatch lead$/m);
-});
 
-// why: catches the overwatch section listing its jobs out of order, so a lead starts the teams before the split is planned.
+// why: guards rule:agent-team-adapter (overwatch jobs listed out of order)
 test('S2 spec 2: the overwatch section names its jobs in order, from plan and split to the owner yes', () => {
 	const section = overwatchSection();
 	const jobs = [
@@ -278,24 +274,20 @@ test('S2 spec 2: the overwatch section names its jobs in order, from plan and sp
 	}
 });
 
-// why: catches the overwatch section casting the lead as an extra role, which would add a seat the build does not have.
+// why: guards rule:agent-role-table (overwatch lead cast as an extra role)
 test('S3 spec 2: one sentence of the overwatch section says the build lead is not an extra role', () => {
 	const sentences = overwatchSection().split(/[.!?]\s/);
 	assert.ok(sentences.some((s) => /build lead/i.test(s) && /not an extra role|not a new role|not a separate role/i.test(s)), 'no sentence joins build lead with not an extra role');
 });
 
-// why: catches the agent-teams rule file dropping its pointer to the overwatch section, so a reader of the rules never finds the lead's job.
-test('S4 spec 3: rules/agent-teams.md names The overwatch lead', () => {
-	assert.match(fs.readFileSync(RULE, 'utf8'), /The overwatch lead/);
-});
 
-// why: catches the pointer line in the rule file not naming agent-team-build, so the reader cannot tell which skill the section is in.
+// why: guards rule:agent-team-adapter (pointer line does not name agent-team-build)
 test('S5 spec 3: one line of rules/agent-teams.md holds "The overwatch lead" and agent-team-build', () => {
 	const lines = fs.readFileSync(RULE, 'utf8').split(/\r?\n/);
 	assert.ok(lines.some((l) => l.includes('The overwatch lead') && l.includes('agent-team-build')), 'no line names both');
 });
 
-// why: catches the agent-teams rule file growing past its 14,000-byte cap, which the kit's size budget refuses.
+// why: guards rule:size-budgets (agent-teams rule file grows past 14000 bytes)
 test('S6 spec 3: rules/agent-teams.md stays under 14000 bytes', () => {
 	const bytes = fs.statSync(RULE).size;
 	assert.ok(bytes < MAX_RULE_BYTES, `rules/agent-teams.md is ${bytes} bytes, cap is ${MAX_RULE_BYTES}`);

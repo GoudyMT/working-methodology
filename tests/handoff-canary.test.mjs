@@ -55,7 +55,7 @@ test('with a handoff checker that throws on load, a ROLE and Not checked hand-ba
 	assert.equal(refusal(r), null, r.stdout);
 });
 
-// why: catches canary.cjs growing to 14000 bytes or more, past its size limit.
+// why: guards rule:size-budgets (canary.cjs grows to 14000 bytes or more)
 test('user/kit-hooks/canary.cjs is under 14000 bytes', () => {
 	assert.ok(fs.statSync('user/kit-hooks/canary.cjs').size < 14000, `canary.cjs is ${fs.statSync('user/kit-hooks/canary.cjs').size} bytes`);
 });

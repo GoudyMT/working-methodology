@@ -111,7 +111,7 @@ test('install project prints one line for a file holding two examples and one sl
 	assert.ok(!(r.stdout + r.stderr).includes('examples.md'), 'a format example was reported as an unfilled slot');
 });
 
-// why: catches the named slot list copied into a second file that then drifts from the one the install reads
+// why: guards rule:kit-standards (slot list copied into a second file that drifts)
 test('the named slot list lives in one non-test script that approve.mjs reads rather than copies', () => {
 	const roots = ['scripts', 'user/skills'].map((d) => path.resolve(d));
 	const walk = (d) => fs.readdirSync(d, { withFileTypes: true }).flatMap((e) => {

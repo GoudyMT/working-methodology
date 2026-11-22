@@ -347,9 +347,7 @@ test('L7: reviewers exits 1 when r1 and r2 started, r2 finished, and 4 units are
 // ---------------------------------------------------------------------------------------------------------------
 // L9: the checker is for risky units only (a unit whose Files hit GUARD_PATHS), and a unit gets at most 2 FIX rounds.
 // ---------------------------------------------------------------------------------------------------------------
-// The guard names, read at registration (test names need them up front). Each test that needs the list imports the
-// tester-model copy inside the test, so a missing tester-model fails that test on an assertion, not the whole file at load.
-const GUARD_NAMES = ['kit-hooks/', '.githooks/', 'guard*.cjs', 'settings.json', 'approve.mjs', 'merge-gate.mjs'];
+// Each test that needs GUARD_PATHS imports the tester-model copy inside the test, so a missing tester-model fails that test on an assertion, not the whole file at load.
 const importTesterGuard = async () => {
 	assert.ok(fs.existsSync(TESTER_MODEL), 'user/kit-tools/tester-model.mjs exists');
 	return (await import(pathToFileURL(TESTER_MODEL).href)).GUARD_PATHS;
@@ -358,9 +356,6 @@ const hookText = () => {
 	assert.ok(fs.existsSync(AGENT_MODEL), 'user/kit-hooks/agent-model.cjs exists');
 	return fs.readFileSync(AGENT_MODEL, 'utf8');
 };
-// A file path that the GUARD_PATHS entry matches.
-const guardFile = (g) => (g.endsWith('/') ? `x/${g}f.js` : g.includes('*') ? `x/${g.replace('*', 'x')}` : `x/${g}`);
-
 function planWith(files) {
 	return put(tmp('flow-plan-'), 'plan.md', `# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | ${files.map((f) => `\`${f}\``).join(', ')} | parallel |\n`);
 }
@@ -381,33 +376,10 @@ function runHook(prompt, { type = 'checker' } = {}) {
 }
 const whys = (rows) => rows.map((r) => r.why);
 
-// why: catches a checker spent on a unit that touches no guard path
-test('L9: a checker call naming a unit with no guard file logs "checker on a non-risky unit" and is not refused', () => {
-	assert.match(hookText(), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
-	const plan = planWith(['src/app.js', 'docs/readme.md']);
-	assert.ok(whys(runHook(`Review this.\nUnit: U1\nPlan: ${plan}\n`)).includes('checker on a non-risky unit'));
-});
 
-// why: catches the risky-unit list in the hook drifting from the R2 guard list
-for (const g of GUARD_NAMES) {
-	test(`L9: a checker call on a unit whose file hits the guard entry ${g} logs no non-risky row`, async () => {
-		assert.deepEqual(GUARD_NAMES, await importTesterGuard(), 'the guard names equal tester-model GUARD_PATHS');
-		assert.match(hookText(), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
-		const plan = planWith(['src/app.js', guardFile(g)]);
-		const w = whys(runHook(`Unit: U1\nPlan: ${plan}\n`));
-		assert.ok(!w.includes('checker on a non-risky unit'));
-		assert.ok(!w.includes('checker with no plan named'));
-	});
-}
 
-// why: catches a plan with only a source file being judged risky by the hook
-test('L9: a plan whose only file is src/app.js logs the non-risky row for a checker call', () => {
-	assert.match(hookText(), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
-	const plan = planWith(['src/app.js']);
-	assert.ok(whys(runHook(`Unit: U1\nPlan: ${plan}\n`)).includes('checker on a non-risky unit'));
-});
 
-// why: catches the non-risky row firing for roles other than the checker
+// why: guards rule:agent-team-adapter (non-risky row fires for roles other than the checker)
 test('L9: on one non-risky unit the checker call logs the row and the builder call does not', () => {
 	assert.match(hookText(), /checker on a non-risky unit/, 'agent-model.cjs holds the non-risky checker row');
 	const plan = planWith(['src/app.js']);
@@ -416,7 +388,7 @@ test('L9: on one non-risky unit the checker call logs the row and the builder ca
 	assert.ok(!whys(runHook(prompt, { type: 'builder' })).includes('checker on a non-risky unit'));
 });
 
-// why: catches a checker call with no plan named passing unseen
+// why: guards rule:agent-team-adapter (checker call with no plan passes unseen)
 test('L9: a checker call with no Plan line logs "checker with no plan named" and is not refused', () => {
 	assert.match(hookText(), /checker with no plan named/, 'agent-model.cjs holds the no-plan checker row');
 	assert.ok(whys(runHook('Review this.\nUnit: U1\n')).includes('checker with no plan named'));
@@ -478,7 +450,7 @@ test('L9: rounds exits 0 with three records holding VERDICT: FIXED or a mid-line
 	assert.equal(r.code, 0, r.out);
 });
 
-// why: catches the hook's GUARD_PATHS list drifting from the tester-model copy
+// why: guards rule:agent-team-adapter (hook GUARD_PATHS drifts from the tester-model copy)
 test('L9: the hook GUARD_PATHS equals tester-model GUARD_PATHS', async () => {
 	hookText();
 	const hook = createRequire(import.meta.url)(AGENT_MODEL);

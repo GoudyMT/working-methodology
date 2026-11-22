@@ -165,7 +165,7 @@ const gitRepo = () => {
   return dir;
 };
 
-// why: catches a plugin build that differs between two runs on the same release, so no pinned build can be checked
+// why: guards rule:kit-standards (a plugin build differs between two runs on one release)
 test('build plugin writes the plugin layout, the same bytes on every run (K174)', () => {
   const root = plugin();
   const again = path.join(makeTemp('plugin-out-'), 'kit-plugin');

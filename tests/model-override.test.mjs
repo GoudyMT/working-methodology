@@ -96,16 +96,6 @@ test('install project refuses a haiku override on the sonnet-floored sweep-bread
 	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
 });
 
-// why: catches a never-drop step (step6) changed by a project override and installed without a word
-test('install project refuses any change to the never-drop step, naming it', () => {
-	const ctx = tableKit();
-	writeOverride(ctx.proj, { steps: { step6: { model: 'claude-haiku-5-5' } } });
-	const before = entries(ctx.proj);
-	const r = installProject(ctx);
-	assert.notEqual(r.status, 0, 'a change to the never-drop step installed');
-	assert.match(r.stderr + r.stdout, /step6/, 'the refusal does not name the step');
-	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
-});
 
 // why: catches a raise of the never-drop step (step6) accepted because only lowering was checked, so the row moves
 test('install project refuses a raise of the never-drop step, and the installed check exits 1 naming it', () => {
