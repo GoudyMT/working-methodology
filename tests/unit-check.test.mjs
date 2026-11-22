@@ -609,8 +609,9 @@ test('review: two test commits before a feat: the first one passing early faults
 	faultFor(r, first, /passed before the code/);
 });
 
-// why: catches a mixed commit resetting the red window so its feat lacks a red.
-test('review: a mixed commit between red and feat does not make the feat lack a red', () => {
+// control: passes on the current module; pins that a mixed commit resets the red window.
+// why: catches a mixed commit between a red and its feat leaving the feat with a red it should not have.
+test('review: a mixed commit resets the red window, so the feat faults no red', () => {
 	const dir = repo();
 	redCommit(dir);
 	const mixed = commit(dir, 'chore: tidy add and its test', { 'src/add.mjs': `${BASE_SRC}\n`, 'tests/add.test.mjs': `${RED_FILE}// tidy\n` });
@@ -618,7 +619,7 @@ test('review: a mixed commit between red and feat does not make the feat lack a 
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
 	faultFor(r, mixed, /mixed/);
-	assert.equal(faultLines(r).filter((l) => l.includes(feat)).length, 0, r.stderr);
+	faultFor(r, feat, /no red commit before it/);
 });
 
 // control: passes on the current module; pins that a swapped passing test name is caught.
