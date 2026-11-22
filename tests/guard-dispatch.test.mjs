@@ -316,16 +316,17 @@ test('a choice pop-up that offers item codes with no plain words, or a plan with
 	if (linkMade) assert.equal(ask('Approve docs/plans/linked.md as written, with every step it names?', [opt('Yes, as written', 'Build it on the branch.'), opt('No', 'Change it first.')]), 'allow', 'a link out of the project');
 });
 
-// why: guards the owner's starred rule "locally run only the changed test" (K339, build 24): a test folder is read as the test files under it, a folder outside the repo is refused even when every test in the repo is changed, Node's default test names (JS and TypeScript) count as tests, the refusal hint names only real test files, a repo with no base is read as the rule says, and a remote not named origin counts as a base.
+// why: guards the owner's starred rule "locally run only the changed test" (K339, build 24): a test folder is read as the test files under it, a folder outside the repo is refused even when every test in the repo is changed, Node's default test names (JS and TypeScript) count as tests, the refusal hint names only real test files, a refusal text names an outside path with one slash and no two periods, a repo with no base is read as the rule says, and a remote not named origin counts as a base.
 test('test-scope reads folders and a repo with no base', () => {
 	const run = setup({ userHooks: true });
 	const at = (repo, command) => run('Bash', { command }, { cwd: repo }, { CI: '' }).permissionDecision || 'allow';
+	const reasonOf = (repo, command) => run('Bash', { command }, { cwd: repo }, { CI: '' }).permissionDecisionReason || '';
 	const gitIn = (repo) => (...a) => spawnSync('git', ['-C', repo, ...a], { encoding: 'utf8' });
 	const commit = (g, msg) => { g('add', '.'); g('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', msg); };
 	const write = (repo, rel, text) => { fs.mkdirSync(path.dirname(path.join(repo, rel)), { recursive: true }); fs.writeFileSync(path.join(repo, rel), text); };
 	const bareRepo = () => { const bare = kitTemp.makeTemp('scope-origin-'); spawnSync('git', ['init', '-q', '--bare', '-b', 'main', bare], { encoding: 'utf8' }); return bare; };
 
-	// Spec 2 (control): tests/ holds an unchanged a.test.mjs and a new b.test.mjs, so the folder is refused.
+	// Control: tests/ holds an unchanged a.test.mjs and a new b.test.mjs, so the folder is refused.
 	const mixed = kitTemp.makeTemp('scope-mixed-');
 	const m = gitIn(mixed);
 	m('init', '-q', '-b', 'main');
@@ -333,7 +334,7 @@ test('test-scope reads folders and a repo with no base', () => {
 	commit(m, 'base');
 	m('switch', '-qc', 'feat/x');
 	write(mixed, 'tests/b.test.mjs', 'b\n');
-	assert.equal(at(mixed, 'node --test tests/'), 'deny', 'spec 2: a folder holding an unchanged test file');
+	assert.equal(at(mixed, 'node --test tests/'), 'deny', 'a folder holding an unchanged test file');
 	assert.equal(at(mixed, 'node --test .'), 'deny', 'control: node --test . with an unchanged test');
 
 	// Control: the folder holds an unchanged file in a nested folder, so only a per-file check can refuse it.
@@ -357,8 +358,8 @@ test('test-scope reads folders and a repo with no base', () => {
 	write(docs, 'docs/readme.md', 'r\n');
 	assert.equal(at(docs, 'node --test docs/'), 'deny', 'control: a folder holding only a non-test file');
 
-	// Specs 1 and 3, and the outside-folder and coverage-value cases: every test file under tests/ is new or changed, so the
-	// folder runs. The repo has a remote named origin, as spec 5 sets one. other/ holds only an unchanged file.
+	// Every test file under tests/ is new or changed, so the folder runs. The repo has a remote named origin. other/ holds
+	// only an unchanged file.
 	const folders = kitTemp.makeTemp('scope-folders-');
 	const f = gitIn(folders);
 	f('init', '-q', '-b', 'main');
@@ -371,16 +372,29 @@ test('test-scope reads folders and a repo with no base', () => {
 	f('switch', '-qc', 'feat/x');
 	write(folders, 'tests/a.test.mjs', 'a2\n');
 	write(folders, 'tests/b.test.mjs', 'b\n');
-	assert.equal(at(folders, 'node --test other/'), 'deny', 'spec 3: a folder with no changed test file');
+	assert.equal(at(folders, 'node --test other/'), 'deny', 'a folder with no changed test file');
 	for (const c of ['node --test tests/', 'node --test tests', 'node --test ./tests/', 'npx vitest run tests/', 'npx jest tests', 'pytest tests/'])
-		assert.equal(at(folders, c), 'allow', `spec 1: ${c}`);
+		assert.equal(at(folders, c), 'allow', c);
 	const outside = kitTemp.makeTemp('scope-outside-');
 	write(outside, 'x.test.mjs', 'x\n');
 	const absOutside = outside.split(path.sep).join('/');
+	const relOutsideFile = path.relative(folders, path.join(outside, 'x.test.mjs')).split(path.sep).join('/');
 	assert.equal(at(folders, 'node --test ..'), 'deny', 'a folder above the repo, with an unchanged test beside it');
 	assert.equal(at(folders, `node --test ${absOutside}/`), 'deny', 'an absolute folder outside the repo');
 	assert.equal(at(folders, `node --test ${absOutside}/x.test.mjs`), 'deny', 'control: an absolute file outside the repo');
 	assert.equal(at(folders, 'node --test --test-coverage-include tests'), 'deny', 'an unknown option value naming a folder');
+
+	// The refusal text for a folder above the repo has no two periods in a row.
+	assert.doesNotMatch(reasonOf(folders, 'node --test ..'), /\.\./, 'the refusal text for a folder above the repo');
+	// The refusal text for a relative path to a file outside the repo has no two periods in a row.
+	assert.doesNotMatch(reasonOf(folders, `node --test ${relOutsideFile}`), /\.\./, 'the refusal text for a relative path to an outside file');
+	// The refusal text for an absolute folder with a trailing slash has one slash between parts.
+	assert.doesNotMatch(reasonOf(folders, `node --test ${absOutside}/`), /\/\//, 'the refusal text for an absolute folder with a trailing slash');
+	// On Windows, a drive root is outside the repo, and its refusal text has one slash too.
+	if (process.platform === 'win32') {
+		const drive = path.parse(outside).root.split(path.sep).join('/');
+		assert.doesNotMatch(reasonOf(folders, `node --test ${drive}`), /\/\//, 'the refusal text for a drive root');
+	}
 
 	// Every test in the repo is changed, and node --test .. still runs the sibling folders: it is refused.
 	const allChanged = kitTemp.makeTemp('scope-allchanged-');
@@ -406,7 +420,7 @@ test('test-scope reads folders and a repo with no base', () => {
 		assert.equal(at(dir, 'node --test x/'), 'deny', `a folder holding an unchanged ${name} beside a new test`);
 	}
 
-	// Default names in a folder whose tests are all new are allowed: the folder runs.
+	// A folder whose default-named tests are all new is allowed: the folder runs.
 	const lib2 = kitTemp.makeTemp('scope-lib2-');
 	const l2 = gitIn(lib2);
 	l2('init', '-q', '-b', 'main');
@@ -426,7 +440,7 @@ test('test-scope reads folders and a repo with no base', () => {
 	h('switch', '-qc', 'feat/x');
 	write(hintRepo, 'scripts/test-run.mjs', 's\n');
 	write(hintRepo, 'tests/b.test.mjs', 'b\n');
-	const hint = run('Bash', { command: 'node --test tests/a.test.mjs' }, { cwd: hintRepo }, { CI: '' }).permissionDecisionReason || '';
+	const hint = reasonOf(hintRepo, 'node --test tests/a.test.mjs');
 	assert.match(hint, /tests\/b\.test\.mjs/, 'the hint names the changed test file');
 	assert.doesNotMatch(hint, /scripts\/test-run\.mjs/, 'the hint names a script that is not a test file');
 
@@ -440,22 +454,22 @@ test('test-scope reads folders and a repo with no base', () => {
 	u('push', '-q', 'upstream', 'main');
 	assert.equal(at(upstream, 'node --test tests/a.test.mjs'), 'deny', 'a remote named upstream, nothing changed');
 
-	// Spec 4: no remote, on main, with a committed test: no base is found, so the run is allowed and logged once.
+	// No remote, on main, with a committed test: no base is found, so the run is allowed and logged once.
 	const local = kitTemp.makeTemp('scope-nobase-');
 	const n = gitIn(local);
 	n('init', '-q', '-b', 'main');
 	write(local, 'tests/a.test.mjs', 'a\n');
 	commit(n, 'base');
-	assert.equal(at(local, 'node --test tests/a.test.mjs'), 'allow', 'spec 4: a repo with no remote, on main');
+	assert.equal(at(local, 'node --test tests/a.test.mjs'), 'allow', 'a repo with no remote, on main');
 	const logFile = path.join(path.resolve(local, n('rev-parse', '--git-common-dir').stdout.trim()), 'kit-guard-open.log');
-	assert.equal(fs.existsSync(logFile), true, 'spec 4: no line was written to kit-guard-open.log');
+	assert.equal(fs.existsSync(logFile), true, 'no line was written to kit-guard-open.log');
 	const lines = fs.readFileSync(logFile, 'utf8').trim().split('\n');
-	assert.equal(lines.length, 1, 'spec 4: kit-guard-open.log must have exactly one line');
+	assert.equal(lines.length, 1, 'kit-guard-open.log must have exactly one line');
 	const last = JSON.parse(lines[0]);
-	assert.equal(last.hook, 'test-scope', 'spec 4: log hook');
-	assert.match(last.cause, /base/i, 'spec 4: log cause');
+	assert.equal(last.hook, 'test-scope', 'log hook');
+	assert.match(last.cause, /base/i, 'log cause');
 
-	// Spec 5 (control): a remote base with nothing unpushed, on main, so nothing changed and the run is denied.
+	// Control: a remote base with nothing unpushed, on main, so nothing changed and the run is denied.
 	const remote = kitTemp.makeTemp('scope-remote-');
 	const r = gitIn(remote);
 	r('init', '-q', '-b', 'main');
@@ -464,5 +478,5 @@ test('test-scope reads folders and a repo with no base', () => {
 	r('remote', 'add', 'origin', bareRepo());
 	r('push', '-q', 'origin', 'main');
 	r('remote', 'set-head', 'origin', 'main');
-	assert.equal(at(remote, 'node --test tests/a.test.mjs'), 'deny', 'spec 5: a remote base with nothing changed');
+	assert.equal(at(remote, 'node --test tests/a.test.mjs'), 'deny', 'a remote base with nothing changed');
 });
