@@ -12,6 +12,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check } from './handoff.mjs';
+import { planFaults } from './plan-check.mjs';
 import { checklist, InputError } from './checklist.mjs';
 
 const UNIT_BAD = /[\\/]|\.\./;
@@ -60,6 +61,10 @@ function notesOf(text) {
 function start(planArg) {
 	const plan = path.resolve(planArg);
 	const name = path.basename(plan);
+	// plan-check's checks come first: a plan it refuses never starts, whatever its plan-graph run said.
+	let faults;
+	try { faults = planFaults(plan); } catch (e) { return bad(`${name}: ${e.message}`); }
+	if (faults.length) return fault(faults.map((f) => `${name} has a plan-check fault: ${f}`));
 	const mtime = fs.statSync(plan).mtimeMs;
 	const g = gitIn(path.dirname(plan), ['rev-parse', '--git-common-dir']);
 	if (g.status !== 0) return fault([`${name} is not in a git repository, so there is no plan-graph log: run plan-graph on it`]);

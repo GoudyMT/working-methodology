@@ -1,20 +1,12 @@
 #!/usr/bin/env node
 // Checks a batch plan before any unit runs, and the saved hand-back records against it.
-// The plan's Units table needs the columns Id, Files, Runs, Risk, Category, Tests and Tester; each unit row needs a Files
-// cell, a Runs cell, a Category cell and a Tests cell; the table needs at least one unit; and the plan graph
-// (project/.claude/plan-graph.mjs) must name no fault: two units that may run at once and touch one file, a Runs that
-// names no unit, or a cycle of "after". Test budget (test-budget.mjs): a Category cell may not be lower than the category
-// the unit's files compute; a unit's test lines (the Tests cell, split by <br>) may not pass its category's ceiling; each
-// test line says "-> <id>"; and each rule under the unit's "### <id> spec" section ("- <id>: ...") has a test line naming it. A guard unit's test lines carry its three fixed rows (guard-rows.mjs).
-// --lock <unit> writes the sha256 of the unit's row line to <plan>.locks.json, when the plan checks clean; a later check
-// refuses a locked row whose text changed.
-// With --records <folder>, each .jsonl file there is a whole hand-back (prose, RECORD:, then JSON lines), checked by
-// handoff.mjs's check. Its unit comes from its role line only, compared exactly after trimming. A record naming a unit
-// the plan does not hold is a fault, and so is a builder record whose unit has no tester record. A record with no unit
-// is skipped, with a line "record without unit: <file name>".
+// The Units table needs the columns Id, Files, Runs, Risk, Category, Tests and Tester; a unit's Files, Runs, Category and
+// Tests cells are not empty; the plan graph (project/.claude/plan-graph.mjs) names no fault; the test budget
+// (test-budget.mjs) holds; each spec rule has a test line "-> <id>"; guard rows hold (guard-rows.mjs).
+// --lock <unit> writes the row's sha256 to <plan>.locks.json when the plan checks clean; a later check refuses a changed row.
+// --records <folder> checks each .jsonl hand-back (handoff.mjs) against the plan by its role line's unit.
 //   node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit>]
-// Exit 0 clean (warning lines allowed), 1 faults named, 2 the plan, the folder, a record or the lock file cannot be read,
-// or the usage is wrong. Faults and warnings go to stdout; the problems that give exit 2 go to stderr.
+// Exit 0 clean, 1 faults on stdout, 2 unreadable input or bad usage (stderr).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -178,6 +170,13 @@ export function unitGate(plan, id) {
 	const locks = readLocks(`${plan}.locks.json`);
 	const locked = Object.prototype.hasOwnProperty.call(locks, id);
 	return { files: filesOf(cells[col('Files')] || ''), lines, locked, changed: locked && locks[id] !== sha(table.raws[i]) };
+}
+
+// For flow-check's start: the plan's faults and its lock faults, as the check prints them. An unreadable plan or lock
+// file throws (a plain Error, or Unreadable's message) for the caller to name.
+export function planFaults(plan) {
+	const p = checkPlan(fs.readFileSync(plan, 'utf8'), mapOf(plan));
+	return [...p.faults, ...lockFaults(readLocks(`${plan}.locks.json`), p.raw)];
 }
 
 // The role line of a hand-back: the first non-blank line after the last RECORD: line, as handoff.mjs reads it.
