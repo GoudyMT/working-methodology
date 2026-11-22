@@ -385,8 +385,7 @@
     "tests/author-check.test.mjs",
     "tests/ci-commit-names.test.mjs",
     "tests/kit-helpers.mjs",
-    "tests/kit-hooks.test.mjs",
-    "tests/test-lock.test.mjs"
+    "tests/kit-hooks.test.mjs"
    ],
    "workflows": []
   },

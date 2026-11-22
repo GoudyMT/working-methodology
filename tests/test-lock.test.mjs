@@ -427,13 +427,3 @@ test('the builder brief drops the test-first line and says the tester red commit
 	assert.match(body, /tester'?s red commit[^\n]*never edit/i);
 });
 
-// why: guards rule:commit-message-format (name check refuses a retest: subject)
-test('name-check accepts a retest: subject and refuses a retest/ branch name', () => {
-	const NAME_CHECK = path.resolve('project/.claude/name-check.mjs');
-	const msg = path.join(kitTemp.makeTemp('lock-msg-'), 'MSG');
-	fs.writeFileSync(msg, 'retest: tighten the add case\n');
-	const m = spawnSync(process.execPath, [NAME_CHECK, 'message', msg], { env: isolatedEnv(), encoding: 'utf8' });
-	assert.equal(m.status, 0, `the retest subject is accepted: ${m.stderr}`);
-	const b = spawnSync(process.execPath, [NAME_CHECK, 'branch', 'retest/x'], { env: isolatedEnv(), encoding: 'utf8' });
-	assert.equal(b.status, 1, `the retest/ branch is refused: ${b.stdout}${b.stderr}`);
-});

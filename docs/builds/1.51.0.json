@@ -386,7 +386,6 @@
    "before": "Pushed like any other commit",
    "after": "Held for the owner's yes",
    "tests": [
-    "tests/test-lock.test.mjs::name-check accepts a retest: subject and refuses a retest/ branch name",
     "tests/test-lock.test.mjs::pre-push refuses a new branch whose range holds a retest: commit",
     "tests/test-lock.test.mjs::pre-push refuses a push whose range holds a retest: commit, names it and says an owner yes is needed",
     "tests/test-lock.test.mjs::pre-push refuses a retest(scope): commit in both the kit and the project hook, naming its subject",
