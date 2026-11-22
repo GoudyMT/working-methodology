@@ -84,6 +84,8 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
 
 ## The flow
 
+Every build has a written plan file that every agent reads before its unit runs: the lead writes it from [templates/batch-plan.md](templates/batch-plan.md), and `{{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> [--records <folder>]` refuses a plan whose Units table lacks a column, names no file or run order, or has a fault in the plan graph, then checks the saved hand-back records against it.
+
 1. **Plan (lead).** Rank the candidate work by user value first. One plan from
    [templates/batch-plan.md](templates/batch-plan.md): the units, each with its exact files, the tests to write
    first, its done-condition, and its **collision list** - every test, caller, fixture and piece of copy the change
