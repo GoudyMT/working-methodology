@@ -697,3 +697,15 @@ test('the new roles hold the access this unit names for tester, test-reviewer, r
 	const roles = realRoles();
 	assert.deepEqual(Object.fromEntries(Object.keys(NEW_ROLES).map((n) => [n, accessOf(roles[n])])), NEW_ROLES);
 });
+
+// why: guards rule:agent-role-table (a const named only inside a block comment is not a definition the check may read)
+test('a const named only inside a block comment is a fault, not a definition', () => {
+	const files = { 'scripts/approve.mjs': `/*\nconst DEFAULT_MODEL = '${SONNET}';\n*/\nexport const OTHER = 1;\n` };
+	assertFault(faultsOf(sweepConfig(SONNET), files), 'sweep', 'DEFAULT_MODEL');
+});
+
+// why: guards rule:agent-role-table (a const named only inside a template literal is not a definition the check may read)
+test('a const named only inside a template literal is a fault, not a definition', () => {
+	const text = 'const HELP = `\nconst DEFAULT_MODEL = \'' + SONNET + '\';\n`;\nexport const OTHER = 1;\n';
+	assertFault(faultsOf(sweepConfig(SONNET), { 'scripts/approve.mjs': text }), 'sweep', 'DEFAULT_MODEL');
+});

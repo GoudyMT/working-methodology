@@ -10,6 +10,7 @@ import { spawnSync } from 'node:child_process';
 import crypto from 'node:crypto';
 import { pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
+import { tableFaults } from '../user/kit-tools/model-table.mjs';
 import { install, foldBack, bump, scrub, snapshot, restore, status as kitStatus, mainProtection, sessionStartReport as kitSessionStart, preCompactReport, promptCheckReport, vaultBackup, projectSlug, newerReleases, lsRemoteCall, tagsOf, render, sourceHooks, measure, measureReal, headings, ledger, build, parseModule, findRules, guardDir, scratch as kitScratch } from '../scripts/kit.mjs';
 import { FAKE_PHRASE, FORMAT_SKILLS, KIT_TEXT_FILES, ROWS, SHEET, adapterRepo, answerQ3, band, canary, canaryLog, canaryRepo, caseKit, compileTools, fences, front, g, gitTree, makeKit, makeTemp, noFront, plainLine, read, require, role, roleTable, ruleFiles, runAudit, runHook, sessionStartReport, sheetTools, status, words } from './kit-helpers.mjs';
 
@@ -537,15 +538,52 @@ test('no rule pointer in the kit names a heading by its words', () => {
   assert.deepEqual(byWords, []);
 });
 
-// why: guards rule:sweep-auto-approval
-test('each agent role file matches the role table: tools, denied tools and rules at start', () => {
-  const rows = roleTable();
-  assert.deepEqual(rows.map((r) => r.role).sort(), ['builder', 'checker', 'orchestrator', 'reviewer', 'scanner']);
-  for (const r of rows) {
-    const fm = front(path.resolve('user/agents', `${r.role}.md`));
-    assert.equal(fm.tools, r.tools, `${r.role} tools`);
-    assert.equal(fm.disallowedTools || 'none', r.denied, `${r.role} denied tools`);
-    assert.equal(fm.skills || 'none', r.rules === 'none' ? 'none' : `${r.role}-rules`, `${r.role} preloaded rules`);
+// why: guards rule:agent-role-table (a role file the config does not describe widens access unseen)
+test('each agent role file matches the role table in kit.config.json: tools, denied tools and rules at start', () => {
+  const config = JSON.parse(read(path.resolve('kit.config.json')));
+  const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
+  assert.deepEqual(files.filter((r) => !config.roles[r]), [], 'role files with no roles entry');
+  assert.deepEqual(tableFaults(config, path.resolve('.')), []);
+});
+
+// why: guards rule:agent-role-table (a markdown row kept beside the config would be a second home that drifts)
+test('the Agent Role Table section of the agent-teams rules holds no table rows and names kit.config.json as its home', () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const start = text.indexOf('{#agent-role-table}');
+  assert.ok(start >= 0, 'the section heading is in the rules file');
+  const next = text.slice(start + 1).search(/^#{1,6} /m);
+  const sec = next < 0 ? text.slice(start) : text.slice(start, start + 1 + next);
+  assert.deepEqual(sec.split('\n').filter((l) => /^\| (builder|checker|scanner|reviewer|orchestrator|tester|test-reviewer|researcher|drafter|writer) \|/.test(l)), []);
+  assert.match(sec, /kit\.config\.json/);
+});
+
+// why: guards rule:agent-role-table (a role body that names no model or file list leaves its own limits unstated)
+test('test-reviewer.md tells the role to end with RECORD, a role line and seven-key finding lines, with no clear default', () => {
+  const body = read(path.resolve('user/agents/test-reviewer.md')).split(/^---$/m)[2] ?? '';
+  assert.match(body, /RECORD:/);
+  assert.match(body, /"role"\s*:/, 'a JSON role line');
+  const finding = body.split('\n').find((l) => l.includes('"id"')) ?? '';
+  for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(finding, new RegExp(`"${k}"\\s*:`), `finding line has no ${k}`);
+  assert.doesNotMatch(body, /No lines means clear/);
+});
+
+// why: guards rule:agent-role-table (a tester or writer that is not told its file list would edit outside its unit)
+test('writer.md and tester.md bodies say the lead writes their file list, kit-unit-files.txt', () => {
+  for (const f of ['writer.md', 'tester.md']) {
+    const body = read(path.resolve('user/agents', f)).split(/^---$/m)[2] ?? '';
+    assert.match(body, /\blead\b[^\n]{0,80}kit-unit-files\.txt/, `${f} names no lead-written file list`);
+  }
+});
+
+// why: guards rule:agent-role-table (the step tables and the role bodies that name a builder model must agree, so no file pins Sonnet by hand)
+test('no agent-team file pairs builders with Sonnet, and each names the step table in kit.config.json', () => {
+  for (const f of ['user/agents/orchestrator.md', 'user/skills/agent-team-build/SKILL.md', 'user/skills/agent-team-build/orchestrated.md']) {
+    const text = read(path.resolve(f));
+    assert.doesNotMatch(text, /builders? \(Sonnet\)/, `${f} pairs builders with Sonnet in brackets`);
+    assert.doesNotMatch(text, /Sonnet builders/, `${f} calls the builders Sonnet builders`);
+    assert.doesNotMatch(text, /\|\s*Builder\s*\|[^\n]*\|\s*Sonnet\s*\|/i, `${f} has a table cell pairing Builder with Sonnet`);
+    assert.doesNotMatch(text, /Sonnet, the `builder` role/, `${f} pairs Sonnet with the builder role`);
+    assert.match(text, /kit\.config\.json/, `${f} names no step table in kit.config.json`);
   }
 });
 
@@ -757,6 +795,22 @@ test('the builder edit fence allows edits in its worktree and blocks edits outsi
   const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_name: 'Write', tool_input: { file_path: path.join(os.tmpdir(), 'elsewhere.js') } });
   assert.equal(out.status, 2);
   assert.match(out.stderr, /outside this builder's worktree/);
+});
+
+// why: guards rule:agent-role-table (a tester or writer edit with no lead-written file list is refused, not let through)
+test('the edit fence refuses a tester or writer edit when the unit has no file list', () => {
+  const dir = gitTree();
+  for (const agent_type of ['tester', 'writer']) {
+    const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+    assert.equal(out.status, 2, `${agent_type} edit with no list: ${out.stderr}`);
+  }
+});
+
+// why: guards rule:agent-role-table (a builder with no file list keeps its worktree edits, as it does today)
+test('the edit fence lets a builder edit in its worktree when the unit has no file list', () => {
+  const dir = gitTree();
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(out.status, 0, out.stderr);
 });
 
 // why: guards rule:agent-team-adapter
@@ -1046,6 +1100,15 @@ test('the leak guard refuses a brief or message that carries the phrase, in any 
   assert.ok(!r.stdout.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'the refusal must not repeat the phrase');
   // A leak is a tasker's failure, so the run record counts it next to the misses.
   assert.deepEqual(canaryLog(dir).map((e) => [e.tool, e.result]), [['Agent', 'leak-refused'], ['Task', 'leak-refused'], ['SendMessage', 'leak-refused'], ['Agent', 'leak-refused']]);
+});
+
+// why: guards rule:agent-canary (a report from a test or research role that opens with the phrase is its own report, not a leak)
+test('a SendMessage from tester, test-reviewer, researcher, drafter or writer that opens with the phrase is not refused', () => {
+  const dir = canaryRepo();
+  for (const agent_type of ['tester', 'test-reviewer', 'researcher', 'drafter', 'writer']) {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', agent_id: `${agent_type}-1`, agent_type, tool_input: { to: 'lead', message: `${FAKE_PHRASE}\nUNIT u1 DONE` } });
+    assert.equal(r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow', 'allow', `${agent_type} report refused`);
+  }
 });
 
 // why: guards rule:agent-canary

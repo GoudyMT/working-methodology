@@ -230,12 +230,12 @@ export function retireKit() {
 }
 
 // Plan rule-modules, Phase 2: one role table (rule:agent-role-table) says what each agent may use and which rules
-// it starts with; the role files must match it, so access is never widened by an edit to one file alone.
+// it starts with; the role files must match it, so access is never widened by an edit to one file alone. The table
+// lives in kit.config.json roles; each entry is shaped as the old markdown row was ('none' for an empty list).
 export const roleTable = () => {
-  const text = read(path.resolve('rules/agent-teams.md'));
-  const sec = text.slice(text.indexOf('{#agent-role-table}'));
-  return [...sec.matchAll(/^\| (builder|checker|scanner|orchestrator|reviewer) \| [^|]+ \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
-    .map(([, role, tools, denied, rules]) => ({ role, tools: tools.trim(), denied: denied.trim(), rules: rules.trim() }));
+  const roles = JSON.parse(read(path.resolve('kit.config.json'))).roles;
+  const list = (xs) => (xs.length ? xs.join(', ') : 'none');
+  return Object.entries(roles).map(([role, r]) => ({ role, tools: r.tools.join(', '), denied: list(r.denied), rules: list(r.rules) }));
 };
 export const front = (f) => Object.fromEntries([...read(f).match(/^---\n([\s\S]*?)\n---/)[1].matchAll(/^(\w+):\s*(.*)$/gm)].map(([, k, v]) => [k, v.trim()]));
 
