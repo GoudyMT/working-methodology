@@ -720,7 +720,8 @@ test('the project settings keep each shell command starting in the project folde
 // hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
 // why: guards the owner's pick "Roles user, Explore per project" (MC2, MC5)
 test('the kit ships a read-only Explore on the table\'s lookup model into each kit project, and none into the Claude folder', () => {
-  const lookupModel = JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps.lookup.model;
+  const steps = JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps || {};
+  const lookupModel = (steps.lookup || {}).model;
   const fm = front(path.resolve('project/.claude/agents/Explore.md'));
   assert.equal(fm.name, 'Explore');
   assert.equal(fm.model, lookupModel);
@@ -731,7 +732,7 @@ test('the kit ships a read-only Explore on the table\'s lookup model into each k
   install({ kit: path.resolve('.'), home, target: 'user' });
   install({ kit: path.resolve('.'), home, target: 'project', projectDir: proj });
   assert.equal(fs.existsSync(path.join(home, 'agents', 'Explore.md')), false);
-  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps.lookup.model);
+  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, lookupModel);
 });
 
 // why: guards rule:sweep-auto-approval
