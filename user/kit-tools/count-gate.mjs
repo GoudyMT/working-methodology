@@ -1,8 +1,8 @@
 #!/usr/bin/env node
-// The count gate (U20) and the reader and git helpers unit-check.mjs shares with it. The first test: commit in a range
-// adds as many tests to the unit's test files as the locked row's Tests cell has lines. kit.config.json's countCommand
-// counts instead: run in the repo root on the red commit's copy of each file, which is written to a temp folder under
-// the file's own name.
+// The count gate (U20) and the reader and git helpers unit-check.mjs shares with it. The test: commits in a range add as
+// many tests to the unit's test files as the locked row's Tests cell has lines, each file counted from the first red
+// commit's parent to the last red commit. kit.config.json's countCommand counts instead: run in the repo root on each
+// file's copy at those two commits, which is written to a temp folder under the file's own name.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';

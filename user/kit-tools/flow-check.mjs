@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 // U15 (build 24): the flow lock. Five checks on the build flow, each a plain script over saved files; none calls a model.
-//   node user/kit-tools/flow-check.mjs start <plan.md> --role builder     the plan's latest plan-graph run is clean and not older than the plan
+//   node user/kit-tools/flow-check.mjs start <plan.md> --role builder     plan-check names no fault, and the plan's latest plan-graph run at its full path is clean and not older than the plan
 //   node user/kit-tools/flow-check.mjs agents <folder>                   no agent id is both tester and builder, or holds over 3 units or 2 lanes
 //   node user/kit-tools/flow-check.mjs reviews <unit> --dir <folder>     one review record (a second needs the lead's note), findings need a fix record
 //   node user/kit-tools/flow-check.mjs reviewers <ledger.jsonl>          more than 3 units waiting while at most one reviewer is active
@@ -55,8 +55,8 @@ function notesOf(text) {
 	});
 }
 
-// start <plan.md> --role builder: the latest plan-graph line for this plan's name (its folder's git dir) has no faults
-// and is not older than the plan file.
+// start <plan.md> --role builder: plan-check's checks name no fault first; then the latest plan-graph line for this plan's
+// full path (its folder's git dir; a legacy line with no planPath matches by name) has no faults and is not older than the plan file.
 async function start(planArg) {
 	const plan = path.resolve(planArg);
 	const name = path.basename(plan);
