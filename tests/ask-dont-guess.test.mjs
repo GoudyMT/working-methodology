@@ -3,13 +3,14 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
-import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 const CLI = fileURLToPath(new URL('../user/kit-tools/handoff.mjs', import.meta.url));
+const TESTER_MD = fileURLToPath(new URL('../user/agents/tester.md', import.meta.url));
+const TEST_REVIEWER_MD = fileURLToPath(new URL('../user/agents/test-reviewer.md', import.meta.url));
 const FIELDS = { id: 'K1', severity: 'low', status: 'red', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
 const finding = (over = {}) => JSON.stringify({ ...FIELDS, ...over });
 // test-reviewer statuses are checked by the gate, so its finding uses one it may write.
@@ -18,12 +19,17 @@ const roleLine = (role, clarity) => JSON.stringify(clarity === undefined ? { rol
 const leadAnswer = (text) => JSON.stringify({ note: `lead answer: ${text}`, writer: 'lead' });
 const record = (...lines) => ['Prose the hand-back holds.', 'RECORD:', ...lines].join('\n');
 const tempDir = () => kitTemp.makeTemp('ask-dont-guess-');
+// The record's own role line decides the rule, so --role is passed only when a test asks for it.
 const gate = (text, role) => {
-	const file = path.join(tempDir(), 'record.txt');
+	const file = `${tempDir()}/record.txt`;
 	fs.writeFileSync(file, text);
-	return spawnSync(process.execPath, [CLI, 'check', file, '--role', role], { encoding: 'utf8' });
+	const args = [CLI, 'check', file];
+	if (role !== undefined) args.push('--role', role);
+	return spawnSync(process.execPath, args, { encoding: 'utf8' });
 };
 const lines = (res) => res.stderr.trim().split('\n');
+// Splits a role file into paragraphs; the three rules must share one, so each rule is said in the same breath.
+const paragraphs = (file) => fs.readFileSync(file, 'utf8').split(/\r?\n\s*\r?\n/);
 
 // why: catches a tester role line with no clarity field passing the gate, so a guessed spec goes unflagged.
 test('A1 spec 1: a tester role line with no clarity is an error naming clarity on line 1', () => {
@@ -74,14 +80,29 @@ test('A7 spec 2: a tester with clarity "asked" and no lead answer line is an err
 test('A8 spec 2: a tester with clarity "asked" and a lead answer with empty text is an error', () => {
 	const res = gate(record(roleLine('tester', 'asked'), leadAnswer(''), finding()), 'tester');
 	assert.equal(res.status, 1, res.stderr);
-	assert.match(res.stderr, /lead answer|`note`|empty/i);
+	assert.match(res.stderr, /lead answer/i);
+});
+
+// why: catches a lead answer whose text is only spaces passing as answered, since blank text is no answer at all.
+test('A8b spec 2: a tester with clarity "asked" and a lead answer of only spaces is an error', () => {
+	const res = gate(record(roleLine('tester', 'asked'), leadAnswer('   '), finding()), 'tester');
+	assert.equal(res.status, 1, res.stderr);
+	assert.match(res.stderr, /lead answer/i);
+});
+
+// why: catches a note from the lead that lacks the "lead answer:" prefix passing as the answer to the question asked.
+test('A8c spec 2: a tester with clarity "asked" and a lead note without the lead answer prefix is an error', () => {
+	const res = gate(record(roleLine('tester', 'asked'), JSON.stringify({ note: 'thanks', writer: 'lead' }), finding()), 'tester');
+	assert.equal(res.status, 1, res.stderr);
+	assert.match(res.stderr, /lead answer/i);
 });
 
 // why: catches a lead answer written by the tester itself passing as the lead's answer to its own question.
-test('A9 spec 2: a lead answer line whose writer is not lead is an error', () => {
+test('A9 spec 2: a lead answer line whose writer is not lead is an error that names the lead answer', () => {
 	const selfAnswer = JSON.stringify({ note: 'lead answer: yes', writer: 'tester' });
 	const res = gate(record(roleLine('tester', 'asked'), selfAnswer, finding()), 'tester');
 	assert.equal(res.status, 1, res.stderr);
+	assert.match(res.stderr, /lead answer/i);
 });
 
 // why: catches an "assumed" tester record passing the gate, which lets a guessed spec line ship unchecked.
@@ -97,12 +118,14 @@ test('A11 spec 2: a tester with clarity "assumed" is still an error with a lead 
 	const res = gate(record(roleLine('tester', 'assumed'), leadAnswer('use the 2026 path'), finding()), 'tester');
 	assert.equal(res.status, 1, res.stderr);
 	assert.match(res.stderr, /assumed/);
+	assert.match(res.stderr, /stop and ask the lead/);
 });
 
 // why: catches an "assumed" test-reviewer record passing the gate, so a review that guessed reaches the lead as settled.
-test('A12 spec 2: a test-reviewer with clarity "assumed" is an error that says to stop and ask the lead', () => {
+test('A12 spec 2: a test-reviewer with clarity "assumed" is an error that says assumed and stop and ask the lead', () => {
 	const res = gate(record(roleLine('test-reviewer', 'assumed'), leadAnswer('the tests are the spec'), reviewFinding()), 'test-reviewer');
 	assert.equal(res.status, 1, res.stderr);
+	assert.match(res.stderr, /assumed/);
 	assert.match(res.stderr, /stop and ask the lead/);
 });
 
@@ -113,59 +136,55 @@ test('A13 spec 2: a test-reviewer with clarity "asked" and no lead answer line i
 	assert.match(res.stderr, /lead answer/i);
 });
 
-// why: catches a builder being made to carry clarity, which would refuse every builder record that predates the field.
-test('A14 spec 3: a builder role line with no clarity is ok', () => {
-	const res = gate(record(roleLine('builder'), finding()), 'builder');
+// why: catches a clarity value outside the three allowed words passing the gate, which lets a free-text guess in as a rating.
+test('A14 spec 1: a tester with clarity "maybe" is an error on line 1 that names the value', () => {
+	const res = gate(record(roleLine('tester', 'maybe'), finding()), 'tester');
+	assert.equal(res.status, 1, res.stderr);
+	assert.ok(lines(res).some((l) => /^line 1: /.test(l)), res.stderr);
+	assert.match(res.stderr, /maybe/);
+});
+
+// why: catches a numeric clarity passing the gate, since a number names no state of the spec at all.
+test('A15 spec 1: a tester with a numeric clarity is an error on line 1 that names the value', () => {
+	const res = gate(record(roleLine('tester', 5), finding()), 'tester');
+	assert.equal(res.status, 1, res.stderr);
+	assert.ok(lines(res).some((l) => /^line 1: /.test(l)), res.stderr);
+	assert.match(res.stderr, /\b5\b/);
+});
+
+// why: catches a tester role line with no clarity passing when the gate is run without --role, so the rule hides behind a flag.
+test('A16 spec 1: a tester role line with no clarity is an error with no --role flag passed', () => {
+	const res = gate(record(roleLine('tester'), finding()));
+	assert.equal(res.status, 1, res.stderr);
+	assert.ok(lines(res).some((l) => /^line 1: .*`clarity`/.test(l)), res.stderr);
+});
+
+// why: catches a checker role line demanding clarity, which would refuse every checker record that predates the field.
+test('A17 spec 3: a checker role line with no clarity is ok', () => {
+	const res = gate(record(roleLine('checker'), finding()), 'checker');
 	assert.equal(res.status, 0, res.stderr);
 });
 
-// why: catches a clarity key on a builder role line being refused, when the spec allows the key on other roles.
-test('A15 spec 3: a builder role line with a clarity key is ok', () => {
-	const res = gate(record(roleLine('builder', 'clear'), finding()), 'builder');
+// why: catches a reviewer role line demanding clarity, which would refuse every reviewer record that predates the field.
+test('A18 spec 3: a reviewer role line with no clarity is ok', () => {
+	const res = gate(record(roleLine('reviewer'), finding()), 'reviewer');
 	assert.equal(res.status, 0, res.stderr);
 });
 
-// why: catches the tester role file dropping the stop-and-ask rule, so a tester guesses with nothing to stop it.
-test('A16 spec 4: user/agents/tester.md says to stop and ask the lead', () => {
-	const text = fs.readFileSync(path.resolve('user/agents/tester.md'), 'utf8');
-	assert.match(text, /stop and ask the lead/i);
+// why: catches a builder record refused for an "assumed" clarity, which the spec says the gate must ignore on other roles.
+test('A19 spec 3: a builder role line with clarity "assumed" is ok', () => {
+	const res = gate(record(roleLine('builder', 'assumed'), finding()), 'builder');
+	assert.equal(res.status, 0, res.stderr);
 });
 
-// why: catches the tester role file dropping the never-guess rule, so a guessed spec line is not forbidden.
-test('A17 spec 4: user/agents/tester.md says never to guess', () => {
-	const text = fs.readFileSync(path.resolve('user/agents/tester.md'), 'utf8');
-	assert.match(text, /never guess/i);
+// why: catches the tester and test-reviewer role files dropping one of the three rules, so a guessing tester has no written stop.
+test('A20 spec 4: user/agents/tester.md has one paragraph that says stop and ask the lead, never guess, and clarity', () => {
+	const hit = paragraphs(TESTER_MD).some((p) => /stop and ask the lead/i.test(p) && /never guess/i.test(p) && /\bclarity\b/.test(p));
+	assert.ok(hit, 'no single paragraph holds all three rules');
 });
 
-// why: catches the tester role file not naming the clarity field, so the brief and the gate never tie together.
-test('A18 spec 4: user/agents/tester.md names the clarity field', () => {
-	const text = fs.readFileSync(path.resolve('user/agents/tester.md'), 'utf8');
-	assert.match(text, /\bclarity\b/);
-});
-
-// why: catches the test-reviewer role file dropping the stop-and-ask rule, so a reviewer guesses past an unclear spec.
-test('A19 spec 4: user/agents/test-reviewer.md says to stop and ask the lead', () => {
-	const text = fs.readFileSync(path.resolve('user/agents/test-reviewer.md'), 'utf8');
-	assert.match(text, /stop and ask the lead/i);
-});
-
-// why: catches the test-reviewer role file dropping the never-guess rule, so a reviewer may guess an unclear spec line.
-test('A20 spec 4: user/agents/test-reviewer.md says never to guess', () => {
-	const text = fs.readFileSync(path.resolve('user/agents/test-reviewer.md'), 'utf8');
-	assert.match(text, /never guess/i);
-});
-
-// why: catches the test-reviewer role file not naming the clarity field, so its role line never carries the field.
-test('A21 spec 4: user/agents/test-reviewer.md names the clarity field', () => {
-	const text = fs.readFileSync(path.resolve('user/agents/test-reviewer.md'), 'utf8');
-	assert.match(text, /\bclarity\b/);
-});
-
-// why: catches a tester brief template that exists but omits the clarity field, so a brief never asks for it.
-test('A22 spec 4: a tester brief template, if one exists, names the clarity field', () => {
-	// No tester brief template exists yet under user/skills/agent-team-build/templates (only builder-brief.md and
-	// checker-brief.md), so this checks nothing until one is added; it does not pass as proof the brief asks for clarity.
-	const file = path.resolve('user/skills/agent-team-build/templates/tester-brief.md');
-	if (!fs.existsSync(file)) return;
-	assert.match(fs.readFileSync(file, 'utf8'), /\bclarity\b/);
+// why: catches the test-reviewer role file dropping one of the three rules, so a guessing reviewer has no written stop.
+test('A21 spec 4: user/agents/test-reviewer.md has one paragraph that says stop and ask the lead, never guess, and clarity', () => {
+	const hit = paragraphs(TEST_REVIEWER_MD).some((p) => /stop and ask the lead/i.test(p) && /never guess/i.test(p) && /\bclarity\b/.test(p));
+	assert.ok(hit, 'no single paragraph holds all three rules');
 });
