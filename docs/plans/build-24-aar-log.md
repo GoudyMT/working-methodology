@@ -15,6 +15,7 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 12:2x | U5 | Haiku tester | Guessed: printed names are family words for known ids, config string otherwise | Reviewer judged it consistent; flagged as an unwritten rule |
 | 12:3x | U11 | Haiku tester | Flagged: the CI job needs a test map the PR does not carry | Lead ruled: report mode exits 0 with a note; the job builds the map |
 | 12:4x | U4 | Haiku tester | Asked three open questions instead of guessing (owner-yes lift, guard vs pre-push, red sha role) | Lead answered in one message |
+| 13:0x | U6 | Haiku tester | Stopped before writing with six spec questions (file formats, the open status, reject or not) | Lead answered in one message; the lead's brief had left the file format open |
 
 ## 2. Drift from L1 to L13 and how it was caught
 
@@ -28,6 +29,7 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 | 12:1x | - | The test-check step in CI reported tests "not measured" while red tests sat on the branch | Lead (expected mid-build; clears when green) |
 | 12:4x | - | A queued fix-round message to a busy agent never started; found 30 min later | Lead, by checking the worktree (a floor-manager moment: a checklist would have shown it) |
 | 12:4x | L10 | U9 builder added an untested enforce branch that refused every built-in agent when holds.json was damaged | Opus check on the risky unit (probe) |
+| 13:1x | - | The read-only Sonnet reviewer wrote a temp test copy into the lead's checkout, deleted it and reported it | Its own report (no tool fence on a general-purpose agent; the test-reviewer role file would have blocked Write) |
 | 12:1x | L3 | The commit-shape fix went to the U7b builder (its own builder had been stopped) | Lead, by choice: warm agent, under 3 units |
 
 ## 3. Lead context and handoffs
