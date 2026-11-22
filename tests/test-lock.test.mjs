@@ -915,3 +915,44 @@ test('pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add
 		}
 	}
 });
+
+// why: catches a merge that deletes a test file pushed unheld when a remote tip also lacks it, since an absent blob reads as one a remote holds
+test('pre-push holds a merge that deletes an existing test file although a remote tip lacks it, and passes a merge bringing a blob a remote tip holds, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// A remote branch whose tip never had tests/add.test.mjs, so one remote tip lacks the path.
+		git(dir, ['checkout', '-q', '-b', 'feat/gone', red]);
+		git(dir, ['rm', '-q', 'tests/add.test.mjs']);
+		const gone = commit(dir, 'feat: drop the add case');
+		git(dir, ['push', '-q', 'origin', `${gone}:refs/heads/feat/gone`]);
+		git(dir, ['checkout', '-q', '-b', 'side', red]);
+		put(dir, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
+		const side = commit(dir, 'feat: tune util');
+		git(dir, ['push', '-q', 'origin', `${side}:refs/heads/side`]);
+		git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		commit(dir, 'feat: tune add');
+		assert.equal(mergeRef(dir, 'side', ['--no-commit']).status, 0, 'the merge of side is clean');
+		git(dir, ['rm', '-q', 'tests/add.test.mjs']);
+		const merge = commit(dir, 'merge side and drop the add case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge that deletes tests/add.test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+		// Folded control: a merge that brings in a test blob a remote branch tip already holds is not held.
+		const ctl = pushRepo();
+		firstPushDone(ctl.dir);
+		git(ctl.dir, ['checkout', '-q', '-b', 'side', ctl.red]);
+		put(ctl.dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const tightened = commit(ctl.dir, 'test: tighten the add case');
+		git(ctl.dir, ['push', '-q', 'origin', `${tightened}:refs/heads/side`]);
+		git(ctl.dir, ['checkout', '-q', '-b', 'feat/x', ctl.red]);
+		put(ctl.dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		commit(ctl.dir, 'feat: tune add');
+		assert.equal(mergeRef(ctl.dir, 'side').status, 0, 'merging side is clean');
+		const ctlMerge = git(ctl.dir, ['rev-parse', 'HEAD']);
+		const ok = pushRun(hook, ctl.dir, ctl.bare, `refs/heads/feat/x ${ctlMerge} refs/heads/feat/x ${ZERO}\n`);
+		assert.equal(ok.status, 0, `${hook} held a merge whose test blob a remote tip holds: ${ok.stderr}`);
+		assert.doesNotMatch(ok.stderr, HOLD_RE);
+	}
+});
