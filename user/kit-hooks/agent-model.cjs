@@ -1,9 +1,9 @@
 'use strict';
-// E36 (build 24): the agent model hook, log only. An Agent or Task call names a subagent_type, and that role's file in
-// the Claude config folder names the model the role runs on. This logs a line to kit-agent-model.log in the repo's git
-// common folder when the role has no file, or when the call names a model of another family than the role file. It
-// never refuses or asks: a slip-catcher, so every call runs as it would have. It loads alone (the guard reads it by
-// itself), so it keeps its git launch inline.
+// E36 (build 24): the agent model hook. An Agent or Task call names a subagent_type, and that role's file in the Claude
+// config folder names the model the role runs on. This logs a line to kit-agent-model.log in the repo's git common folder
+// when the role has no file, or when the call names a model of another family than the role file. Its hold (U9, in
+// holds.json) is log: every call runs as it would have. Set to enforce, the same mismatch is refused. The git launch stays
+// inline: the guard loads this file from the Claude folder, beside hold-mode.cjs.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -43,6 +43,16 @@ function commonDir(cwd) {
 	return r.status === 0 ? r.stdout.trim() : null;
 }
 
+// The hold's mode from hold-mode.cjs beside this file. A copy with no hold-mode.cjs beside it (the kit's tests copy this
+// file alone) logs as it did before the holds, so it is never refused for a missing file.
+function holdMode(id) {
+	try {
+		return require('./hold-mode.cjs').mode(id);
+	} catch {
+		return 'log';
+	}
+}
+
 function check(input) {
 	try {
 		const call = input && input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
@@ -60,8 +70,11 @@ function check(input) {
 				fs.appendFileSync(path.join(common, LOG), `${JSON.stringify(row)}\n`);
 			}
 		}
+		if (why && holdMode('agent-model') === 'enforce') {
+			return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Held by the agent-model hold (enforce): ${why}.` } };
+		}
 	} catch {
-		/* a log-only hook never stops a call */
+		/* a hook that fails never stops a call */
 	}
 	return null;
 }
