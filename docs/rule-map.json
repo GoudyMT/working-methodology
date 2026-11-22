@@ -48,6 +48,7 @@
     "tests/kit-helpers.mjs",
     "tests/kit-plugin.test.mjs",
     "tests/kit-rules.test.mjs",
+    "tests/model-scripts.test.mjs",
     "tests/model-table-enforcers.test.mjs",
     "tests/model-table.test.mjs"
    ],
@@ -729,7 +730,9 @@
   "tdd": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/model-scripts.test.mjs"
+   ],
    "workflows": []
   },
   "ci-gate": {
@@ -773,7 +776,8 @@
    "tests": [
     "tests/kit-hooks.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep-budget.test.mjs"
+    "tests/kit-sweep-budget.test.mjs",
+    "tests/model-scripts.test.mjs"
    ],
    "workflows": []
   },
@@ -941,7 +945,6 @@
   "features-first",
   "pre-push-op-test",
   "mid-design-red-team",
-  "tdd",
   "session-log-compression",
   "status-files-rot-silently",
   "tracking-file-batching",
