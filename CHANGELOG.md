@@ -22,6 +22,10 @@ Every hand-back ends in a checked JSONL record; tests are written, reviewed and 
 - Tester and test reviewer records carry a clarity field; an asked question needs the lead's answer before the work goes on, and a missing field warns in this release.
 - `plan-check.mjs` refuses a batch plan whose Units table lacks a column or a cell, or whose plan graph names a fault, and checks the saved hand-back records against it.
 - The build lead is the overwatch lead: the team build skill gains its section, and the flow checklist reads the lead's JSONL log against the plan, naming a unit merged before its tests, review or build step.
+- A batch plan sets each unit's test budget: `test-budget.mjs` reads the unit's category (guard, logic, glue, data or docs) from its files and Risk, a Category cell can raise it, never lower it, and plan-check holds the ceiling.
+- A count gate at red and at review: the first test commit adds as many tests as the locked row lists, counted by the project's own count command when it names one.
+- After green, a value check lists new tests that catch no flip and name no rule they guard; it only reports in this release.
+- A guard unit's Tests cell carries three fixed rows, a bypass, a repeat and a fail-closed or fail-open row that says logged; plan-check refuses a guard unit without them.
 
 ### Changed
 - The sweep tally reads a RECORD block, keeps a `|` inside a claim and refuses a record that fails the check; the canary reads a valid block as the report; a hand-back gate logs a broken block, and the brief templates ask for one.
