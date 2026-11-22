@@ -8,6 +8,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
+import { TAP_SID, ownerTaps } from './kit-helpers.mjs';
 
 kitTemp.sessionRoot();
 const LOCK = path.resolve('user/kit-tools/unit-lock.mjs');
@@ -76,8 +77,37 @@ test('unit-lock writes the source files it is given to the unit file list and pr
 	assert.equal(r.code, 0, r.out);
 	assert.match(r.out, /src\/add\.js/);
 	assert.match(r.out, /src\/util\.js/);
-	const lines = fs.readFileSync(listPath(dir), 'utf8').split(/\r?\n/).filter(Boolean);
+	const lines = fs.readFileSync(listPath(dir), 'utf8').split(/\r?\n/).filter((l) => l && !l.startsWith('#'));
 	assert.deepEqual(lines, ['src/add.js', 'src/util.js']);
+});
+
+// why: catches a unit lock written with no red sha, so the file list is not tied to the red commit it locks
+test('unit-lock writes the red sha as the first line of kit-unit-files.txt, then the source files', () => {
+	const { dir, red } = redRepo();
+	const r = lock(dir, red, ['src/add.js', 'src/util.js']);
+	assert.equal(r.code, 0, r.out);
+	const lines = fs.readFileSync(listPath(dir), 'utf8').split(/\r?\n/).filter(Boolean);
+	assert.deepEqual(lines, [`# red ${red}`, 'src/add.js', 'src/util.js']);
+});
+
+// why: catches a lock given a sha that is no commit still writing a list, so the unit locks against nothing
+test('unit-lock exits 2 and writes no list when the red sha is not a commit', () => {
+	const { dir } = redRepo();
+	const r = lock(dir, 'f'.repeat(40), ['src/add.js']);
+	assert.equal(r.code, 2, r.out);
+	assert.equal(fs.existsSync(listPath(dir)), false, 'no list file is written');
+});
+
+// why: catches the fence reading the red-sha comment line as a path, so a file named after it could be edited
+test('edit fence ignores the # red line of the list, blocking a file named after it and allowing the listed source', () => {
+	const { dir, red } = redRepo();
+	const locked = lock(dir, red, ['src/add.js']);
+	assert.equal(locked.code, 0, `lock written first: ${locked.out}`);
+	assert.equal(fs.readFileSync(listPath(dir), 'utf8').split(/\r?\n/)[0], `# red ${red}`, 'the list starts with the red line');
+	const source = fence(dir, 'builder', path.join(dir, 'src', 'add.js'));
+	assert.equal(source.code, 0, source.out);
+	const named = fence(dir, 'builder', path.join(dir, `# red ${red}`));
+	assert.equal(named.code, 2, named.out);
 });
 
 // why: catches a lead's lock that lists a test file, which would let the builder rewrite the test it must pass
@@ -131,6 +161,25 @@ test('pre-push refuses a push whose range holds a retest: commit, names it and s
 	assert.notEqual(r.status, 0, `pre-push refused: ${r.stderr}`);
 	assert.ok(r.stderr.includes(subject) || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
 	assert.match(r.stderr, /owner yes/i);
+});
+
+// why: catches an owner's yes that cannot lift a held retest push, so the one push that needs the owner stays stuck
+test('pre-push holds a retest: range without the owner yes and lets it through with the owner yes to that push', () => {
+	const { dir, red } = redRepo();
+	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+	const retest = commit(dir, 'retest: tighten the add case');
+	const input = `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`;
+	const held = spawnSync('sh', [PRE_PUSH, 'origin', 'origin'], { cwd: dir, env: isolatedEnv({ CLAUDECODE: '', AI_AGENT: '' }), input, encoding: 'utf8' });
+	assert.notEqual(held.status, 0, 'held without a yes');
+	const cfg = kitTemp.makeTemp('lock-owner-');
+	ownerTaps(cfg, dir, 'git push origin feat/x');
+	const yes = spawnSync('sh', [PRE_PUSH, 'origin', 'origin'], {
+		cwd: dir,
+		env: isolatedEnv({ KIT_OWNER_PUSH: '1', CLAUDECODE: '', AI_AGENT: '', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID }),
+		input,
+		encoding: 'utf8',
+	});
+	assert.equal(yes.status, 0, `the owner's yes lets the push through: ${yes.stderr}`);
 });
 
 // why: catches a push of an ordinary commit refused for a retest it does not hold, so every push stops
