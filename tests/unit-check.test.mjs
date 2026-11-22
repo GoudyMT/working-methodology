@@ -685,3 +685,101 @@ test('review: usage text with no arguments says the tool covers node:test projec
 	assert.equal(r.status, 2, r.stderr);
 	assert.match(r.stderr, /node:test/);
 });
+
+// ---- round 3 rows: root paths, deleted touched tests, fixtures, regex, names on next line, comments ----
+const ADDS_LINE = 'test("adds two numbers", () => { assert.equal(add(1, 2), 3); });\n';
+const MULTI_LINE = "test('multi line body', () => {\n\tconst sum = add(4, 0);\n\tassert.equal(sum, 4);\n});\n";
+const REGEX_BASE = String.raw`import { test } from 'node:test';
+import assert from 'node:assert/strict';
+import { add } from '../src/add.mjs';
+test('parses a paren', () => { assert.match('(', /\(/); });
+test("add case one", () => { assert.equal(add(4, 0), 4); });
+`;
+const WHY_BASE = testFile(['first passing', 'assert.equal(add(4, 0), 4);']) + '// why: catches an old add case.\ntest("add case one", () => { assert.equal(add(4, 0), 4); });\n';
+const FAKE_LINE = String.raw`const FAKE = "test('fake inside a string', () => {});";` + '\n';
+
+// why: catches a test reading a source file from the project root failing on the pair.
+test('review: a test reading a file from the project root is a good red then green pair', () => {
+	const dir = repo();
+	commit(dir, 'test: add a root-read case', {
+		'tests/add.test.mjs': testFile(CASE_ONE)
+			+ "test('reads the source from the project root', async () => { const { readFileSync } = await import('node:fs'); const { resolve } = await import('node:path'); const src = readFileSync(resolve('src/add.mjs'), 'utf8'); assert.ok(src.includes('return a + b')); });\n",
+	});
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// control: passes on the current code; pins that a deleted touched test is reported on the feat.
+// why: catches a test touched by an earlier red commit and deleted later going unreported on the feat.
+test('review: a test touched in an earlier commit and deleted later still fails on the feat', () => {
+	const dir = repo();
+	commit(dir, 'test: add a case that will be removed', { 'tests/add.test.mjs': testFile(CASE_ONE, ['gone soon', 'assert.equal(add(1, 2), 4);']) });
+	const drop = commit(dir, 'test: remove the case and add a new red', { 'tests/add.test.mjs': testFile(CASE_ONE, ADDS) });
+	const feat = featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, drop, /use retest:/);
+	const featLine = faultLines(r).find((l) => l.includes(feat) && /still fails after the code/.test(l));
+	assert.ok(featLine && featLine.includes('gone soon'), r.stderr);
+});
+
+// why: catches a test( call inside a fixture string read as a real test of the file.
+test('review: a test( call inside a fixture string is not read as a test', () => {
+	const dir = repo();
+	commit(dir, 'test: add a fixture string and a red case', { 'tests/add.test.mjs': testFile(CASE_ONE, ADDS) + FAKE_LINE });
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches an import added above the first test counted as part of that test.
+test('review: an import added above the first test is not part of that test', () => {
+	const dir = repo();
+	commit(dir, 'test: add an import and a red case', { 'tests/add.test.mjs': `import fs from 'node:fs';\n${testFile(CASE_ONE, ADDS)}` });
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// control: passes on the current code; pins that a lone-paren regex does not hide a later test.
+// why: catches a regex with a lone paren swallowing a later passing test unflagged.
+test('review: a regex with a lone paren does not swallow a later passing test', () => {
+	const dir = repo({ 'tests/add.test.mjs': REGEX_BASE });
+	const after = commit(dir, 'test: add a case after the regex', { 'tests/add.test.mjs': `${REGEX_BASE}test("keeps after the regex", () => { assert.equal(add(4, 0), 4); });\n` });
+	const r = runCheck(dir);
+	assert.equal(r.status, 1, r.stderr);
+	faultFor(r, after, /use retest:/);
+});
+
+// why: catches a test whose name sits on the next line never read as a test.
+test('review: a test whose name sits on the next line is a good red then green pair', () => {
+	const dir = repo();
+	commit(dir, 'test: add a red case with the name on its own line', {
+		'tests/add.test.mjs': `${testFile(CASE_ONE)}test(\n\t'adds on its own line',\n\t() => { assert.equal(add(1, 2), 3); },\n);\n`,
+	});
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// control: passes on the current code; pins that a multi-line body is not touched by a new test.
+// why: catches a multi-line test body before a new red test breaking the pair.
+test('review: a multi-line test body followed by a new red test is a good pair', () => {
+	const dir = repo({ 'tests/add.test.mjs': testFile(CASE_ONE) + MULTI_LINE });
+	commit(dir, 'test: add a red case after a multi-line body', { 'tests/add.test.mjs': testFile(CASE_ONE) + MULTI_LINE + ADDS_LINE });
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a reworded why line on an old test counted as a change to that test.
+test('review: a reworded why line on an old test beside a new red test is a good pair', () => {
+	const dir = repo({ 'tests/add.test.mjs': WHY_BASE });
+	commit(dir, 'test: reword the why line and add a red case', {
+		'tests/add.test.mjs': WHY_BASE.replace('catches an old add case.', 'catches an old add case, reworded.') + ADDS_LINE,
+	});
+	featCommit(dir);
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
