@@ -329,14 +329,15 @@ const EXPECTED = {
 	closeout: { model: OPUS, effort: 'medium', enforcer: 'lead', floor: OPUS },
 	step6: { model: 'none', effort: '-', enforcer: 'script:scripts/release-verify.mjs' },
 	reviewer: { model: SONNET, effort: 'high', enforcer: 'role:reviewer', floor: SONNET },
+	'writer-large': { model: OPUS, effort: 'medium', enforcer: 'script:user/kit-tools/pr-size.mjs' },
 };
 const shape = (s) => ({ model: s.model, effort: s.effort, enforcer: s.enforcer, floor: s.floor, stepUp: s.stepUp });
 const realSteps = () => JSON.parse(fs.readFileSync(path.join(REAL_DIR, 'kit.config.json'), 'utf8')).steps;
 
 // why: guards rule:agent-role-table (a step dropped or renamed silently leaves its model unchecked)
-test('the real steps table names the nineteen steps', () => {
+test('the real steps table names the twenty steps', () => {
 	const names = Object.keys(realSteps()).sort();
-	assert.equal(names.length, 19);
+	assert.equal(names.length, 20);
 	assert.deepEqual(names, Object.keys(EXPECTED).sort());
 });
 
