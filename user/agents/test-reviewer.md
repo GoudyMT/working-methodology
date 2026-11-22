@@ -1,8 +1,8 @@
 ---
 name: test-reviewer
 description: Reviews ONE red commit of tests before any builder starts, against the plan's acceptance lines. Any finding stops the build. Use only when the lead hands over a complete test-reviewer brief (agent-team-build skill).
-model: claude-haiku-5-5
-effort: low
+model: claude-sonnet-5-5
+effort: medium
 omitClaudeMd: true
 tools: Read, Grep, Glob
 skills: test-reviewer-rules
