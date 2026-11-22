@@ -91,6 +91,16 @@ test('G3 spec G3: a guard unit with no fail-closed or fail-open row is refused, 
 	// Control: a fail-open row that does not say logged is refused, even with valid bypass and repeat rows.
 	const openNotLogged = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-open: lets through, not logged -> S1'])]));
 	assert.equal(openNotLogged.status, 1, out(openNotLogged));
+	// Denials: never, nothing, and "no ... logged" each say the outcome is not logged, so each row is refused.
+	for (const denial of ['fail-closed: a broken guard blocks the call and is never logged -> S1', 'fail-closed: a broken guard blocks the call, nothing logged -> S1', 'fail-closed: a broken guard blocks the call, no outcome is logged -> S1']) {
+		const denied = runCheck(planText([guardRow([BYPASS, REPEAT, denial])]));
+		assert.equal(denied.status, 1, `${denial}: ${out(denied)}`);
+		assert.match(out(denied), /says the outcome is not logged/, denial);
+	}
+	// Limit: a denial word only counts within its clause, so a comma ends it. "not" in the first clause does not make the
+	// "logged" in the second a denial, and the row passes.
+	const clauseLimit = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-closed: it does not run the check, blocks the call and is logged -> S1'])]));
+	assert.equal(clauseLimit.status, 0, out(clauseLimit));
 	// Control: a complete guard unit whose fail-open row says logged passes.
 	const open = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-open: a broken guard lets the call through, logged -> S1'])]));
 	assert.equal(open.status, 0, out(open));
@@ -108,6 +118,10 @@ test('G4 spec G4: a wiring: row is accepted alongside the three rows, and wiring
 	const repeatSwap = runCheck(planText([guardRow([BYPASS, WIRING, FAIL_CLOSED])]));
 	assert.equal(repeatSwap.status, 1, out(repeatSwap));
 	assert.match(out(repeatSwap), /repeat/);
+	// Control: wiring: in place of the fail row is refused for lacking a fail-closed or fail-open row.
+	const failSwap = runCheck(planText([guardRow([BYPASS, REPEAT, WIRING])]));
+	assert.equal(failSwap.status, 1, out(failSwap));
+	assert.match(out(failSwap), /fail-closed: or fail-open: row/);
 });
 
 // why: guards rule:agent-team-adapter (the batch-plan.md guard example is a Tests cell plan-check accepts as a complete guard unit)
