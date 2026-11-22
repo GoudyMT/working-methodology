@@ -113,6 +113,11 @@ function changeSet(cwd) {
 	if (git(cwd, 'symbolic-ref', '-q', 'HEAD').status !== 0 && git(cwd, 'describe', '--exact-match', '--tags', 'HEAD').status === 0) return null;
 	let base = git(cwd, 'symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD').stdout.trim();
 	if (!base) base = ['origin/main', 'origin/master', 'main', 'master'].find((b) => git(cwd, 'rev-parse', '-q', '--verify', b).status === 0) || '';
+	// A local base that is the branch itself (no remote, on main) leaves nothing to compare with: let the call through.
+	if (base && !base.includes('/') && git(cwd, 'symbolic-ref', '-q', '--short', 'HEAD').stdout.trim() === base) {
+		logOpen(cwd, `no base to compare with: ${base} is the branch HEAD is on`);
+		return null;
+	}
 	const mb = base ? git(cwd, 'merge-base', 'HEAD', base).stdout.trim() : '';
 	const diff = mb ? git(cwd, 'diff', '--name-only', mb) : git(cwd, 'diff', '--name-only', 'HEAD');
 	// Repo-relative, as the diff is, whatever folder the run starts in.
@@ -158,9 +163,19 @@ function check(input) {
 			if (r.never) what = r.what;
 			else if (!r.files.length) what = `${r.what} with no test file runs the whole suite`;
 			else {
-				const named = r.files.map((f) => (f.startsWith('dir:') ? `${rel(r.from, f.slice(4))}/` : rel(r.from, f)));
-				const all = [...named, ...named.filter((f) => !f.endsWith('/')).flatMap(reaches)];
-				const out = all.filter((f) => (f.endsWith('/') ? ![...changed].some((c) => c.startsWith(f) && TEST_FILE.test(c)) : !changed.has(f)));
+				// A word that is a folder on disk stands for every test file under it, tracked or not.
+				const isDir = (f) => { try { return fs.statSync(path.resolve(r.from, f)).isDirectory(); } catch { return false; } };
+				const folderOut = (f) => {
+					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', rel(r.from, f) || '.');
+					if (ls.status !== 0) throw new Error('git ls-files failed');
+					const tests = ls.stdout.split('\n').map((x) => x.trim()).filter((x) => x && TEST_FILE.test(x));
+					const unchanged = tests.filter((x) => !changed.has(x));
+					return tests.length ? unchanged : [`${rel(r.from, f)}/`];
+				};
+				const plain = r.files.map((f) => (f.startsWith('dir:') ? f.slice(4) : f));
+				const named = plain.filter((f) => !isDir(f)).map((f) => rel(r.from, f));
+				const all = [...named, ...named.flatMap(reaches)];
+				const out = [...all.filter((f) => !changed.has(f)), ...plain.filter(isDir).flatMap(folderOut)];
 				if (out.length) what = `${r.what} reaches ${out.slice(0, 3).join(', ')}, which this branch did not change`;
 			}
 			if (what) {
