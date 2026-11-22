@@ -48,7 +48,7 @@ const runCheck = (text) => {
 	return spawnSync(process.execPath, [CHECK, file], { cwd: dir, encoding: 'utf8' });
 };
 
-// why: S1: no category line, or the wrong one, so the lead cannot read a unit's test budget from its files.
+// why: catches a unit with no category line, or the wrong one, so the lead cannot read its test budget from its files (S1).
 test('B1 spec S1: test-budget prints one category line with its ceiling, and the highest category of any file wins', () => {
 	const map = mapFile({ 'docs/*.md': 'docs', 'src/*.mjs': 'logic' });
 	// Three files in the order logic, docs, guard-list: the guard file is the highest, whatever the order.
@@ -64,7 +64,7 @@ test('B1 spec S1: test-budget prints one category line with its ceiling, and the
 	assert.match(docs.stdout, /^category: docs \(ceiling 3; /m);
 });
 
-// why: S2: a guard file or a Risk high that does not fire guard, so a hook or gate change gets a logic budget.
+// why: catches a guard file or Risk high that does not fire guard, so a hook or gate change gets a logic budget (S2).
 test('B2 spec S2: Risk high or a GUARD_PATHS file fires guard, and the list is imported from tester-model.mjs', async () => {
 	assert.ok(fs.existsSync(TESTER), 'user/kit-tools/tester-model.mjs is missing');
 	const { GUARD_PATHS } = await import(pathToFileURL(TESTER).href);
@@ -83,7 +83,7 @@ test('B2 spec S2: Risk high or a GUARD_PATHS file fires guard, and the list is i
 	assert.doesNotMatch(src, /['"]approve\.mjs['"]/);
 });
 
-// why: S3: an unmapped file counted as docs or glue, so a file the adapter never named gets a cheap budget.
+// why: catches an unmapped file counted as docs or glue, so a file the adapter never named gets a cheap budget (S3).
 test('B3 spec S3: the testCategories map sets categories by path or glob, and a file the map does not name counts as logic', () => {
 	const map = mapFile({ 'docs/*.md': 'docs', 'kit-tools/exact.cjs': 'glue' });
 	const unmapped = runBudget(['--files', 'unmapped/z.txt', '--map', map]);
@@ -96,7 +96,7 @@ test('B3 spec S3: the testCategories map sets categories by path or glob, and a 
 	assert.match(exact.stdout, /^category: glue \(ceiling 6; /m);
 });
 
-// why: S4: a plan row lowering a category below the computed one, so a unit gets a cheaper budget than its files earn.
+// why: catches a plan row lowering a category below the computed one, so a unit gets a cheaper budget than its files earn (S4).
 test('B4 spec S4: a Category above the computed one is raised to it, and one below is refused naming both', () => {
 	const raised = runBudget(['--files', 'src/a.mjs', '--category', 'guard']);
 	assert.equal(raised.status, 0, out(raised));
@@ -108,7 +108,7 @@ test('B4 spec S4: a Category above the computed one is raised to it, and one bel
 	assert.match(out(lower), /docs/);
 });
 
-// why: S5: a Units table with no Category or Tests column read as clean, so the plan never carries a budget to check.
+// why: catches a Units table with no Category or Tests column read as clean, so the plan never carries a budget (S5).
 test('B5 spec S5: plan-check reads the Category and Tests columns and refuses a Units table without them', () => {
 	const noCat = planText([row('U1')], { head: HEAD.filter((h) => h !== 'Category') });
 	const missingCat = runCheck(noCat);
@@ -123,7 +123,7 @@ test('B5 spec S5: plan-check reads the Category and Tests columns and refuses a 
 	assert.doesNotMatch(out(present), /column/i);
 });
 
-// why: S6: a row over its category ceiling passing, so a unit is built with a test list too long to hold to one budget.
+// why: catches a row over its category ceiling passing, so a unit is built with a test list too long for one budget (S6).
 test('B6 spec S6: a row over its category ceiling is refused with a split message, and one at the ceiling is not', () => {
 	const over = runCheck(planText([row('U1', { [TESTS]: tests(16) })]));
 	assert.equal(over.status, 1, out(over));
@@ -147,7 +147,7 @@ test('B6 spec S6: a row over its category ceiling is refused with a split messag
 	assert.equal(docsAt.status, 0, out(docsAt));
 });
 
-// why: S7: a test line with no "->" passing, so a test is listed with no spec line or rule id it proves.
+// why: catches a test line with no "->" passing, so a test is listed with no spec line or rule id it proves (S7).
 test('B7 spec S7: a test line with no "->" is refused naming the unit, and a line with one is not', () => {
 	const bad = runCheck(planText([row('U1', { [TESTS]: 'checks the thing' })]));
 	assert.equal(bad.status, 1, out(bad));
@@ -157,7 +157,7 @@ test('B7 spec S7: a test line with no "->" is refused naming the unit, and a lin
 	assert.equal(good.status, 0, out(good));
 });
 
-// why: S8: a spec rule no test line names passing, so a rule ships with no test that proves it.
+// why: catches a spec rule no test line names passing, so a rule ships with no test that proves it (S8).
 test('B8 spec S8: a spec rule no test line names is refused by its id, and one a test names is not', () => {
 	const spec = ['### U1 spec', '', '- S1: the first rule', '- S2: the second rule', ''].join('\n');
 	const bad = runCheck(planText([row('U1', { [TESTS]: 'checks one -> S1' })], { extra: spec }));
@@ -170,7 +170,7 @@ test('B8 spec S8: a spec rule no test line names is refused by its id, and one a
 	assert.equal(all.status, 0, out(all));
 });
 
-// why: S9: a Category cell below the computed category passing, so a unit is given a cheaper budget than its files earn.
+// why: catches a Category cell below the computed category passing, so a unit gets a cheaper budget than its files earn (S9).
 test('B9 spec S9: a Category cell below the computed category is refused naming the unit, and a matching one is not', () => {
 	// U1's file computes logic; its cell says docs.
 	const res = runCheck(planText([
@@ -186,7 +186,7 @@ test('B9 spec S9: a Category cell below the computed category is refused naming 
 	assert.doesNotMatch(out(res), /U3/);
 });
 
-// why: S10: a locked row edited later passing, so a unit's test budget can change after it was set.
+// why: catches a locked row edited later passing, so a unit's test budget can change after it was set (S10).
 test('B10 spec S10: --lock writes the sha256 of the row line, and a later run refuses that row once its text changes', () => {
 	assert.ok(fs.existsSync(CHECK), 'user/kit-tools/plan-check.mjs is missing');
 	const dir = kitTemp.makeTemp('plan-lock-');
@@ -212,7 +212,7 @@ test('B10 spec S10: --lock writes the sha256 of the row line, and a later run re
 	assert.equal(unlocked.status, 0, out(unlocked));
 });
 
-// why: S11: the Units template or the adapter missing its Category, Tests or testCategories entry, so a kit-made plan cannot set a budget.
+// why: catches a Units template or adapter missing its Category, Tests or testCategories entry, so a plan cannot set a budget (S11).
 test('B11 spec S11: the batch-plan Units table has Category and Tests columns, and project-adapter documents the testCategories row', () => {
 	assert.ok(fs.existsSync(TEMPLATE), 'batch-plan.md is missing');
 	const lines = fs.readFileSync(TEMPLATE, 'utf8').split(/\r?\n/);

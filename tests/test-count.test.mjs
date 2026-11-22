@@ -79,7 +79,7 @@ const handoffCheck = async (text) => {
 	return check(text, { role: 'test-reviewer' });
 };
 
-// why: C1: a count that misses it() calls, so a unit whose tests use it() is refused for a count it meets.
+// why: catches a count that misses it() calls, so a unit whose tests use it() is refused for a count it meets (C1).
 test('C1 spec C1: unit-check counts the test() and it() calls the red commit adds, per file the locked row names', () => {
 	// The base holds one test; the red commit extends the file with one test() and one it(), so it adds 2.
 	const fx = fixture({
@@ -93,7 +93,7 @@ test('C1 spec C1: unit-check counts the test() and it() calls the red commit add
 	assert.equal(off.status, 1, out(off));
 });
 
-// why: C2: a project count command ignored, so the kit's own counter decides a project's test count.
+// why: catches a project count command being ignored, so the kit's own counter decides a project's test count (C2).
 test('C2 spec C2: a countCommand in kit.config.json runs with the test file appended and replaces the kit counter', () => {
 	const script = "console.log(process.argv.at(-1).endsWith('a.test.mjs') ? 7 : 0);\n";
 	const fx = fixture({ red: redFile(2, 0), config: { command: 'node fake-count.mjs', script } });
@@ -106,7 +106,7 @@ test('C2 spec C2: a countCommand in kit.config.json runs with the test file appe
 	assert.equal(kit.status, 0, out(kit));
 });
 
-// why: C3, C4: a red commit whose count differs from its locked row passing, so a unit ships with fewer tests than planned; or a matching count refused, which blocks a correct red commit.
+// why: catches a red commit with a count off its locked row passing, so a unit ships short; or a matching count refused, which blocks a correct red commit (C3, C4).
 test('C3, C4 spec C3, C4: a count that differs fails on one line naming the file and both counts, and a matching count passes with exit 0', () => {
 	const fx = fixture({ red: redFile(2, 0) });
 	const res = runUnit(fx, writePlan(fx.dir, [row(3)]));
@@ -120,7 +120,7 @@ test('C3, C4 spec C3, C4: a count that differs fails on one line naming the file
 	assert.equal(same.status, 0, out(same));
 });
 
-// why: C5: handoff refusing swap or redundant as a status, so a reviewer cannot write the two new verdicts.
+// why: catches handoff refusing swap or redundant as a status, so a reviewer cannot write the two new verdicts (C5).
 test('C5 spec C5: handoff accepts the test-reviewer statuses swap and redundant, and refuses a made-up one', async () => {
 	const red = await handoffCheck(reviewText({ status: 'redundant' }));
 	assert.equal(red.ok, true, red.errors.join('; '));
@@ -131,7 +131,7 @@ test('C5 spec C5: handoff accepts the test-reviewer statuses swap and redundant,
 	assert.equal(bogus.ok, false);
 });
 
-// why: C6: an add finding with no break named passing, so a test is added with no reason it catches anything.
+// why: catches an add finding with no break named passing, so a test is added with no reason it catches anything (C6).
 test('C6 spec C6: an add finding with no breaks named is refused, and one that names its break passes', async () => {
 	const bare = await handoffCheck(reviewText({ status: 'add' }));
 	assert.equal(bare.ok, false);
@@ -141,7 +141,7 @@ test('C6 spec C6: an add finding with no breaks named is refused, and one that n
 	assert.equal(named.ok, true, named.errors.join('; '));
 });
 
-// why: C7: a swap that drops an assertion with no replacement passing, so a weaker test replaces a stronger one unnoticed.
+// why: catches a swap that drops an assertion with no replacement passing, so a weaker test replaces a stronger one unnoticed (C7).
 test('C7 spec C7: a swap with no replacement or with empty or missing keeps is refused, and one that keeps its assertions passes', async () => {
 	const noReplacement = await handoffCheck(reviewText({ status: 'swap' }));
 	assert.equal(noReplacement.ok, false);
@@ -181,7 +181,7 @@ test('C10 spec C10: builder-brief.md says one test per plan line, tests are a fl
 	assert.match(text, /never[^.]*\badd\b[^.]*\bdrop/i);
 });
 
-// why: C11: a count gate passing a plan edited after its lock, so a unit's locked Tests cell can change unseen.
+// why: catches a count gate passing a plan edited after its lock, so a unit's locked Tests cell can change unseen (C11).
 test('C11 lock: an edited locked row fails with "the locked row changed", and the unedited row passes', () => {
 	// The locked row is the unedited one; the lock file holds its sha256, as the lock writes it.
 	const fx = fixture({ red: redFile(2, 0) });

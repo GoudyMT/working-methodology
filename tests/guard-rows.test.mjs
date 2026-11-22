@@ -37,7 +37,7 @@ const runCheck = (text) => {
 	return spawnSync(process.execPath, [CHECK, file], { cwd: dir, encoding: 'utf8' });
 };
 
-// why: G1, G5: a guard unit with no bypass: row passing, so a guard that a wrapper or another shell gets past is never tested for it; a complete guard unit beside a plain logic unit wrongly refused.
+// why: catches a guard unit with no bypass row passing, so a guard a wrapper or another shell gets past is never tested; or a complete guard unit beside a plain logic unit wrongly refused (G1, G5).
 test('G1 spec G1: a guard unit with no bypass: row is refused naming that unit, and a complete guard unit beside a plain logic unit passes', () => {
 	const noBypass = runCheck(planText([guardRow([REPEAT, FAIL_CLOSED])]));
 	assert.equal(noBypass.status, 1, out(noBypass));
@@ -54,7 +54,7 @@ test('G1 spec G1: a guard unit with no bypass: row is refused naming that unit, 
 	assert.equal(pair.status, 0, out(pair));
 });
 
-// why: G2, G5: a guard unit with no repeat: row passing, so a guard whose verdict flips on a second run is never caught; a complete guard unit wrongly refused.
+// why: catches a guard unit with no repeat row passing, so a guard whose verdict flips on a second run is never caught; or a complete guard unit wrongly refused (G2, G5).
 test('G2 spec G2: a guard unit with no repeat: row is refused naming repeat, and a complete guard unit passes', () => {
 	const noRepeat = runCheck(planText([guardRow([BYPASS, FAIL_CLOSED])]));
 	assert.equal(noRepeat.status, 1, out(noRepeat));
@@ -67,7 +67,7 @@ test('G2 spec G2: a guard unit with no repeat: row is refused naming repeat, and
 	assert.equal(withRepeat.status, 0, out(withRepeat));
 });
 
-// why: G3, G5: a guard unit with no fail row, or one whose outcome is not logged, passing, so a guard that fails silently ships; a complete guard unit wrongly refused.
+// why: catches a guard unit with no fail row, or one whose outcome is not logged, passing, so a guard that fails silently ships; or a complete guard unit wrongly refused (G3, G5).
 test('G3 spec G3: a guard unit with no fail-closed or fail-open row is refused, a fail row without "logged" is refused, and a complete guard unit with a logged fail-open row passes', () => {
 	const noFail = runCheck(planText([guardRow([BYPASS, REPEAT])]));
 	assert.equal(noFail.status, 1, out(noFail));
@@ -86,7 +86,7 @@ test('G3 spec G3: a guard unit with no fail-closed or fail-open row is refused, 
 	assert.equal(open.status, 0, out(open));
 });
 
-// why: G4: a wiring: row refused as a guard proof, so a guard registered in the wrong place passes its plan unseen.
+// why: catches a wiring: row refused as a guard proof, so a guard registered in the wrong place passes its plan unseen (G4).
 test('G4 spec G4: a wiring: row is accepted alongside the three rows, and wiring: never stands in for bypass:, repeat: or the fail row', () => {
 	const withWiring = runCheck(planText([guardRow([BYPASS, REPEAT, FAIL_CLOSED, WIRING])]));
 	assert.equal(withWiring.status, 0, out(withWiring));

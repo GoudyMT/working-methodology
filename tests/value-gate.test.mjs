@@ -21,6 +21,15 @@ const write = (dir, rel, text) => {
 };
 const git = (root, ...a) => spawnSync('git', ['-C', root, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' });
 const lineOf = (text, needle) => text.split('\n').findIndex((l) => l.includes(needle)) + 1;
+// The "Tests that catch nothing:" section of --value: its heading, then the indented test lines until the next unindented line.
+const catchNothingSection = (text) => {
+	const lines = text.split('\n');
+	const at = lines.findIndex((l) => l.startsWith('Tests that catch nothing:'));
+	assert.ok(at >= 0, 'the --value output has a "Tests that catch nothing:" section');
+	const body = [];
+	for (const l of lines.slice(at + 1)) { if (!/^ {4}\S/.test(l)) break; body.push(l); }
+	return body.join('\n');
+};
 
 // A repo with a base commit, then a branch commit that adds the files, and (optionally) a coverage map at the head.
 function repo({ base, branch, map = null }) {
@@ -63,7 +72,7 @@ const valueRepo = () => repo({
 	} }),
 });
 
-// why: V1: test-check's A2 lets a doc claim, a named pin or a guard proof pass without a caught flip, and still measures a bare why line
+// why: catches A2 exempting a doc claim, a pin or a guard proof, or not measuring a bare why line (V1).
 test('A2 exempts a doc claim, a named pin and a guard proof by their why line', () => {
 	const key = (n) => `tests/exempt.test.mjs::${n}`;
 	const { root, baseSha } = repo({
@@ -96,13 +105,15 @@ test('A2 exempts a doc claim, a named pin and a guard proof by their why line', 
 	assert.match(a2('control')[0] ?? '', /catches no flip/);
 });
 
-// why: V2: the mutation check --value lists a test that catches nothing, names a covering set, times each test, prices it when a CI rate is set, and lists a function over approx complexity 10 first
+// why: catches --value omitting a test that catches nothing, its covering set, seconds, dollars or an over-10 function listed first (V2).
 test('mutation-check --value reports covering set, seconds, dollars and approx complexity', () => {
 	const { root } = valueRepo();
 	const run = () => spawnSync(process.execPath, [MUT, '--value'], { cwd: root, encoding: 'utf8' });
 	const first = run();
 	const out = first.stdout + first.stderr;
-	assert.match(out, /big is only called/, 'the never-catching test is listed');
+	const nothing = catchNothingSection(first.stdout);
+	assert.match(nothing, /big is only called/, 'the never-catching test is listed in its section');
+	assert.doesNotMatch(nothing, /small is checked/, 'the test that catches a flip is not in the never-catching section');
 	assert.match(out, /covering set/i, 'a smallest covering set is named');
 	assert.match(out, /small is checked.*\d(\.\d+)?\s?s\b/, 'each test has its seconds');
 	assert.match(out, /not priced/, 'no CI rate set: dollars print "not priced"');
@@ -119,7 +130,7 @@ test('mutation-check --value reports covering set, seconds, dollars and approx c
 	assert.ok(smallAt >= 0 && bigAt < smallAt, 'the over-10 function is listed first');
 });
 
-// why: V3: the --value report only reports, so with a survivor it still exits 0 and names the survivor
+// why: catches --value exiting non-zero on a survivor, or not naming it by file and line (V3).
 test('mutation-check --value exits 0 and names a survivor', () => {
 	const { root } = valueRepo();
 	const r = spawnSync(process.execPath, [MUT, '--value'], { cwd: root, encoding: 'utf8' });
@@ -127,7 +138,7 @@ test('mutation-check --value exits 0 and names a survivor', () => {
 	assert.match(r.stdout + r.stderr, /src\/calc\.mjs:\d+/, 'the survivor is named by its file and line');
 });
 
-// why: V4: the project test-value step runs the mutationCommand named in kit.config.json and prints its stdout
+// why: catches the project test-value step not running the mutationCommand from kit.config.json or not printing its stdout (V4).
 test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its report', () => {
 	assert.ok(fs.existsSync(KIT_VALUE), 'the project step exists');
 	const dir = kitTemp.makeTemp('value-gate-');
@@ -139,7 +150,7 @@ test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its 
 	assert.match(r.stdout, new RegExp(SENTINEL), 'the stub output is printed');
 });
 
-// why: V5: with no mutation tool named, the project step prints "not measured" and exits 0
+// why: catches the project step failing to print "not measured" and exit 0 when no mutation tool is named (V5).
 test('user/kit-tools/test-value.mjs prints "not measured" and exits 0 with no tool named', () => {
 	assert.ok(fs.existsSync(KIT_VALUE), 'the project step exists');
 	const dir = kitTemp.makeTemp('value-gate-');
@@ -148,7 +159,7 @@ test('user/kit-tools/test-value.mjs prints "not measured" and exits 0 with no to
 	assert.match(r.stdout, /not measured/);
 });
 
-// why: V6: the agent-team-build skill tells the lead to fold or drop a new test that catches nothing before merge
+// why: catches the agent-team-build skill omitting the rule to fold or drop a test that catches nothing before merge (V6).
 test('agent-team-build SKILL.md says the lead folds or drops a test that catches nothing before merge', () => {
 	const src = fs.readFileSync(SKILL, 'utf8');
 	assert.match(src, /catches nothing/, 'the skill names a test that catches nothing');
