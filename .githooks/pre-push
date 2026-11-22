@@ -9,18 +9,39 @@ refs=$(cat)
 retests=""
 while read -r lref lsha rref rsha; do
   case "$lsha" in *[!0]*) ;; *) continue ;; esac
-  case "$rsha" in *[!0]*) below="$rsha" ;; *) below=$(git ls-remote --heads "$2" 2>/dev/null | awk '{print $1}' | tr '\n' ' ') ;; esac
+  below=$(git ls-remote --heads "$2" 2>/dev/null | while read -r s _; do git cat-file -e "$s^{commit}" 2>/dev/null && printf '%s ' "$s"; done)
+  case "$rsha" in *[!0]*) below="$below$rsha" ;; esac
   range=$(git log --format='%h %s' "$lsha" --not $below 2>&1) || { echo "Push blocked: the commits of $rref cannot be read, so a retest: commit in them cannot be ruled out. $range" >&2; exit 1; }
-  hits=$(printf '%s\n' "$range" | awk '$2=="retest:"')
+  hits=$(printf '%s\n' "$range" | awk '$2 ~ /^retest(\([^)]*\))?!?:$/')
   if [ -n "$hits" ]; then retests="$retests$hits
 "; fi
 done <<EOF
 $refs
 EOF
 if [ -n "$retests" ]; then
-  echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: ask the owner, who pushes it from their own terminal." >&2
-  printf '%s' "$retests" >&2
-  exit 1
+  # F4 (owner ruling): the owner's own push lifts the hold when the owner tapped Yes on a pop-up quoting the push. It is
+  # read as project/.githooks/pre-push reads it: the same owner-yes.cjs, one check per ref, with the kind it reads.
+  yes="$(dirname "$0")/../project/.claude/owner-yes.cjs"
+  common=$(git rev-parse --git-common-dir)
+  owned=1
+  [ "$KIT_OWNER_PUSH" = "1" ] && [ -z "$AI_AGENT$CLAUDECODE" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ] && [ -f "$yes" ] || owned=0
+  while read -r lref lsha rref rsha; do
+    [ -n "$rref" ] || continue
+    [ "$owned" = 1 ] || break
+    kind=""
+    case "$lsha" in *[!0]*) ;; *) kind=delete ;; esac
+    case "$rsha" in *[!0]*)
+      [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
+    esac
+    node "$yes" --push "$rref" "$kind" "$common" "$1" 10 || owned=0
+  done <<EOF
+$refs
+EOF
+  if [ "$owned" != 1 ]; then
+    echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: the owner pushes it from their own terminal, or answers the pop-up yes to this push in the session." >&2
+    printf '%s' "$retests" >&2
+    exit 1
+  fi
 fi
 common=$(git rev-parse --git-common-dir)
 gatelog="$common/kit-merge-gate.log"
