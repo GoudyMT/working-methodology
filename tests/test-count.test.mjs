@@ -43,6 +43,14 @@ const writePlan = (dir, rows) => {
 	fs.writeFileSync(file, planText(rows));
 	return file;
 };
+// The lock an unchanged row needs (as C11 writes it): the sha256 of the U1 row line, in the locks file beside the plan.
+const lockPlan = (file) => {
+	const rowLine = fs.readFileSync(file, 'utf8').split('\n').find((l) => l.startsWith('| U1 |'));
+	fs.writeFileSync(`${file}.locks.json`, JSON.stringify({ U1: crypto.createHash('sha256').update(rowLine).digest('hex') }));
+	return file;
+};
+// A plan whose U1 row is locked, so the count gate reads its count rather than refusing it as unlocked.
+const lockedPlan = (dir, rows) => lockPlan(writePlan(dir, rows));
 // A temp git repo: a base commit (with an optional countCommand config), then one red commit that adds the test file.
 const fixture = ({ red, base: baseFile = null, config = null }) => {
 	const dir = kitTemp.makeTemp('unit-count-');
@@ -86,10 +94,10 @@ test('C1 spec C1: unit-check counts the test() and it() calls the red commit add
 		base: `${HEADER}\n${passing('t0')}\n`,
 		red: `${HEADER}\n${passing('t0')}\n${failing('t1')}\n${itFailing('i1')}\n`,
 	});
-	const res = runUnit(fx, writePlan(fx.dir, [row(2)]));
+	const res = runUnit(fx, lockedPlan(fx.dir, [row(2)]));
 	assert.equal(res.status, 0, out(res));
 	// Control: the same commit against a plan of one test is refused, so the count was read as something other than 2.
-	const off = runUnit(fx, writePlan(fx.dir, [row(1)]));
+	const off = runUnit(fx, lockedPlan(fx.dir, [row(1)]));
 	assert.equal(off.status, 1, out(off));
 });
 
@@ -97,26 +105,26 @@ test('C1 spec C1: unit-check counts the test() and it() calls the red commit add
 test('C2 spec C2: a countCommand in kit.config.json runs with the test file appended and replaces the kit counter', () => {
 	const script = "console.log(process.argv.at(-1).endsWith('a.test.mjs') ? 7 : 0);\n";
 	const fx = fixture({ red: redFile(2, 0), config: { command: 'node fake-count.mjs', script } });
-	const res = runUnit(fx, writePlan(fx.dir, [row(2)]));
+	const res = runUnit(fx, lockedPlan(fx.dir, [row(2)]));
 	assert.equal(res.status, 1, out(res));
 	assert.match(out(res), /\b7\b/);
 	// Control: with no countCommand, the kit counter's 2 matches the plan's 2.
 	const bare = fixture({ red: redFile(2, 0) });
-	const kit = runUnit(bare, writePlan(bare.dir, [row(2)]));
+	const kit = runUnit(bare, lockedPlan(bare.dir, [row(2)]));
 	assert.equal(kit.status, 0, out(kit));
 });
 
 // why: catches a red commit with a count off its locked row passing, so a unit ships short; or a matching count refused, which blocks a correct red commit (C3, C4).
 test('C3, C4 spec C3, C4: a count that differs fails on one line naming the file and both counts, and a matching count passes with exit 0', () => {
 	const fx = fixture({ red: redFile(2, 0) });
-	const res = runUnit(fx, writePlan(fx.dir, [row(3)]));
+	const res = runUnit(fx, lockedPlan(fx.dir, [row(3)]));
 	assert.equal(res.status, 1, out(res));
 	const line = out(res).split('\n').find((l) => /a\.test\.mjs/.test(l));
 	assert.ok(line, out(res));
 	assert.match(line, /\b3\b/);
 	assert.match(line, /\b2\b/);
 	// Control: the same red commit against its planned count of 2 passes with exit 0.
-	const same = runUnit(fx, writePlan(fx.dir, [row(2)]));
+	const same = runUnit(fx, lockedPlan(fx.dir, [row(2)]));
 	assert.equal(same.status, 0, out(same));
 });
 
@@ -209,7 +217,7 @@ test('M5 count gate: two red commits, 2 tests in a.test.mjs then 1 test in b.tes
 	git(['commit', '-q', '-m', 'test: red count two']);
 	const head = git(['rev-parse', 'HEAD']).stdout.trim();
 	const base = fx.range.split('..')[0];
-	const plan = writePlan(fx.dir, [{ ...row(3), Files: '`tests/a.test.mjs`, `tests/b.test.mjs`' }]);
+	const plan = lockedPlan(fx.dir, [{ ...row(3), Files: '`tests/a.test.mjs`, `tests/b.test.mjs`' }]);
 	const res = runUnit({ ...fx, range: `${base}..${head}` }, plan);
 	assert.equal(res.status, 0, out(res));
 });
@@ -219,7 +227,7 @@ test('M5 count gate: with countCommand, one test added to a file that holds five
 	const five = `${HEADER}\n${[0, 1, 2, 3, 4].map((i) => passing(`t${i}`)).join('\n')}\n`;
 	const script = "import fs from 'node:fs';\nconst text = fs.readFileSync(process.argv.at(-1), 'utf8');\nconsole.log((text.match(/^test\\(/gm) || []).length);\n";
 	const fx = fixture({ base: five, red: `${five}${failing('t5')}\n`, config: { command: 'node fake-count.mjs', script } });
-	const res = runUnit(fx, writePlan(fx.dir, [row(1)]));
+	const res = runUnit(fx, lockedPlan(fx.dir, [row(1)]));
 	assert.equal(res.status, 0, out(res));
 });
 
@@ -243,7 +251,7 @@ test('M5 count gate: a test file name with shell metacharacters reaches countCom
 	git(['add', '-A']);
 	git(['commit', '-q', '-m', 'test: red count']);
 	const head = git(['rev-parse', 'HEAD']).stdout.trim();
-	const plan = writePlan(dir, [{ ...row(2), Files: `\`tests/${NAME}\`` }]);
+	const plan = lockedPlan(dir, [{ ...row(2), Files: `\`tests/${NAME}\`` }]);
 	const payloadEnv = { ...process.env, KIT_PWN: `x"&mkdir ${path.join(dir, 'pwned')}&"` };
 	const res = spawnSync(process.execPath, [UNIT_CHECK, `${base}..${head}`, '--repo', dir, '--plan', plan, '--unit', 'U1'], { encoding: 'utf8', env: payloadEnv });
 	assert.ok(fs.existsSync(ARGV_OUT), 'countCommand ran and wrote the argument it received');
