@@ -422,3 +422,44 @@ test('N13 spec 4: a record holding only a role line and one note line passes', (
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 	assert.equal(r.notes, 1);
 });
+
+// why: catches a record whose role line names builder passing as the tester's hand-back when the brief named tester.
+test('N14 spec 2: a role line that differs from the expected role is an error naming role on line 1', () => {
+	const r = check(record('{"role": "builder", "commit": "158ec54"}', finding('K1')), { role: 'tester', commit: '158ec54' });
+	assert.equal(r.ok, false);
+	assert.ok(r.errors.some((e) => /^line 1: .*`role`/.test(e)), JSON.stringify(r.errors));
+});
+
+// why: catches a record whose commit is not the expected one passing when the brief named a different build.
+test('N15 spec 2: a commit that is not the expected commit is an error naming commit on line 1', () => {
+	const r = check(record('{"role": "tester", "commit": "abc1234"}', finding('K1')), { role: 'tester', commit: '158ec54' });
+	assert.equal(r.ok, false);
+	assert.ok(r.errors.some((e) => /^line 1: .*`commit`/.test(e)), JSON.stringify(r.errors));
+});
+
+// why: catches matching role and commit values being refused, which would block every correct hand-back.
+test('N16 spec 2: matching role and a commit that extends the expected prefix are ok', () => {
+	const r = check(record('{"role": "tester", "commit": "158ec5411234567"}', finding('K1')), { role: 'tester', commit: '158ec54' });
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+});
+
+// why: catches check(text) with no expectations changing behaviour when the new expectation argument is absent.
+test('N17 spec 2: check with no expectations still accepts a record with any role and commit', () => {
+	const r = check(record('{"role": "tester", "commit": "abc1234"}', finding('K1')));
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+});
+
+// why: catches the CLI passing a commit mismatch with --role and --commit, so a wrong brief exits zero.
+test('N18 spec 9: CLI check with --role and --commit exits 1 on a mismatch', () => {
+	const file = writeRecord(record('{"role": "builder", "commit": "abc1234"}', finding('K1')));
+	const res = cli(['check', file, '--role', 'tester', '--commit', '158ec54']);
+	assert.equal(res.status, 1);
+	assert.ok(/^line 1: /m.test(res.stderr), res.stderr);
+});
+
+// why: catches the CLI refusing a record whose role and commit match the expectation it was given.
+test('N19 spec 9: CLI check with matching --role and --commit exits 0', () => {
+	const file = writeRecord(record('{"role": "tester", "commit": "158ec54"}', finding('K1')));
+	const res = cli(['check', file, '--role', 'tester', '--commit', '158ec54']);
+	assert.equal(res.status, 0, res.stderr);
+});
