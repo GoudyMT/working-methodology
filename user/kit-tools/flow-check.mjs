@@ -12,7 +12,6 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { check } from './handoff.mjs';
-import { planFaults } from './plan-check.mjs';
 import { checklist, InputError } from './checklist.mjs';
 
 const UNIT_BAD = /[\\/]|\.\./;
@@ -58,10 +57,12 @@ function notesOf(text) {
 
 // start <plan.md> --role builder: the latest plan-graph line for this plan's name (its folder's git dir) has no faults
 // and is not older than the plan file.
-function start(planArg) {
+async function start(planArg) {
 	const plan = path.resolve(planArg);
 	const name = path.basename(plan);
 	// plan-check's checks come first: a plan it refuses never starts, whatever its plan-graph run said.
+	// Loaded here only: plan-check reads the plan graph, and the other subcommands never need it.
+	const { planFaults } = await import('./plan-check.mjs');
 	let faults;
 	try { faults = planFaults(plan); } catch (e) { return bad(`${name}: ${e.message}`); }
 	if (faults.length) return fault(faults.map((f) => `${name} has a plan-check fault: ${f}`));
@@ -234,7 +235,7 @@ function main(argv) {
 }
 
 try {
-	process.exitCode = main(process.argv.slice(2));
+	process.exitCode = await main(process.argv.slice(2));
 } catch (e) {
 	if (!e.code) throw e;
 	process.stderr.write(`flow-check: cannot read ${e.path ?? ''}: ${e.code}\n`);
