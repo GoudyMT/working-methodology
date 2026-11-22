@@ -7,11 +7,15 @@ refs=$(cat)
 # A test change needs the owner's yes. The helper holds each test path a push changes, by net effect, and each retest:
 # subject; a history it cannot read, or a shallow repo, is held too, and no yes lifts that.
 scan_tests="$(dirname "$0")/../project/.claude/test-push-scan.mjs"
+if [ ! -f "$scan_tests" ]; then
+  echo "Push blocked: the test-change scan (project/.claude/test-push-scan.mjs) is missing; reinstall the kit." >&2
+  exit 1
+fi
 retests=""
 held=$(printf '%s\n' "$refs" | node "$scan_tests" "$2"); scan_rc=$?
 case "$scan_rc" in
   0) ;;
-  1) retests=$held ;;
+  10) if printf '%s\n' "$held" | grep -Eq '^  [0-9a-f]{7} '; then retests=$held; else echo "Push blocked: the test-change scan gave no result, so the push is held." >&2; exit 1; fi ;;
   *) printf '%s\n' "${held:-Push blocked: the test-change scan did not finish (exit $scan_rc), so the push is held.}" >&2; exit 1 ;;
 esac
 if [ -n "$retests" ]; then

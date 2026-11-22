@@ -1,6 +1,6 @@
 #!/bin/sh
-# Pushes are the owner's (rule:outward-acts) but for a feature branch, which goes without a yes. Every push is scanned
-# for secrets and logged. KIT_OWNER_PUSH=1 (the owner's own push) passes the bound only; the other checks still run.
+# Feature-branch pushes go without a yes (rule:outward-acts). Every push is scanned for secrets and logged;
+# KIT_OWNER_PUSH=1 passes the bound only.
 # The refs being pushed, from stdin.
 refs=$(cat)
 # Branch names (rule:branching).
@@ -12,34 +12,27 @@ if [ -f "$names" ]; then
   done
 fi
 OWNER_WAY="The owner's own push from their own terminal has its own way (rule:outward-acts)."
-# A url.insteadOf rewrite that matches the push URL sends every ls-remote below to another remote, so the default-branch
-# check and the secret scan would read a decoy's answer. Such a push is refused whoever runs it. Each key and value is
-# read NUL-split, so a value with spaces is read whole, and an empty value, which matches every URL, counts.
+# A url.insteadOf rewrite of the push URL would send every ls-remote to a decoy: refused, whoever runs it. Keys and
+# values are read NUL-split, so a value with spaces counts whole, and an empty one matches every URL.
 if git config -z --get-regexp '^url\..*\.insteadof$' 2>/dev/null | KIT_URL="$2" node -e 'let s="";process.stdin.on("data",(d)=>{s+=d;}).on("end",()=>{process.exit(s.split("\0").some((r)=>{const n=r.indexOf("\n");const v=r.slice(n+1);return n>=0&&process.env.KIT_URL.startsWith(v);})?0:1);})'; then
   echo "Push blocked: a url.insteadOf setting rewrites $2, so the hook cannot ask the real remote what it holds. Push to the remote's own URL with that setting out of the way." >&2
   exit 1
 fi
-# The remote's own answer for its default branch, asked by URL so no remote setting of this repo changes it; the local
-# origin/HEAD, which a command can move or delete, is used only when the remote cannot be asked or names none. A remote
-# that answers with no symref line (a HEAD that names a commit, a dumb server) was read as having no default branch, so
-# a push to it went out: with branches there and nothing naming one, it prints ?.
+# The remote's default branch, asked of the remote by URL (a local origin/HEAD is any command's to move). With branches
+# there and no default line, it prints ?.
 remote_default() {
   if out=$(git ls-remote --symref "$2" HEAD 2>/dev/null); then
     d=$(printf '%s\n' "$out" | sed -n 's|^ref: refs/heads/\([^[:space:]]*\)[[:space:]]*HEAD$|\1|p' | head -n 1)
-    # The remote answered and named none: the local origin/HEAD is not asked, since a tool can move it with any write to
-    # .git. A new repo has no branch, so no default yet: its first push is judged below, as before.
+    # Named none: origin/HEAD is not asked, since a tool can move it. A new repo has no default yet.
     if [ -z "$d" ] && [ -n "$(git ls-remote --heads "$2" 2>/dev/null)" ]; then d="?"; fi
   else
-    # A remote that cannot be asked: the local origin/HEAD is any command's to delete, and a config key can break this one
-    # call while the push itself goes through, so it may be the default branch: ?.
+    # Cannot be asked: it may be the default branch, so ?.
     d="?"
   fi
   printf '%s\n' "$d"
 }
-# Two pushes on one yes would race for the lock. A lock older than 10 minutes was left by a push that was killed (a closed
-# terminal left it, and every later owner push waited on it), so it is taken over. The lock names its owner (this hook's
-# pid and a nonce): it is taken over only when older than 10 minutes and its owner is no longer running, and only its
-# owner removes it (a slow push kept its lock).
+# Two pushes on one yes would race. A lock over 10 minutes old, whose owner (pid and nonce) is gone, is taken over;
+# only its owner removes it.
 lock_me="$$ $(od -An -N8 -tx1 /dev/urandom 2>/dev/null | tr -d ' \n')"
 take_lock() {
   l="$common/kit-push.lock"
@@ -61,8 +54,8 @@ take_lock() {
 drop_lock() {
   [ "$(cat "$common/kit-push.lock/owner" 2>/dev/null)" = "$lock_me" ] && rm -rf "$common/kit-push.lock"
 }
-# A test change needs the owner's yes. The helper holds each test path a push changes, by net effect, and each retest:
-# subject. A history it cannot read, or a shallow repo, is held too, and no yes lifts that.
+# A test change needs the owner's yes; the helper names each test path and retest. An unreadable history is held too,
+# and no yes lifts that.
 scan_tests="$(dirname "$0")/../.claude/test-push-scan.mjs"
 if [ ! -f "$scan_tests" ]; then
   echo "Push blocked: the test-change scan (.claude/test-push-scan.mjs) is missing; reinstall the kit." >&2
@@ -72,7 +65,7 @@ retests=""
 held=$(printf '%s\n' "$refs" | node "$scan_tests" "$2"); scan_rc=$?
 case "$scan_rc" in
   0) ;;
-  1) retests=$held ;;
+  10) if printf '%s\n' "$held" | grep -Eq '^  [0-9a-f]{7} '; then retests=$held; else echo "Push blocked: the test-change scan gave no result, so the push is held." >&2; exit 1; fi ;;
   *) printf '%s\n' "${held:-Push blocked: the test-change scan did not finish (exit $scan_rc), so the push is held.}" >&2; exit 1 ;;
 esac
 if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
@@ -212,7 +205,7 @@ if [ ! -f "$common/kit-first-push-done" ]; then
   if [ -n "$checked" ] && [ -n "$(git branch -r --contains "$checked" 2>/dev/null)" ]; then
     : > "$common/kit-first-push-done"
   else
-    # What the remote holds, asked of the remote itself: a local remote-tracking ref can be faked.
+    # Asked of the remote: a local remote-tracking ref can be faked.
     have=$(git ls-remote "$2" 2>/dev/null | while read -r sha ref; do git cat-file -e "$sha^{commit}" 2>/dev/null && printf '%s\n' "$sha"; done)
     while read -r lref lsha rref rsha; do
       case "$lsha" in *[!0]*) ;; *) continue ;; esac
