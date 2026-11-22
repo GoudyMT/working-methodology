@@ -51,7 +51,8 @@
     "tests/model-override.test.mjs",
     "tests/model-scripts.test.mjs",
     "tests/model-table-enforcers.test.mjs",
-    "tests/model-table.test.mjs"
+    "tests/model-table.test.mjs",
+    "tests/test-lock.test.mjs"
    ],
    "workflows": []
   },
