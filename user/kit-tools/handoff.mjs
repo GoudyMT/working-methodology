@@ -5,12 +5,16 @@
 // checks it, so any model's output can pass through it, and a `|` in a claim is kept (the old pipe format split it).
 //
 // Usage: node handoff.mjs check <file|-> [--role <r>] [--commit <c>]     (exit 0 valid, 1 invalid with errors on stderr, 2 unreadable input)
+//        node handoff.mjs check --review <unit> [--dir <folder>]          (exit 0 every review finding has a fixed line, 1 not, 2 unreadable)
 import fs from 'node:fs';
 import path from 'node:path';
+import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const FINDING_KEYS = ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix'];
+// The statuses a test-reviewer may write (K310). Other roles' statuses are not checked here.
+const REVIEW_STATUSES = ['wrong-test', 'uncovered', 'passes-on-base', 'vague', 'open'];
 
 // A key error names the key in backticks, so a retry prompt can point at exactly the field to repair.
 function keyErrors(obj, keys) {
@@ -90,6 +94,9 @@ export function check(text, expect = {}) {
 			if (typeof obj.severity === 'string' && obj.severity && !SEVERITIES.includes(obj.severity)) {
 				errs.push(`bad \`severity\`, want one of ${SEVERITIES.join(', ')}`);
 			}
+			if (expect.role === 'test-reviewer' && typeof obj.status === 'string' && obj.status && !REVIEW_STATUSES.includes(obj.status)) {
+				errs.push(`bad \`status\` ${JSON.stringify(obj.status)}, want one of ${REVIEW_STATUSES.join(', ')}`);
+			}
 			if (typeof obj.id === 'string' && obj.id) {
 				if (seen.has(obj.id)) errs.push(`duplicate \`id\` ${JSON.stringify(obj.id)}`);
 				seen.add(obj.id);
@@ -104,25 +111,97 @@ export function check(text, expect = {}) {
 	return out;
 }
 
+const UNIT_BAD = /[\\/]|\.\./;
+
+// The review folder: kit-reviews under the git common dir, so a linked worktree reads the main repo's. Git is launched
+// as pr-size.mjs launches it: from node's own folder, with a git.exe left in the folder never run in its place.
+function defaultFolder() {
+	const r = spawnSync('git', ['-C', process.cwd(), '-c', 'core.fsmonitor=false', 'rev-parse', '--git-common-dir'], {
+		encoding: 'utf8',
+		timeout: 60000,
+		windowsHide: true,
+		cwd: path.dirname(process.execPath),
+		env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' },
+	});
+	return r.status === 0 ? path.join(path.resolve(process.cwd(), r.stdout.trim()), 'kit-reviews') : null;
+}
+
+// The file's text, undefined when there is no such file. A file that is there but cannot be read throws.
+function readOptional(file) {
+	try { return fs.readFileSync(file, 'utf8'); } catch (e) {
+		if (e.code === 'ENOENT') return undefined;
+		throw new Error(`cannot read ${file}: ${e.code || e.message}`);
+	}
+}
+
+// check --review <unit> (K310): each review finding needs a `fixed` line with the same id in the tester's fix record.
+function reviewGate(unit, dirArg) {
+	if (unit.trim() === '' || UNIT_BAD.test(unit)) {
+		console.error(`unit ${JSON.stringify(unit)} is not a plain name: no path separator, no .., not empty`);
+		return 2;
+	}
+	const folder = dirArg ?? defaultFolder();
+	if (folder === null) {
+		console.error('check --review: not inside a git repository, so there is no default folder; pass --dir <folder>');
+		return 2;
+	}
+	let review, fix;
+	try {
+		review = readOptional(path.join(folder, `${unit}.review.jsonl`));
+		fix = readOptional(path.join(folder, `${unit}.fix.jsonl`));
+	} catch (e) {
+		console.error(e.message);
+		return 2;
+	}
+	if (review === undefined) {
+		console.error(`no review for ${unit}`);
+		return 1;
+	}
+	const rv = check(review, { role: 'test-reviewer' });
+	if (!rv.ok) {
+		console.error(rv.errors.join('\n'));
+		return 1;
+	}
+	const fx = fix === undefined ? { ok: true, findings: [] } : check(fix, { role: 'tester' });
+	if (!fx.ok) {
+		console.error(fx.errors.join('\n'));
+		return 1;
+	}
+	const fixed = new Set(fx.findings.filter((f) => f.status === 'fixed').map((f) => f.id));
+	const unfixed = rv.findings.filter((f) => !fixed.has(f.id));
+	for (const f of unfixed) console.error(`unfixed: review finding ${f.id} (${f.status}) has no fixed line in ${unit}.fix.jsonl`);
+	if (unfixed.length) return 1;
+	console.log(`ok: ${rv.findings.length} review findings, all fixed`);
+	return 0;
+}
+
 function main(argv) {
 	const [cmd, ...rest] = argv;
 	const expect = {};
 	let file;
+	let review;
+	let dir;
 	for (let i = 0; i < rest.length; i++) {
-		if (rest[i] === '--role' || rest[i] === '--commit') {
+		const flag = rest[i];
+		if (['--role', '--commit', '--review', '--dir'].includes(flag)) {
 			const v = rest[++i];
 			if (v === undefined) {
-				console.error(`${rest[i - 1]} needs a value`);
+				console.error(`${flag} needs a value`);
 				return 2;
 			}
-			expect[rest[i - 1].slice(2)] = v;
+			if (flag === '--review') review = v;
+			else if (flag === '--dir') dir = v;
+			else expect[flag.slice(2)] = v;
 		} else if (file === undefined) file = rest[i];
 		else file = null;
 	}
-	if (cmd !== 'check' || !file) {
-		console.error('usage: node handoff.mjs check <file|-> [--role <r>] [--commit <c>]');
+	const usage = () => {
+		console.error('usage: node handoff.mjs check <file|-> [--role <r>] [--commit <c>]  |  check --review <unit> [--dir <folder>]');
 		return 2;
-	}
+	};
+	if (cmd !== 'check') return usage();
+	if (review !== undefined) return file === undefined ? reviewGate(review, dir) : usage();
+	if (!file || dir !== undefined) return usage();
 	let text;
 	try { text = fs.readFileSync(file === '-' ? 0 : file, 'utf8'); } catch (e) {
 		console.error(`cannot read ${file}: ${e.code || e.message}`);
