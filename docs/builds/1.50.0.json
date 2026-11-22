@@ -433,7 +433,7 @@
  "verification": [
   "Every new test fails first on the 1.49.0 code, on an assertion; the test check reports no finding.",
   "A live plugin session named the plugin root and `/kit:methodology-kit` at start, held a push to main, and the runner stopped a plugin with its hooks removed.",
-  "Score gate on the owner's PC at 93b14fc: recall median 14 against the release's 14, control 0; behaviour 14 against 14, control 8; two blind scorers, no question or scenario worse."
+  "Score gate on the owner's PC at 93b14fc: recall median 14 against the release's 14, control 0; behaviour 14 against 14, control 8; none worse."
  ],
  "decisions": [
   {
