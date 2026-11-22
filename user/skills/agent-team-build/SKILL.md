@@ -124,7 +124,7 @@ hand-pasted copy, because a pasted copy goes stale the day the rule changes.
    commit; a high, critical, security or owner-rule fix with a test that fails before it, a low or medium one only when a
    real input shows it (rule:finding-pipeline). Then the fix check (rule:finding-pipeline): each fix's test fails on the
    code before it, and CI's test check states each named fix test's verdict. No checker re-reviews the fixes, and
-   there is no re-sweep: a second sweep is the user's call. Then
+   there is no re-sweep: a second sweep is the user's call. Group the findings with `{{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`, so each lane shares no file with another, and a fix merges once its tests pass and CI is green, with no re-review. Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
    wait for the user, except a feature-branch push inside the user's bound (rule:outward-acts). For any other push
    the lead asks in a pop-up quoting the exact command, `KIT_PUSH_APPROVED=1` included, and runs it after the user's
