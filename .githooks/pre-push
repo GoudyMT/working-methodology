@@ -24,7 +24,11 @@ if [ -n "$retests" ]; then
   yes="$(dirname "$0")/../project/.claude/owner-yes.cjs"
   common=$(git rev-parse --git-common-dir)
   owned=1
-  [ "$KIT_OWNER_PUSH" = "1" ] && [ -z "$AI_AGENT$CLAUDECODE" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ] && [ -f "$yes" ] || owned=0
+  if [ "$KIT_OWNER_PUSH" = "1" ]; then
+    [ -z "$AI_AGENT$CLAUDECODE" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ] && [ -f "$yes" ] || owned=0
+  else
+    [ "$KIT_PUSH_APPROVED" = "1" ] && [ -n "$CLAUDE_CODE_SESSION_ID" ] && [ -f "$yes" ] || owned=0
+  fi
   while read -r lref lsha rref rsha; do
     [ -n "$rref" ] || continue
     [ "$owned" = 1 ] || break
@@ -38,7 +42,7 @@ if [ -n "$retests" ]; then
 $refs
 EOF
   if [ "$owned" != 1 ]; then
-    echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: the owner pushes it from their own terminal, or answers the pop-up yes to this push in the session." >&2
+    echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal." >&2
     printf '%s' "$retests" >&2
     exit 1
   fi

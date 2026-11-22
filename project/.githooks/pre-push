@@ -85,8 +85,8 @@ while read -r lref lsha rref rsha; do
 done <<EOF
 $refs
 EOF
-if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ]; then
-  echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: the owner pushes it from their own terminal, or answers the pop-up yes to this push in the session. $OWNER_WAY" >&2
+if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
+  echo "Push blocked: this push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal. $OWNER_WAY" >&2
   printf '%s' "$retests" >&2
   exit 1
 fi
@@ -210,6 +210,7 @@ EOF
       esac
       if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1"; then
         echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first. $OWNER_WAY" >&2
+        if [ -n "$retests" ]; then echo "This push holds a retest: commit, a test changed after its red commit (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1." >&2; printf '%s' "$retests" >&2; fi
         exit 1
       fi
     done <<EOF
