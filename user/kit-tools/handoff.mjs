@@ -83,6 +83,10 @@ export function check(text, expect = {}) {
 			if (!errs.length) out.notes++;
 		} else if (FINDING_KEYS.some((k) => k in obj)) {
 			const errs = keyErrors(obj, FINDING_KEYS);
+			// A whole placeholder (<...> with nothing else) is a template line copied without its values.
+			for (const k of FINDING_KEYS) {
+				if (typeof obj[k] === 'string' && /^<[^<>]*>$/.test(obj[k].trim())) errs.push(`\`${k}\` is an unfilled placeholder`);
+			}
 			if (typeof obj.severity === 'string' && obj.severity && !SEVERITIES.includes(obj.severity)) {
 				errs.push(`bad \`severity\`, want one of ${SEVERITIES.join(', ')}`);
 			}
