@@ -187,7 +187,7 @@ test('T19 spec 7: a role line alone is never ok and says the record is empty', (
 test('T20 spec 4: a notChecked line with an empty string is an error on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"notChecked": ""}'));
 	assert.equal(r.ok, false);
-	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
+	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
 });
 
 // why: a notChecked given as a number must be refused, or a count typed as a value passes as a disclosure.
