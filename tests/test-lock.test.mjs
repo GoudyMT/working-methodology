@@ -21,6 +21,7 @@ const ZERO = '0'.repeat(40);
 // The test-file shapes both the lock and the fence are checked on. test_x.py is left out: unit-check, whose test-file
 // rule the lock follows, does not count it, and the edit fence has no test-file rule of its own (it blocks by list).
 const TEST_SHAPES = ['tests/helper.mjs', 'src/x.test.js', '__tests__/x.js'];
+const esc = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
 
 // A child environment whose home and Claude config folders are temp dirs.
 function isolatedEnv(extra = {}) {
@@ -131,10 +132,10 @@ test('unit-lock exits 1 and names each test shape given to it, and writes none o
 		const { dir, red } = redRepo();
 		const r = lock(dir, red, ['src/add.js', shape]);
 		assert.equal(r.code, 1, `${shape}: ${r.out}`);
-		assert.match(r.out, new RegExp(shape.replace(/[.]/g, '\\.')), `${shape} is named`);
+		assert.match(r.out, new RegExp(esc(shape)), `${shape} is named`);
 		const file = listPath(dir);
 		const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
-		assert.doesNotMatch(text, new RegExp(shape.replace(/[.]/g, '\\.')), `${shape} is not written`);
+		assert.doesNotMatch(text, new RegExp(esc(shape)), `${shape} is not written`);
 	}
 });
 

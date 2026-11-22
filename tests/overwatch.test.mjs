@@ -46,7 +46,7 @@ const CLEAN = [['U1', '`src/a.mjs`'], ['U2', '`src/b.mjs`']];
 // The file a risky unit touches, built from each GUARD_PATHS entry: a folder, a glob or a plain file name.
 const fileFor = (entry) => {
 	if (entry.endsWith('/')) return `user/${entry}guard.cjs`;
-	if (entry.includes('*')) return `user/${entry.replace('*', 'one')}`;
+	if (entry.includes('*')) return `user/${entry.replaceAll('*', 'one')}`;
 	return `user/${entry}`;
 };
 // The section from its heading to the next level-two heading; shared by the section tests.

@@ -140,8 +140,9 @@ test('hold-mode returns enforce and does not throw for holds.json of the wrong s
 
 // Runs agent-model.cjs from hookDir once per call in calls, in dir's repo; one result per call, null when it decides nothing.
 function checkCalls(hookDir, dir, calls, extraEnv = {}) {
-	const script = `const m = require(${JSON.stringify(path.join(hookDir, 'agent-model.cjs'))}); const calls = ${JSON.stringify(calls)}; process.stdout.write(JSON.stringify(calls.map((c) => m.check({ tool_name: 'Agent', tool_input: c, cwd: ${JSON.stringify(dir)} }))));`;
-	return spawnSync(process.execPath, ['-e', script], { env: isolatedEnv(extraEnv), encoding: 'utf8' });
+	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); process.stdout.write(JSON.stringify(a.calls.map((c) => m.check({ tool_name: 'Agent', tool_input: c, cwd: a.dir }))));";
+	const args = JSON.stringify({ hookDir, calls, dir });
+	return spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env: isolatedEnv({ ...extraEnv, KIT_TEST_ARGS: args }), encoding: 'utf8' });
 }
 
 // A Claude config folder holding one role file per name in roles (name -> model line), for the role lookup.
