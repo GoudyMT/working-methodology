@@ -16,7 +16,9 @@ const { spawnSync } = require('child_process');
 // a folder of its own, as guard-outward.cjs runs it.
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 const posix = (p) => String(p).split(path.sep).join('/');
-const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.(py|go)$|([-_]test|(^|\/)test|(^|\/)test-[^/]*)\.[cm]?js$/i;
+const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.(py|go)$/i;
+// What a folder run counts: also node's default names (*-test, *_test, test-*, test), which a hint never offers.
+const FOLDER_TEST = new RegExp(`${TEST_FILE.source}|([-_]test|(^|/)test|(^|/)test-[^/]*)\\.[cm]?[jt]s$`, 'i');
 // Options whose value is the next word, so it is never read as a file.
 const VALUED = /^(--test-name-pattern|--test-skip-pattern|--test-reporter|--test-reporter-destination|--test-concurrency|--test-timeout|--import|--require|-r|--shards|--slice|--always|-k|-m|-p|--config|-c|--project|--testNamePattern|-t|--reporter|--rootdir|-n|--tb|--maxfail|--cov|--cov-report|--maxWorkers|-w|-run|-count|-timeout|--durations|--deselect|--ignore|--grep|-g|--timeout|--env|--environment|--testTimeout|--test-coverage-include|--test-coverage-exclude|--watch-path)$/;
 // Options of a package manager or npx whose value is the next word (a folder, a package).
@@ -167,14 +169,12 @@ function check(input) {
 				// A word that is a folder on disk stands for every test file under it, tracked or not.
 				const isDir = (f) => { try { return fs.statSync(path.resolve(r.from, f)).isDirectory(); } catch { return false; } };
 				const folderOut = (f) => {
-					// A folder outside the repo cannot be listed: refuse it, unless the repo is inside it (then read the root).
+					// A folder outside the repo cannot be listed, and one holding the repo runs its sibling folders too: refuse every one.
 					const at = rel(r.from, f);
-					const outside = /^\.\.(\/|$)/.test(at) || path.isAbsolute(at);
-					const apart = /^\.\.(\/|$)/.test(posix(path.relative(path.resolve(r.from, f), root)));
-					if (outside && apart) return [`${posix(path.resolve(r.from, f))}/ (outside the repo)`];
-					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', outside ? '.' : at || '.');
+					if (/^\.\.(\/|$)/.test(at) || path.isAbsolute(at)) return [`${posix(path.resolve(r.from, f))}/ (outside the repo)`];
+					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', at || '.');
 					if (ls.status !== 0) throw new Error('git ls-files failed');
-					const tests = ls.stdout.split('\n').map((x) => x.trim()).filter((x) => x && TEST_FILE.test(x));
+					const tests = ls.stdout.split('\n').map((x) => x.trim()).filter((x) => x && FOLDER_TEST.test(x));
 					const unchanged = tests.filter((x) => !changed.has(x));
 					return tests.length ? unchanged : [`${rel(r.from, f)}/`];
 				};
@@ -187,7 +187,7 @@ function check(input) {
 			if (what) {
 				const mine = [...changed].filter((f) => TEST_FILE.test(f)).slice(0, 3);
 				const hint = mine.length ? ` Run only the tests you changed (${mine.join(', ')}); CI runs the rest after you push.` : ' CI runs the suite after you push.';
-				return { kitWhat: `a local test run past the changed tests: ${what}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Owner's yes needed: a local test run past the changed tests (${what}).${hint}` } };
+				return { kitWhat: `a local test run past the changed tests: ${what}.${hint}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Owner's yes needed: a local test run past the changed tests (${what}).${hint}` } };
 			}
 		}
 		return null;
