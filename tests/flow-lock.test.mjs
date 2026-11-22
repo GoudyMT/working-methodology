@@ -6,6 +6,7 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import kitTemp from '../project/.claude/kit-temp.cjs';
@@ -457,6 +458,20 @@ test('L9: rounds exits 0 with three records holding VERDICT: FIXED or a mid-line
 	put(dir, 'U1.checker1.jsonl', `VERDICT: FIXED\n${body}`);
 	put(dir, 'U1.checker2.jsonl', `The checker said VERDICT: FIX in prose.\n${body}`);
 	put(dir, 'U1.checker3.jsonl', `VERDICT: FIXED\n${body}`);
+	const r = rounds(dir);
+	assert.equal(r.code, 0, r.out);
+});
+
+// why: catches the hook's GUARD_PATHS list drifting from the tester-model copy
+test('L9: the hook GUARD_PATHS equals tester-model GUARD_PATHS', () => {
+	const hook = createRequire(import.meta.url)(AGENT_MODEL);
+	assert.deepEqual(hook.GUARD_PATHS, GUARD_PATHS);
+});
+
+// why: catches a PASS record quoting a FIX verdict being counted as a fix round
+test('L9: rounds exits 0 when a PASS record quotes an earlier VERDICT: FIX line', () => {
+	const dir = checkerDir(['FIX', 'FIX']);
+	put(dir, 'U1.checker3.jsonl', `VERDICT: PASS\nThe earlier checker wrote:\nVERDICT: FIX\nRECORD:\n${JSON.stringify({ role: 'checker', commit: 'abc1234' })}\n${NOTE('checked', 'checker')}\n`);
 	const r = rounds(dir);
 	assert.equal(r.code, 0, r.out);
 });
