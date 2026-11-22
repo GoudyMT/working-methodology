@@ -246,6 +246,16 @@ test('pre-push refuses a push whose range holds a retest: commit, names it and s
 	assert.notEqual(r.status, 0, `pre-push refused: ${r.stderr}`);
 	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
 	assert.match(r.stderr, OWNER_YES);
+	// Folded control (was its own test): catches a push of an ordinary commit refused for a retest it does not hold, so every push stops.
+	{
+		git(dir, ['checkout', '-q', '-b', 'feat/ordinary', red]);
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+		const feat = commit(dir, 'feat: tidy add');
+		const ok = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${feat} refs/heads/feat/x ${red}\n`);
+		assert.equal(ok.status, 0, ok.stderr);
+		assert.doesNotMatch(ok.stderr, /retest/);
+		assert.doesNotMatch(ok.stderr, OWNER_YES);
+	}
 });
 
 // why: catches the owner's yes failing to lift a held retest push, so the one push that needs the owner stays stuck
@@ -287,6 +297,26 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 	assert.notEqual(r.status, 0, `pre-push refused: ${r.stderr}`);
 	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
 	assert.match(r.stderr, OWNER_YES);
+	// Folded control (was its own test): catches an update push re-refusing a retest the remote already holds on another branch, which blocks every merge of main.
+	{
+		const { dir: d2, red: r2, bare: b2 } = pushRepo();
+		git(d2, ['checkout', '-q', '-b', 'topic']);
+		put(d2, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		commit(d2, 'retest: tighten the add case');
+		git(d2, ['push', '-q', 'origin', 'topic']);
+		git(d2, ['checkout', '-q', 'main']);
+		git(d2, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
+		git(d2, ['checkout', '-q', '-b', 'feat/x', r2]);
+		put(d2, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+		const first = commit(d2, 'feat: first add');
+		git(d2, ['push', '-q', 'origin', 'feat/x']);
+		git(d2, ['merge', '-q', '--no-edit', 'main']);
+		put(d2, { 'src/util.js': 'export const id = (x) => x + 0;\n' });
+		const next = commit(d2, 'feat: tidy util');
+		const up = pushRun(PROJECT_PRE_PUSH, d2, b2, `refs/heads/feat/x ${next} refs/heads/feat/x ${first}\n`);
+		assert.equal(up.status, 0, `the update push goes through: ${up.stderr}`);
+		assert.doesNotMatch(up.stderr, /retest/);
+	}
 });
 
 // why: catches a new-branch push (remote sha all zeros) that skips the secret scan, so a key goes out with a new branch
@@ -358,6 +388,31 @@ test('pre-push refuses a new branch whose range holds a retest: commit', () => {
 	const r = pushRun(PROJECT_PRE_PUSH, dir, bare, `refs/heads/feat/new ${retest} refs/heads/feat/new ${ZERO}\n`);
 	assert.notEqual(r.status, 0, `the new branch was refused: ${r.stderr}`);
 	assert.match(r.stderr, OWNER_YES);
+	// Folded control (was its own test): catches a new-branch push (remote sha all zeros) that skips the secret scan, so a key goes out with a new branch.
+	{
+		const { dir: d4, bare: b4 } = pushRepo();
+		put(d4, { 'src/keys.js': `export const key = '${['AKIA', 'IOSFODNN7EXAMPLE'].join('')}';\n` });
+		const key = commit(d4, 'feat: add a key');
+		const sc = pushRun(PROJECT_PRE_PUSH, d4, b4, `refs/heads/feat/new ${key} refs/heads/feat/new ${ZERO}\n`);
+		assert.notEqual(sc.status, 0, `the new branch was refused: ${sc.stderr}`);
+		assert.match(sc.stderr, /secret/i);
+	}
+	// Folded control (was its own test): catches a push whose remote head this repo never fetched being read as unreadable, which blocks a push with no retest.
+	{
+		const { dir: d3, bare: b3 } = pushRepo();
+		const parent = kitTemp.makeTemp('lock-other-');
+		git(parent, ['clone', '-q', b3, 'other']);
+		const other = path.join(parent, 'other');
+		git(other, ['checkout', '-q', '-b', 'feat/other']);
+		put(other, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
+		commit(other, 'feat: other clone work');
+		git(other, ['push', '-q', 'origin', 'feat/other']);
+		put(d3, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+		const feat = commit(d3, 'feat: tidy add');
+		const nb = pushRun(PROJECT_PRE_PUSH, d3, b3, `refs/heads/feat/x ${feat} refs/heads/feat/x ${ZERO}\n`);
+		assert.equal(nb.status, 0, `a push with no retest goes through: ${nb.stderr}`);
+		assert.doesNotMatch(nb.stderr, /cannot be read/);
+	}
 });
 
 // why: catches an update push re-refusing a retest the remote already holds on another branch, which blocks every merge of main
@@ -401,6 +456,17 @@ test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes a
 	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`);
 	assert.notEqual(r.status, 0, `the kit hook refused: ${r.stderr}`);
 	assert.match(r.stderr, OWNER_YES);
+	// Folded control (was its own test): catches the kit's own pre-push refusing a retest push even with the owner's pop-up yes to that push, unlike the project hook.
+	{
+		const { dir: d5, red: r5, bare: b5 } = pushRepo();
+		put(d5, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const retest5 = commit(d5, 'retest: tighten the add case');
+		const input5 = `refs/heads/feat/x ${retest5} refs/heads/feat/x ${r5}\n`;
+		const cfg5 = kitTemp.makeTemp('lock-owner-kit-');
+		ownerTaps(cfg5, d5, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+		const yes5 = pushRun(KIT_PRE_PUSH, d5, b5, input5, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg5, CLAUDE_CODE_SESSION_ID: TAP_SID });
+		assert.equal(yes5.status, 0, `the owner's yes lets the kit hook's push through: ${yes5.stderr}`);
+	}
 });
 
 // why: catches an approved agent push of a retest commit refused even with the owner's pop-up yes to that push
@@ -424,6 +490,17 @@ test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-u
 	assert.notEqual(r.status, 0, `the marker alone did not lift the hold: ${r.stderr}`);
 	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
 	assert.match(r.stderr, OWNER_YES);
+	// Folded control (was its own test): catches an approved agent push of a retest commit refused even with the owner's pop-up yes to that push.
+	{
+		const { dir: d6, red: r6, bare: b6 } = pushRepo();
+		put(d6, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const retest6 = commit(d6, 'retest: tighten the add case');
+		const input6 = `refs/heads/feat/x ${retest6} refs/heads/feat/x ${r6}\n`;
+		const cfg6 = kitTemp.makeTemp('lock-approved-');
+		ownerTaps(cfg6, d6, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+		const ok6 = pushRun(PROJECT_PRE_PUSH, d6, b6, input6, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg6, CLAUDE_CODE_SESSION_ID: TAP_SID });
+		assert.equal(ok6.status, 0, `the approved push with the owner's yes goes through: ${ok6.stderr}`);
+	}
 });
 
 // why: catches the kit's own pre-push refusing an approved retest push even with the owner's pop-up yes to that push
@@ -447,6 +524,17 @@ test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with 
 	assert.notEqual(r.status, 0, `the kit hook refused on the marker alone: ${r.stderr}`);
 	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
 	assert.match(r.stderr, OWNER_YES);
+	// Folded control (was its own test): catches the kit's own pre-push refusing an approved retest push even with the owner's pop-up yes to that push.
+	{
+		const { dir: d7, red: r7, bare: b7 } = pushRepo();
+		put(d7, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const retest7 = commit(d7, 'retest: tighten the add case');
+		const input7 = `refs/heads/feat/x ${retest7} refs/heads/feat/x ${r7}\n`;
+		const cfg7 = kitTemp.makeTemp('lock-approved-kit-');
+		ownerTaps(cfg7, d7, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+		const ok7 = pushRun(KIT_PRE_PUSH, d7, b7, input7, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg7, CLAUDE_CODE_SESSION_ID: TAP_SID });
+		assert.equal(ok7.status, 0, `the approved push with the owner's yes goes through the kit hook: ${ok7.stderr}`);
+	}
 });
 
 // why: catches the builder brief keeping the test-first line or not naming the tester's red commit as never edited
