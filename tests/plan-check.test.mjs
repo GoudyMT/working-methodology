@@ -21,11 +21,12 @@ const COLS = [
 	{ key: 'Tests', head: 'Tests to write first, and the failure each must show' },
 	{ key: 'Done', head: 'Done when' },
 	{ key: 'Risk', head: 'Risk' },
+	{ key: 'Category', head: 'Category' },
 	{ key: 'Tester', head: 'Tester' },
 	{ key: 'Runs', head: 'Runs' },
 	{ key: 'Built', head: 'Built by' },
 ];
-const DEFAULTS = { Title: 't', Files: '`src/a.mjs`', Tests: 'x', Done: 'x', Risk: 'low', Tester: '', Runs: 'alone', Built: 'builder' };
+const DEFAULTS = { Title: 't', Files: '`src/a.mjs`', Tests: 'x -> spec-1', Done: 'x', Risk: 'low', Category: 'logic', Tester: '', Runs: 'alone', Built: 'builder' };
 const unit = (id, over = {}) => ({ Id: id, ...DEFAULTS, ...over });
 // Builds a Units table from the given columns and rows; the separator row matches the header's width.
 const planText = (rows, cols = COLS) => {
@@ -131,7 +132,7 @@ test('P10 spec 2: the batch-plan template as written is refused for its blank Fi
 // why: catches the template's own column layout drifting from what plan-check reads, which would refuse every plan built from it.
 test('P11 spec 2: the batch-plan template with its example row filled passes plan-check', () => {
 	const filled = fs.readFileSync(TEMPLATE, 'utf8').split('\n').map((l) => (l.startsWith('| U1 |')
-		? '| U1 | t | `src/a.mjs` | x | x | low | | alone | builder |'
+		? '| U1 | t | `src/a.mjs` | x -> spec-2 | x | low | logic | | alone | builder |'
 		: l)).join('\n');
 	const res = run(filled);
 	assert.equal(res.status, 0, out(res));
