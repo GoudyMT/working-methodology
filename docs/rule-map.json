@@ -52,6 +52,8 @@
     "tests/model-scripts.test.mjs",
     "tests/model-table-enforcers.test.mjs",
     "tests/model-table.test.mjs",
+    "tests/overwatch.test.mjs",
+    "tests/review-gate.test.mjs",
     "tests/test-lock.test.mjs"
    ],
    "workflows": []
@@ -89,9 +91,14 @@
     "user/skills/release-notes/audit.mjs"
    ],
    "tests": [
+    "tests/flow-lock.test.mjs",
+    "tests/handoff.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-install.test.mjs",
-    "tests/kit-rules.test.mjs"
+    "tests/kit-rules.test.mjs",
+    "tests/overwatch.test.mjs",
+    "tests/plan-check.test.mjs",
+    "tests/test-lock.test.mjs"
    ],
    "workflows": []
   },
@@ -107,9 +114,11 @@
     "project/.claude/size-band.mjs"
    ],
    "tests": [
+    "tests/handoff-canary.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/kit-sweep.test.mjs"
+    "tests/kit-sweep.test.mjs",
+    "tests/overwatch.test.mjs"
    ],
    "workflows": []
   },
@@ -201,7 +210,9 @@
   "what-holds-where": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/what-holds.test.mjs"
+   ],
    "workflows": []
   },
   "session-workflow": {
@@ -310,7 +321,9 @@
   "anti-hallucination": {
    "guards": [],
    "scripts": [],
-   "tests": [],
+   "tests": [
+    "tests/ask-dont-guess.test.mjs"
+   ],
    "workflows": []
   },
   "dual-horizon": {
@@ -367,7 +380,8 @@
     "tests/author-check.test.mjs",
     "tests/ci-commit-names.test.mjs",
     "tests/kit-helpers.mjs",
-    "tests/kit-hooks.test.mjs"
+    "tests/kit-hooks.test.mjs",
+    "tests/test-lock.test.mjs"
    ],
    "workflows": []
   },
@@ -526,6 +540,7 @@
     "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
     "tests/kit-rules.test.mjs",
+    "tests/slots.test.mjs",
     "tests/use-check.test.mjs"
    ],
    "workflows": []
@@ -606,6 +621,7 @@
     "user/skills/pre-pr-sweep/audit.mjs"
    ],
    "tests": [
+    "tests/handoff.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep-budget.test.mjs",
     "tests/kit-sweep-outcome.test.mjs",
@@ -729,6 +745,7 @@
     "tests/recall-behave.test.mjs",
     "tests/recall-ci.test.mjs",
     "tests/resume-packet.test.mjs",
+    "tests/test-lock.test.mjs",
     "tests/what-holds.test.mjs"
    ],
    "workflows": []
@@ -755,6 +772,7 @@
     "tests/kit-hooks.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/model-override.test.mjs",
+    "tests/model-table-enforcers.test.mjs",
     "tests/mutation-job.test.mjs",
     "tests/recall-behave.test.mjs"
    ],
@@ -800,6 +818,7 @@
    "scripts": [],
    "tests": [
     "tests/kit-recall.test.mjs",
+    "tests/test-lock.test.mjs",
     "tests/unit-check.test.mjs"
    ],
    "workflows": []
@@ -935,7 +954,6 @@
   "code-standards",
   "critical-rules-priority-index",
   "edit-discipline",
-  "what-holds-where",
   "session-workflow",
   "what-this-file-is-not",
   "craft-floor",
@@ -943,7 +961,6 @@
   "enumerate-before-you-count",
   "snag-response",
   "cost-first",
-  "anti-hallucination",
   "dual-horizon",
   "goal-before-mechanism",
   "success-charter",
