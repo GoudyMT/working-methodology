@@ -55,6 +55,8 @@ export function problems(rec) {
 		need(Object.hasOwn(KINDS, it.kind), `item ${i + 1} kind "${it.kind}" is not one of ${Object.keys(KINDS).join(', ')}`);
 		for (const k of ['text', 'evidence']) need(text(it[k]), `item ${i + 1} (${it.id}) has no ${k}`);
 		need(!it.where || (text(it.before) && text(it.after)), `item ${i + 1} (${it.id}) names a where without its before and after`);
+		// An item may name many tests: a list of test keys, each read by CI's test check (rule:test-value).
+		need(it.tests === undefined || (Array.isArray(it.tests) && it.tests.every((t) => TEST_KEY.test(String(t)))), `item ${i + 1} (${it.id}) tests is not a list of test keys`);
 		// K109: a missing reach read as projects and filed a kit-only item under projects; from 1.41.0 each item says it.
 		if (it.reach === undefined && from141) out.push(`item ${i + 1} (${it.id}) names no reach: projects or kit`);
 		else need(it.reach === undefined || ['projects', 'kit'].includes(it.reach), `item ${i + 1} (${it.id}) reach "${it.reach}" is not projects or kit`);

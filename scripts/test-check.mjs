@@ -505,7 +505,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 	// existing test; one that adds a new test is named unless it carries a reason (no existing test reaches its module).
 	// High, critical and security fixes may add one. Checked once, by the first slice.
 	if (record && !windowsPart && (!slice || slice.i === 0)) {
-		const named = new Set([...items.map((i) => i && i.test), ...record.map((f) => f && f.test)].filter(Boolean));
+		const named = new Set([...items.map((i) => i && i.test), ...items.flatMap((i) => (i && Array.isArray(i.tests) ? i.tests : [])), ...record.map((f) => f && f.test)].filter(Boolean));
 		for (const t of allNew) if (!named.has(t.key)) note(t.key, 'A7', 'a new test the build record does not name: name it under the item or sweep fix it serves');
 		const newKeys = new Set(allNew.map((t) => t.key));
 		for (const f of record) {
