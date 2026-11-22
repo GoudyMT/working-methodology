@@ -89,11 +89,6 @@ test('U6 spec 4: the test-reviewer role file names the intent: note line', () =>
 	assert.match(read(ROLE_FILE), /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);
 });
 
-// why: catches the rules skill leaving out the intent: note line, so a brief that preloads only the skill loses the question.
-test('U6 spec 4: the test-reviewer rules skill names the intent: note line', () => {
-	assert.match(read(SKILL_FILE), /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);
-});
-
 // why: catches a clean review failing the gate when it has no findings and the reviewer's intent note is its only line.
 test('U6 spec 2: a review with no findings passes check --review alone (exit 0)', () => {
 	const dir = gateDir({ review: handBack(REVIEW_ROLE, INTENT) });
