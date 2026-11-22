@@ -710,9 +710,8 @@ test('review: a test reading a file from the project root is a good red then gre
 	assert.equal(r.status, 0, r.stderr);
 });
 
-// control: passes on the current code; pins that a deleted touched test is reported on the feat.
-// why: catches a test touched by an earlier red commit and deleted later going unreported on the feat.
-test('review: a test touched in an earlier commit and deleted later still fails on the feat', () => {
+// why: catches a test deleted later in the window reported as still failing on the feat.
+test('review: a test deleted later in the window is not read on the feat', () => {
 	const dir = repo();
 	commit(dir, 'test: add a case that will be removed', { 'tests/add.test.mjs': testFile(CASE_ONE, ['gone soon', 'assert.equal(add(1, 2), 4);']) });
 	const drop = commit(dir, 'test: remove the case and add a new red', { 'tests/add.test.mjs': testFile(CASE_ONE, ADDS) });
@@ -720,8 +719,8 @@ test('review: a test touched in an earlier commit and deleted later still fails 
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
 	faultFor(r, drop, /use retest:/);
-	const featLine = faultLines(r).find((l) => l.includes(feat) && /still fails after the code/.test(l));
-	assert.ok(featLine && featLine.includes('gone soon'), r.stderr);
+	const featLines = faultLines(r).filter((l) => l.includes(feat));
+	assert.ok(featLines.every((l) => !l.includes('gone soon')), r.stderr);
 });
 
 // why: catches a test( call inside a fixture string read as a real test of the file.
