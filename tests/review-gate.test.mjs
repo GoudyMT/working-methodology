@@ -209,7 +209,7 @@ test('U6 spec 2: a fix path that cannot be read is exit 2 saying cannot read', (
 // why: catches the default folder being somewhere other than kit-reviews under the git common dir, so a review is never found.
 test('U6 spec 2: with no --dir, the review is read from kit-reviews under the git common dir', () => {
 	const repo = tempDir();
-	const init = spawnSync('git', ['init', '-q'], { cwd: repo, encoding: 'utf8' });
+	const init = spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, encoding: 'utf8' });
 	assert.equal(init.status, 0, init.stderr);
 	const folder = path.join(repo, '.git', 'kit-reviews');
 	fs.mkdirSync(folder, { recursive: true });
@@ -293,7 +293,7 @@ test('U6 TR2: --review with a fix record holding bad JSON exits 1 naming line 2'
 test('U6 TR4: run in a linked worktree, the review is found in the main repo .git/kit-reviews', () => {
 	const main = tempDir();
 	const gitRun = (args, cwd) => spawnSync('git', args, { cwd, encoding: 'utf8' });
-	assert.equal(gitRun(['init', '-q'], main).status, 0);
+	assert.equal(gitRun(['init', '-q', '-b', 'main'], main).status, 0);
 	assert.equal(gitRun(['-c', 'user.email=t@example.invalid', '-c', 'user.name=t', 'commit', '-q', '--allow-empty', '-m', 'init'], main).status, 0);
 	const wt = path.join(tempDir(), 'wt');
 	assert.equal(gitRun(['worktree', 'add', '-q', wt], main).status, 0);
