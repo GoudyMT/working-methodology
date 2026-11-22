@@ -35,7 +35,7 @@ const USER = [
 	['call-cap.cjs', (t, input) => Boolean(input.agent_id)],
 	['canary.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
-	// E36 (build 24): log only; a subagent whose model differs from its role file is written to the repo's log.
+	// E36 (build 24): follows its hold's mode (log or enforce); under log, a subagent whose model differs from its role file is written to the repo's log.
 	['agent-model.cjs', (t) => AGENTS.includes(t)],
 	// K150 (build 20): a local test run reaches only the tests the branch changed, unless the owner's pop-up says yes.
 	['test-scope.cjs', (t) => SHELLS.includes(t)],
