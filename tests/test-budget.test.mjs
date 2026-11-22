@@ -51,6 +51,10 @@ const runCheck = (text) => {
 // why: S1: no category line, or the wrong one, so the lead cannot read a unit's test budget from its files.
 test('B1 spec S1: test-budget prints one category line with its ceiling, and the highest category of any file wins', () => {
 	const map = mapFile({ 'docs/*.md': 'docs', 'src/*.mjs': 'logic' });
+	// Three files in the order logic, docs, guard-list: the guard file is the highest, whatever the order.
+	const three = runBudget(['--files', 'src/b.mjs,docs/a.md,user/kit-tools/approve.mjs', '--map', map]);
+	assert.equal(three.status, 0, out(three));
+	assert.match(three.stdout, /^category: guard \(ceiling 25; /m);
 	const res = runBudget(['--files', 'docs/a.md,src/b.mjs', '--map', map]);
 	assert.equal(res.status, 0, out(res));
 	assert.match(res.stdout, /^category: logic \(ceiling 15; .+\)\s*$/m);
@@ -109,7 +113,7 @@ test('B5 spec S5: plan-check reads the Category and Tests columns and refuses a 
 	const noCat = planText([row('U1')], { head: HEAD.filter((h) => h !== 'Category') });
 	const missingCat = runCheck(noCat);
 	assert.equal(missingCat.status, 1, out(missingCat));
-	assert.match(out(missingCat), /Category/);
+	assert.match(out(missingCat), /the Units table has no Category column/);
 	const noTests = planText([row('U1')], { head: HEAD.filter((h) => h !== TESTS) });
 	const missingTests = runCheck(noTests);
 	assert.equal(missingTests.status, 1, out(missingTests));
@@ -127,6 +131,20 @@ test('B6 spec S6: a row over its category ceiling is refused with a split messag
 	// Control: 15 test lines is the logic ceiling, so the row is not refused for its count.
 	const atCeiling = runCheck(planText([row('U1', { [TESTS]: tests(15) })]));
 	assert.doesNotMatch(out(atCeiling), /split/i);
+	// Control: a docs row (ceiling 3) with 4 test lines is refused; one exactly at 3 passes. The docs map sits beside the repo root.
+	const docsPlan = (n) => {
+		const dir = kitTemp.makeTemp('plan-check-docs-');
+		spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
+		fs.writeFileSync(path.join(dir, 'kit.config.json'), JSON.stringify({ testCategories: { 'docs/*.md': 'docs' } }));
+		const file = path.join(dir, 'plan.md');
+		fs.writeFileSync(file, planText([row('D1', { Files: '`docs/a.md`', Category: 'docs', [TESTS]: tests(n) })]));
+		return spawnSync(process.execPath, [CHECK, file], { cwd: dir, encoding: 'utf8' });
+	};
+	const docsOver = docsPlan(4);
+	assert.equal(docsOver.status, 1, out(docsOver));
+	assert.match(out(docsOver), /split/i);
+	const docsAt = docsPlan(3);
+	assert.equal(docsAt.status, 0, out(docsAt));
 });
 
 // why: S7: a test line with no "->" passing, so a test is listed with no spec line or rule id it proves.
@@ -147,16 +165,25 @@ test('B8 spec S8: a spec rule no test line names is refused by its id, and one a
 	assert.match(out(bad), /S2/);
 	// Control: S1 is named by a test line, so it is not the refused rule.
 	assert.doesNotMatch(out(bad), /\bS1\b/);
+	// Control: with every rule named by a test line, the plan passes.
+	const all = runCheck(planText([row('U1', { [TESTS]: 'checks one -> S1<br>checks two -> S2' })], { extra: spec }));
+	assert.equal(all.status, 0, out(all));
 });
 
 // why: S9: a Category cell below the computed category passing, so a unit is given a cheaper budget than its files earn.
 test('B9 spec S9: a Category cell below the computed category is refused naming the unit, and a matching one is not', () => {
 	// U1's file computes logic; its cell says docs.
-	const res = runCheck(planText([row('U1', { Category: 'docs' }), row('U2', { Files: '`src/b.mjs`', Category: 'logic' })]));
+	const res = runCheck(planText([
+		row('U1', { Category: 'docs' }),
+		row('U2', { Files: '`src/b.mjs`', Category: 'logic' }),
+		// Control: a guard cell on a logic file is a raise, which is allowed, so U3 is not named.
+		row('U3', { Files: '`src/c.mjs`', Category: 'guard' }),
+	]));
 	assert.equal(res.status, 1, out(res));
 	assert.match(out(res), /U1/);
 	// Control: U2's cell matches the computed category, so it is not named.
 	assert.doesNotMatch(out(res), /U2/);
+	assert.doesNotMatch(out(res), /U3/);
 });
 
 // why: S10: a locked row edited later passing, so a unit's test budget can change after it was set.
@@ -179,6 +206,10 @@ test('B10 spec S10: --lock writes the sha256 of the row line, and a later run re
 	const changed = spawnSync(process.execPath, [CHECK, file], { cwd: dir, encoding: 'utf8' });
 	assert.equal(changed.status, 1, out(changed));
 	assert.match(out(changed), /U1/);
+	// Control: editing only the unlocked row U2 passes.
+	fs.writeFileSync(file, planText([row('U1'), row('U2', { Files: '`src/b.mjs`', [TESTS]: 'changed -> S1' })]));
+	const unlocked = spawnSync(process.execPath, [CHECK, file], { cwd: dir, encoding: 'utf8' });
+	assert.equal(unlocked.status, 0, out(unlocked));
 });
 
 // why: S11: the Units template or the adapter missing its Category, Tests or testCategories entry, so a kit-made plan cannot set a budget.
