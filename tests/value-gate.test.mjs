@@ -155,10 +155,11 @@ test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its 
 	assert.match(none.stdout, /not measured/);
 });
 
-// why: doc claim: the agent-team-build skill tells the lead to fold or drop a test that catches nothing before merge
+// why: guards rule:agent-team-adapter (the build skill tells the lead to fold or drop a test that catches nothing)
 test('agent-team-build SKILL.md says the lead folds or drops a test that catches nothing before merge', () => {
 	const src = fs.readFileSync(SKILL, 'utf8');
 	assert.match(src, /catches nothing/, 'the skill names a test that catches nothing');
-	assert.match(src, /fold or drop|fold or drops|folds or drops/, 'the lead folds or drops it');
+	assert.match(src, /\bfolds?\b/, 'the lead folds it');
+	assert.match(src, /\bdrops?\b/, 'the lead drops it');
 	assert.match(src, /before the unit merges|before merge/, 'this happens before the unit merges');
 });

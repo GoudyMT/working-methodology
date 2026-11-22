@@ -103,7 +103,7 @@ test('G4 spec G4: a wiring: row is accepted alongside the three rows, and wiring
 	assert.match(out(repeatSwap), /repeat/);
 });
 
-// why: doc claim: batch-plan.md shows the three fixed rows in its guard example.
+// why: guards rule:agent-team-adapter (batch-plan.md guard example shows the three fixed rows)
 test('G6 spec G6: batch-plan.md shows the bypass:, repeat: and fail-closed or fail-open rows near the word guard', () => {
 	assert.ok(fs.existsSync(BRIEF), 'batch-plan.md is missing');
 	const text = fs.readFileSync(BRIEF, 'utf8');
@@ -116,7 +116,7 @@ test('G6 spec G6: batch-plan.md shows the bypass:, repeat: and fail-closed or fa
 	}
 });
 
-// why: doc claim: tester.md tells the tester to write the three fixed rows for a guard unit.
+// why: guards rule:agent-role-table (tester.md tells the tester to write the three fixed rows for a guard unit)
 test('G7 spec G7: tester.md tells the tester to write the bypass:, repeat: and fail-closed or fail-open rows for a guard unit', () => {
 	assert.ok(fs.existsSync(TESTER), 'user/agents/tester.md is missing');
 	const text = fs.readFileSync(TESTER, 'utf8');

@@ -20,7 +20,7 @@ function whatHoldsSection(agents) {
   return (start[0] + (next ? rest.slice(0, next.index) : rest)).trimEnd();
 }
 
-// why: catches the built AGENTS.md dropping the What holds where section that says hooks and CI are the only outside layers
+// why: guards rule:what-this-file-is-not (the built AGENTS.md keeps its What holds where section)
 test('the built AGENTS.md has a What holds where section that says what holds each agent, ASCII, inside the cap', () => {
   const agents = BUILT.get('project/AGENTS.md');
   const section = whatHoldsSection(agents);

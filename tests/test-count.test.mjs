@@ -154,7 +154,7 @@ test('C7 spec C7: a swap with no replacement or with empty or missing keeps is r
 	assert.equal(kept.ok, true, kept.errors.join('; '));
 });
 
-// why: doc claim: tester.md says one test per plan line, controls fold into their partner test, and tests are a floor.
+// why: guards rule:agent-role-table (tester.md: one test per plan line, controls fold, tests are a floor)
 test('C8 spec C8: tester.md states one test per plan line, controls fold into their partner test, and tests are a floor', () => {
 	assert.ok(fs.existsSync(TESTER), 'user/agents/tester.md is missing');
 	const text = fs.readFileSync(TESTER, 'utf8');
@@ -163,7 +163,7 @@ test('C8 spec C8: tester.md states one test per plan line, controls fold into th
 	assert.match(text, /tests? (are|is) a floor/i);
 });
 
-// why: doc claim: test-reviewer.md names the statuses swap and redundant and says an add names its break.
+// why: guards rule:agent-role-table (test-reviewer.md names swap and redundant, and an add names its break)
 test('C9 spec C9: test-reviewer.md names swap and redundant and says an add names its break', () => {
 	assert.ok(fs.existsSync(REVIEWER), 'user/agents/test-reviewer.md is missing');
 	const text = fs.readFileSync(REVIEWER, 'utf8');
@@ -172,7 +172,7 @@ test('C9 spec C9: test-reviewer.md names swap and redundant and says an add name
 	assert.match(text, /add[^.]*names? (its|the) break/i);
 });
 
-// why: doc claim: builder-brief.md says one test per plan line, tests are a floor, and the builder never adds or drops a test.
+// why: guards rule:agent-team-adapter (builder-brief.md: one test per plan line, a floor, builder never adds or drops)
 test('C10 spec C10: builder-brief.md says one test per plan line, tests are a floor, and the builder never adds or drops a test', () => {
 	assert.ok(fs.existsSync(BRIEF), 'builder-brief.md is missing');
 	const text = fs.readFileSync(BRIEF, 'utf8');
