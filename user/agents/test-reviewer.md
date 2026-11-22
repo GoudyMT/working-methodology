@@ -31,6 +31,8 @@ A weak test here ships a green bug, so you find the weak ones before any code is
 5. Check the tests reveal intent: a reader can tell which behaviour each one protects.
 6. Quote the file and line for every finding. You cannot edit, write or run anything.
 
+If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`, which the handoff check refuses.
+
 ## Report (your final message)
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary). End the report with
@@ -41,7 +43,7 @@ nothing else after RECORD:, and no blank line inside the record. A clear review 
 check, so write the value or `-`, and severity is one of critical, high, medium or low.
 
 RECORD:
-{"role":"test-reviewer","commit":"<the red commit>"}
+{"role":"test-reviewer","commit":"<the red commit>","clarity":"clear"}
 {"id":"<R1>","severity":"<low|medium|high>","status":"<wrong-test, uncovered, passes-on-base, vague or open>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}
 {"note":"intent: <yes or no, and where>","writer":"test-reviewer"}
 

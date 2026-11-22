@@ -15,6 +15,10 @@ const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 const FINDING_KEYS = ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix'];
 // The statuses a test-reviewer may write (K310). Other roles' statuses are not checked here.
 const REVIEW_STATUSES = ['wrong-test', 'uncovered', 'passes-on-base', 'vague', 'open'];
+// U16: a tester or test-reviewer states whether its spec was clear, asked (a lead answer must follow) or assumed (refused).
+// A missing clarity is a warning in this release (log-only), so only the values are checked as errors.
+const CLARITY = ['clear', 'asked', 'assumed'];
+const CLARITY_ROLES = ['tester', 'test-reviewer'];
 
 // A key error names the key in backticks, so a retry prompt can point at exactly the field to repair.
 function keyErrors(obj, keys) {
@@ -40,7 +44,7 @@ function startsWithRole(lines, at) {
 
 // expect: optional { role, commit } the brief named; a commit matches when either one is a prefix of the other.
 export function check(text, expect = {}) {
-	const out = { ok: false, findings: [], notChecked: 0, notes: 0, errors: [] };
+	const out = { ok: false, findings: [], notChecked: 0, notes: 0, errors: [], warnings: [] };
 	const lines = String(text).split(/\r?\n/);
 	const marks = lines.flatMap((l, i) => (l.trim() === 'RECORD:' ? [i] : []));
 	if (!marks.length) {
@@ -54,7 +58,9 @@ export function check(text, expect = {}) {
 		return out;
 	}
 	const seen = new Set();
+	const notes = [];
 	let roleDone = false;
+	let roleObj = null;
 	lines.slice(start + 1).forEach((raw, i) => {
 		if (raw.trim() === '') return;
 		const n = i + 1;
@@ -71,6 +77,12 @@ export function check(text, expect = {}) {
 				const c = expect.commit;
 				if (c !== undefined && !obj.commit.startsWith(c) && !c.startsWith(obj.commit)) errs.push(`\`commit\` is ${obj.commit}, the brief named ${c}`);
 			}
+			if (isObject(obj) && CLARITY_ROLES.includes(obj.role)) {
+				roleObj = obj;
+				if (!('clarity' in obj)) out.warnings.push(`line ${n}: missing clarity (log-only in this release)`);
+				else if (!CLARITY.includes(obj.clarity)) fail(`bad \`clarity\` ${JSON.stringify(obj.clarity)}, want one of ${CLARITY.join(', ')}`);
+				else if (obj.clarity === 'assumed') fail('`clarity` is "assumed": assumed without a lead answer is refused; stop and ask the lead');
+			}
 			errs.forEach(fail);
 			return;
 		}
@@ -84,7 +96,7 @@ export function check(text, expect = {}) {
 		} else if ('note' in obj) {
 			const errs = keyErrors(obj, ['note', 'writer']);
 			errs.forEach(fail);
-			if (!errs.length) out.notes++;
+			if (!errs.length) { out.notes++; notes.push(obj); }
 		} else if (FINDING_KEYS.some((k) => k in obj)) {
 			const errs = keyErrors(obj, FINDING_KEYS);
 			// A whole placeholder (<...> with nothing else) is a template line copied without its values.
@@ -105,6 +117,9 @@ export function check(text, expect = {}) {
 			if (!errs.length) out.findings.push(obj);
 		} else fail('unknown line shape');
 	});
+	if (roleObj && roleObj.clarity === 'asked' && !notes.some((o) => o.writer === 'lead' && /^lead answer:\s*\S/.test(o.note))) {
+		out.errors.push('clarity is asked, so the lead must answer: a line {"note":"lead answer: <text>","writer":"lead"}');
+	}
 	// A role line alone is not a hand-back; only said when nothing else is wrong, so it adds no noise.
 	if (!out.findings.length && !out.notChecked && !out.notes && !out.errors.length) out.errors.push('the record is empty: no finding, notChecked or note');
 	out.ok = out.errors.length === 0;
@@ -208,6 +223,7 @@ function main(argv) {
 		return 2;
 	}
 	const r = check(text, expect);
+	r.warnings.forEach((w) => console.error(w));
 	if (!r.ok) {
 		console.error(r.errors.join('\n'));
 		return 1;

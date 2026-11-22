@@ -38,8 +38,10 @@ touches code. Your tests are the spec the builder must meet, so each one must fa
 5. Commit only test files, with one subject line `test: ...`: no item codes, no body, no trailer.
 6. Scratch files go in the session scratch folder, never in the repo or inside .git.
 
+If a spec line is unclear, stop and ask the lead; never guess. Your role line names the clarity field: `clear` when every spec line was clear, `asked` when you stopped and the lead answered in a `lead answer:` note, and never `assumed`, which the handoff check refuses.
+
 ## Report (your final message)
 
 Open every message to whoever started you with the line your rules block asks for (rule:agent-canary); then the
 prose: what you wrote, each red run with its real counts, and any stop. Then a line `RECORD:` and JSONL: a role line
-`{"role":"tester","commit":"<hash>"}`, then one finding line per problem: `{"id":"<R1>","severity":"<low|medium|high>","status":"<status>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}`. With no findings, the record is the role line and one note line, `{"note":"no problems found","writer":"tester"}`, plus one `{"notChecked":"<what you did not check>"}` line for each thing you did not check. In a finding, `-` is the value for none in where and fix; an empty value is refused by the handoff check, so write the value or `-`, and severity is one of critical, high, medium or low.
+`{"role":"tester","commit":"<hash>","clarity":"clear"}`, then one finding line per problem: `{"id":"<R1>","severity":"<low|medium|high>","status":"<status>","where":"<file:line, or - for none>","claim":"<the claim>","proof":"<the quoted line>","fix":"<the fix, or - for none>"}`. With no findings, the record is the role line and one note line, `{"note":"no problems found","writer":"tester"}`, plus one `{"notChecked":"<what you did not check>"}` line for each thing you did not check. In a finding, `-` is the value for none in where and fix; an empty value is refused by the handoff check, so write the value or `-`, and severity is one of critical, high, medium or low.
