@@ -176,8 +176,8 @@ export function unitGate(plan, id) {
 	const cells = table.rows[i];
 	const lines = (cells[col('Tests')] || '').split(/<br\s*\/?>/i).filter((l) => l.trim()).length;
 	const locks = readLocks(`${plan}.locks.json`);
-	const changed = Object.prototype.hasOwnProperty.call(locks, id) && locks[id] !== sha(table.raws[i]);
-	return { files: filesOf(cells[col('Files')] || ''), lines, changed };
+	const locked = Object.prototype.hasOwnProperty.call(locks, id);
+	return { files: filesOf(cells[col('Files')] || ''), lines, locked, changed: locked && locks[id] !== sha(table.raws[i]) };
 }
 
 // The role line of a hand-back: the first non-blank line after the last RECORD: line, as handoff.mjs reads it.

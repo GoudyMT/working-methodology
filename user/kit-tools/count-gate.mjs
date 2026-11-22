@@ -117,6 +117,7 @@ function addedIn(repo, words, c, f) {
 // Count gate: the test: commits in the range add as many tests to the unit's test files as the locked Tests cell has lines.
 export function countGate(repo, hashes, plan, id) {
 	const gate = unitGate(plan, id);
+	if (!gate.locked) return [`${id}: not locked: the locks file has no sha256 for this row (run plan-check --lock ${id})`];
 	if (gate.changed) return [`${id}: the locked row changed since --lock`];
 	const reds = hashes.map((h) => commitOf(repo, h)).filter((c) => c.type === 'test');
 	if (!reds.length) return [`${id}: no test: commit in the range, so no red commit to count`];
