@@ -489,21 +489,29 @@ test('L1 start: refuses a plan plan-check refuses, matches the log by full path,
 });
 
 // why: catches a documented hand-back with no agent key being skipped silently, so its tester and builder identity is never checked (H2).
-test('H2 agents: documented tester and builder role lines with no agent key are named in the output, not skipped', () => {
+test('H2 agents: role lines with no agent key are named and exit 1; a keyed hand-back is not named', () => {
 	const dir = tmp('flow-agents-');
 	put(dir, 'U1.tester.jsonl', handBack({ role: 'tester', commit: 'abc1234', clarity: 'clear' }, NOTE('done', 'tester')));
 	put(dir, 'U1.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234' }, NOTE('done', 'builder')));
+	// Control: a hand-back with an agent key and an exact RECORD: line is not named.
+	put(dir, 'U9.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234', agent: 'a9', unit: 'U9' }, NOTE('done', 'builder')));
 	const r = agents(dir);
+	assert.equal(r.code, 1, r.out);
 	assert.match(r.out, /U1\.tester\.jsonl/, r.out);
 	assert.match(r.out, /U1\.builder\.jsonl/, r.out);
+	assert.doesNotMatch(r.out, /U9\.builder\.jsonl/, r.out);
 });
 
 // why: catches a .jsonl whose RECORD: marker is misspelled being skipped with no word, so its role is never read (H2).
-test('H2 agents: a .jsonl with no exact RECORD: line is named in the output, not skipped silently', () => {
+test('H2 agents: a .jsonl with no exact RECORD: line is named and exits 1; a keyed hand-back is not named', () => {
 	const dir = tmp('flow-agents-');
 	put(dir, 'U1.builder.jsonl', `Prose.\nRECORD :\n${JSON.stringify({ role: 'builder', commit: 'abc1234', agent: 'a1', unit: 'U1' })}\n${NOTE('done')}\n`);
+	// Control: a hand-back with an agent key and an exact RECORD: line is not named.
+	put(dir, 'U9.builder.jsonl', handBack({ role: 'builder', commit: 'abc1234', agent: 'a9', unit: 'U9' }, NOTE('done')));
 	const r = agents(dir);
+	assert.equal(r.code, 1, r.out);
 	assert.match(r.out, /U1\.builder\.jsonl/, r.out);
+	assert.doesNotMatch(r.out, /U9\.builder\.jsonl/, r.out);
 });
 
 // why: catches a fix file that never marks a review finding fixed passing review, so an unfixed finding reaches the builder (H3).
@@ -530,8 +538,8 @@ test('H4 SKILL.md: the overwatch steps name plan-check --lock and unit-check --p
 	const end = text.indexOf('## Who decides');
 	assert.ok(at >= 0 && end > at, 'SKILL.md has the overwatch section and the Who decides section after it');
 	const section = text.slice(at, end);
-	assert.match(section, /plan-check\.mjs[^\n]*--lock/);
-	assert.match(section, /unit-check\.mjs[^\n]*--plan[^\n]*--unit/);
+	assert.match(section, /plan-check(\.mjs)?\b[^\n]*--lock/);
+	assert.match(section, /unit-check(\.mjs)?\b[^\n]*--plan[^\n]*--unit/);
 });
 
 // why: catches the split step naming lanes.mjs, a sweep-findings tool, for splitting a plan's units (H5).
@@ -544,13 +552,26 @@ test('H5 SKILL.md: the plan-and-split step names plan-graph for the unit split a
 });
 
 // why: catches lanes.mjs printing nothing and exiting 0 for a markdown plan, so a build's units are never split into lanes (H5).
-test('H5 lanes: a markdown plan given to lanes.mjs exits 2 with a stderr message and an empty stdout', () => {
+test('H5 lanes: a markdown plan exits 2 with stderr and empty stdout; controls: all-fixed prints nothing, one open finding prints one lane', () => {
 	const dir = tmp('flow-lanes-');
+	const lanes = (file) => spawnSync(process.execPath, [LANES, file], { cwd: dir, env: env(), encoding: 'utf8' });
 	const plan = put(dir, 'plan.md', '# plan\n\n## Units\n\n| Id | Files | Runs |\n|---|---|---|\n| U1 | `a.txt` | parallel |\n');
-	const r = spawnSync(process.execPath, [LANES, plan], { cwd: dir, env: env(), encoding: 'utf8' });
+	const r = lanes(plan);
 	assert.equal(r.status, 2, `${r.stdout}${r.stderr}`);
 	assert.equal(r.stdout, '');
 	assert.ok(r.stderr.trim() !== '', 'a stderr message names the problem');
+	// Control: a findings file where every finding is fixed exits 0 with empty stdout.
+	const fixed = put(dir, 'fixed.jsonl', `${JSON.stringify({ id: 'F1', severity: 'high', status: 'fixed', where: 'a.js:1', claim: 'c', proof: 'p', fix: 'f' })}\n`);
+	const done = lanes(fixed);
+	assert.equal(done.status, 0, `${done.stdout}${done.stderr}`);
+	assert.equal(done.stdout, '');
+	// Control: one valid open finding exits 0 and prints one lane line.
+	const open = put(dir, 'open.jsonl', `${JSON.stringify({ id: 'F2', severity: 'high', status: 'open', where: 'a.js:1', claim: 'c', proof: 'p', fix: 'f' })}\n`);
+	const one = lanes(open);
+	assert.equal(one.status, 0, `${one.stdout}${one.stderr}`);
+	const rows = one.stdout.split('\n').filter((l) => l.trim() !== '');
+	assert.equal(rows.length, 1, one.stdout);
+	assert.deepEqual(JSON.parse(rows[0]).findings, ['F2']);
 });
 
 // why: catches a PASS record quoting a FIX verdict being counted as a fix round
