@@ -749,8 +749,8 @@ test('the findings count reads a RECORD block, keeps a | inside a claim, and wri
 	const ledger = read(path.join(dir, 'sweeps', 'contract-ledger.md'));
 	assert.equal(ledger.split('\n').filter((l) => /^\| \d/.test(l)).length, 2);
 	// The ledger writes a | inside a claim as /, so the claim stays one cell.
-	assert.match(ledger, /^\| 1 \| high \| CONFIRMED \| an import a \/ b writes outside F1 \| src\/import\.ts:12 \|$/m, 'the claim stays whole, in one cell');
-	assert.match(ledger, /^\| 1 \| medium \| PLAUSIBLE \| an import a \/ b writes outside F2 \| src\/routes\.ts:4 \|$/m, 'the plausible row keeps its own where');
+	assert.match(ledger, /^\| 1 \| high \| CONFIRMED \| an import a \/ b writes outside F1 \| src\/import\.ts:12 \|$/m, 'the claim stays whole, in one cell'); // pin: 1 a machine reads the ledger row
+	assert.match(ledger, /^\| 1 \| medium \| PLAUSIBLE \| an import a \/ b writes outside F2 \| src\/routes\.ts:4 \|$/m, 'the plausible row keeps its own where'); // pin: 1 a machine reads the ledger row
 });
 
 // why: guards rule:finding-pipeline

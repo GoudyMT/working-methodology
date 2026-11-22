@@ -253,11 +253,12 @@ test('the minimal-code job builds its map on a full checkout before the run line
 	assert.ok(mapAt < runAt, 'the map is built after the run line');
 });
 
-// why: guards rule:ci-gate (no survivor may turn the run red, so the job sets continue-on-error at job level)
-test('the minimal-code job cannot fail the run: continue-on-error is set at job level', () => {
+// why: guards rule:ci-gate (no survivor or failing map test may turn the run red; the kit allows no continue-on-error in ci.yml)
+test('the minimal-code job cannot fail the run: no continue-on-error, the map step tolerates failing tests', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
-	assert.match(job, /^    continue-on-error: true$/m);
+	assert.doesNotMatch(job, /continue-on-error/);
+	assert.match(job, /^        run: node scripts\/test-run\.mjs --map \|\| /m);
 });
 
 // why: guards rule:ci-gate (a job that reads a secret would run a PR's own code next to it, so the job holds none)

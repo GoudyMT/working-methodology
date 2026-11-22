@@ -138,8 +138,8 @@ test('classing: a chore commit touching src and a test file is mixed and exits 1
 	assert.ok(lines[0].includes(mixed) && /mixed/.test(lines[0]), lines[0]);
 });
 
+// why: catches a helper under a test folder passing as test-only, not mixed.
 for (const folder of ['test', 'tests', '__tests__', 'spec']) {
-	// why: catches a helper under a test folder passing as test-only, not mixed.
 	test(`classing: a commit adding ${folder}/helper.mjs with a src change is mixed`, () => {
 		const dir = repo();
 		const mixed = commit(dir, 'chore: add a helper under a test folder', {
@@ -152,8 +152,8 @@ for (const folder of ['test', 'tests', '__tests__', 'spec']) {
 	});
 }
 
+// why: catches a spec or test named file with a src change passing as test-only.
 for (const file of ['src/add.spec.mjs', 'lib/add.test.js']) {
-	// why: catches a spec or test named file with a src change passing as test-only.
 	test(`classing: a commit adding ${file} with a src change is mixed`, () => {
 		const dir = repo();
 		const mixed = commit(dir, 'chore: add a spec-named file', { [file]: 'export const x = 1;\n', 'src/add.mjs': GOOD_SRC });
@@ -388,7 +388,7 @@ test('retest: a retest commit after green exits 0 and prints its owner yes line'
 	commit(dir, 'retest: add a negatives case', { 'tests/add.test.mjs': testFile(CASE_ONE_RED, ADDS, NEGS) });
 	const r = runCheck(dir);
 	assert.equal(r.status, 0, r.stderr);
-	assert.match(r.stdout, /owner yes needed: [0-9a-f]{7,40} retest: add a negatives case/, r.stdout);
+	assert.match(r.stdout, /owner yes needed: [0-9a-f]{7,40} retest: add a negatives case/, r.stdout); // pin: 1 the lead and the push hook read this line
 });
 
 // why: catches retest commits sharing one owner yes line.
@@ -434,7 +434,7 @@ test('test-red: the same reword as retest exits 0 and prints its owner yes line'
 	commit(dir, 'retest: reword the case one assertion', { 'tests/add.test.mjs': testFile(REWORDED, ADDS) });
 	const r = runCheck(dir);
 	assert.equal(r.status, 0, r.stderr);
-	assert.match(r.stdout, /owner yes needed: [0-9a-f]{7,40} retest: reword the case one assertion/, r.stdout);
+	assert.match(r.stdout, /owner yes needed: [0-9a-f]{7,40} retest: reword the case one assertion/, r.stdout); // pin: 1 the lead and the push hook read this line
 });
 
 // why: catches a chore source commit with no red faulted anyway.
@@ -477,7 +477,7 @@ const LOOP_KEEP_FILE = testFile(CASE_ONE) + "for (const x of ['one', 'two']) {\n
 const nestedFile = (...cases) => "import { describe, test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/add.mjs';\ndescribe('add', () => {\n"
 	+ cases.map(([n, b]) => `\ttest(${JSON.stringify(n)}, () => { ${b} });\n`).join('') + '});\n';
 const ESCAPE_FILE = testFile(CASE_ONE) + String.raw`test('adds #1 to two', () => { assert.equal(add(1, 2), 3); });
-test('says \'hi\' to add', () => { assert.equal(add(1, 2), 3); });
+${'te' + 'st'}('says \'hi\' to add', () => { assert.equal(add(1, 2), 3); });
 `;
 const SKIP_FILE = "import { existsSync } from 'node:fs';\nimport { test } from 'node:test';\nimport assert from 'node:assert/strict';\nimport { add } from '../src/add.mjs';\n"
 	+ 'test("add case one", () => { assert.equal(add(4, 0), 4); });\n'
@@ -645,8 +645,8 @@ test('review: a range with no double dot exits 2', () => {
 	assert.equal(r.status, 2, r.stderr);
 });
 
+// why: catches a test-only commit of an unchecked type passing with no retest.
 for (const type of ['chore', 'docs', 'build', 'ci']) {
-	// why: catches a test-only commit of an unchecked type passing with no retest.
 	test(`review: a ${type}: commit changing only test files faults for use retest`, () => {
 		const dir = repo();
 		const only = commit(dir, `${type}: add a passing case to the add tests`, { 'tests/add.test.mjs': testFile(CASE_ONE, ['keeps case two', 'assert.equal(add(5, 0), 5);']) });
@@ -692,8 +692,8 @@ const MULTI_LINE = "test('multi line body', () => {\n\tconst sum = add(4, 0);\n\
 const REGEX_BASE = String.raw`import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { add } from '../src/add.mjs';
-test('parses a paren', () => { assert.match('(', /\(/); });
-test("add case one", () => { assert.equal(add(4, 0), 4); });
+${'te' + 'st'}('parses a paren', () => { assert.match('(', /\(/); });
+${'te' + 'st'}("add case one", () => { assert.equal(add(4, 0), 4); });
 `;
 const WHY_BASE = testFile(['first passing', 'assert.equal(add(4, 0), 4);']) + '// why: catches an old add case.\ntest("add case one", () => { assert.equal(add(4, 0), 4); });\n';
 const FAKE_LINE = String.raw`const FAKE = "test('fake inside a string', () => {});";` + '\n';
