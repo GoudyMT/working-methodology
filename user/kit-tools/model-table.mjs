@@ -104,6 +104,20 @@ export function tableFaults(config, dir) {
 	if (!steps) return ['kit.config.json has no steps object'];
 	const faults = [];
 	const used = new Set();
+	// The models a step or role runs on are measured and none is retiring (kit.config.json "models"). A kit with no
+	// models object says nothing, as session start does. A measured list that is no list of model ids is a fault.
+	const models = config.models && typeof config.models === 'object' && !Array.isArray(config.models) ? config.models : null;
+	const measured = models && Array.isArray(models.measured) ? models.measured : null;
+	const retiring = models && Array.isArray(models.retiring) ? models.retiring : [];
+	if (models && !measured) faults.push('models.measured is not a list of model ids');
+	if (measured) {
+		for (const m of measured) if (typeof m !== 'string' || rank(m) === 0) faults.push(`models.measured names ${JSON.stringify(m)}, which is no known model family`);
+	}
+	const modelFault = (where, model) => {
+		if (!measured) return;
+		if (retiring.includes(model)) faults.push(where(`model ${model} is retiring in models.retiring`));
+		else if (!measured.includes(model)) faults.push(where(`model ${model} is not in models.measured`));
+	};
 
 	// A role file (or a file step): its model and effort, its duplicate keys, and the role's access lists when given.
 	const checkFile = (where, rel, s, access, role) => {
@@ -146,6 +160,8 @@ export function tableFaults(config, dir) {
 		if (!nonEmpty(s.model)) faults.push(where('model key missing'));
 		if (!nonEmpty(s.effort)) faults.push(where('effort key missing'));
 		const isScript = typeof s.enforcer === 'string' && s.enforcer.startsWith('script:');
+		// A script step's "none" names no model; every other model a step names must be measured.
+		if (nonEmpty(s.model) && !(isScript && s.model === 'none')) modelFault(where, s.model);
 		if (!nonEmpty(s.enforcer)) {
 			faults.push(where('enforcer key missing'));
 		} else {
@@ -209,6 +225,7 @@ export function tableFaults(config, dir) {
 
 	for (const role of Object.keys(roles)) {
 		if (!used.has(role)) faults.push(`role ${role}: no step runs it`);
+		if (roles[role] && typeof roles[role] === 'object') modelFault((msg) => `role ${role}: ${msg}`, roles[role].model);
 	}
 	// A role file the config does not describe widens access with no row to check it against. A kit with no agents
 	// folder has no role files to check.
@@ -220,6 +237,20 @@ export function tableFaults(config, dir) {
 	}
 	for (const f of agentFiles) {
 		if (!Object.hasOwn(roles, f.slice(0, -3))) faults.push(`user/agents/${f} has no roles entry in kit.config.json`);
+	}
+	return faults;
+}
+
+// The rules skill of each role that names rules: the role file's skills line names user/skills/<role>-rules, so that
+// folder's SKILL.md must exist. The check command runs this beside tableFaults, since a table alone does not name the
+// skills folder.
+export function skillFaults(config, dir) {
+	const roles = config?.roles && typeof config.roles === 'object' ? config.roles : {};
+	const faults = [];
+	for (const [role, r] of Object.entries(roles)) {
+		if (!r || !Array.isArray(r.rules) || r.rules.length === 0) continue;
+		const rel = `user/skills/${role}-rules/SKILL.md`;
+		if (readText(dir, rel) === null) faults.push(`role ${role}: the rules skill file ${rel} is missing`);
 	}
 	return faults;
 }
@@ -248,7 +279,7 @@ function main(argv) {
 		console.error(`Cannot read ${file}: not a JSON object`);
 		return 2;
 	}
-	const faults = tableFaults(config, dir);
+	const faults = [...tableFaults(config, dir), ...skillFaults(config, dir)];
 	if (faults.length) {
 		for (const f of faults) console.error(f);
 		return 1;

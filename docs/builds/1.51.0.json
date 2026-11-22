@@ -5,7 +5,7 @@
  "area": "Delegation",
  "title": "feat: handoff record, test method and one model table per step",
  "headline": "Every hand-back ends in a checked JSONL record; tests are written, reviewed and locked before the build starts, and a commit-shape check reads the order; one model table names the model and effort of every step, with floors a project cannot lower; and the build flow, the plan and the sweep fix lanes are checked by scripts.",
- "alignment": "v1.51.0 is build 24 of the v2.0 plan: K339, K300 and K301, E36 with K303, K309 and K312, K225, K308 with the `retest:` type, K307, K310, K341, K277, K311, K315, K294, and the flow checks U15 to U18, each unit opened by a test-only commit. The `agent-model` and `handoff-gate` holds ship log-only.",
+ "alignment": "v1.51.0 is build 24 of the v2.0 plan. Its items are K339, K300, K301, E36, E36-ENFORCE, K303, K309, K308 with the `retest:` type, T3, K307, K310, K225, K341, K277, K311, K315, K294, U15, U16, U17, U18, U19, U20, U21 and U22, each unit opened by a test-only commit; K312 is a row of U3 beside K309. The `agent-model` and `handoff-gate` holds ship log-only.",
  "items": [
   {
    "id": "K339",
@@ -271,7 +271,7 @@
    "id": "K303",
    "kind": "changed",
    "reach": "projects",
-   "text": "Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the lead model.",
+   "text": "Read-only lookups run on the researcher role, and the project Explore role is pinned to Haiku instead of the middle model tier.",
    "evidence": "user/agents/researcher.md, project/.claude/agents/Explore.md",
    "tests": [
     "tests/kit-rules.test.mjs::each agent role file matches the role table in kit.config.json: tools, denied tools and rules at start"
@@ -281,7 +281,7 @@
    "id": "K309",
    "kind": "added",
    "reach": "projects",
-   "text": "`unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. CI runs it report-only.",
+   "text": "`unit-check.mjs base..head` reads a unit's commit shape: a test-only red commit whose new tests fail on an assertion, then source commits, refactors that leave tests alone, and `retest:` for a test change after red. No CI job runs it yet.",
    "evidence": "user/kit-tools/unit-check.mjs",
    "tests": [
     "tests/unit-check.test.mjs::CLI: a folder that is not a git repo exits 2 for bad use",
@@ -840,7 +840,7 @@
   }
  ],
  "verification": [
-  "Each of the 19 units opens with a test-only commit; the unit commit lists in this record let the commit-shape check read each unit, report-only in CI.",
+  "Of the 24 unit entries in the units map, 23 open with a test-only commit (U14, the version commit, does not); the unit commits let the commit-shape check read each unit when run by hand; no CI job runs it yet.",
   "Pending: the score gate on the owner's PC runs after the sweep, since rule text changed (docs/migrations/1.51.0-reworded.json).",
   "Pending: the one sweep, paired with the cloud run, fills the review below."
  ],
