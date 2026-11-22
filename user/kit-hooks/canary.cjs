@@ -15,7 +15,7 @@ const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
 const { recordCounts } = require('./record-counts.cjs');
 
-// git from node's own folder, never the project (build 23).
+// git from node's own folder, never the project.
 const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
 // around the phrase (bold, a quote, a heading) and hyphens inside it then compare the same; the space padding
@@ -30,14 +30,14 @@ function findPhrase(cwd) {
 	if (common.status !== 0) return null;
 	const commonDir = common.stdout.trim();
 	const root = path.dirname(commonDir);
-	// K218: during a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
+	// During a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
 	// branch cannot swap the phrase its own reviewers are checked against. That copy is read while HEAD is the commit
 	// it was written for.
 	try {
 		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
 		const head = git(cwd, 'rev-parse', 'HEAD');
-		// The build 23a commit security review: the phrase approve.mjs recorded is used, not the copy read again, so a
-		// copy rewritten after the approval cannot swap it.
+		// The phrase approve.mjs recorded is used, not a copy read again, so a copy rewritten after the approval cannot
+		// swap it.
 		if (rec && typeof rec.phrase === 'string' && words(rec.phrase).trim() && head.status === 0 && rec.head === head.stdout.trim()) return { phrase: rec.phrase, commonDir };
 		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
 			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
@@ -57,7 +57,7 @@ function findPhrase(cwd) {
 }
 
 function log(commonDir, entry) {
-	try { fs.appendFileSync(path.join(commonDir, 'kit-canary.log'), JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'); } catch { /* a log that cannot be written never blocks the work */ }
+	try { fs.appendFileSync(path.join(commonDir, 'kit-canary.log'), JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'); } catch { /* a log that cannot be written never blocks */ }
 }
 
 const CLOSE_OUT = [
@@ -129,16 +129,16 @@ function run(input) {
 
 	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
 	const key = (who.agent || `${who.session}-${who.role}`).replace(/[^\w.-]/g, '_');
-	// The canary's own block leaves a mark, so the report after it is told apart from a first report (and a stop that
-	// another hook, like the checker's clean-tree stop, blocked; stop_hook_active alone cannot tell them apart).
+	// The canary's own block leaves a mark, so the report after it is told apart from a first one (a stop another hook
+	// blocked looks the same; stop_hook_active alone cannot tell them apart).
 	const mark = path.join(found.commonDir, 'kit-canary-blocked', key);
-	// A hand-back already checked at its call leaves a seen mark, so the stops after it (one more if another hook,
-	// like the checker's clean-tree stop, blocks the first) add nothing to the log. The next hand-back is checked anew.
+	// A hand-back checked at its call leaves a seen mark, so the stops after it (one more if another hook blocks the
+	// first) add nothing to the log.
 	const seen = path.join(found.commonDir, 'kit-canary-seen', key);
 	const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); };
 
 	// The desktop app's hand-back: the report is the call's own message. Checked here, at the call, because the stop
-	// event fires before the hand-back reaches the agent's transcript (captured live).
+	// event fires before the hand-back reaches the agent's transcript.
 	if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') {
 		const report = String((input.tool_input || {}).message || '');
 		if (fs.existsSync(mark)) {
@@ -148,8 +148,8 @@ function run(input) {
 			return {};
 		}
 		const opens = words(report).startsWith(phrase);
-		// T6 (build 11): a reviewer's report is what the findings ledger is read from, so its shape is checked here too,
-		// once: a second try goes through, logged, so a role never loops on its report.
+		// A reviewer's report is what the findings ledger is read from, so its shape is checked here too, once: a second
+		// try goes through, logged, so a role never loops on its report.
 		if (opens && input.agent_type === 'reviewer') {
 			const shaped = path.join(found.commonDir, 'kit-canary-shape', key);
 			if (fs.existsSync(shaped)) {
@@ -206,10 +206,12 @@ const check = (input) => { try { return run(input).out || null; } catch { return
 if (require.main === module) {
 	try {
 		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
-		// The log-only hand-back record gate rides on this hook, so a role's hook table keeps one entry per matcher.
-		if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') { try { require('./handoff-gate.cjs').run(input); } catch { /* a log never blocks */ } }
+		// The hand-back record gate follows its hold's mode (log or enforce); one deny carries both reasons.
+		let gate = null;
+		if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') { try { gate = require('./handoff-gate.cjs').run(input); } catch { /* a log never blocks */ } }
 		const r = run(input);
-		if (r.out) process.stdout.write(JSON.stringify(r.out));
+		const denies = [gate, r.out].filter(Boolean);
+		if (denies.length) process.stdout.write(JSON.stringify({ hookSpecificOutput: { ...denies[0].hookSpecificOutput, permissionDecisionReason: denies.map((o) => o.hookSpecificOutput.permissionDecisionReason).join(' ') } }));
 		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
 		process.exitCode = r.code || 0;
 	} catch { process.exitCode = 0; }
