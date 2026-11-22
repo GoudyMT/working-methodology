@@ -8,8 +8,10 @@
 // Output: one JSON line per lane, {"lane":"L1","findings":["F1","F2"],"files":["src/a.js"]}. A lane with no file is
 // marked "nofile":true and has "files":[]. Lanes sort by their highest severity, then by the input position of their
 // first finding. Exit 0 (nothing printed when no open finding is left); exit 2 when a file cannot be read, a finding
-// line has no id or where, or its severity is missing or unknown. The problem goes to stderr and stdout stays empty.
+// line has no id or where, its severity is missing or unknown, or the file holds no JSON object line at all. The problem
+// goes to stderr and stdout stays empty.
 import fs from 'node:fs';
+import path from 'node:path';
 
 const RANK = { critical: 4, high: 3, medium: 2, low: 1 };
 const DONE = new Set(['fixed', 'dropped']);
@@ -21,15 +23,17 @@ class BadInput extends Error {}
 // One spelling per file, folded as project/.claude/plan-graph.mjs folds it: no line number, forward slashes, no ./,
 // lower case (Windows and macOS fold case). Empty and "-" name no file and come back as null.
 const fileOf = (entry) => {
-	const f = entry.trim().replace(/:\d+(?:[:-]\d+)?$/, '').replace(/\\/g, '/').replace(/^(\.\/)+/, '').toLowerCase();
-	return f && f !== '-' ? f : null;
+	const t = entry.trim().replace(/:\d+(?:[:-]\d+)?$/, '').replace(/\\/g, '/');
+	const f = t === '' || t === '-' ? '' : path.posix.normalize(t).toLowerCase();
+	return f && f !== '.' ? f : null;
 };
-const filesIn = (where) => where.split(', ').map(fileOf).filter(Boolean);
+const filesIn = (where) => where.split(',').map(fileOf).filter(Boolean);
 
 // The finding lines of a hand-back, in input order. A line that does not open with { is prose or RECORD:. An object
 // with none of the finding keys is a role, note or notChecked line. A { line that is not JSON is an input error.
 function findingsIn(text) {
 	const out = [];
+	let objects = 0;
 	text.split(/\r?\n/).forEach((line, i) => {
 		const s = line.trim();
 		if (!s.startsWith('{')) return;
@@ -39,8 +43,11 @@ function findingsIn(text) {
 		} catch {
 			throw new BadInput(`line ${i + 1} starts with { but is not JSON`);
 		}
+		objects++;
 		if (FINDING_KEYS.some((k) => k in o)) out.push(o);
 	});
+	// A file with no JSON object line at all is not a findings file (a markdown plan, say): refused, not an empty result.
+	if (objects === 0) throw new BadInput('no JSON object line: this is not a findings file');
 	return out;
 }
 
