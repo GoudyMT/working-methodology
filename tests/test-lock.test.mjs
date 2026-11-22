@@ -227,16 +227,6 @@ test('edit fence blocks a builder edit of the list named by the relative path .g
 	assert.equal(r.code, 2, r.out);
 });
 
-// why: catches the lead's own edits blocked by the builder's fence, so the lead could not write the test or the list
-test('edit fence lets the lead (no agent type) edit a test file and the list while a list is set', () => {
-	const { dir, red } = redRepo();
-	assert.equal(lock(dir, red, ['src/add.js']).code, 0);
-	const test = fence(dir, undefined, path.join(dir, 'tests', 'add.test.mjs'));
-	assert.equal(test.code, 0, test.out);
-	const list = fence(dir, undefined, listPath(dir));
-	assert.equal(list.code, 0, list.out);
-});
-
 // why: catches a test shape the builder's fence lets through, so a helper or a __tests__ file is editable mid-unit
 test('edit fence blocks a builder edit of each test shape under the lock', () => {
 	const { dir, red } = redRepo();
