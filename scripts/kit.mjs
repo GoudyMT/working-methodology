@@ -1630,24 +1630,31 @@ function roleModelRows(kit, dir) {
   return rows;
 }
 
-// E36: one list row for each role on a retiring or unmeasured model, added through state.mjs. The id names the role and
-// the model; state.mjs refuses a row whose id it already holds, so a later session start adds none, and a model change
-// gives the role a new row.
-function addModelRows(projectDir, rows) {
-  const state = path.join(projectDir, '.claude', 'state.mjs');
-  if (!rows.length || !fs.existsSync(state)) return;
+// E36: one list row for each role on a retiring or unmeasured model, added through the kit's own state.mjs (the
+// project's copy is only checked to exist, never run). The id names the role and the model; state.mjs refuses a row
+// whose id it already holds, so a later session start adds none, and a model change gives the role a new row. Nothing
+// here throws out of session start, and no row is written through a linked .kit folder.
+function addModelRows(kit, projectDir, rows) {
+  const state = path.join(kit, 'project', '.claude', 'state.mjs');
+  if (!rows.length || !fs.existsSync(state) || !fs.existsSync(path.join(projectDir, '.claude', 'state.mjs'))) return;
   for (const r of rows) {
-    const slug = r.role.replace(/[^A-Za-z0-9]+/g, '-').slice(0, 20);
-    const id = `model-${slug}-${crypto.createHash('sha256').update(`${r.role}|${r.model}`).digest('hex').slice(0, 8)}`;
-    const reason = r.retiring ? 'is marked retiring' : 'the kit has not measured its roles on';
-    const short = `${r.role} on ${r.model}: ${r.retiring ? 'retiring' : 'not measured'}`.slice(0, 60);
-    const from = path.join('.kit', `${id}.json`);
-    fs.mkdirSync(path.join(projectDir, '.kit'), { recursive: true });
-    fs.writeFileSync(path.join(projectDir, from), JSON.stringify({ id, title: `${r.role} runs on ${r.model}, which ${reason}`, short, tag: 'owner' }));
     try {
-      spawnSync(process.execPath, [state, 'item', 'add', '--from', from], { cwd: projectDir, encoding: 'utf8', timeout: 60000, windowsHide: true });
-    } finally {
-      fs.rmSync(path.join(projectDir, from), { force: true });
+      const slug = r.role.replace(/[^A-Za-z0-9]+/g, '-').slice(0, 20);
+      const id = `model-${slug}-${crypto.createHash('sha256').update(`${r.role}|${r.model}`).digest('hex').slice(0, 8)}`;
+      const reason = r.retiring ? 'is marked retiring' : 'the kit has not measured its roles on';
+      const short = `${r.role} on ${r.model}: ${r.retiring ? 'retiring' : 'not measured'}`.slice(0, 60);
+      const dir = path.join(projectDir, '.kit');
+      fs.mkdirSync(dir, { recursive: true });
+      if (fs.lstatSync(dir).isSymbolicLink()) return;
+      const from = path.join('.kit', `model-row-${crypto.randomBytes(6).toString('hex')}.json`);
+      fs.writeFileSync(path.join(projectDir, from), JSON.stringify({ id, title: `${r.role} runs on ${r.model}, which ${reason}`, short, tag: 'owner' }), { flag: 'wx' });
+      try {
+        spawnSync(process.execPath, [state, 'item', 'add', '--from', from], { cwd: projectDir, encoding: 'utf8', timeout: 60000, windowsHide: true });
+      } finally {
+        fs.rmSync(path.join(projectDir, from), { force: true });
+      }
+    } catch {
+      /* a row that cannot be written leaves the session start text as it is */
     }
   }
 }
@@ -1717,7 +1724,7 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
   if (channel) lines.push(channel);
   const roles = roleModelLine(kit, env.CLAUDE_PLUGIN_ROOT || home);
   if (roles) lines.push(roles);
-  if (!readOnly) addModelRows(projectDir, roleModelRows(kit, env.CLAUDE_PLUGIN_ROOT || home));
+  if (!readOnly) addModelRows(kit, projectDir, roleModelRows(kit, env.CLAUDE_PLUGIN_ROOT || home));
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   // K153 (build 20): a stale note is named before a thread acts on it, not only at the closeout that fails on it.
