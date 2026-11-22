@@ -784,6 +784,19 @@ test('a RECORD finding whose status is not confirmed or plausible is not tallied
 	assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
 });
 
+// why: catches a pipe row beside an empty RECORD block tallied as zero findings.
+test('a pipe row beside a valid empty RECORD block is not tallied: the findings count is not checked', () => {
+	const dir = sweepRepo();
+	const r = approveRun(featureContract(), dir);
+	assert.equal(r.status, 0, r.stdout);
+	const pipe = 'high | CONFIRMED | an import writes outside F1 | src/import.ts:12 | ran it';
+	const mixed = ['Prose.', 'ROLE: reviewer', pipe, 'RECORD:', JSON.stringify({ role: 'reviewer', commit: 'abc1234' }), JSON.stringify({ notChecked: 'nothing' })].join('\n');
+	const res = k301Outcome(dir, r, [mixed, k301Clean, k301Clean, k301Clean, k301Clean], 1);
+	assert.equal(res.status, 0, res.stdout);
+	assert.match(res.stdout, /--findings[^\n]*not checked/);
+	assert.equal(approvalLog(dir).filter((e) => e.kind === 'outcome').pop().findingsChecked, false);
+});
+
 // The 1.23.0 sweep's findings on the drift signals.
 // why: guards rule:sweep-auto-approval
 test('a reviewer that only read the hook\'s words was not stopped: only the hook\'s refusal counts', () => {
