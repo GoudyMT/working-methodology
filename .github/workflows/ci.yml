@@ -375,7 +375,6 @@ jobs:
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 12
-    continue-on-error: true
     permissions:
       contents: read
     strategy:
@@ -394,7 +393,7 @@ jobs:
           package-manager-cache: false
 
       - name: Coverage map at the PR head
-        run: node scripts/test-run.mjs --map
+        run: node scripts/test-run.mjs --map || echo "the map run had failing tests; the report below uses what it recorded"
 
       - name: Survivors in this slice (report only)
         run: node scripts/mutation-check.mjs --base ${{ github.event.pull_request.base.sha }} --report --slice ${{ matrix.slice }}/4
