@@ -73,11 +73,14 @@ async function start(planArg) {
 	let lines = [];
 	try { lines = readText(logFile).split(/\r?\n/).filter((l) => l.trim()); } catch (e) { if (e.code !== 'ENOENT') throw e; }
 	let last = null;
+	// Windows and macOS fold case in file names, as lanes.mjs folds a path; the compare folds the same way.
+	const fold = process.platform === 'win32' || process.platform === 'darwin' ? (s) => s.toLowerCase() : (s) => s;
+	const full = fold(plan.replace(/\\/g, '/'));
 	for (const line of lines) {
 		let o;
 		try { o = JSON.parse(line); } catch { return bad(`${logFile} has a line that is not JSON`); }
 		// A line with a planPath is this plan only at that full path; a legacy line with none matches by basename.
-		if (o && (o.planPath === undefined ? o.plan === name : o.planPath === plan.replace(/\\/g, '/'))) last = o;
+		if (o && (o.planPath === undefined ? o.plan === name : typeof o.planPath === 'string' && fold(o.planPath) === full)) last = o;
 	}
 	if (!last) return fault([`no plan-graph log line for ${name} in ${logFile}: run node .claude/plan-graph.mjs ${planArg} first`]);
 	if (last.faults !== 0) return fault([`plan-graph's latest run of ${name} (${last.at}) reported ${last.faults} fault(s): fix the plan and run plan-graph again`]);
