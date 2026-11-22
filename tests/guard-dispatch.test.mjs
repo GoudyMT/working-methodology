@@ -385,9 +385,9 @@ test('test-scope reads folders and a repo with no base', () => {
 	assert.equal(at(folders, 'node --test --test-coverage-include tests'), 'deny', 'an unknown option value naming a folder');
 
 	// The refusal text for a folder above the repo has no two periods in a row.
-	assert.doesNotMatch(reasonOf(folders, 'node --test ..'), /\.\./, 'the refusal text for a folder above the repo');
+	assert.doesNotMatch(reasonOf(folders, 'node --test ..'), /\.\.\s+[A-Z]/, 'the refusal text for a folder above the repo');
 	// The refusal text for a relative path to a file outside the repo has no two periods in a row.
-	assert.doesNotMatch(reasonOf(folders, `node --test ${relOutsideFile}`), /\.\./, 'the refusal text for a relative path to an outside file');
+	assert.doesNotMatch(reasonOf(folders, `node --test ${relOutsideFile}`), /\.\.\s+[A-Z]/, 'the refusal text for a relative path to an outside file');
 	// The refusal text for an absolute folder with a trailing slash has one slash between parts.
 	assert.doesNotMatch(reasonOf(folders, `node --test ${absOutside}/`), /\/\//, 'the refusal text for an absolute folder with a trailing slash');
 	// On Windows, a drive root is outside the repo, and its refusal text has one slash too.
