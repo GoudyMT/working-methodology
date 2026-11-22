@@ -200,3 +200,23 @@ T3. U5 K307 tester role and tester-model.mjs. U6 K310 test review. U7 E36 table,
 row, pr-size.mjs. U8 K341 project override. U9 K225 hold modes. U10 K277 lanes.mjs. U11 K311 CI job. U12 K315
 slots. U13 K294 docs line. U14 VERSION, build record, reworded record. U1 runs first; U2 before U6 and U10; U9
 before U2's hook and U7's hook.
+
+## 7. Progress (resume here)
+
+Flow from 2026-11-22 11:41Z (owner): per unit, a Sonnet tester, one Haiku test review, a Haiku builder, green, next
+unit. No per-unit Opus check. One sweep at the end; its fixes run in lanes.
+
+- [x] U1 K339 test-scope folder fix (Sonnet-built; Opus PASS)
+- [x] U2a K300/K301 handoff.mjs (Sonnet-built; Opus PASS). Two lows for the sweep: a clear-form wording test that
+  never failed first; placeholders in note and notChecked values pass the check.
+- [x] U7a E36 model table: 19 steps (row 9 and row 12 each split per enforcer, reviewer row added, row 15 lands with
+  pr-size.mjs), role access in kit.config.json, five new roles, the role table rule moved (1.51.0-reworded.json).
+  Haiku-built; Opus PASS.
+- [ ] U3 K309/K312 unit-check.mjs: round 3 build in flight (tests at 4b955509). Ships report-only in CI (call 4).
+- [ ] U7b Agent model hook (log-only), CI wiring of model-table check, session-start list row, pr-size.mjs, lead
+  settings write
+- [ ] U2b approve.mjs JSONL reader, SubagentHandback gate hook (log-only), brief templates
+- [ ] U4 K308 lock written by the lead, retest: hold; U5-U6 tester-model.mjs (R1-R6), builder-model.mjs, K310 gate
+- [ ] U8 K341 override; U9 K225 hold modes; U10 K277 lanes.mjs; U11 K311 CI job; U12 K315 slots; U13 K294 line
+- [ ] U14 VERSION 1.51.0, build record (unit commit lists for unit-check), CHANGELOG
+- [ ] Sweep (paired with the cloud bench, briefs sent blind first), score gate on the PC, PR ready
