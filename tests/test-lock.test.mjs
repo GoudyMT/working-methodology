@@ -105,6 +105,10 @@ test('unit-lock writes the source files it is given to the unit file list and pr
 	assert.match(r.out, /src\/add\.js/);
 	assert.match(r.out, /src\/util\.js/);
 	assert.deepEqual(listLines(dir).filter((l) => !l.startsWith('#')), ['src/add.js', 'src/util.js']);
+	// A leading ./ and a backslash spelling name the same file, so the list holds one spelling of each.
+	const spelled = lock(dir, red, ['./src/add.js', 'src\\util.js']);
+	assert.equal(spelled.code, 0, spelled.out);
+	assert.deepEqual(listLines(dir).filter((l) => !l.startsWith('#')), ['src/add.js', 'src/util.js']);
 });
 
 // why: catches a unit lock written with no red sha, so the file list is not tied to the red commit it locks
@@ -124,11 +128,16 @@ test('unit-lock exits 1 and names the test path it is given, and writes no test 
 	const file = listPath(dir);
 	const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '';
 	assert.doesNotMatch(text, /add\.test\.mjs/);
+	// A ./ prefix and backslashes are normalised before the test check, so the spelled path is refused as the test it is.
+	const spelled = lock(dir, red, ['src/add.js', '.\\tests\\add.test.mjs']);
+	assert.equal(spelled.code, 1, spelled.out);
+	assert.match(spelled.out, /tests\/add\.test\.mjs/);
 });
 
 // why: catches a test shape the lock lets through, so a builder can edit a test named by its shape
 test('unit-lock exits 1 and names each test shape given to it, and writes none of them', () => {
-	for (const shape of TEST_SHAPES) {
+	// The lock's own shapes beyond the fence's: a test/ folder, a spec/ folder and a .spec. name.
+	for (const shape of [...TEST_SHAPES, 'test/x.js', 'spec/x.js', 'src/x.spec.js']) {
 		const { dir, red } = redRepo();
 		const r = lock(dir, red, ['src/add.js', shape]);
 		assert.equal(r.code, 1, `${shape}: ${r.out}`);
