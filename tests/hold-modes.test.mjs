@@ -161,7 +161,55 @@ test('agent-model reads its mode through hold-mode.cjs, then logs the call in lo
 	const common = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
 	const logFile = path.join(common, 'kit-agent-model.log');
 	assert.ok(fs.existsSync(logFile), 'the log-mode call wrote kit-agent-model.log');
-	assert.match(fs.readFileSync(logFile, 'utf8'), /"hook":"agent-model"/);
+	const log = fs.readFileSync(logFile, 'utf8');
+	assert.match(log, /"hook":"agent-model"/);
+	assert.match(log, /"mode":"log"/);
+});
+
+// Runs agent-model.cjs from hookDir once per call in calls, in dir's repo; one result per call, null when it decides nothing.
+function checkCalls(hookDir, dir, calls, extraEnv = {}) {
+	const script = `const m = require(${JSON.stringify(path.join(hookDir, 'agent-model.cjs'))}); const calls = ${JSON.stringify(calls)}; process.stdout.write(JSON.stringify(calls.map((c) => m.check({ tool_name: 'Agent', tool_input: c, cwd: ${JSON.stringify(dir)} }))));`;
+	return spawnSync(process.execPath, ['-e', script], { env: isolatedEnv(extraEnv), encoding: 'utf8' });
+}
+
+// A Claude config folder holding one role file per name in roles (name -> model line), for the role lookup.
+function roleConfig(roles) {
+	const config = kitTemp.makeTemp('agent-model-config-');
+	for (const [name, model] of Object.entries(roles)) {
+		put(path.join(config, 'agents'), { [`${name}.md`]: `---\nname: ${name}\nmodel: ${model}\n---\nrole\n` });
+	}
+	return config;
+}
+
+// The kit-agent-model.log text in dir's repo (the git common folder), read after a check.
+function agentLogText(dir) {
+	const common = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']).trim();
+	return fs.readFileSync(path.join(common, 'kit-agent-model.log'), 'utf8');
+}
+
+// why: catches a log-only guard that refuses when its list is damaged
+test('agent-model never refuses in build 24, even when its hold reads enforce', () => {
+	const hookDir = kitTemp.makeTemp('agent-model-enforce-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), `'use strict';\nmodule.exports = { mode() { return 'enforce'; } };\n`);
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const dir = repo();
+	const run = checkCalls(hookDir, dir, [{ subagent_type: 'no-such-role' }, { subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
+	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
+	assert.deepEqual(JSON.parse(run.stdout), [null, null], 'neither the no-role-file call nor the model-mismatch call is refused');
+	assert.match(agentLogText(dir), /"mode":"enforce"/);
+});
+
+// why: catches a missing helper file turning the guard into a refusal
+test('agent-model logs and returns null when hold-mode.cjs is missing', () => {
+	const hookDir = kitTemp.makeTemp('agent-model-alone-');
+	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
+	const config = roleConfig({ 'opus-role': 'opus' });
+	const dir = repo();
+	const run = checkCalls(hookDir, dir, [{ subagent_type: 'opus-role', model: 'haiku' }], { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config });
+	assert.equal(run.status, 0, `agent-model.cjs check ran: ${run.stderr}`);
+	assert.deepEqual(JSON.parse(run.stdout), [null], 'the model-mismatch call is not refused');
+	assert.match(agentLogText(dir), /"mode":"log"/);
 });
 
 // why: catches a deleted holds.json that the check reads as no holds, so an enforce hold vanishes unnoticed
