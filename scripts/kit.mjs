@@ -1556,13 +1556,13 @@ function stableChannelLine(home) {
 
 // E36: a role on a model the kit has not measured its roles on, or one kit.config.json "models" marks retiring. The
 // role file in use wins over the table (an owner can move one by hand); a kit with no measured list says nothing.
-function roleModelLine(kit, dir) {
+function roleModelRows(kit, dir) {
   let config = {};
-  try { config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')); } catch { return ''; }
+  try { config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')); } catch { return []; }
   const models = config.models || {};
-  if (!Array.isArray(models.measured)) return '';
+  if (!Array.isArray(models.measured)) return [];
   const retiring = new Set(models.retiring || []);
-  const named = [];
+  const rows = [];
   for (const role of Object.keys(config.roles || {}).sort()) {
     let model = config.roles[role].model;
     try {
@@ -1573,10 +1573,40 @@ function roleModelLine(kit, dir) {
     } catch { /* not installed: the table's model */ }
     // A family name (opus) is measured when the kit measured a model of that family.
     const measured = models.measured.includes(model) || (/^(opus|sonnet|haiku)$/i.test(model) && models.measured.some((x) => x.toLowerCase().includes(model.toLowerCase())));
-    const file = `${toPosix(dir)}/agents/${role}.md`;
-    if (retiring.has(model)) named.push(`${role} runs on ${model}, which is marked retiring (${file})`);
-    else if (!measured) named.push(`${role} runs on ${model}, which the kit has not measured its roles on (${file})`);
+    if (retiring.has(model)) rows.push({ role, model, retiring: true });
+    else if (!measured) rows.push({ role, model, retiring: false });
   }
+  return rows;
+}
+
+// E36: one list row for each role on a retiring or unmeasured model, added through state.mjs. The id names the role and
+// the model; state.mjs refuses a row whose id it already holds, so a later session start adds none, and a model change
+// gives the role a new row.
+function addModelRows(projectDir, rows) {
+  const state = path.join(projectDir, '.claude', 'state.mjs');
+  if (!rows.length || !fs.existsSync(state)) return;
+  for (const r of rows) {
+    const slug = r.role.replace(/[^A-Za-z0-9]+/g, '-').slice(0, 20);
+    const id = `model-${slug}-${crypto.createHash('sha256').update(`${r.role}|${r.model}`).digest('hex').slice(0, 8)}`;
+    const reason = r.retiring ? 'is marked retiring' : 'the kit has not measured its roles on';
+    const short = `${r.role} on ${r.model}: ${r.retiring ? 'retiring' : 'not measured'}`.slice(0, 60);
+    const from = path.join('.kit', `${id}.json`);
+    fs.mkdirSync(path.join(projectDir, '.kit'), { recursive: true });
+    fs.writeFileSync(path.join(projectDir, from), JSON.stringify({ id, title: `${r.role} runs on ${r.model}, which ${reason}`, short, tag: 'owner' }));
+    try {
+      spawnSync(process.execPath, [state, 'item', 'add', '--from', from], { cwd: projectDir, encoding: 'utf8', timeout: 60000, windowsHide: true });
+    } finally {
+      fs.rmSync(path.join(projectDir, from), { force: true });
+    }
+  }
+}
+
+// E36: the role line session start names, for the roles rows above (the role file in use wins over the table).
+function roleModelLine(kit, dir) {
+  const named = roleModelRows(kit, dir).map((r) => {
+    const file = `${toPosix(dir)}/agents/${r.role}.md`;
+    return r.retiring ? `${r.role} runs on ${r.model}, which is marked retiring (${file})` : `${r.role} runs on ${r.model}, which the kit has not measured its roles on (${file})`;
+  });
   // The build 23b sweep: the repair is on the owner's side (the role file wins over the kit's table, and changing the
   // table leaves the release checkout).
   return named.length ? `Kit roles: ${named.join('; ')}. Set the model line in that role file to a measured model, or measure the model first; the next release's table may move it.` : '';
@@ -1636,6 +1666,7 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
   if (channel) lines.push(channel);
   const roles = roleModelLine(kit, env.CLAUDE_PLUGIN_ROOT || home);
   if (roles) lines.push(roles);
+  if (!readOnly) addModelRows(projectDir, roleModelRows(kit, env.CLAUDE_PLUGIN_ROOT || home));
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   // K153 (build 20): a stale note is named before a thread acts on it, not only at the closeout that fails on it.
