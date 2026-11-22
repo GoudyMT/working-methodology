@@ -24,6 +24,10 @@ export const SIX_DIMENSIONS = ['Privacy', 'Supply chain', 'Legal', 'Code securit
 export const releaseTitle = (rec) => `Methodology Kit v${rec.version}`;
 export const NO_TEST = 'no test: no real input';
 export const TEST_KEY = /^tests\/[^:\s]+\.test\.mjs::\S/;
+// An item's test or tests entry: a string, exact, with no space around it and no glob, regex or group character in its
+// path. The fix rows keep TEST_KEY; this pattern is the stricter one, since CI's test check looks each key up by its text.
+const EXACT_KEY = /^tests\/[^\s:*?[\]()]+\.test\.mjs::\S(?:.*\S)?$/;
+const itemKey = (v) => typeof v === 'string' && EXACT_KEY.test(v);
 // A hand-typed claim that every fix or finding has its test (PR 49's line 1), which no check read.
 // The quantifier names the fixes or findings themselves, so a line about the auto-fix push is not one (the build 14 sweep).
 const FIX_CLAIM = /\b(each|every|all)\s+(of\s+the\s+)?(sweep\s+|high\s+|other\s+)?(findings?|fix(es)?)\b[^.]*\btests?\b/i;
@@ -55,8 +59,10 @@ export function problems(rec) {
 		need(Object.hasOwn(KINDS, it.kind), `item ${i + 1} kind "${it.kind}" is not one of ${Object.keys(KINDS).join(', ')}`);
 		for (const k of ['text', 'evidence']) need(text(it[k]), `item ${i + 1} (${it.id}) has no ${k}`);
 		need(!it.where || (text(it.before) && text(it.after)), `item ${i + 1} (${it.id}) names a where without its before and after`);
-		// An item may name many tests: a list of test keys, each read by CI's test check (rule:test-value).
-		need(it.tests === undefined || (Array.isArray(it.tests) && it.tests.every((t) => TEST_KEY.test(String(t)))), `item ${i + 1} (${it.id}) tests is not a list of test keys`);
+		// An item names one test in test, or many in tests, each an exact key; the message names the item, never the entry.
+		const label = `item ${i + 1} (${typeof it.id === 'string' ? it.id : '?'})`;
+		need(it.test === undefined || itemKey(it.test), `${label} test is not an exact test key`);
+		need(it.tests === undefined || (Array.isArray(it.tests) && it.tests.every(itemKey)), `${label} tests is not a list of exact test keys`);
 		// K109: a missing reach read as projects and filed a kit-only item under projects; from 1.41.0 each item says it.
 		if (it.reach === undefined && from141) out.push(`item ${i + 1} (${it.id}) names no reach: projects or kit`);
 		else need(it.reach === undefined || ['projects', 'kit'].includes(it.reach), `item ${i + 1} (${it.id}) reach "${it.reach}" is not projects or kit`);
