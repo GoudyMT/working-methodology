@@ -28,98 +28,98 @@ const writeRecord = (body) => {
 	return file;
 };
 
-// why: a prose-only hand-back with no RECORD: line must fail, or a model's free text passes the gate unread.
+// why: catches a prose-only hand-back with no RECORD line passing the gate unread.
 test('T1 spec 1: text with no RECORD line is an error', () => {
 	const r = check('Just prose, no record.');
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /RECORD/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: an empty RECORD: block must fail and say it is empty, or a model that wrote the marker and nothing else passes.
+// why: catches an empty RECORD block passing as a finished hand-back with nothing in it.
 test('T2 spec 9: an empty RECORD: block is an error that says empty', () => {
 	const r = check(record());
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /empty/i.test(e)), JSON.stringify(r.errors));
 });
 
-// why: blank lines between record lines must be skipped, or a tidy hand-back with a gap is refused for nothing.
+// why: catches a tidy hand-back with a blank line between its records refused for no reason.
 test('T3 spec 1: blank lines after RECORD: are skipped', () => {
 	const r = check(record(ROLE, '', finding('K1'), ''));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 	assert.equal(r.findings.length, 1);
 });
 
-// why: a valid role line plus one finding must pass, or the gate refuses every good record.
+// why: catches a good role line and one finding refused by the gate, which would block every record.
 test('T4 spec 2: a role line then a finding is ok', () => {
 	const r = check(record(ROLE, finding('K1')));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 
-// why: a finding with no role line at all must error on line 1, or a bare finding list passes with no build named.
+// why: catches a bare finding list with no role line passing with no build named anywhere.
 test('T5 spec 9: findings with no role line at all are an error naming line 1', () => {
 	const r = check(record(finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 1), JSON.stringify(r.errors));
 });
 
-// why: a finding placed before the role line must be an error naming line 1, or a record with no role is read as one.
+// why: catches a finding placed before the role line being read as the record's role.
 test('T6 spec 2: a finding before the role line is an error naming line 1', () => {
 	const r = check(record(finding('K1'), ROLE));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 1), JSON.stringify(r.errors));
 });
 
-// why: a commit of 6 characters must be refused, or a short stub hash ties a finding to no build.
+// why: catches a six-character commit passing as a build id when a stub hash ties a finding to nothing.
 test('T7 spec 3: a 6-character commit is an error on line 1', () => {
 	const r = check(record('{"role": "builder", "commit": "abc123"}', finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 1), JSON.stringify(r.errors));
 });
 
-// why: a 40-character commit must pass, or a full SHA-1 hash is refused by the gate.
+// why: catches a full 40-character commit hash being refused by the gate as too long to be valid.
 test('T8 spec 2: a 40-character commit is ok', () => {
 	const r = check(record(`{"role": "builder", "commit": "${'a'.repeat(40)}"}`, finding('K1')));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 
-// why: a 41-character commit must be refused, or a hash longer than a SHA-1 passes as a real commit.
+// why: catches a 41-character commit passing as a real commit, which is longer than any SHA-1 hash.
 test('T9 spec 2: a 41-character commit is an error on line 1', () => {
 	const r = check(record(`{"role": "builder", "commit": "${'a'.repeat(41)}"}`, finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 1), JSON.stringify(r.errors));
 });
 
-// why: a commit with non-hex characters must be refused, or a made-up word passes as a commit id.
+// why: catches a non-hex word such as zzzzzzz passing as a commit id, which names no real build.
 test('T10 spec 2: a non-hex commit is an error on line 1', () => {
 	const r = check(record('{"role": "builder", "commit": "zzzzzzz"}', finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 1), JSON.stringify(r.errors));
 });
 
-// why: an empty role must be refused, or a role line with no name is taken as a signed hand-back.
+// why: catches an empty role passing as a signed hand-back with no name on it at all.
 test('T11 spec 2: an empty role is an error naming role on line 1', () => {
 	const r = check(record('{"role": "", "commit": "abc1234"}', finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 1: .*`role`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: an empty commit must be refused, or a role line with a blank commit passes with no build named.
+// why: catches a blank commit passing the role line with no build named for the findings below it.
 test('T12 spec 2: an empty commit is an error naming commit on line 1', () => {
 	const r = check(record('{"role": "builder", "commit": ""}', finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 1: .*`commit`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: each finding key must be present and non-empty, or a finding missing a field passes as complete. One test per key.
+// why: catches a finding that is missing a field being counted as complete and passed on by the gate.
 for (const k of KEYS) {
-	// why: a finding missing its `${k}` key must fail naming that key on line 2, or a partial finding passes as complete.
+	// why: catches a partial finding passing as complete when its key is missing from the line.
 	test(`R1 spec 3: a finding missing \`${k}\` is an error on line 2`, () => {
 		const r = check(record(ROLE, without(k)));
 		assert.equal(r.ok, false);
 		assert.ok(r.errors.some((e) => new RegExp(`^line 2: missing \`${k}\``).test(e)), JSON.stringify(r.errors));
 	});
 
-	// why: a finding with an empty `${k}` string must fail naming that key on line 2, or a blank field passes as filled in.
+	// why: catches a blank field passing as filled in when the key is there but its value is empty.
 	test(`R1 spec 3: a finding with an empty \`${k}\` is an error on line 2`, () => {
 		const r = check(record(ROLE, finding('K1', { [k]: '' })));
 		assert.equal(r.ok, false);
@@ -127,21 +127,21 @@ for (const k of KEYS) {
 	});
 }
 
-// why: a non-string id must be refused, or a number passes where the spec wants a string key.
+// why: catches a numeric id passing the gate where the spec requires a string key for each finding.
 test('R1 spec 3: a finding with a non-string id is an error naming id on line 2', () => {
 	const r = check(record(ROLE, finding('K1', { id: 5 })));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 2: .*`id`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: a severity outside critical/high/medium/low must be refused on line 2, or the prose-drop of a severity goes unseen.
+// why: catches a severity outside the four levels slipping through, which hides a prose-dropped rating.
 test('T13 spec 3: a severity outside the four levels is an error naming line 2', () => {
 	const r = check(record(ROLE, finding('K1', { severity: 'urgent' })));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
 });
 
-// why: each of the four severity levels must pass, or a valid critical or medium finding is refused by mistake.
+// why: catches a valid critical or medium finding being refused by mistake when the gate is tightened.
 test('T14 spec 3: all four severities are accepted', () => {
 	const lines = ['critical', 'high', 'medium', 'low'].map((s, i) => finding(`K${i}`, { severity: s }));
 	const r = check(record(ROLE, ...lines));
@@ -149,76 +149,76 @@ test('T14 spec 3: all four severities are accepted', () => {
 	assert.equal(r.findings.length, 4);
 });
 
-// why: where "-" and fix "-" must pass, or a finding with no path or no fix is refused when the spec allows it.
+// why: catches a finding with no path or no fix being refused when the spec explicitly allows a dash there.
 test('T15 spec 3: where and fix may each be "-"', () => {
 	const r = check(record(ROLE, finding('K1', { where: '-', fix: '-' })));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 
-// why: two findings sharing an id must be an error naming the second one's line, or the gate cannot tell them apart.
+// why: catches two findings sharing one id, which the gate cannot tell apart when it reads them back.
 test('T16 spec 6: a duplicate finding id is an error naming line 3', () => {
 	const r = check(record(ROLE, finding('K1'), finding('K1')));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
 });
 
-// why: a line that is not JSON must be an error naming its line, or a broken line is skipped silently.
+// why: catches a broken JSON line being skipped silently, so a finding quietly goes missing from the record.
 test('T17 spec 6: a line that is not JSON is an error naming line 2', () => {
 	const r = check(record(ROLE, 'this is not json'));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
 });
 
-// why: a line that is valid JSON but of no known shape must be an error, or a typo'd key becomes an ignored line.
+// why: catches a valid JSON line of unknown shape being ignored, which hides a typo in a key name.
 test('T18 spec 6: an unknown line shape is an error naming line 2', () => {
 	const r = check(record(ROLE, '{"foo": 1}'));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
 });
 
-// why: a record with only a role line must fail and say it is empty, or a bare role passes as a finished hand-back.
+// why: catches a record holding only a role line passing as a finished hand-back with no content in it.
 test('T19 spec 7: a role line alone is never ok and says the record is empty', () => {
 	const r = check(record(ROLE));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /empty/i.test(e)), JSON.stringify(r.errors));
 });
 
-// why: a notChecked line with an empty string must be an error on line 3, or a blank gap is counted as an honest disclosure.
+// why: catches a notChecked line with a blank string counted as an honest disclosure of a gap.
 test('T20 spec 4: a notChecked line with an empty string is an error on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"notChecked": ""}'));
 	assert.equal(r.ok, false);
 	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
 });
 
-// why: a notChecked given as a number must be refused, or a count typed as a value passes as a disclosure.
+// why: catches a notChecked typed as a number passing as a disclosure when it names no check at all.
 test('T21 spec 4: a numeric notChecked is an error naming notChecked on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"notChecked": 5}'));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 3: .*`notChecked`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: a note line with no writer must be an error naming writer on line 2, or an anonymous note is accepted into the record.
+// why: catches an anonymous note without a writer being accepted into the record as if it were signed.
 test('T22 spec 4: a note line without a writer is an error naming writer on line 2', () => {
 	const r = check(record(ROLE, '{"note": "looks fine"}'));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 2: missing `writer`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: an empty note text with a writer must be refused, or a blank note is counted as a finished note.
+// why: catches a blank note text counted as a finished note with nothing in it to read.
 test('T23 spec 4: a note with an empty text is an error naming note on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"note": "", "writer": "tester"}'));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 3: .*`note`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: an empty writer must be refused, or a note with no name behind it is accepted as signed.
+// why: catches a note whose writer is blank being accepted as signed when no name stands behind it.
 test('T24 spec 4: a note with an empty writer is an error naming writer on line 3', () => {
 	const r = check(record(ROLE, finding('K1'), '{"note": "ok", "writer": ""}'));
 	assert.equal(r.ok, false);
 	assert.ok(r.errors.some((e) => /^line 3: .*`writer`/.test(e)), JSON.stringify(r.errors));
 });
 
-// why: the result must carry findings in order and counts for notChecked and notes, or the CLI and callers read the wrong fields.
+// why: catches the result missing its findings in order or its notChecked and notes counts that callers read.
 test('T25 spec 4-5: check returns findings in order, notChecked and notes counts', () => {
 	const r = check(record(ROLE, finding('K1'), finding('K2'), '{"notChecked": "the drag path"}', '{"note": "ok", "writer": "tester"}'));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
@@ -228,7 +228,7 @@ test('T25 spec 4-5: check returns findings in order, notChecked and notes counts
 	assert.ok(Array.isArray(r.errors));
 });
 
-// why: ok must be false when any error is present, even with valid findings, or a half-broken record ships as passing.
+// why: catches a half-broken record shipping as ok because its one good finding hides the bad line.
 test('T26 spec 8: a valid finding plus one bad line is not ok and names line 3', () => {
 	const r = check(record(ROLE, finding('K1'), 'junk'));
 	assert.equal(r.ok, false);
@@ -236,14 +236,14 @@ test('T26 spec 8: a valid finding plus one bad line is not ok and names line 3',
 	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
 });
 
-// why: a claim holding `a | b | c` must come back unchanged, or the pipe parser splits it and the claim is lost.
+// why: catches a claim with pipes split by the pipe parser, which loses the rest of the claim text.
 test('T27 spec 10: a claim with pipes comes back unchanged', () => {
 	const r = check(record(ROLE, finding('K1', { claim: 'a | b | c' })));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 	assert.equal(r.findings[0].claim, 'a | b | c');
 });
 
-// why: a pipe in any other field must be kept too, or a where or proof with a pipe is cut and mis-scored.
+// why: catches a pipe inside where or proof being cut off, which mis-scores the finding it belongs to.
 test('T28 spec 3: a pipe inside where and proof is kept exactly', () => {
 	const r = check(record(ROLE, finding('K1', { where: 'a.mjs:1 | b.mjs:2', proof: 'x | y' })));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
@@ -251,7 +251,7 @@ test('T28 spec 3: a pipe inside where and proof is kept exactly', () => {
 	assert.equal(r.findings[0].proof, 'x | y');
 });
 
-// why: a pipe in id, status and fix must be kept too, or a split field silently breaks the finding's identity.
+// why: catches a pipe inside id, status or fix splitting the field and breaking that finding's identity.
 test('T29 spec 3: a pipe inside id, status and fix is kept exactly', () => {
 	const r = check(record(ROLE, finding('K|1', { status: 'red|open', fix: 'a|b' })));
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
@@ -260,7 +260,7 @@ test('T29 spec 3: a pipe inside id, status and fix is kept exactly', () => {
 	assert.equal(r.findings[0].fix, 'a|b');
 });
 
-// why: a valid record on the CLI must exit 0 and print one line of counts, or the kit's gate step cannot tell it passed.
+// why: catches a valid record on the CLI failing to exit 0, so the kit's gate step cannot tell it passed.
 test('T30 spec 9: CLI exits 0 on a valid record and prints one line of counts', () => {
 	const res = cli(['check', writeRecord(record(ROLE, finding('K1'), finding('K2')))]);
 	assert.equal(res.status, 0, res.stderr);
@@ -269,7 +269,7 @@ test('T30 spec 9: CLI exits 0 on a valid record and prints one line of counts', 
 	assert.ok(/\b2\b/.test(lines[0]), lines[0]);
 });
 
-// why: the CLI must never change or delete the file it reads, or a re-run of the gate reads a different record.
+// why: catches the CLI rewriting the file it reads on the ok path, so a second run reads a different record.
 test('T31 spec 9: CLI leaves the file it reads unchanged on the ok path', () => {
 	const file = writeRecord(record(ROLE, finding('K1')));
 	const before = fs.readFileSync(file, 'utf8');
@@ -277,7 +277,7 @@ test('T31 spec 9: CLI leaves the file it reads unchanged on the ok path', () => 
 	assert.equal(fs.readFileSync(file, 'utf8'), before);
 });
 
-// why: the CLI must leave the file unchanged on the error path too, or a failed gate destroys the hand-back it checked.
+// why: catches a failed gate destroying or changing the hand-back it was asked to check.
 test('T32 spec 9: CLI leaves the file it reads unchanged on the error path', () => {
 	const file = writeRecord(record(ROLE, 'not json'));
 	const before = fs.readFileSync(file, 'utf8');
@@ -287,7 +287,7 @@ test('T32 spec 9: CLI leaves the file it reads unchanged on the error path', () 
 	assert.ok(fs.existsSync(file));
 });
 
-// why: an invalid record on the CLI must exit 1 with each error on its own stderr line, or the caller cannot read them.
+// why: catches CLI errors merged onto one stderr line, which the caller then cannot read one by one.
 test('T33 spec 9: CLI exits 1 with one stderr line per error', () => {
 	const res = cli(['check', writeRecord(record(ROLE, 'not json', finding('K2', { severity: 'urgent' })))]);
 	assert.equal(res.status, 1);
@@ -297,28 +297,105 @@ test('T33 spec 9: CLI exits 1 with one stderr line per error', () => {
 	assert.ok(/^line 3: /.test(lines[1]), lines[1]);
 });
 
-// why: an invalid record piped on stdin must exit 1 with the error on stderr, or the stdin path reports a bad record as passing.
+// why: catches a bad record piped on stdin being reported as passing, which lets it through the gate.
 test('T34 spec 9: CLI check - exits 1 with the error on stderr for a bad record', () => {
 	const res = cli(['check', '-'], record(ROLE, finding('K1', { severity: 'urgent' })));
 	assert.equal(res.status, 1);
 	assert.ok(/^line 2: /m.test(res.stderr), res.stderr);
 });
 
-// why: a file that cannot be read must exit 2, not 0 or 1, or a missing hand-back looks like a bad record.
+// why: catches a missing hand-back file being read as a bad record instead of an unreadable path.
 test('T35 spec 9: CLI exits 2 when the file cannot be read', () => {
 	const missing = path.join(tempDir(), 'no-such-file.txt');
 	const res = cli(['check', missing]);
 	assert.equal(res.status, 2);
 });
 
-// why: a directory path is not a readable hand-back, so it must exit 2, or a folder passed by mistake reads as a bad record.
+// why: catches a folder passed by mistake being read as a bad record rather than an unreadable path.
 test('T36 spec 9: CLI exits 2 when the path is a directory', () => {
 	const res = cli(['check', tempDir()]);
 	assert.equal(res.status, 2);
 });
 
-// why: check - must read the record from stdin, or a hand-back piped into the gate is refused as unreadable.
+// why: catches the check dash path refusing a valid record piped in on stdin as unreadable input.
 test('T37 spec 9: CLI check - reads the record from stdin', () => {
 	const res = cli(['check', '-'], record(ROLE, finding('K1')));
 	assert.equal(res.status, 0, res.stderr);
+});
+
+// why: catches the gate failing on a Windows junction path to handoff.mjs, which the hooks use on Windows.
+test('N1 spec 9: CLI run through a Windows junction still checks a malformed record', { windows: 'also', skip: process.platform !== 'win32' ? 'a Windows junction; elsewhere there is no junction to check' : false }, () => {
+	const linkDir = path.join(tempDir(), 'link');
+	fs.symlinkSync(path.dirname(CLI), linkDir, 'junction');
+	const res = spawnSync(process.execPath, [path.join(linkDir, 'handoff.mjs'), 'check', writeRecord(record(ROLE, 'not json'))], { encoding: 'utf8' });
+	assert.equal(res.status, 1, res.stderr);
+	assert.ok(/^line 2: /m.test(res.stderr), res.stderr);
+});
+
+// why: catches a note line that also carries finding keys passing while silently dropping the finding.
+test('N2 spec 6: a note line that holds finding keys is an unknown line shape on line 3', () => {
+	const r = check(record(ROLE, finding('K1'), '{"note": "x", "writer": "w", "id": "K9"}'));
+	assert.equal(r.ok, false);
+	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
+});
+
+// why: catches a notChecked line that also carries finding keys passing while silently dropping the finding.
+test('N3 spec 6: a notChecked line that holds finding keys is an unknown line shape on line 3', () => {
+	const r = check(record(ROLE, finding('K1'), '{"notChecked": "x", "severity": "low"}'));
+	assert.equal(r.ok, false);
+	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
+});
+
+// why: catches a quoted example record in the prose being read as the real hand-back instead of the last one.
+test('N4 spec 4: when the text holds two RECORD: lines, the last one starts the record', () => {
+	const text = ['Example of a hand-back:', 'RECORD:', finding('KX'), 'Now the real one:', 'RECORD:', ROLE, finding('K2')].join('\n');
+	const r = check(text);
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+	assert.deepEqual(r.findings.map((f) => f.id), ['K2']);
+});
+
+// why: catches a bad role line using up the role slot, so the next finding is wrongly judged as the role.
+test('N5 spec 2: a non-JSON role line uses the role slot with no missing role error on line 2', () => {
+	const r = check(record('not json', finding('K1')));
+	assert.equal(r.ok, false);
+	assert.ok(atLine(r.errors, 1), JSON.stringify(r.errors));
+	assert.ok(!r.errors.some((e) => /missing `role`/.test(e)), JSON.stringify(r.errors));
+	assert.ok(!atLine(r.errors, 2), JSON.stringify(r.errors));
+});
+
+// why: catches a null record line crashing the gate instead of being reported as an error on its line.
+test('N6 spec 6: a record line that is null is an error on line 2, not a crash', () => {
+	const r = check(record(ROLE, 'null'));
+	assert.equal(r.ok, false);
+	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
+});
+
+// why: catches a numeric record line crashing the gate instead of being reported as an error on its line.
+test('N7 spec 6: a record line that is a number is an error on line 2, not a crash', () => {
+	const r = check(record(ROLE, '5'));
+	assert.equal(r.ok, false);
+	assert.ok(atLine(r.errors, 2), JSON.stringify(r.errors));
+});
+
+// why: catches a RECORD: marker padded with spaces, or a whitespace-only line, being refused by the gate.
+test('N8 spec 1: a RECORD: line with spaces around it works and a whitespace-only line is skipped', () => {
+	const text = ['Prose.', '   RECORD:   ', ROLE, '   ', finding('K1')].join('\n');
+	const r = check(text);
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+	assert.equal(r.findings.length, 1);
+});
+
+// why: catches a record with only a role line and one notChecked line refused as empty when it is complete.
+test('N9 spec 7: a role line and one notChecked line is ok', () => {
+	const r = check(record(ROLE, '{"notChecked": "the drag path"}'));
+	assert.equal(r.ok, true, JSON.stringify(r.errors));
+	assert.equal(r.notChecked, 1);
+});
+
+// why: catches a duplicate id with a newline in it printed as two lines, which breaks the one-line-per-error form.
+test('N10 spec 6: a duplicate id holding a newline gives a single-line error on line 3', () => {
+	const r = check(record(ROLE, finding('K\n1'), finding('K\n1')));
+	assert.equal(r.ok, false);
+	assert.ok(atLine(r.errors, 3), JSON.stringify(r.errors));
+	assert.ok(r.errors.every((e) => !e.includes('\n')), JSON.stringify(r.errors));
 });
