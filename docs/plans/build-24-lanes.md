@@ -69,3 +69,17 @@ assertion, not a test; over a ceiling splits at planning. Then the build's own n
 - test-budget.mjs:97 (U22 Opus check note): Risk is matched as exactly "high", so a Risk cell of **high** on a non-guard file skips the guard category. Normalise markup (strip * and backticks) before the compare.
 - Main CI on 14d65c33 (1.50.1): "a long command is read in time" failed once on the push-to-main coverage run (9.6 s, owner-proof.cjs 7.6 s; hot lines 225, 39, 201), passed on rerun with no change. Load-sensitive timing test: owner-proof.cjs on a 98 KB command is near the hook timeout under coverage. Fix the cost in owner-proof (or the test budget the coverage run uses), with a failing test first if the guard is changed.
 - CodeQL on PR 67 (security, fix with a failing test first where it is code): 4 high js/incomplete-sanitization (tests/test-lock.test.mjs:134 and :137 backslash not escaped; tests/overwatch.test.mjs:49 and tests/flow-lock.test.mjs:352 replace only the first *), 1 medium js/bad-code-sanitization (tests/hold-modes.test.mjs:143). All in test helpers; use a full regex escape or replaceAll.
+
+## Sweep fix lanes (sweep c4afd66c, 71 rows, 22 distinct, lanes.mjs gave 16 lanes)
+
+Five packets, each one tester and one builder in its own worktree, file-disjoint. High, security and owner-rule
+fixes get a failing test first; the rest are fixed and covered by the targeted tests. Owner pick: enforce must truly
+refuse (holds still ship log).
+
+| Packet | Lanes | Findings | Red tests first | Check |
+|---|---|---|---|---|
+| P1 holds and push hold | L1, L3 | H1 enforce does nothing; M1 pre-push reads subjects only, case, ordinary yes | yes | Opus |
+| P2 flow tools | L2, L5, L6, L14, L16 | H2 agents skips role lines; H3 fixed-line writer and split review files; H4 lock and count gate not in SKILL; H5 lanes.mjs named for units; M3 clarity exact role; M5 count gate first commit, whole file, shell string; M6 start unwired, VERDICT first line, basename; M4 checklist; M7 filesOf mixed cell; L1 regex; L3 where split | yes for H2-H5, M5 | Opus |
+| P3 approver records | L4, L15 | M2 role/commit unchecked, pretty-printed guard, canary fail-open; L2 slots | yes (security) | none |
+| P4 test value | L7, L8, L9 | M8 fence tests; M9 flow-lock tests; M10 B1, guard rows, V3, greps, C1, conditional | retest commits, owner push yes | none |
+| P5 CI, table, text, record | L10-L13 | M11 model-table step order, minimal-code budget, hold-check wiring; M12 measured, steps, skills; M13 retest rule, hooks overclaim, role text; M14 record claims | no | none |
