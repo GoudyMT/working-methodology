@@ -14,6 +14,9 @@
 //                       one: for a check that asks only whether each test catches some flip (the test check's A2, K131)
 //   --whole             a flip that survives its mapped tests runs once more against every test of their files: the map
 //                       misses code reached through a child it never traced (K126)
+//   --value             the value check (U21): the tests that catch nothing, a covering set, each reached test's seconds
+//                       (its duration_ms) and dollars (kit.config.json ciRatePerMinute, else "not priced"), and the functions
+//                       by approx complexity (1 + branches, over 10 first). Report only: exits 0 whatever it finds.
 // Needs tests/.map.json made at HEAD (node scripts/test-run.mjs --map, on a clean tree). Exit 0 none survived,
 // 1 some survived, 2 it could not run. The repo itself is never changed: every flip is made in the copy.
 import fs from 'node:fs';
@@ -46,7 +49,7 @@ function flip(line) {
 }
 
 function parseArgs(argv) {
-	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false, untilCaught: false, whole: false, report: false };
+	const o = { files: [], base: null, also: [], timeout: 120000, json: null, slice: null, count: false, untilCaught: false, whole: false, report: false, value: false };
 	for (let i = 0; i < argv.length; i++) {
 		if (argv[i] === '--base') o.base = argv[++i];
 		else if (argv[i] === '--json') o.json = argv[++i];
@@ -58,6 +61,7 @@ function parseArgs(argv) {
 		else if (argv[i] === '--until-caught') o.untilCaught = true;
 		else if (argv[i] === '--whole') o.whole = true;
 		else if (argv[i] === '--report') o.report = true;
+		else if (argv[i] === '--value') o.value = true;
 		else if (argv[i] === '--also') o.also.push(argv[++i]);
 		else if (argv[i] === '--timeout') o.timeout = Number(argv[++i]) || o.timeout;
 		else o.files.push(posix(argv[i]));
@@ -89,7 +93,7 @@ function changedLines(root, base) {
 	return out;
 }
 
-function runTests(copy, keys, timeout, home) {
+function runTests(copy, keys, timeout, home, timing) {
 	return new Promise((resolve) => {
 		const only = path.join(copy, '.mutation-only.json');
 		fs.writeFileSync(only, JSON.stringify(keys));
@@ -106,6 +110,9 @@ function runTests(copy, keys, timeout, home) {
 			// Which tests went red, by name (TAP's "not ok <n> - <name>", top level only); a run that died or timed out
 			// cannot say, so every test it ran is named.
 			const red = new Set([...out.matchAll(/^not ok \d+ - (.*?)(?: # .*)?$/gm)].map((m) => m[1]));
+			// U21: each test's duration_ms in this run, summed into timing for the value check's seconds.
+			const took = new Map([...out.matchAll(/^(?:not )?ok \d+ - (.*?)(?: # .*)?\n  ---\n  duration_ms: ([\d.]+)/gm)].map((m) => [m[1], Number(m[2])]));
+			for (const k of keys) { const ms = took.get(k.slice(k.indexOf('::') + 2)); if (timing && ms !== undefined) timing.set(k, { sum: (timing.get(k)?.sum ?? 0) + ms, n: (timing.get(k)?.n ?? 0) + 1 }); }
 			// A whole-file key (<file>::*, one file per run) names each test of that file that went red (the build 17 sweep).
 			const named = keys.flatMap((k) => (k.endsWith('::*') ? [...red].map((n) => `${k.slice(0, -1)}${n}`) : red.has(k.slice(k.indexOf('::') + 2)) ? [k] : []));
 			const caught = code !== 0 || fail > 0;
@@ -114,9 +121,65 @@ function runTests(copy, keys, timeout, home) {
 	});
 }
 
+// U21, the value check (--value): what the flips say about each test. Approx complexity is 1 plus a branch word, a
+// short-circuit, ?? or a ternary ? in a top-level function's body (comment lines aside): an estimate, labelled approx.
+const BRANCH = /\b(?:if|for|while|catch)\s*\(|\bcase\b|&&|\|\||\?\?|(?<![?.])\?(?![?.])/g;
+function valueReport(root, map, record, timing) {
+	const caughtBy = new Map();
+	const reached = new Map();
+	for (const f of record) {
+		const id = `${f.file}:${f.line}`;
+		for (const k of f.tests) reached.set(k, (reached.get(k) || 0) + 1);
+		for (const k of f.caughtBy || []) (caughtBy.get(k) || caughtBy.set(k, new Set()).get(k)).add(id);
+	}
+	const keys = Object.keys(map.tests || {});
+	const nothing = keys.filter((k) => reached.has(k) && !caughtBy.has(k));
+	// Greedy covering set: the test that catches most of the caught flips still uncovered, until none is left.
+	const todo = new Set([...caughtBy.values()].flatMap((s) => [...s]));
+	const total = todo.size;
+	const cover = [];
+	while (todo.size) {
+		let best = null;
+		let gain = 0;
+		for (const [k, ids] of caughtBy) { const g = [...ids].filter((x) => todo.has(x)).length; if (g > gain) { gain = g; best = k; } }
+		cover.push(best);
+		for (const x of caughtBy.get(best)) todo.delete(x);
+	}
+	let rate = null;
+	try { const v = JSON.parse(fs.readFileSync(path.join(root, 'kit.config.json'), 'utf8')).ciRatePerMinute; if (typeof v === 'number') rate = v; } catch { /* unset: not priced */ }
+	const fns = [];
+	for (const file of [...new Set(keys.flatMap((k) => Object.keys(map.tests[k].lines || {})))]) {
+		let lines;
+		try { lines = fs.readFileSync(path.join(root, file), 'utf8').split('\n'); } catch { continue; }
+		lines.forEach((l, i) => {
+			const m = /^(?:export )?(?:async )?function (\w+)/.exec(l);
+			if (!m) return;
+			let end = i + 1;
+			while (end < lines.length && !/^\}/.test(lines[end])) end++;
+			const body = lines.slice(i, end + 1).filter((x) => !/^\s*\/\//.test(x)).join('\n');
+			const n = keys.filter((k) => (map.tests[k].lines?.[file] || []).some((x) => x >= i + 1 && x <= end + 1)).length;
+			if (n) fns.push({ name: m[1], file, c: 1 + (body.match(BRANCH) || []).length, n });
+		});
+	}
+	fns.sort((a, b) => b.c - a.c);
+	const out = [`Test value (report only): ${keys.length} tests, ${record.length} flips, ${keys.length - reached.size} reach no flip (not measured)`];
+	out.push(`Tests that catch nothing: ${nothing.length}`, ...nothing.map((k) => `    ${k}`));
+	out.push('Functions by approx complexity (1 + branches; over 10 first):', ...fns.map((f) => `    ${f.name}  ${f.file}  complexity ${f.c}${f.c > 10 ? ' (over 10)' : ''}  reached by ${f.n} test(s)`));
+	out.push(rate === null ? 'Seconds and dollars per reached test (dollars: ciRatePerMinute in kit.config.json, unset: not priced):' : `Seconds and dollars per reached test (ciRatePerMinute ${rate}):`);
+	for (const k of keys.filter((x) => reached.has(x))) {
+		const t = timing.get(k);
+		const sec = t ? t.sum / t.n / 1000 : null;
+		const cost = rate === null ? 'not priced' : sec === null ? 'not timed' : `$${(sec / 60 * rate).toFixed(4)}`;
+		out.push(`    ${k}  ${sec === null ? 'not timed' : `${sec.toFixed(3)} s`}  ${cost}`);
+	}
+	out.push(`Covering set (greedy, so near the smallest): ${cover.length} test(s) catch all ${total} caught flip(s): ${cover.join(', ') || 'none'}`);
+	return out.join('\n') + '\n';
+}
+
 export async function main(argv) {
 	const o = parseArgs(argv);
 	if (o.slice && (o.slice === 'bad' || !sliceOk(o))) { process.stderr.write(`mutation-check: --slice takes i/n${o.report ? ' with 1 <= i <= n' : ' with i below n'}\n`); return 2; }
+	if (o.value && (o.base || o.slice || o.report || o.count)) { process.stderr.write('mutation-check: --value measures every flip of the kit: it takes no --base, --slice, --report or --count\n'); return 2; }
 	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
 	if (top.status !== 0) { process.stderr.write('mutation-check: run it inside a git repo\n'); return 2; }
 	const root = path.resolve(top.stdout.trim());
@@ -168,6 +231,7 @@ export async function main(argv) {
 	let caught = 0;
 	const survived = [];
 	const record = [];
+	const timing = new Map();
 	try {
 		// Only lines that flip are counted, so the slices split the real work: slice i takes every n-th flip from i.
 		const every = [...byLine.values()].sort((a, b) => a.file.localeCompare(b.file) || a.line - b.line)
@@ -205,12 +269,12 @@ export async function main(argv) {
 			lines[s.line - 1] = f.text;
 			fs.writeFileSync(file, lines.join('\n'));
 			try {
-				let r = await runTests(copy, tests, o.timeout, home);
+				let r = await runTests(copy, tests, o.timeout, home, timing);
 				let byWhole = false;
 				// The build 17 sweep: one file per run, so each red test is named; a run out of time catches nothing.
 				if (!r.caught && o.whole) {
 					for (const wf of new Set(tests.map((k) => k.slice(0, k.indexOf('::'))))) {
-						const w = await runTests(copy, [`${wf}::*`], o.timeout, home);
+						const w = await runTests(copy, [`${wf}::*`], o.timeout, home, timing);
 						if (w.timedOut) { r = { ...r, timedOut: true }; continue; }
 						if (w.caught) { r = w; byWhole = true; break; }
 					}
@@ -231,9 +295,12 @@ export async function main(argv) {
 	}
 	if (o.json) fs.writeFileSync(o.json, JSON.stringify({ sha: head, slice: o.slice, ...(o.base ? { base: o.base } : {}), flips: record }, null, 1) + '\n');
 	if (!o.report) process.stdout.write(`mutation check: ${caught + survived.length} flips, ${caught} caught, ${survived.length} survived\n`);
+	if (o.value) process.stdout.write(valueReport(root, map, record, timing));
 	return survived.length && !o.report ? 1 : 0;
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
-	process.exitCode = await main(process.argv.slice(2));
+	const code = await main(process.argv.slice(2));
+	// U21: the value check only reports, so it exits 0 whatever it finds or cannot run.
+	process.exitCode = process.argv.includes('--value') ? 0 : code;
 }

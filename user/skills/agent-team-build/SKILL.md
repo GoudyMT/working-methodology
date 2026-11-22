@@ -109,7 +109,7 @@ Every build has a written plan file that every agent reads before its unit runs:
    on the integrated branch covers it. Verdict: **PASS**, **FIX** (specific, with the evidence) or **ESCALATE** (a
    choice that belongs to the lead or the user). A FIX goes back to the same builder (resume it with `SendMessage`,
    so it keeps its context). At most 2 FIX rounds; then the lead finishes the unit itself or escalates.
-5. **Integrate (lead).** Apply the units onto the feature branch in plan order (cherry-pick from each builder's
+5. **Integrate (lead).** Before a unit merges, the lead folds or drops each new test that catches nothing: the value check (the project's test-value step) lists the tests no flip they reach catches, and a test that catches nothing is folded into another or dropped before the unit merges. Apply the units onto the feature branch in plan order (cherry-pick from each builder's
    branch, with a blob check per file against the builder's commit) and resolve any conflict. Every pick goes through the commit hook. Run the size checks once
    per batch, after all picks: units that each fit alone can overflow a budget together; only when a budget is over,
    bisect by re-checking per pick. A trim pass's brief
