@@ -1,0 +1,65 @@
+{
+ "version": "1.50.1",
+ "date": "2026-11-22",
+ "level": "patch",
+ "area": "Kit tooling",
+ "title": "fix: a record item can name many tests",
+ "headline": "A build record item can name many tests in a tests list, so a build with hundreds of new tests names each one without a changelog line per test.",
+ "alignment": "v1.50.1 is a patch before build 24: one record field and the test check that reads it, each test seen failing first.",
+ "items": [
+  {
+   "id": "RECORD-TESTS",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "A build record item may carry a tests list of test keys; the record check refuses a list that holds anything but test keys.",
+   "evidence": "scripts/build-record.mjs",
+   "where": "A record item that names many tests",
+   "before": "One test per item",
+   "after": "A tests list of test keys, each checked",
+   "test": "tests/build-record.test.mjs::a record item names many tests as a list of test keys, and a tests value that is not such a list is refused"
+  },
+  {
+   "id": "A7-TESTS",
+   "kind": "changed",
+   "reach": "kit",
+   "text": "CI's test check counts every test an item names in its tests list as named, and still flags a new test no item names.",
+   "evidence": "scripts/test-check.mjs",
+   "test": "tests/test-check.test.mjs::the test check counts every test an item names in its tests list, and still flags a new test no item names"
+  }
+ ],
+ "verification": [
+  "Pending: written after the sweep and CI."
+ ],
+ "decisions": [
+  {
+   "decision": "A patch release",
+   "why": "Kit tooling only; nothing a project installs behaves differently."
+  }
+ ],
+ "upgrading": "Nothing to run: the change is in the kit's own record and test check scripts.",
+ "limits": "Pending: the fix-tier sweep has not run.",
+ "tests": {
+  "before": 1155,
+  "after": 1157,
+  "flips": "declared tests at main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Fix",
+  "commit": "4d135f4",
+  "dimensions": [
+   {
+    "name": "Code security",
+    "result": "Pending: the sweep has not run"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 0,
+   "low": 0
+  },
+  "accepted": [],
+  "deferred": [],
+  "fixes": []
+ }
+}
