@@ -62,6 +62,11 @@ test('install project refuses an override that names a model below a floor, nami
 	assert.notEqual(r.status, 0, 'a refused override exited 0');
 	assert.match(r.stderr + r.stdout, /checker/, 'the refusal does not name the step');
 	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
+	// An override equal to the checker floor is accepted, so a project can pin a row at its floor.
+	const equal = tableKit();
+	writeOverride(equal.proj, { steps: { checker: { model: 'claude-opus-5-5' } } });
+	const e = installProject(equal);
+	assert.equal(e.status, 0, `an equal-to-floor override was refused: ${e.stderr}`);
 });
 
 // why: guards rule:agent-role-table (an older generation of the floor's own family slips under the floor unnoticed)
@@ -73,6 +78,11 @@ test('install project refuses an override naming an older generation of the floo
 	assert.notEqual(r.status, 0, 'an older opus under the opus-5-5 floor installed');
 	assert.match(r.stderr + r.stdout, /checker/, 'the refusal does not name the step');
 	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
+	// A newer generation of the floor family is accepted, so an upgrade is not blocked as a lowering.
+	const newer = tableKit();
+	writeOverride(newer.proj, { steps: { checker: { model: 'claude-opus-6-0' } } });
+	const n = installProject(newer);
+	assert.equal(n.status, 0, `a newer-generation override was refused: ${n.stderr}`);
 });
 
 // why: guards rule:agent-role-table (a sonnet floor on sweep-breadth is lowered to haiku by a project and installed)
@@ -124,22 +134,6 @@ test('install project accepts a raise above a floor and installs the project cop
 	assert.ok(fs.existsSync(path.join(ctx.proj, '.claude', 'model-override.mjs')), 'the project has no .claude/model-override.mjs');
 });
 
-// why: catches an override equal to the floor refused as a lowering, so a project cannot pin a row at its floor
-test('install project accepts an override equal to the checker floor', () => {
-	const ctx = tableKit();
-	writeOverride(ctx.proj, { steps: { checker: { model: 'claude-opus-5-5' } } });
-	const r = installProject(ctx);
-	assert.equal(r.status, 0, `an equal-to-floor override was refused: ${r.stderr}`);
-});
-
-// why: catches a newer generation of the floor family refused as if it were a lowering, so upgrades are blocked
-test('install project accepts a newer generation of the checker floor family', () => {
-	const ctx = tableKit();
-	writeOverride(ctx.proj, { steps: { checker: { model: 'claude-opus-6-0' } } });
-	const r = installProject(ctx);
-	assert.equal(r.status, 0, `a newer-generation override was refused: ${r.stderr}`);
-});
-
 // why: guards rule:agent-role-table (an override on a step with no floor is refused, so a project cannot change a row freely)
 test('install project accepts a change to a step with no floor, and the installed check passes it', () => {
 	const ctx = tableKit();
@@ -151,13 +145,6 @@ test('install project accepts a change to a step with no floor, and the installe
 	assert.ok(c.stdout.trim().length > 0, 'the check printed nothing');
 });
 
-// why: catches an install that refuses a project with no override file, so every project install breaks
-test('install project with no .kit/models.json installs normally', () => {
-	const ctx = tableKit();
-	const r = installProject(ctx);
-	assert.equal(r.status, 0, r.stderr);
-});
-
 // why: catches a malformed override read as no override, so every row silently takes its default model
 test('install project refuses a malformed .kit/models.json, naming the file', () => {
 	const ctx = tableKit();
@@ -167,6 +154,10 @@ test('install project refuses a malformed .kit/models.json, naming the file', ()
 	assert.notEqual(r.status, 0, 'a malformed models.json installed');
 	assert.match(r.stderr + r.stdout, /models\.json/, 'the refusal does not name the file');
 	assert.deepEqual(entries(ctx.proj), before, 'a refused install wrote into the project');
+	// A project with no override file installs normally, or every project install would break.
+	const clean = tableKit();
+	const c = installProject(clean);
+	assert.equal(c.status, 0, c.stderr);
 });
 
 // why: catches a wrong-shaped override (array steps, a bare string row, a non-string model, null) read as clean
