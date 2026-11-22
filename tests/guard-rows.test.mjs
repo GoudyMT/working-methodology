@@ -81,6 +81,9 @@ test('G3 spec G3: a guard unit with no fail-closed or fail-open row is refused, 
 	// Control: "logged" on the repeat line only, not on the fail line, is still refused.
 	const loggedElsewhere = runCheck(planText([guardRow([BYPASS, 'repeat: runs it twice, logged -> S1', 'fail-closed: a broken guard blocks the call -> S1'])]));
 	assert.equal(loggedElsewhere.status, 1, out(loggedElsewhere));
+	// Control: a fail-open row that does not say logged is refused, even with valid bypass and repeat rows.
+	const openNotLogged = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-open: lets through, not logged -> S1'])]));
+	assert.equal(openNotLogged.status, 1, out(openNotLogged));
 	// Control: a complete guard unit whose fail-open row says logged passes.
 	const open = runCheck(planText([guardRow([BYPASS, REPEAT, 'fail-open: a broken guard lets the call through, logged -> S1'])]));
 	assert.equal(open.status, 0, out(open));
