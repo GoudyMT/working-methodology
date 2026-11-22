@@ -17,9 +17,10 @@ while read -r lref lsha rref rsha; do
     git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id "$c" >/dev/null 2>&1 || { echo "Push blocked: the changes of $c cannot be read, so a test change in it cannot be ruled out." >&2; exit 1; }
     hit=$(git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id --name-status "$c" | awk 'BEGIN{RS="\0"}
       function istest(p,   q) { q = tolower(p); return q ~ /(^|\/)(test|tests|__tests__|spec)\// || q ~ /\.(test|spec)\.[^\/]*$/ }
-      { if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
-      END { if (held) print 1 }')
-    if [ -n "$hit" ] || git log -1 --format=%s "$c" | grep -Eiq '^(fixup! |squash! )?retest(\([^)]*\))?!?:'; then
+      { n++; if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
+      END { r = held ? 1 : 0; if (n > 0 && (need != 0 || n < 2)) r = 2; print r }')
+    case "$hit" in 0) ;; 1) ;; *) echo "Push blocked: $c could not be parsed for test changes, so it is held." >&2; exit 1 ;; esac
+    if [ "$hit" = 1 ] || git log -1 --format=%s "$c" | grep -Eiq '^(fixup! |squash! )?retest(\([^)]*\))?!?:'; then
       retests="$retests$(git log -1 --format='%h %s' "$c")
 "
     fi

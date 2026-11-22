@@ -3,7 +3,7 @@
 # for secrets and logged. KIT_OWNER_PUSH=1 (the owner's own push) passes the bound only; the other checks still run.
 # The refs being pushed, from stdin.
 refs=$(cat)
-# Branch names in house style (rule:branching).
+# Branch names (rule:branching).
 names="$(dirname "$0")/../.claude/name-check.mjs"
 if [ -f "$names" ]; then
   for rref in $(printf "%s
@@ -63,9 +63,10 @@ while read -r lref lsha rref rsha; do
     git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id "$c" >/dev/null 2>&1 || { echo "Push blocked: $c cannot be read, so its test changes are unknown." >&2; exit 1; }
     hit=$(git -c core.quotePath=false diff-tree -r -z --root $d --no-commit-id --name-status "$c" | awk 'BEGIN{RS="\0"}
       function istest(p,   q) { q = tolower(p); return q ~ /(^|\/)(test|tests|__tests__|spec)\// || q ~ /\.(test|spec)\.[^\/]*$/ }
-      { if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
-      END { if (held) print 1 }')
-    if [ -n "$hit" ] || git log -1 --format=%s "$c" | grep -Eiq '^(fixup! |squash! )?retest(\([^)]*\))?!?:'; then
+      { n++; if (need == 0) { st = $0; need = st ~ /^[RC]/ ? 2 : 1 } else { if (st !~ /^A+$/ && istest($0)) held = 1; need-- } }
+      END { r = held ? 1 : 0; if (n > 0 && (need != 0 || n < 2)) r = 2; print r }')
+    case "$hit" in 0) ;; 1) ;; *) echo "Push blocked: $c could not be parsed for test changes, so it is held." >&2; exit 1 ;; esac
+    if [ "$hit" = 1 ] || git log -1 --format=%s "$c" | grep -Eiq '^(fixup! |squash! )?retest(\([^)]*\))?!?:'; then
       retests="$retests$(git log -1 --format='%h %s' "$c")
 "
     fi
@@ -74,7 +75,7 @@ done <<EOF
 $refs
 EOF
 if [ -n "$retests" ] && [ "$KIT_OWNER_PUSH" != "1" ] && [ "$KIT_PUSH_APPROVED" != "1" ]; then
-  echo "Push blocked: this push holds a test change (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal. $OWNER_WAY" >&2
+  echo "Push blocked: this push holds a test change (named below). The owner's yes is needed: after the pop-up yes, run it with KIT_PUSH_APPROVED=1, or the owner pushes it. $OWNER_WAY" >&2
   printf '%s' "$retests" >&2
   exit 1
 fi
@@ -99,7 +100,7 @@ fi
         [ -z "$kind" ] && ! git merge-base --is-ancestor "$rsha" "$lsha" 2>/dev/null && kind=force ;;
       esac
       if [ -z "$CLAUDE_CODE_SESSION_ID" ]; then
-        # With no session, the owner types the ref's name at their own terminal; a script has no terminal to answer.
+        # No session: the owner types the ref's name at their own terminal.
         short=${rref#refs/heads/}
         short=${short#refs/tags/}
         if ! (exec 3<>/dev/tty) 2>/dev/null; then
@@ -115,7 +116,7 @@ fi
           exit 1
         fi
       elif [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1" 10; then
-        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref, in the session CLAUDE_CODE_SESSION_ID names. Answer Yes in that session's pop-up first, or push from your own terminal with no session." >&2
+        echo "Push blocked: KIT_OWNER_PUSH counts only beside the owner's pop-up yes, at most 10 minutes old, to a push to $1 naming $rref, Answer Yes in that session's pop-up first, or push from your own terminal with no session." >&2
         exit 1
       fi
     done <<EOF
@@ -151,7 +152,7 @@ EOF
       exit 1
     fi
   else
-    # A script can set the marker, so it counts only beside the owner's pop-up yes naming each ref.
+    # A script can set the marker, so the pop-up yes is needed too.
     yes="$(dirname "$0")/../.claude/owner-yes.cjs"
     # The lock holds from the yes check to the log line that spends the yes.
     take_lock || exit 1
@@ -188,7 +189,7 @@ EOF
       esac
       if [ ! -f "$yes" ] || ! node "$yes" --push "$rref" "$kind" "$common" "$1"; then
         echo "Push blocked: KIT_PUSH_APPROVED is set, but this session holds no fresh pop-up yes from the owner to a push naming $rref. Ask the owner with the pop-up first. $OWNER_WAY" >&2
-        if [ -n "$retests" ]; then echo "This push holds a test change (named below). The owner's yes is needed: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1." >&2; printf '%s' "$retests" >&2; fi
+        if [ -n "$retests" ]; then echo "This push holds a test change (named below). The owner's yes is needed: after the pop-up yes, run it with KIT_PUSH_APPROVED=1." >&2; printf '%s' "$retests" >&2; fi
         exit 1
       fi
     done <<EOF
