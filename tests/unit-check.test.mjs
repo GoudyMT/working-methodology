@@ -21,6 +21,9 @@ const CASE_ONE = ['add case one', 'assert.equal(add(4, 0), 4);'];
 const CASE_ONE_RED = ['add case one', 'assert.equal(add(4, 9), 13);'];
 const ADDS = ['adds two numbers', 'assert.equal(add(1, 2), 3);'];
 const NEGS = ['adds negatives', 'assert.equal(add(-1, -2), -3);'];
+const CLAMP = ['clamps at zero', 'assert.equal(add(-1, -2), 0);'];
+const CLAMP_SRC = 'export function add(a, b) {\n\treturn Math.max(0, a + b);\n}\n';
+const REWORDED = ['add case one', 'assert.equal(add(5, 8), 13);'];
 const testFile = (...cases) => [
 	"import { test } from 'node:test';",
 	"import assert from 'node:assert/strict';",
@@ -361,15 +364,37 @@ test('retest: two retest commits print two owner yes lines', () => {
 	assert.equal(lines.length, 2, r.stdout);
 });
 
-// why: catches a test change after green passing without the retest prefix.
-test('retest: a test-file change after green under a test: subject is a fault', () => {
+// why: catches a new failing test after green wrongly refused as no red.
+test('test-red: a test, feat, new failing test, fix sequence exits 0', () => {
 	const dir = repo();
 	redCommit(dir);
 	featCommit(dir);
-	const late = commit(dir, 'test: add a negatives case', { 'tests/add.test.mjs': testFile(CASE_ONE_RED, ADDS, NEGS) });
+	commit(dir, 'test: clamp the sum at zero', { 'tests/add.test.mjs': testFile(CASE_ONE_RED, ADDS, CLAMP) });
+	commit(dir, 'fix: clamp the sum at zero', { 'src/add.mjs': CLAMP_SRC });
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a test edit with no failing test passing unflagged.
+test('test-red: a test commit that rewords a passing assertion faults for use retest', () => {
+	const dir = repo();
+	redCommit(dir);
+	featCommit(dir);
+	const reword = commit(dir, 'test: reword the case one assertion', { 'tests/add.test.mjs': testFile(REWORDED, ADDS) });
 	const r = runCheck(dir);
 	assert.equal(r.status, 1, r.stderr);
-	assert.ok(faultLines(r).some((l) => l.includes(late) && /test changed after green without retest:/.test(l)), r.stderr);
+	assert.ok(faultLines(r).some((l) => l.includes(reword) && /test changed without a red test; use retest:/.test(l)), r.stderr);
+});
+
+// why: guards rule:test-integrity (a retest commit that rewords a passing assertion passes and prints its owner yes line).
+test('test-red: the same reword as retest exits 0 and prints its owner yes line', () => {
+	const dir = repo();
+	redCommit(dir);
+	featCommit(dir);
+	commit(dir, 'retest: reword the case one assertion', { 'tests/add.test.mjs': testFile(REWORDED, ADDS) });
+	const r = runCheck(dir);
+	assert.equal(r.status, 0, r.stderr);
+	assert.match(r.stdout, /owner yes needed: [0-9a-f]{7,40} retest: reword the case one assertion/, r.stdout);
 });
 
 // why: catches a chore source commit with no red faulted anyway.
