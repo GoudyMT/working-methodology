@@ -562,8 +562,13 @@ test('builder, checker and reviewer wire the gate under SubagentHandback beside 
 		const block = text.slice(text.indexOf('matcher: "SubagentHandback"'));
 		const own = block.slice(0, block.indexOf('- matcher:', 1) === -1 ? block.length : block.indexOf('- matcher:', 1));
 		assert.match(own, /canary\.cjs/, `${role}: canary.cjs`);
-		assert.match(own, /handoff-gate\.cjs/, `${role}: handoff-gate.cjs`);
 	}
+	// The gate rides on canary.cjs, so each role's hook table keeps one entry per matcher.
+	const repo = gateRepo();
+	const broken = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1', { proof: '' }));
+	const r = spawnSync(process.execPath, [path.resolve('user/kit-hooks/canary.cjs')], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', agent_type: 'builder', tool_input: { message: broken }, cwd: repo }) });
+	assert.equal(r.status, 0, r.stderr);
+	assert.equal(gateLog(repo).length, 1);
 });
 
 // why: catches a brief template that asks for findings without the RECORD line and keys the gate reads
