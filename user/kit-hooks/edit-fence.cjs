@@ -10,6 +10,14 @@ const safeSpawn = require('./safe-spawn.cjs');
 
 // Roles whose edits need the lead's file list (their role bodies say so); a builder without one edits its worktree as before.
 const LISTED_ROLES = ['tester', 'writer'];
+// U4 (build 24): the unit list's name, and unit-check's test-file rule (a test folder, or *.test.* / *.spec.*): a builder
+// edits neither, whatever list there is.
+const LIST = 'kit-unit-files.txt';
+const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec']);
+const isTestFile = (rel) => {
+	const parts = rel.split(/[\\/]/);
+	return parts.slice(0, -1).some((d) => TEST_DIRS.has(d)) || /\.(test|spec)\./.test(parts[parts.length - 1]);
+};
 
 // The real path, through any symlink or junction: git reports the worktree's real path, so the target must be
 // compared the same way. A file not yet written resolves through its nearest existing folder.
@@ -48,10 +56,14 @@ function main() {
 		process.stderr.write(`Blocked: ${target} is outside this builder's worktree (${root}). Edit only files of your unit, in your worktree.\n`);
 		return 2;
 	}
-	const gitPath = safeSpawn.gitRead(root, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt'], { encoding: 'utf8' });
+	if (input.agent_type === 'builder' && (isTestFile(rel) || path.basename(rel) === LIST)) {
+		process.stderr.write(`Blocked: ${rel} is a test file or the unit list, which a builder does not edit. Report it to the lead instead of editing it.\n`);
+		return 2;
+	}
+	const gitPath = safeSpawn.gitRead(root, ['rev-parse', '--path-format=absolute', '--git-path', LIST], { encoding: 'utf8' });
 	const listFile = gitPath.status === 0 ? gitPath.stdout.trim() : '';
 	if (listFile && fs.existsSync(listFile)) {
-		const allowed = fs.readFileSync(listFile, 'utf8').split(/\r?\n/).map(norm).filter(Boolean);
+		const allowed = fs.readFileSync(listFile, 'utf8').split(/\r?\n/).map(norm).filter((p) => p && !p.startsWith('#'));
 		if (!allowed.includes(norm(rel))) {
 			process.stderr.write(`Blocked: ${rel} is not in this unit's file list (git rev-parse --git-path kit-unit-files.txt). Report it to the lead instead of editing it.\n`);
 			return 2;
