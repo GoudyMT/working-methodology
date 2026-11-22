@@ -313,7 +313,7 @@ const EXPECTED = {
 	lead: { model: OPUS, effort: 'medium', enforcer: 'settings', floor: OPUS },
 	orchestrator: { model: OPUS, effort: 'high', enforcer: 'role:orchestrator' },
 	tester: { model: HAIKU, effort: 'medium', enforcer: 'role:tester', stepUp: SONNET },
-	'test-review': { model: HAIKU, effort: 'low', enforcer: 'role:test-reviewer' },
+	'test-review': { model: SONNET, effort: 'medium', enforcer: 'role:test-reviewer' },
 	builder: { model: HAIKU, effort: 'medium', enforcer: 'role:builder', stepUp: SONNET },
 	checker: { model: OPUS, effort: 'high', enforcer: 'role:checker', floor: OPUS },
 	'sweep-breadth': { model: SONNET, effort: 'high', enforcer: 'const:user/skills/pre-pr-sweep/approve.mjs#DEFAULT_MODEL', floor: SONNET },

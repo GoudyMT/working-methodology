@@ -432,3 +432,13 @@ test('the rows session start adds pass the state check of the project', () => {
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
 	assert.match(r.stdout, /claude-z-9/);
 });
+
+// why: catches the test reviewer running on a model the table does not name
+test('the test-reviewer role file matches the table entry for test-review and its role entry', () => {
+	const config = JSON.parse(fs.readFileSync('kit.config.json', 'utf8'));
+	const front = fs.readFileSync('user/agents/test-reviewer.md', 'utf8').split(/\r?\n/).slice(1, fs.readFileSync('user/agents/test-reviewer.md', 'utf8').split(/\r?\n/).indexOf('---', 1));
+	const field = (key) => front.find((l) => l.startsWith(`${key}:`))?.slice(key.length + 1).trim();
+	const want = { model: config.steps['test-review'].model, effort: config.steps['test-review'].effort };
+	assert.deepEqual(want, { model: config.roles['test-reviewer'].model, effort: config.roles['test-reviewer'].effort });
+	assert.deepEqual({ model: field('model'), effort: field('effort') }, want);
+});
