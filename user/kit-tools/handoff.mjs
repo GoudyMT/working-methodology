@@ -28,7 +28,7 @@ const isObject = (v) => v !== null && typeof v === 'object' && !Array.isArray(v)
 export function check(text) {
 	const out = { ok: false, findings: [], notChecked: 0, notes: 0, errors: [] };
 	const lines = String(text).split(/\r?\n/);
-	const start = lines.findIndex((l) => l.trim() === 'RECORD:');
+	const start = lines.findLastIndex((l) => l.trim() === 'RECORD:');
 	if (start < 0) {
 		out.errors.push('no RECORD: line');
 		return out;
@@ -39,16 +39,19 @@ export function check(text) {
 		if (raw.trim() === '') return;
 		const n = i + 1;
 		const fail = (msg) => out.errors.push(`line ${n}: ${msg}`);
+		const isRole = !roleDone;
+		roleDone = true;
 		let obj;
 		try { obj = JSON.parse(raw); } catch { return fail('not valid JSON'); }
-		if (!roleDone) {
-			roleDone = true;
+		if (isRole) {
 			const errs = isObject(obj) ? keyErrors(obj, ['role', 'commit']) : ['missing `role`'];
 			if (errs.length === 0 && !/^[0-9a-f]{7,40}$/i.test(obj.commit)) errs.push('bad `commit`, want 7 to 40 hex characters');
 			errs.forEach(fail);
 			return;
 		}
 		if (!isObject(obj)) return fail('unknown line shape');
+		const hasOther = ['notChecked', 'note'].some((k) => k in obj);
+		if (hasOther && FINDING_KEYS.some((k) => k in obj)) return fail('unknown line shape, mixes finding and note keys');
 		if ('notChecked' in obj) {
 			const errs = keyErrors(obj, ['notChecked']);
 			errs.forEach(fail);
@@ -63,7 +66,7 @@ export function check(text) {
 				errs.push(`bad \`severity\`, want one of ${SEVERITIES.join(', ')}`);
 			}
 			if (typeof obj.id === 'string' && obj.id) {
-				if (seen.has(obj.id)) errs.push(`duplicate \`id\` ${obj.id}`);
+				if (seen.has(obj.id)) errs.push(`duplicate \`id\` ${JSON.stringify(obj.id)}`);
 				seen.add(obj.id);
 			}
 			errs.forEach(fail);
@@ -97,4 +100,8 @@ function main(argv) {
 }
 
 // Run only when started directly, never when a test or tool imports check.
-if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) process.exitCode = main(process.argv.slice(2));
+// Real paths on both sides, so a run through a junction or symlink still checks.
+function runDirectly() {
+	try { return fs.realpathSync(process.argv[1]) === fs.realpathSync(fileURLToPath(import.meta.url)); } catch { return false; }
+}
+if (runDirectly()) process.exitCode = main(process.argv.slice(2));
