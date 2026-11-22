@@ -57,3 +57,4 @@ test review, one fix pass, Opus only on risky units). Folded into the build reco
 
 - 2026-11-22: writer stopped before naming 566 tests (about 566 changelog lines under A7). Owner picked: cut tests first, after the smart test strategy lands. Push and CI wait on that cut.
 - 2026-11-22 (lead miss): the U19-U22 briefs gave why lines "S1: ..." and "doc claim: ...", which the kit shape check (whyFault, A6) rejects; caught by the U21 builder. Fixed by a why-line retest and a whyFault change accepting the three exempt shapes.
+- 2026-11-22 (lead miss): ran the full unbudgeted test check locally without sampling CPU/GPU load or asking Max first (machine-load rule). No harm seen; next heavy run samples load 3 times and asks.
