@@ -46,6 +46,8 @@ import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 // The record check a hand-back's RECORD: block must pass (the kit's tools folder sits beside the skills folder).
 import { check as checkRecord } from '../../kit-tools/handoff.mjs';
+// K315: the template slots a rules block must not still hold (one list, shared with install).
+import { slotsIn } from './slots.mjs';
 // K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
 // source and in the Claude folder alike).
 const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../kit-hooks/prices.cjs');
@@ -637,6 +639,8 @@ function decide() {
 	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 	const block = rulesBlock(facts);
 	if (block && block.phrase && words(block.phrase).trim()) (c.roles || []).forEach((r, i) => { if (words(JSON.stringify(r)).includes(words(block.phrase))) fix.push(`role ${i + 1}'s text carries the confirmation phrase: take it out, the reviewer finds it by reading`); });
+	// K315: a rules block that still holds a template slot writes no brief; the slot is named, and the sweep stops as a fix.
+	if (block && block.slots && block.slots.length) fix.push(`the rules block in ${block.file} still holds ${block.slots.join(' and ')}: fill it in, then run approve.mjs again`);
 	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
 	// owner's, whatever its file is called, however often it is rerun and whatever outcome came between. A new commit
@@ -784,7 +788,7 @@ function rulesBlock(facts, hash) {
 		const start = lines.findIndex((l) => /\*\*Rules every brief carries\*\*/.test(l));
 		// The line the canary reads the phrase from, as it reads it.
 		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /^\s*Confirmation phrase: .* with: \S/.test(l));
-		if (end > start) return { file: where, offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim() };
+		if (end > start) return { file: where, offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim(), slots: slotsIn(lines.slice(start, end + 1).join('\n')) };
 		return { file: where };
 	}
 	return null;
