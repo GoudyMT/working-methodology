@@ -3,11 +3,11 @@
 // before each feat or fix, refactors that leave tests alone, retests for the owner's yes.
 // Usage: node unit-check.mjs <base>..<head> [--repo <dir>] [--timeout <ms>] (exit 0 pass, 1 faults, 2 bad use).
 import fs from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import safeSpawn from './audits/safe-spawn.cjs';
+import kitTemp from './kit-temp.cjs';
 
 const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec']);
 const UNCHECKED = new Set(['chore', 'docs', 'build', 'ci']);
@@ -150,7 +150,7 @@ const pick = (touched, run, keep) => [...new Set([...touched].flatMap(([f, names
 
 // A commit's tree in a temp folder, read through a temp index.
 function withTree(repo, rev, fn) {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'unit-check-'));
+	const dir = kitTemp.makeTemp('unit-check-');
 	try {
 		const env = { ...process.env, GIT_INDEX_FILE: path.join(dir, 'index') };
 		const dest = path.join(dir, 'tree');
@@ -160,7 +160,7 @@ function withTree(repo, rev, fn) {
 		if (out.status !== 0) throw new Error(`cannot write the tree of ${rev}: ${String(out.stderr).trim()}`);
 		return fn(dest);
 	} finally {
-		fs.rmSync(dir, { recursive: true, force: true });
+		kitTemp.removeTemp(dir);
 	}
 }
 
