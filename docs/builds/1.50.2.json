@@ -1,0 +1,113 @@
+{
+ "version": "1.50.2",
+ "date": "2026-11-22",
+ "level": "patch",
+ "area": "Kit tooling",
+ "title": "fix: the commit check accepts the retest type",
+ "headline": "The commit check accepts a `retest:` subject, the type for a test changed after its red commit, so a branch that uses it passes the name check; from 1.51.0 a push that carries one is held for the owner's yes.",
+ "alignment": "v1.50.2 is a patch before build 24: one commit type added to both copies of the name check, never a PR title or a branch type, its test seen failing first.",
+ "items": [
+  {
+   "id": "RETEST-TYPE",
+   "kind": "fixed",
+   "reach": "projects",
+   "text": "The commit check accepts the `retest:` type, a test changed after its red commit, in the kit and the project copy of the name check; a PR title is never a retest subject. The hold for the owner's yes arrives with 1.51.0.",
+   "evidence": "user/kit-tools/audits/name-check.mjs, project/.claude/name-check.mjs",
+   "where": "A commit whose subject starts with retest:",
+   "before": "Refused by the name check",
+   "after": "Accepted as a commit; a PR title still refused",
+   "test": "tests/kit-hooks.test.mjs::the commit check accepts the retest type in both copies of the name check"
+  }
+ ],
+ "verification": [
+  "The name check test passes, with rows for the scoped form, a prefix match and the type fault message.",
+  "Break check: before d8ce185 the title row fails, since a retest PR title passed the name check.",
+  "Pending: CI on the PR."
+ ],
+ "decisions": [
+  {
+   "decision": "Retest is a commit type only",
+   "why": "Never a branch type or a PR title, so the branch types stay as they are."
+  },
+  {
+   "decision": "A patch release",
+   "why": "One commit type added; nothing else changes."
+  }
+ ],
+ "upgrading": "Run install user, then install project: the name check changes.",
+ "limits": "The rule text does not list retest yet; it changes with 1.51.0, which runs the score gate. A feat or fix commit that edits locked tests is not held on main until 1.51.0 brings the edit fence and the pre-push hold. A PR cut before this merges sees the old check until it takes in main.",
+ "tests": {
+  "before": 1158,
+  "after": 1159,
+  "flips": "declared tests at main and on this branch; the PR run gives the final count"
+ },
+ "sweep": {
+  "tier": "Fix (security-sensitive)",
+  "commit": "661475d",
+  "dimensions": [
+   {
+    "name": "Privacy",
+    "result": "Not touched: the name check reads commit and title text only; nothing leaves the machine"
+   },
+   {
+    "name": "Supply chain",
+    "result": "Not touched: no dependency added"
+   },
+   {
+    "name": "Legal",
+    "result": "Not touched: no license or content source changed"
+   },
+   {
+    "name": "Code security",
+    "result": "Three security roles: a retest PR title passed the name check; refused now. Retest stays out of the branch types"
+   },
+   {
+    "name": "Gaps, scaling, test value",
+    "result": "Fix root, blast radius and test value: an overclaimed hold reworded, three test rows added, the record placeholders filled; two gaps to 1.51.0"
+   },
+   {
+    "name": "Alignment",
+    "result": "YES"
+   }
+  ],
+  "findings": {
+   "critical": 0,
+   "high": 0,
+   "medium": 2,
+   "low": 8
+  },
+  "accepted": [
+   "A PR cut before this merges sees main's old check until it takes in main",
+   "Retest is a commit type only, never a branch type, so the branch types are unchanged"
+  ],
+  "deferred": [
+   "The rule text in the git and release rules and its project copy does not list retest (1.51.0, with the score gate)",
+   "A feat or fix commit that edits locked tests is not held on main (1.51.0 edit fence and pre-push hold)"
+  ],
+  "fixes": [
+   {
+    "id": "F1",
+    "severity": "medium",
+    "text": "A PR title is never a retest subject: the title mode refuses it, so a title the PR body audit fails no longer passes the name check",
+    "commit": "d8ce185f",
+    "test": "tests/kit-hooks.test.mjs::the commit check accepts the retest type in both copies of the name check",
+    "reason": "a row in this patch's own new test"
+   },
+   {
+    "id": "F2",
+    "severity": "medium",
+    "text": "The test comment and the record no longer claim an owner's-yes hold that main lacks; the hold arrives with 1.51.0",
+    "commit": "c8e44527",
+    "test": "no test: no real input"
+   },
+   {
+    "id": "F3",
+    "severity": "low",
+    "text": "The test holds a prefix match, the type fault message and the scoped form",
+    "commit": "c8e44527",
+    "test": "tests/kit-hooks.test.mjs::the commit check accepts the retest type in both copies of the name check",
+    "reason": "a row in this patch's own new test"
+   }
+  ]
+ }
+}

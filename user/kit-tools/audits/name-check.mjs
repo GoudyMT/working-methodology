@@ -12,7 +12,7 @@
 import fs from 'node:fs';
 import { createRequire } from 'node:module';
 
-const TYPES = ['feat', 'fix', 'refactor', 'test', 'docs', 'chore', 'security', 'perf'];
+const TYPES = ['feat', 'fix', 'refactor', 'test', 'docs', 'chore', 'security', 'perf', 'retest'];
 // T13 (the owner, 2026-11-10): one change per line; a longer subject packs a list that belongs in the PR body.
 const SUBJECT_MAX = 72;
 // A tracking code (K61, E12, A27, S23-4) tells a reader outside the project nothing, and a subject, title or repo name
@@ -125,7 +125,9 @@ function repo(name) {
 }
 
 const [mode, arg] = process.argv.slice(2);
-const faults = mode === 'ident' ? ident() : mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? message(arg || '') : mode === 'repo' ? repo(arg || '') : null;
+// A PR title is the squash subject that lands on main: a retest commit waits on the owner's yes, so never a title.
+const titleFaults = (text) => [...message(text), ...(/^retest\b/.test(text) ? ['a PR title is the squash subject on main: use feat, fix or test, never retest'] : [])];
+const faults = mode === 'ident' ? ident() : mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? titleFaults(arg || '') : mode === 'repo' ? repo(arg || '') : null;
 if (!faults) {
 	console.error('Usage: node .claude/name-check.mjs message <file> | branch <name> | title <text> | repo <name> | ident');
 	process.exitCode = 2;
