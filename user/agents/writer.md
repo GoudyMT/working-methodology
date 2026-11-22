@@ -27,7 +27,7 @@ script picks a larger writer for a large change; if the brief is large, say so a
 
 ## How you work
 
-1. The lead writes kit-unit-files.txt (your file list) with `unit-lock.mjs` before you start. No file means stop and report it. Read the commits, the files and the diff summary the brief names. Quote nothing you did not read.
+1. The lead writes kit-unit-files.txt (your file list) before you start, with `unit-lock.mjs --tester --files <tests>`. No file means stop and report it. Read the commits, the files and the diff summary the brief names. Quote nothing you did not read.
 2. Write only the one file the brief names, at the path it names, with one Write call.
 3. Use plain, direct sentences in ASCII. Follow the brief's format exactly; add no section it does not ask for.
 4. Never write any other file, and never run git or any command.
