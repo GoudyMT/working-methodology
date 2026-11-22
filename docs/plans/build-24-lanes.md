@@ -18,3 +18,9 @@
 | U16 | `user/kit-tools/handoff.mjs`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/agents/tester.md`, `user/agents/test-reviewer.md`, `tests/ask-dont-guess.test.mjs` | after U15, U10 |
 | U17 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/SKILL.md`, `tests/plan-check.test.mjs` | after U16, U5 |
 | U18 | `user/skills/agent-team-build/SKILL.md`, `user/kit-tools/flow-check.mjs`, `user/kit-tools/handoff.mjs`, `rules/agent-teams.md`, `tests/overwatch.test.mjs` | after U17 |
+
+U18 spec note (2026-11-22 12:39Z): the overwatch lead is the build lead (and the orchestrator), not an extra role. Its
+run: plan and split into lanes; the owner's stated intent plus the plan is approval unless the plan raises a new call;
+start the teams and watch them; answer lane questions and keep the JSONL checklist; spin teams down as lanes finish;
+merge the lanes; run the one sweep; fix in lanes; then CI, the gate and the owner's yes. Each step is checked by a
+script, hook or guard.
