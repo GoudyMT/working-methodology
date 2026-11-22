@@ -557,6 +557,7 @@ test('the Agent Role Table section of the agent-teams rules holds no table rows 
 
 // why: guards rule:agent-role-table (a role body that names no model or file list leaves its own limits unstated)
 test('test-reviewer.md tells the role to end with RECORD, a role line and seven-key finding lines, with no clear default', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
   const body = read(path.resolve('user/agents/test-reviewer.md')).split(/^---$/m)[2] ?? '';
   assert.match(body, /RECORD:/);
   assert.match(body, /"role"\s*:/, 'a JSON role line');
@@ -567,6 +568,7 @@ test('test-reviewer.md tells the role to end with RECORD, a role line and seven-
 
 // why: guards rule:agent-role-table (a tester or writer that is not told its file list would edit outside its unit)
 test('writer.md and tester.md bodies say the lead writes their file list, kit-unit-files.txt', () => {
+  for (const f of ['writer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
   for (const f of ['writer.md', 'tester.md']) {
     const body = read(path.resolve('user/agents', f)).split(/^---$/m)[2] ?? '';
     assert.match(body, /\blead\b[^\n]{0,80}kit-unit-files\.txt/, `${f} names no lead-written file list`);
@@ -802,13 +804,9 @@ test('the edit fence refuses a tester or writer edit when the unit has no file l
     const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
     assert.equal(out.status, 2, `${agent_type} edit with no list: ${out.stderr}`);
   }
-});
-
-// why: guards rule:agent-role-table (a builder with no file list keeps its worktree edits, as it does today)
-test('the edit fence lets a builder edit in its worktree when the unit has no file list', () => {
-  const dir = gitTree();
-  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
-  assert.equal(out.status, 0, out.stderr);
+  // A builder with no file list keeps its worktree edits, as it does today.
+  const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(builder.status, 0, builder.stderr);
 });
 
 // why: guards rule:agent-team-adapter
@@ -1578,6 +1576,7 @@ const testerExamples = () => [...read(path.resolve('user/agents/tester.md')).mat
 
 // why: catches a test-reviewer finding example the handoff check refuses, so a reviewer's findings never reach the ledger
 test('the test-reviewer finding example, filled in as its template says, passes the handoff check', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
   const block = reviewerBlock().map(fillExample);
   const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', ...block].join('\n'));
   assert.equal(r.status, 0, r.stderr);
@@ -1585,6 +1584,7 @@ test('the test-reviewer finding example, filled in as its template says, passes 
 
 // why: catches a test-reviewer clear form the handoff check refuses, so a clean review reads as a failed hand-back
 test('the test-reviewer clear form, as its template words it, passes the handoff check', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
   const clear = read(path.resolve('user/agents/test-reviewer.md')).match(/\{"note":[^}]*\}/);
   assert.ok(clear, 'the template names a clear form');
   const block = reviewerBlock();
@@ -1596,6 +1596,7 @@ test('the test-reviewer clear form, as its template words it, passes the handoff
 
 // why: catches a tester finding example the handoff check refuses, so a tester's red report is unreadable
 test('the tester finding example, filled in as its template says, passes the handoff check', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/tester.md')), 'user/agents/tester.md is missing');
   const [role, finding] = testerExamples().map(fillExample);
   assert.ok(role && finding, 'the template gives a role line and a finding line');
   const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, finding].join('\n'));
@@ -1604,6 +1605,7 @@ test('the tester finding example, filled in as its template says, passes the han
 
 // why: catches a tester template with no clear form, so a unit with no problems has no record the check accepts
 test('the tester template names a clear form that the handoff check accepts', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/tester.md')), 'user/agents/tester.md is missing');
   const clear = read(path.resolve('user/agents/tester.md')).match(/\{"note":[^}]*\}/);
   assert.ok(clear, 'the template names a clear form');
   const [role] = testerExamples().map(fillExample);
@@ -1618,17 +1620,14 @@ test('the edit fence refuses a tester or writer edit when the session folder is 
     const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
     assert.equal(out.status, 2, `${agent_type} edit outside git: ${out.stderr}`);
   }
-});
-
-// why: guards rule:agent-role-table (a builder outside any git repo keeps the pass-through it has today)
-test('the edit fence lets a builder edit when the session folder is not in a git repo, as today', () => {
-  const dir = makeTemp('fence-nogit-');
-  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
-  assert.equal(out.status, 0, out.stderr);
+  // A builder outside any git repo keeps the pass-through it has today.
+  const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(builder.status, 0, builder.stderr);
 });
 
 // why: guards rule:agent-role-table (a finding example copied with its blanks still is refused by the handoff check)
 test('a test-reviewer or tester finding line copied with its blanks is refused by the handoff check', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
   const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
   const [role, tester] = testerExamples();
   for (const [name, finding] of [['test-reviewer', reviewer], ['tester', tester]]) {
@@ -1640,6 +1639,7 @@ test('a test-reviewer or tester finding line copied with its blanks is refused b
 
 // why: catches a finding example that shows empty strings where a placeholder belongs, so a writer copies blanks as values
 test('the test-reviewer and tester finding examples show placeholders, not empty strings', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
   const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
   const [, tester] = testerExamples();
   assert.doesNotMatch(reviewer, /":""/, 'test-reviewer finding example holds an empty string');
@@ -1648,6 +1648,7 @@ test('the test-reviewer and tester finding examples show placeholders, not empty
 
 // why: catches a template that leaves "-" for none unnamed, so a writer may fill fix with an invented value
 test('the test-reviewer and tester templates name "-" as the value for none', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
   for (const f of ['test-reviewer.md', 'tester.md']) {
     assert.match(read(path.resolve('user/agents', f)), /`-`[^\n]*\bnone\b|\bnone\b[^\n]*`-`/, `${f} does not name - as none`);
   }
@@ -1655,6 +1656,7 @@ test('the test-reviewer and tester templates name "-" as the value for none', ()
 
 // why: catches a test-reviewer clear form that drops its intent note, so the run record never shows what the review was for
 test('the test-reviewer clear form keeps an intent note beside the no problems note', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
   const text = read(path.resolve('user/agents/test-reviewer.md'));
   assert.match(text, /\{"note":"no problems found","writer":"test-reviewer"\}/);
   assert.match(text, /\{"note":"intent:[^"]*","writer":"test-reviewer"\}/);
@@ -1665,11 +1667,7 @@ test('the edit fence refuses a tester edit when the hook throws after reading it
   const dir = gitTree();
   const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'tester', tool_name: 'Edit', tool_input: { file_path: 5 } });
   assert.equal(out.status, 2, out.stderr);
-});
-
-// why: guards rule:agent-role-table (a builder whose edit hook throws keeps the fail-open pass-through it has today)
-test('the edit fence lets a builder edit through when the hook throws, as today', () => {
-  const dir = gitTree();
-  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: 5 } });
-  assert.equal(out.status, 0, out.stderr);
+  // A builder whose edit hook throws keeps the fail-open pass-through it has today.
+  const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: 5 } });
+  assert.equal(builder.status, 0, builder.stderr);
 });
