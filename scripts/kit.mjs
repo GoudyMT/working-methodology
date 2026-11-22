@@ -1060,7 +1060,7 @@ export function install(ctx) {
       // not run, so the hooks stay on the project's own .githooks until install user has run.
       const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
       const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys, prevRecord, isHost, skipped) : null;
-      const hooksPath = keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned], launcher ? shims : null);
+      const hooksPath = keepKitLocal(ctx.projectDir, [...Object.keys(files).filter((k) => !k.startsWith('memory/')), '.claude/model-floors.json'], [...hostOwned], launcher ? shims : null);
       if (shims && hooksPath === shims) {
         const recFile = path.join(guardDir(ctx.home, ctx.projectDir), 'record.json');
         fs.writeFileSync(recFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(recFile, 'utf8')), hooksPath: shims }, null, 2) + '\n');
