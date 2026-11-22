@@ -2,8 +2,9 @@
 // E36 (build 24): the agent model hook. An Agent or Task call names a subagent_type, and that role's file in the Claude
 // config folder names the model the role runs on. This logs a line to kit-agent-model.log in the repo's git common folder
 // when the role has no file, or when the call names a model of another family than the role file. Its hold (U9, in
-// holds.json) is log: every call runs as it would have. Set to enforce, the same mismatch is refused. The git launch stays
-// inline: the guard loads this file from the Claude folder, beside hold-mode.cjs.
+// holds.json) is log: every call runs as it would have. Each logged row records the mode; nothing refuses until build
+// 25 switches a hold to enforce. The git launch stays inline: the guard loads this file from the Claude folder, beside
+// hold-mode.cjs.
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
@@ -44,7 +45,7 @@ function commonDir(cwd) {
 }
 
 // The hold's mode from hold-mode.cjs beside this file. A copy with no hold-mode.cjs beside it (the kit's tests copy this
-// file alone) logs as it did before the holds, so it is never refused for a missing file.
+// file alone) records log.
 function holdMode(id) {
 	try {
 		return require('./hold-mode.cjs').mode(id);
@@ -66,12 +67,9 @@ function check(input) {
 		if (why) {
 			const common = commonDir(String((input && input.cwd) || process.cwd()));
 			if (common) {
-				const row = { at: new Date().toISOString(), hook: 'agent-model', type, model, want: want === undefined ? null : want, why };
+				const row = { at: new Date().toISOString(), hook: 'agent-model', mode: holdMode('agent-model'), type, model, want: want === undefined ? null : want, why };
 				fs.appendFileSync(path.join(common, LOG), `${JSON.stringify(row)}\n`);
 			}
-		}
-		if (why && holdMode('agent-model') === 'enforce') {
-			return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Held by the agent-model hold (enforce): ${why}.` } };
 		}
 	} catch {
 		/* a hook that fails never stops a call */
