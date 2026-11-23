@@ -354,13 +354,13 @@ test('a test added by rename, or in a new test file, is still counted', () => {
 
 // why: catches M5 a record with its sweep block removed after the closeout commit passing the closeout check unchecked
 test('M5: a record with its sweep removed after the closeout commit fails the check', () => {
-	const gone = check(mk({ after: addTests('orphan'), mutate: (rec) => { delete rec.sweep; } }));
+	const gone = check(mk({ mutate: (rec) => { delete rec.sweep; } }));
 	assert.equal(gone.status, 1, `a record with no sweep but a closeout file fails: ${gone.stderr}`);
-	assert.match(gone.stderr, /closeout/, gone.stderr);
-	// control: with the sweep kept, the same repo fails on the orphan test, so only the sweep decides the first verdict
-	const kept = check(mk({ after: addTests('orphan') }));
-	assert.equal(kept.status, 1);
-	assert.ok(kept.stderr.includes('tests/a.test.mjs::orphan'), kept.stderr);
+	assert.match(gone.stderr, new RegExp(`${VERSION.replace(/\./g, '\\.')}\\.closeout\\.json[^\\n]*sweep|sweep[^\\n]*${VERSION.replace(/\./g, '\\.')}\\.closeout\\.json`), gone.stderr);
+	assert.ok(!gone.stderr.includes('::'), `no orphan test is named: ${gone.stderr}`);
+	// control: with the sweep kept, the same repo is clean, so only the sweep decides the verdict
+	const kept = check(mk());
+	assert.equal(kept.status, 0, kept.stderr);
 });
 
 // why: catches M6 a new test file with a non-ASCII name read as a quoted path and so left uncounted after closeout
@@ -372,6 +372,7 @@ test('M6: a new test file with a non-ASCII name after the closeout commit needs 
 	// control: the same test in an ASCII-named file is counted the same way
 	const plain = check(mk({ after: (root) => { write(root, 'tests/cafe.test.mjs', testFile(['in an accented file'])); commit(root, 'plain file'); } }));
 	assert.equal(plain.status, 1);
+	assert.ok(plain.stderr.includes('tests/cafe.test.mjs::in an accented file'), plain.stderr);
 });
 
 // why: catches defer appends one JSON line to the next-patch file and prints "written, carry on" (K369 S8)

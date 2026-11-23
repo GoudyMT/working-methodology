@@ -102,9 +102,16 @@ test('H4: a why-less test written indented, with a variable name, through an ali
 		assert.equal(bad.code, 2, `a why-less test written as ${label} is refused: ${bad.err}`);
 		assert.ok(bad.err.includes(NO_WHY), `${label}: stderr quotes whyFault: ${bad.err}`);
 	}
-	// control: the indented form with a passing why line saves
-	const ok = fence(dir, 'Write', { file_path: target(dir), content: `${head}\t${GOOD_WHY}\n\ttest('adds two numbers', () => {});\n` });
-	assert.equal(ok.code, 0, 'an indented test with a why saves: ' + ok.err);
+	// control: each form with a passing why line above its test call saves
+	const withWhy = {
+		indented: `\t${GOOD_WHY}\n${forms.indented}`,
+		alias: `const t = test;\n${GOOD_WHY}\nt('adds two numbers', () => {});\n`,
+		forEach: `const CASES = ['a', 'b'];\n${GOOD_WHY}\nCASES.forEach((c) => test(\`adds \${c}\`, () => {}));\n`,
+	};
+	for (const [label, body] of Object.entries(withWhy)) {
+		const ok = fence(dir, 'Write', { file_path: target(dir), content: head + body });
+		assert.equal(ok.code, 0, `${label} with a why line saves: ${ok.err}`);
+	}
 });
 
 // why: catches a test with a passing why line saves (K368 S1)

@@ -115,13 +115,17 @@ test('under enforce, a numeric agent_id that makes canary throw still prints the
 test('M7: under enforce, a tester hand-back naming a commit that does not resolve is refused', () => {
 	const home = enforceHome();
 	const dir = canaryRepo();
-	const role = (commit) => JSON.stringify({ role: 'tester', commit, clarity: 'clear' });
-	const message = (commit) => [`${FAKE_PHRASE}`, 'Prose the tester wrote.', 'ROLE: tester', 'Not checked: nothing', 'RECORD:', role(commit), NOTE_CHECKED].join('\n');
-	const bad = oneObject(handBackEnforced(home, dir, 'm7a', message('0123456789abcdef0123456789abcdef01234567')).stdout);
+	const BAD = '0123456789abcdef0123456789abcdef01234567';
+	const listed = [{ name: 'x', why: '// why: catches a listed test whose commit cannot be read' }];
+	const role = (commit, tests) => JSON.stringify({ role: 'tester', commit, clarity: 'clear', ...(tests ? { tests } : {}) });
+	const message = (commit, tests) => [`${FAKE_PHRASE}`, 'Prose the tester wrote.', 'ROLE: tester', 'Not checked: nothing', 'RECORD:', role(commit, tests), NOTE_CHECKED].join('\n');
+	const bad = oneObject(handBackEnforced(home, dir, 'm7a', message(BAD, listed)).stdout);
 	assert.ok(bad, 'a commit that resolves to nothing is refused');
 	assert.equal(bad.hookSpecificOutput.permissionDecision, 'deny');
-	assert.match(bad.hookSpecificOutput.permissionDecisionReason, /0123456789abcdef|commit/, bad.hookSpecificOutput.permissionDecisionReason);
+	assert.ok(bad.hookSpecificOutput.permissionDecisionReason.includes(BAD), `the reason names the commit: ${bad.hookSpecificOutput.permissionDecisionReason}`);
+	// control: the same unresolvable commit with no tests list is not refused
+	assert.equal(handBackEnforced(home, dir, 'm7c', message(BAD)).stdout.trim(), '', 'no tests listed: the commit is not checked');
 	// control: the repo's own head resolves, so the same record is not refused
 	const head = spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
-	assert.equal(handBackEnforced(home, dir, 'm7b', message(head)).stdout.trim(), '', 'a resolving commit is not refused');
+	assert.equal(handBackEnforced(home, dir, 'm7b', message(head, listed)).stdout.trim(), '', 'a resolving commit is not refused');
 });
