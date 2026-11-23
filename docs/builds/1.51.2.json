@@ -402,15 +402,15 @@
     },
     {
       "decision": "The warm limit is 150,000 tokens",
-      "why": "The owner's pick (2026-11-23); a role at the limit counts as over."
+      "why": "The owner's pick; a role at the limit counts as over."
     },
     {
       "decision": "At most two check rounds a unit",
-      "why": "Past two rounds the lead finishes the fix and CI is the gate; what is still open goes to the next patch list."
+      "why": "Past two, the lead finishes and CI is the gate."
     },
     {
       "decision": "The Windows job has a 60 s fast cap",
-      "why": "Windows starts a process about twice as slowly as Linux; the owner's pick (2026-11-23), the deferred L17 pulled forward."
+      "why": "Windows starts processes about twice as slowly; the owner's pick."
     },
     {
       "decision": "K359 shipped first as 1.51.1",
