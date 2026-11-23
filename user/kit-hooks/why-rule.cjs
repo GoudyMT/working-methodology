@@ -83,7 +83,7 @@ function codeLines(lines) {
 				prev = c;
 				continue;
 			}
-			if (c === '/' && (prev === '' || /[(,=:[!&|?{};]/.test(prev) || /(?:^|[^\w$.])(?:return|typeof|case|in|of|delete|void|throw|new|yield|await)\s*$/.test(out))) {
+			if (c === '/' && (prev === '' || /[(,=:[!&|?{};]/.test(prev) || /(?:^|[^\w$.])(?:return|typeof|case|in|delete|void|throw|new)\s*$/.test(out))) {
 				let j = k + 1;
 				let cls = false;
 				while (j < line.length && (cls || line[j] !== '/')) { if (line[j] === '\\') j++; else if (line[j] === '[') cls = true; else if (line[j] === ']') cls = false; j++; }
@@ -109,7 +109,7 @@ function testStarts(text) {
 	// of the module (import() or require(), renamed with test: t).
 	const whole = String(text);
 	const bind = (spec) => { for (const part of spec.split(',')) { const m = /^\s*(test|it)\s*(?:(?:as|:)\s*([\w$]+))?\s*$/.exec(part); if (m) names.add(m[2] || m[1]); } };
-	for (const m of whole.matchAll(/\bimport\s+([\w$]+)?\s*,?\s*(?:\{([^}]*)\})?\s*from\s*['"](?:node:)?test['"]/g)) { if (m[1]) names.add(m[1]); if (m[2]) bind(m[2]); }
+	for (const m of whole.matchAll(/\bimport\s+(?:([\w$]+)\s*(?:,\s*)?)?(?:\{([^}]*)\}\s*)?from\s*['"](?:node:)?test['"]/g)) { if (m[1]) names.add(m[1]); if (m[2]) bind(m[2]); }
 	for (const m of whole.matchAll(/\b(?:const|let|var)\s*\{([^}]*)\}\s*=\s*(?:await\s+)?(?:import|require)\(\s*['"](?:node:)?test['"]\s*\)/g)) bind(m[1]);
 	for (const l of code) {
 		for (const m of l.matchAll(/\b(?:const|let|var)\s+([\w$]+)\s*=\s*test\s*(?:;|$)/g)) names.add(m[1]);
