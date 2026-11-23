@@ -316,7 +316,17 @@ test('an installed approve.mjs reads the owner\'s taps only from the folder it w
 test('the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it', () => {
   const r = approveRun(featureContract());
   outcome(r);
-  const approveN = (n) => { for (let i = 0; i < n; i++) { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, `approval ${i + 1}: ${a.stdout}`); outcome(r); } };
+  // One real approval and its outcome, then the rest of the run as copies of that pair, each linked to the line before
+  // as approve.mjs links its own: the count the trial reads is the same, without a process start for every approval.
+  const approveN = (n) => {
+    nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, `approval 1: ${a.stdout}`); outcome(r);
+    const log = path.join(r.dir, '.git', 'kit-sweep-approvals.jsonl');
+    const lines = fs.readFileSync(log, 'utf8').split('\n').filter(Boolean);
+    const pair = lines.slice(-2).map((l) => JSON.parse(l));
+    assert.deepEqual(pair.map((e) => e.decision || e.kind), ['approved', 'outcome'], 'the last two lines are an approval and its outcome');
+    let last = lines[lines.length - 1];
+    for (let i = 1; i < n; i++) for (const e of pair) { last = JSON.stringify({ ...e, prev: crypto.createHash('sha256').update(last).digest('hex').slice(0, 16) }); fs.appendFileSync(log, `${last}\n`); }
+  };
   const due = (every) => { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 1); assert.match(a.stdout, new RegExp(`trial review due: ${every} auto-approvals`)); };
   const resume = () => { const o = approveIn(r.dir, ['--resume'], { KIT_OWNER_RESUME: '1' }); assert.equal(o.status, 0, o.stdout); };
   approveN(9); due(10); resume();
