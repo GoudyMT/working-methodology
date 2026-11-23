@@ -147,6 +147,8 @@ function judgeCommit(c, held, defTip) {
 function run(url, refs) {
 	const held = [];
 	if (git(['rev-parse', '--is-shallow-repository']).trim() !== 'false') throw new Shallow();
+	// Deletes only, or no refs: no commit is pushed, and the remote need not be asked.
+	if (refs.every(([, lsha]) => ZERO.test(lsha))) return held;
 	const { def, heads } = remote(url);
 	const below = [...heads.values()].filter(local);
 	const defTip = def && heads.has(`refs/heads/${def}`) && local(heads.get(`refs/heads/${def}`)) ? heads.get(`refs/heads/${def}`) : null;
