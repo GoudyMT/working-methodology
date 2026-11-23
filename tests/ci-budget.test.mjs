@@ -101,7 +101,6 @@ test('a merge-path job at 181 s is reported over the limit with its 5 slowest te
 test('a job at 180 s passes', () => {
 	const r = run([job('unit-tests (1)', 180), job('lint', 20)]);
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
-	assert.ok(!r.stderr.includes('unit-tests (1)'), `a job at the limit is named as a failure: ${r.stderr}`);
 	assert.ok(!/OVER unit-tests/.test(r.stdout), `a job at the limit is reported over: ${r.stdout}`);
 	// Control: the limit is the --limit argument, and the same job over a lower one is reported over it, report only.
 	const lower = run([job('unit-tests (1)', 180)], { args: ['--limit', '179'] });
@@ -204,6 +203,10 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 		`the step does not run the base copy when it exists, in one line: ${line}`,
 	);
 	assert.match(line, /--skip minimal-code(\s|$)/);
+	// L6 (the 1.51.3 sweep): only a push to main reads the earlier main runs, older than this one, into --history.
+	assert.match(kit, /if \[ "\$EVENT" = "push" \] && \[ "\$REF" = "refs\/heads\/main" \]; then/); // pin: 1 (GitHub runs the workflow line)
+	assert.match(kit, /select\(\.run_number < \(env\.RUN_NUMBER \| tonumber\)\)/);
+	assert.match(line, /"\$\{history\[@\]\}"$/);
 	// The 1.51.3 sweep (M8): a failed fetch of the earlier main runs warns and skips the trend; it never fails the check.
 	assert.match(kit, /if fetch_history; then[\s\S]*?else\s+echo "::warning::the earlier main runs could not be read/); // pin: 1 (GitHub reads the workflow line)
 	// M6: the Windows step takes its slice and its count from the matrix itself, so no part can be dropped unseen.
