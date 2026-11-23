@@ -42,7 +42,7 @@ test('a fast-lane test over 30 s is reported with its name and time, and the run
 	assert.ok(line, out);
 	const times = [...line.matchAll(/\b(\d+) ms\b/g)].map((m) => Number(m[1]));
 	assert.ok(times.some((t) => t >= 1500), `no time of 1500 ms or more on: ${line}`);
-	// The cap line is on stderr, where test-check quotes a failed run from (the sweep's M13), not only on stdout.
+	// The cap line is on stderr too (the sweep's M13), so a run's error output names its slow tests beside any failure.
 	assert.ok(r.stderr.split('\n').some((l) => l.includes('the sleeping test') && /\b500\b/.test(l)), `no cap line on stderr: ${r.stderr}`);
 	// A traced run (--map) measures every test and is not held to the cap (M12): the same test passes there, so a main
 	// push still writes its map.
@@ -52,6 +52,8 @@ test('a fast-lane test over 30 s is reported with its name and time, and the run
 	git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
 	const traced = runner(dir, ['--map', '--shards', '1', file], 500);
 	assert.equal(traced.status, 0, 'a --map run must not apply the fast cap: ' + traced.stdout + traced.stderr);
+	// The 1.51.3 sweep: the cap never fails a run now, so the exit alone shows nothing; a --map run prints no cap line.
+	assert.doesNotMatch(traced.stdout + traced.stderr, /over the cap/, 'a --map run reported the fast cap');
 });
 
 // why: catches the same test under tests/slow reported over the fast-lane cap (CI-C S2)
@@ -77,5 +79,6 @@ test('KIT_TEST_FAST_MS overrides the cap', () => {
 	assert.match(high.stdout + high.stderr, /fast-lane cap 5000 ms/);
 	const unset = runner(dir, ['--shards', '1', file]);
 	assert.equal(unset.status, 0, 'with no override the 1.5 s test must pass: ' + unset.stdout + unset.stderr);
+	assert.doesNotMatch(unset.stdout + unset.stderr, /over the cap/, 'a 1.5 s test is over the 30 s default cap');
 	assert.match(unset.stdout + unset.stderr, /fast-lane cap 30000 ms/);
 });

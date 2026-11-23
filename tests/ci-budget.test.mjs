@@ -32,7 +32,7 @@ function repo() {
 }
 
 // Writes the inputs into a fresh temp repo and runs the script there.
-function run(jobs, { timings, args = [], raw, history } = {}) {
+function run(jobs, { timings, args = [], raw, history, env = {} } = {}) {
 	const dir = repo();
 	const jobsFile = path.join(dir, 'jobs.json');
 	fs.writeFileSync(jobsFile, raw !== undefined ? raw : JSON.stringify({ total_count: jobs.length, jobs }));
@@ -48,7 +48,7 @@ function run(jobs, { timings, args = [], raw, history } = {}) {
 		fs.writeFileSync(tf, typeof timings === 'string' ? timings : JSON.stringify(timings));
 		argv.push('--timings', tf);
 	}
-	const r = spawnSync(process.execPath, [...argv, ...args], { cwd: dir, encoding: 'utf8' });
+	const r = spawnSync(process.execPath, [...argv, ...args], { cwd: dir, encoding: 'utf8', env: { ...process.env, ...env } });
 	const logFile = path.join(dir, '.git', 'kit-guard-open.log');
 	const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean) : [];
 	kitTemp.removeTemp(dir); // the run's temp growth check counts a folder left behind
@@ -284,22 +284,43 @@ test('a job over the limit on 3 main runs in a row is named as a trend, and 2 in
 	const three = run(now, { history: [over, over] });
 	assert.equal(three.status, 0, `${three.stdout}${three.stderr}`);
 	assert.match(three.stdout, /TREND windows-tests \(0\): over the 180 s limit on 3 main runs in a row: open a list row/);
-	assert.match(three.stdout, /::warning::/);
+	assert.match(three.stdout, /^::warning::windows-tests \(0\) ran over the 180 s budget on 3 main runs in a row$/m);
 	assert.doesNotMatch(three.stdout, /TREND lint/);
-	// Two in a row (the newest earlier run under the limit) is not a trend, nor is a run with no history.
-	const two = run(now, { history: [under, over] });
-	assert.equal(two.status, 0, `${two.stdout}${two.stderr}`);
-	assert.doesNotMatch(two.stdout, /TREND/);
+	// The 1.51.3 sweep: every job over the limit is a warning on any run, a PR's included, not only a trend.
+	assert.match(three.stdout, /^::warning::windows-tests \(0\) ran 190 s, over the 180 s limit$/m);
+	assert.doesNotMatch(three.stdout, /::warning::lint/);
+	// Two in a row is not a trend, whichever earlier run was under: the newest, or the one before it.
+	for (const history of [[under, over], [over, under]]) {
+		const two = run(now, { history });
+		assert.equal(two.status, 0, `${two.stdout}${two.stderr}`);
+		assert.doesNotMatch(two.stdout, /TREND/, `history ${history === under ? 'under' : 'mixed'}`);
+	}
+	// Only the 2 newest earlier runs count: a third run under the limit behind them does not break the trend.
+	assert.match(run(now, { history: [over, over, under] }).stdout, /TREND windows-tests \(0\)/);
+	// The 1.51.3 sweep: an earlier run whose job was cancelled or failed past the limit still counts its time.
+	const cancelled = [job('windows-tests (0)', 1800, { conclusion: 'cancelled' }), job('lint', 20)];
+	assert.match(run(now, { history: [cancelled, over] }).stdout, /TREND windows-tests \(0\)/);
+	// A job over only in the earlier runs, or missing from one, is no trend.
+	const quick = [job('windows-tests (0)', 100), job('lint', 20)];
+	assert.doesNotMatch(run(quick, { history: [over, over] }).stdout, /TREND/);
+	assert.doesNotMatch(run(now, { history: [[job('lint', 20)], over] }).stdout, /TREND/);
 	const none = run(now);
 	assert.doesNotMatch(none.stdout, /TREND/);
-	// Every run prints one compact JSON line of its job times, for the totals.
-	const json = (three.stdout.split('\n').find((l) => l.startsWith('ci-budget-json: ')) || '').slice('ci-budget-json: '.length);
-	const parsed = JSON.parse(json);
+	// Every run prints one compact JSON line of its job times, for the totals, named by its run.
+	const jsonOf = (r) => JSON.parse((r.stdout.split('\n').find((l) => l.startsWith('ci-budget-json: ')) || '').slice('ci-budget-json: '.length));
+	const parsed = jsonOf(three);
 	assert.equal(parsed.limit, 180);
 	assert.deepEqual(parsed.jobs, { lint: 20, 'windows-tests (0)': 190 });
 	assert.deepEqual(parsed.over, ['windows-tests (0)']);
 	assert.deepEqual(parsed.trend, ['windows-tests (0)']);
-	// A job that failed still fails the check: report only covers time, never a failed or timed-out job.
-	const failed = run([job('windows-tests (0)', 60, { conclusion: 'failure' })], { history: [over, over] });
+	const ids = jsonOf(run(now, { env: { GITHUB_RUN_ID: '77', GITHUB_RUN_ATTEMPT: '2', GITHUB_SHA: 'abc123', GITHUB_EVENT_NAME: 'push' } }));
+	assert.deepEqual([ids.run, ids.attempt, ids.sha, ids.event], ['77', '2', 'abc123', 'push']);
+	const calm = jsonOf(run([job('lint', 20)]));
+	assert.deepEqual([calm.over, calm.trend, calm.failed], [[], [], []]);
+	// A job that failed still fails the check, named, and its time is in the JSON line's failed list.
+	const failed = run([job('windows-tests (0)', 60, { conclusion: 'failure' }), job('slow-fail', 400, { conclusion: 'failure' })], { history: [over, over] });
 	assert.equal(failed.status, 1, `${failed.stdout}${failed.stderr}`);
+	assert.match(failed.stderr, /FAIL windows-tests \(0\): failure/);
+	assert.match(failed.stderr, /FAIL slow-fail: failure/);
+	assert.deepEqual(jsonOf(failed).failed, [{ name: 'slow-fail', s: 400, reason: 'failure' }, { name: 'windows-tests (0)', s: 60, reason: 'failure' }]);
 });
