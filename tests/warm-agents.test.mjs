@@ -34,6 +34,7 @@ function git(cwd, args) {
 function repo() {
 	const dir = kitTemp.makeTemp('warm-repo-');
 	git(dir, ['init', '-q', '-b', 'main']);
+	fs.writeFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/warm-agents.test.mjs\n');
 	return dir;
 }
 const openLog = (dir) => path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-guard-open.log');
