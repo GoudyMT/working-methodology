@@ -126,6 +126,10 @@ test('a cancelled or skipped job is named, never passed silently', () => {
 	assert.match(n.stderr, /nulled-cancel/);
 	assert.match(`${n.stdout}${n.stderr}`, /slow-lane/);
 	assert.ok(!/TypeError|at .*\.mjs:\d+/.test(n.stderr), `the script crashed: ${n.stderr}`);
+	// A success job with no start or end time was never measured: it fails, named.
+	const blank = run([job('unit-tests (1)', 30), { ...job('blank-success', 10), started_at: null, completed_at: null }]);
+	assert.equal(blank.status, 1, `${blank.stdout}${blank.stderr}`);
+	assert.match(blank.stderr, /blank-success/);
 	// A job that concluded failure or timed_out fails, named, whatever its time.
 	for (const conclusion of ['failure', 'timed_out']) {
 		const f = run([job('unit-tests (1)', 30), job('quick-fail', 10, { conclusion })]);
@@ -155,6 +159,27 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 	const prefix = run([job('budget-check', 500), job('unit-tests (1)', 30)], { args: ['--self', 'budget'] });
 	assert.equal(prefix.status, 1, `${prefix.stdout}${prefix.stderr}`);
 	assert.match(prefix.stderr, /budget-check/);
+	// --skip leaves a job out by name, with its matrix legs, whatever state it is in; each is named on a skipped line.
+	const stuck = { ...job('minimal-code (2)', 10), status: 'in_progress', conclusion: null, completed_at: null };
+	const skipRun = run(
+		[
+			job('unit-tests (1)', 30),
+			job('minimal-code', 500),
+			job('minimal-code (1)', 10, { conclusion: 'cancelled' }),
+			stuck,
+			job('minimal-code (3)', 900),
+			job('minimal-code (4)', 181),
+		],
+		{ args: ['--skip', 'minimal-code'] },
+	);
+	assert.equal(skipRun.status, 0, `${skipRun.stdout}${skipRun.stderr}`);
+	for (const name of ['minimal-code', 'minimal-code (1)', 'minimal-code (2)', 'minimal-code (3)', 'minimal-code (4)']) {
+		const said = `${skipRun.stdout}${skipRun.stderr}`.split('\n').some((l) => /skipped/i.test(l) && l.includes(name));
+		assert.ok(said, `${name} is not named on a skipped line: ${skipRun.stdout}`);
+	}
+	const extra = run([job('minimal-code-extra', 181), job('minimal-code', 500)], { args: ['--skip', 'minimal-code'] });
+	assert.equal(extra.status, 1, `${extra.stdout}${extra.stderr}`);
+	assert.match(extra.stderr, /minimal-code-extra/);
 	// The workflow runs it: the kit-tests job fetches the run's jobs into one file and runs the check, never tolerated.
 	const yml = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	const part = yml.split(/^  kit-tests:$/m)[1] || '';
@@ -165,8 +190,16 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 	assert.ok(line, 'kit-tests never runs scripts/ci-budget.mjs');
 	assert.match(line, /--jobs \S+/);
 	assert.match(line, /--self kit-tests(\s|$)/);
+	assert.ok(
+		line.includes('node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs'),
+		`the step does not run the base copy when it exists, in one line: ${line}`,
+	);
+	assert.match(line, /--skip minimal-code(\s|$)/);
 	assert.doesNotMatch(line, /\|\|/);
 	assert.doesNotMatch(kit, /continue-on-error/);
+	const needs = (/^    needs: \[(.*)\]$/m.exec(kit) || [])[1];
+	assert.ok(needs, 'kit-tests has no needs list');
+	assert.ok(!needs.split(',').map((s) => s.trim()).includes('minimal-code'), `kit-tests needs minimal-code: ${needs}`);
 });
 
 // why: catches two runs on the same jobs JSON give the same verdict (CI-C S5)
