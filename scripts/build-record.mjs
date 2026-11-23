@@ -20,8 +20,10 @@ import { checkSection } from '../project/.claude/visuals.mjs';
 import { check } from '../user/kit-tools/handoff.mjs';
 import { planUnits, testLines, testOf } from '../user/kit-tools/plan-check.mjs';
 import { filesOf } from '../user/kit-tools/test-budget.mjs';
+import { findingsOf } from '../user/kit-tools/closeout.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CLOSEOUT = path.join(ROOT, 'user', 'kit-tools', 'closeout.mjs');
 export const KINDS = { added: 'Added', changed: 'Changed', fixed: 'Fixed', security: 'Security', removed: 'Removed' };
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const SIX_DIMENSIONS = ['Privacy', 'Supply chain', 'Legal', 'Code security', 'Gaps, scaling, test value', 'Alignment'];
@@ -104,6 +106,12 @@ export function problems(rec) {
 		// Only an accepted line that names a high or critical stands in for its fix row (the build 14 sweep).
 		const hcAccepted = (s.accepted || []).filter((a) => /^(high|critical)\b/i.test(String(a))).length;
 		need(!Array.isArray(s.fixes) || hcRows + hcAccepted >= hcFound,`sweep has ${hcFound} high or critical finding(s) but ${hcRows} high or critical fix row(s)`);
+		// S5: one fix row per finding of each severity, the margin 0: a row past the findings of its severity is a fault.
+		for (const sev of ['critical', 'high']) {
+			const rows = (Array.isArray(s.fixes) ? s.fixes : []).filter((f) => f && f.severity === sev).length;
+			const got = (s.findings || {})[sev] || 0;
+			if (rows > got) out.push(`sweep has ${got} ${sev} finding(s) but ${rows} ${sev} fix row(s): one fix row per finding`);
+		}
 	}
 	need(!(rec.verification || []).some((v) => FIX_CLAIM.test(String(v))), 'a verification line states the fix-test claim: it is written from sweep.fixes, never typed');
 	need(rec.tests && Number.isInteger(rec.tests.before) && Number.isInteger(rec.tests.after), 'tests has no before and after count');
@@ -251,6 +259,22 @@ export function checkRepo(root, file) {
 		if (shown.status !== 0) { found.push(`fix ${f.id} commit ${f.commit} is not a commit here`); continue; }
 		const guarded = shown.stdout.split('\n').filter((p) => GUARDED.test(p));
 		if (f.test === NO_TEST && guarded.length) found.push(`fix ${f.id} changes ${guarded.join(', ')}, a guard or gate file: mark it security and name its test`);
+	}
+	// K369 S1: a record with a sweep runs the closeout check, and its stderr lines are this check's problems.
+	if (inRepo && rec.sweep) {
+		const r = spawnSync(process.execPath, [CLOSEOUT, 'check', '--root', root], { cwd: root, encoding: 'utf8' });
+		const lines = String(r.stderr).split('\n').filter(Boolean);
+		if (r.status !== 0) found.push(...(lines.length ? lines : [`closeout check exited ${r.status}`]));
+	}
+	// K369 S5: a fix row takes its finding's severity from the closeout file, never its own.
+	const co = findingsOf(root, version);
+	if (co && rec.sweep && Array.isArray(rec.sweep.fixes)) {
+		rec.sweep.fixes.forEach((f, i) => {
+			if (!f) return;
+			const id = f.id || `row ${i + 1}`;
+			if (!f.finding || !co.has(f.finding)) found.push(`fix ${id} names no finding the closeout file lists`);
+			else if (co.get(f.finding) !== f.severity) found.push(`fix ${id} is ${f.severity} but its finding ${f.finding} is ${co.get(f.finding)}: a fix row takes its finding's severity`);
+		});
 	}
 	const log = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').replace(/\r\n/g, '\n');
 	const top = (log.split(/^(?=## \d)/m).find((part) => part.startsWith('## ')) || '').trimEnd();
