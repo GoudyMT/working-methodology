@@ -1,10 +1,12 @@
 // scripts/ci-budget.mjs enforces the merge-path time budget in the required check (CI-C).
 //   node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...
-// --skip leaves out a job by name and its matrix legs, and names each one on a skipped line. --jobs is GitHub's run-jobs answer as one {jobs:[...]} object (gh api --paginate, pages merged). Every job in it is
-// measured except --self, so the list comes from the run and not from a fixed list. A job's time is completed_at minus
-// started_at; queue wait is not counted. --timings is optional JSON {"<job name>": {"<file::name>": ms}}: a failing job
-// is named with its 5 slowest tests from it. Exit 0 pass, 1 a failing job (named on stderr), 2 an unreadable --jobs or
-// --timings or a bad usage. An unreadable input also appends one row {at, hook, cause} to <git common dir>/kit-guard-open.log.
+// --jobs is GitHub's run-jobs answer as one {jobs:[...]} object (gh api --paginate, pages merged). Every job in it is
+// measured except --self and --skip, so the list comes from the run and not from a fixed list. --skip leaves out a
+// job by name and its matrix legs, and names each one on a skipped line. A job's time is completed_at minus
+// started_at; queue wait is not counted. --timings is optional JSON {"<job name>": {"<file::name>": ms}}: a failing
+// job is named with its 5 slowest tests from it. Exit 0 pass, 1 a failing job (named on stderr), 2 an unreadable
+// --jobs or --timings or a bad usage. An unreadable input also appends one row {at, hook, cause} to
+// <git common dir>/kit-guard-open.log.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';

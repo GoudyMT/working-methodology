@@ -703,8 +703,9 @@ jobs:
           node scripts/recall-gate-base.mjs gate "$PR_BASE" "$PR_HEAD"
 
       # CI-C: the merge path's jobs are timed here, and a job over 180 s fails this required check, named with its
-      # slowest tests. The list is the run's own jobs, every one but this job, fetched whole: the pages are merged into one
-      # {jobs:[...]} answer. A failed fetch fails the step; an unreadable answer fails the check.
+      # slowest tests. The list is the run's own jobs, every one but this job and the --skip jobs (minimal-code, report
+      # only), fetched whole: the pages are merged into one {jobs:[...]} answer. A failed fetch fails the step; an
+      # unreadable answer fails the check.
       - name: Time budget of the run's jobs
         shell: bash
         env:
