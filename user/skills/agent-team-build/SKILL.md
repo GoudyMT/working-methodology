@@ -178,9 +178,9 @@ Each lesson below came from a real run. Follow it as written.
   ask.
 
 **Warm agents and check rounds.**
-- `warm.mjs` holds a tester or builder spawn while an open agent of the same lane is under `WARM_LIMIT` (150000
-  tokens): continue that agent with `SendMessage`. At or over 150000 tokens, reset it: spawn a fresh agent and log the reset
-  with `warm.mjs reset`. The agent-model hook holds the spawn until you do.
+- The agent-model hook holds a fresh tester or builder spawn while an open agent of the same lane is under 150000
+  tokens (`WARM_LIMIT` in `warm.mjs`): continue that agent with `SendMessage`. At or over 150000 tokens, the
+  agent-model hook holds the SendMessage instead: spawn a fresh agent and log the reset with `warm.mjs reset`.
 - A unit gets at most 2 check rounds. The agent-model hook enforces the cap and refuses a third checker spawn.
 
 **How many at once, and the log.**
