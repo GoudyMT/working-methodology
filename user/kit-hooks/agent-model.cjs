@@ -70,11 +70,15 @@ function commonDir(cwd) {
 }
 
 // The hold's mode from hold-mode.cjs beside this file. A copy with no hold-mode.cjs beside it (the kit's tests copy this
-// file alone) falls back to log, and the row says so with holdModeMissing.
-function holdMode(id) {
+// file alone) falls back to log, and the row says so with holdModeMissing. A hold-mode.cjs that is there but throws, at load
+// or in mode(), falls back the same way for a small-tier hold; for a high-tier one (strict: round-cap, closeout-spawn) the
+// error is thrown, so the gate refuses with its hook error.
+function holdMode(id, strict) {
 	try {
 		return { mode: require('./hold-mode.cjs').mode(id) };
-	} catch {
+	} catch (err) {
+		const absent = err && err.code === 'MODULE_NOT_FOUND' && /hold-mode\.cjs/.test(String(err.message).split('\n')[0]);
+		if (strict && !absent) throw err;
 		return { mode: 'log', missing: true };
 	}
 }
@@ -90,6 +94,18 @@ function lineValues(prompt, label) {
 }
 const lineValue = (prompt, label) => { const v = lineValues(prompt, label); return v.length ? v[0] : null; };
 const hasLine = (prompt, label) => lineValues(prompt, label).length > 0;
+// The first of the named roles that the brief's Role: value names as a whole word (not inside a longer or hyphenated word:
+// "the checker for U17" names checker; "rechecker" and "checkers-list" do not); null when none. Earliest in the value wins.
+function roleNamed(prompt, names) {
+	const v = lineValue(prompt, 'role');
+	if (v === null) return null;
+	let best = null;
+	for (const n of names) {
+		const m = new RegExp(`(?<![\\w-])${n}(?![\\w-])`, 'i').exec(v);
+		if (m && (best === null || m.index < best.at)) best = { n, at: m.index };
+	}
+	return best && best.n;
+}
 // The first word of a Role: line after markup, lower-cased; '' when there is none.
 const roleOf = (prompt) => { const v = lineValue(prompt, 'role'); const m = v === null ? null : /^[*_`\s]*([a-z][\w-]*)/i.exec(v); return m ? m[1].toLowerCase() : ''; };
 
@@ -151,8 +167,7 @@ function listRole(type, prompt) {
 	const bare = String(type).split(':').pop().toLowerCase();
 	if (bare === 'tester' || bare === 'writer') return bare;
 	if (bare !== 'general-purpose' && bare !== '') return null;
-	const named = roleOf(prompt);
-	return named === 'tester' || named === 'writer' ? named : null;
+	return roleNamed(prompt, ['tester', 'writer']);
 }
 
 // The folder a spawn's brief names with its Worktree: line (resolved from the hook's cwd), else the hook's cwd.
@@ -172,15 +187,15 @@ function isChecker(type, prompt) {
 	if (bare === 'checker') return true;
 	if (bare !== 'general-purpose' && bare !== '') return false;
 	const role = roleOf(prompt);
-	if (role === 'checker') return true;
+	if (roleNamed(prompt, ['checker'])) return true;
 	return !role && hasLine(prompt, 'plan') && hasLine(prompt, 'units?');
 }
 
-// One key per plan file: the path token (before any " (" note, edge markup dropped), resolved from the hook's cwd, forward
+// One key per plan file: the first path token (cut at whitespace, a comma or #; edge markup and trailing punctuation dropped), resolved from the hook's cwd, forward
 // slashes, lower case on Windows; so ./PLAN.md, PLAN.md (round 3) and _PLAN.md_ are the plan PLAN.md is. Null with no Plan: line.
 function planKey(raw, cwd) {
 	if (raw === null || raw === undefined) return null;
-	const token = String(raw).split(' (')[0].trim().replace(/^[*_`]+|[*_`]+$/g, '');
+	const token = String(raw).trim().replace(/^[*_`]+/, '').split(/[\s,#]/)[0].replace(/[.;:!?*_`'")\]]+$/, '');
 	if (!token) return null;
 	const key = path.resolve(cwd, token).replace(/\\/g, '/');
 	return process.platform === 'win32' ? key.toLowerCase() : key;
@@ -220,10 +235,10 @@ function roundCounts(common, plan, cwd) {
 // folder git cannot read included, refuses with "hook error: lead review" whatever the hold says, and appends its cause to
 // kit-guard-open.log.
 function roundGate(cwd, type, model, prompt, prior) {
-	const hold = holdMode('round-cap');
 	const units = unitsOf(prompt);
 	let common = null;
 	try {
+		const hold = holdMode('round-cap', true);
 		const plan = planKey(lineValue(prompt, 'plan'), cwd);
 		common = commonDir(cwd);
 		if (common === null) throw new Error(`git cannot read the common folder of ${cwd}`);
@@ -348,16 +363,19 @@ function gitRun(cwd, args) {
 		timeout: 3000,
 		windowsHide: true,
 		cwd: path.dirname(process.execPath),
-		env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' },
+		env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1', LC_ALL: 'C' },
 	});
 	if (r.status === null) throw new Error(`git ${args[0]} did not run${r.error ? `: ${r.error.message}` : ''}`);
-	return { status: r.status, stdout: r.stdout || '' };
+	return { status: r.status, stdout: r.stdout || '', stderr: r.stderr || '' };
 }
 
-// The tickets of the closeout file in HEAD: null when there is no commit or no such file, and it throws when the file is
-// there but cannot be read or has no tickets array.
+// The tickets of the closeout file in HEAD: null when there is no commit (rev-parse status 1), the folder is in no git
+// repository, or there is no such file; it throws on any other git failure, and when the file is there but cannot be read or
+// has no tickets array.
 function closeoutTickets(cwd) {
-	if (gitRun(cwd, ['rev-parse', '--verify', '-q', 'HEAD']).status !== 0) return null;
+	const head = gitRun(cwd, ['rev-parse', '--verify', '-q', 'HEAD']);
+	if (head.status === 1 || (head.status === 128 && /not a git repository \(or any of the parent directories\)/.test(head.stderr))) return null;
+	if (head.status !== 0) throw new Error(`git rev-parse HEAD exited ${head.status}`);
 	const present = gitRun(cwd, ['ls-tree', '--full-tree', '--name-only', 'HEAD', '--', 'VERSION']);
 	if (present.status !== 0) throw new Error('git cannot list HEAD for VERSION');
 	if (present.stdout.trim() !== 'VERSION') return null;
@@ -387,7 +405,7 @@ function closeoutRole(type, prompt) {
 	if (role) return role;
 	const bare = String(type).split(':').pop().toLowerCase();
 	if (bare === 'test-writer') return 'test-writer';
-	return (bare === 'general-purpose' || bare === '') && roleOf(prompt) === 'test-writer' ? 'test-writer' : null;
+	return (bare === 'general-purpose' || bare === '') && roleNamed(prompt, ['test-writer']) ? 'test-writer' : null;
 }
 
 // The closeout check for a checker, tester or writer spawn. Any other spawn passes without a read of the repo. Fail-closed: any
@@ -396,8 +414,8 @@ function closeoutGate(cwd, type, prompt) {
 	const checkerCall = isChecker(type, prompt);
 	const role = checkerCall ? null : closeoutRole(type, prompt);
 	if (!checkerCall && !role) return null;
-	const hold = holdMode('closeout-spawn');
 	try {
+		const hold = holdMode('closeout-spawn', true);
 		const tickets = closeoutTickets(cwd);
 		if (tickets === null) return null;
 		const why = checkerCall
@@ -418,6 +436,7 @@ function check(input) {
 	let refuse = null;
 	let cwd = process.cwd();
 	let checkerSpawn = false;
+	let closed = null;
 	try {
 		const call = input && input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
 		const type = call.subagent_type == null ? '' : String(call.subagent_type);
@@ -426,6 +445,10 @@ function check(input) {
 		if (input && input.tool_name === 'SendMessage') return warmMessage(cwd, input);
 		const prompt = call.prompt == null ? '' : String(call.prompt);
 		checkerSpawn = isChecker(type, prompt);
+		// The closeout check (K369) runs before any log write below, so a log that cannot be written does not let a tester or
+		// writer through in closeout. It comes first in precedence: a checker in closeout is refused, a tester or writer names
+		// a ticket in the closeout list, and the same spawn gets the same refusal on every try, even past the round cap.
+		closed = closeoutGate(cwd, type, prompt);
 		const want = roleModel(type);
 		const hold = holdMode('agent-model');
 		const whys = [];
@@ -457,9 +480,6 @@ function check(input) {
 				if (gate.mode === 'enforce') refuse = deny(`${why}. Run ${LIST_COMMAND} <test files> from that worktree, then spawn.`);
 			}
 		}
-		// The closeout check (K369) comes first in precedence: a checker in closeout is refused, a tester or writer names a
-		// ticket in the closeout list, and the same spawn gets the same refusal on every try, even past the round cap.
-		const closed = closeoutGate(cwd, type, prompt);
 		// The round cap: a checker spawn on a unit with two counted check rounds already is refused (K366). roundGate still
 		// runs for every checker, so its check rows are written as before.
 		const capped = checkerSpawn ? roundGate(cwd, type, model, prompt, closed || refuse) : null;
@@ -468,6 +488,7 @@ function check(input) {
 		refuse = refuse || warmSpawn(cwd, input, type, prompt);
 	} catch (err) {
 		if (checkerSpawn) return hookError(cwd, null, err);
+		if (closed) return closed;
 		/* any other call passes; the row says it passed unchecked */
 		try {
 			logRow(cwd, { type: '', model: null, want: null, why: 'hook error: the call passes unchecked' }, holdMode('agent-model'));

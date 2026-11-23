@@ -25,7 +25,17 @@ export function contextSize(file) {
 	return last ? SIZE_FIELDS.reduce((t, k) => t + (Number(last[k]) || 0), 0) : 0;
 }
 
-// The Role: and Lane: lines of an agent's brief (its first user message), each trimmed; null when a line is missing.
+// The first value of a labelled brief line, read as lineValues in agent-model.cjs reads it (this file is its own module, so
+// it copies the rule): case-insensitive, a list marker and emphasis around the label allowed, edge emphasis dropped; null
+// when there is no such line.
+function lineValue(text, label) {
+	const re = new RegExp(`^[ \\t]*(?:[-*+][ \\t]+)?[*_\`]*(?:${label})[*_\`]*[ \\t]*:[*_\`]*[ \\t]*(.*)$`, 'im');
+	const m = re.exec(text);
+	return m ? m[1].trim().replace(/^[*`]+|[*`]+$/g, '').trim() : null;
+}
+
+// The Role: and Lane: lines of an agent's brief (its first user message); a role is its first word after markup, lower-cased
+// (as roleOf in agent-model.cjs reads it); null when a line is missing.
 function briefOf(file) {
 	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
 		if (!line.trim()) continue;
@@ -33,11 +43,22 @@ function briefOf(file) {
 		try { m = JSON.parse(line).message; } catch { continue; }
 		if (!m || m.role !== 'user') continue;
 		const text = typeof m.content === 'string' ? m.content : Array.isArray(m.content) ? m.content.map((b) => (b && typeof b.text === 'string' ? b.text : '')).join('\n') : '';
-		const role = /^[ \t]*role:[ \t]*(.*)$/im.exec(text);
-		const lane = /^[ \t]*lane:[ \t]*(.*)$/im.exec(text);
-		return { role: role && role[1].trim() ? role[1].trim() : null, lane: lane && lane[1].trim() ? lane[1].trim() : null };
+		const role = lineValue(text, 'role');
+		const word = role === null ? null : /^[*_`\s]*([a-z][\w-]*)/i.exec(role);
+		return { role: word ? word[1].toLowerCase() : null, lane: lineValue(text, 'lane') || null };
 	}
 	return { role: null, lane: null };
+}
+
+// The agentType in agent-<id>.meta.json beside a transcript, a plugin prefix dropped and lower-cased; '' when the file is
+// missing, unreadable or names none.
+function typeOf(file) {
+	try {
+		const t = JSON.parse(fs.readFileSync(file.replace(/\.jsonl$/, '.meta.json'), 'utf8')).agentType;
+		return typeof t === 'string' ? t.split(':').pop().trim().toLowerCase() : '';
+	} catch {
+		return '';
+	}
 }
 
 // The agents of a session's subagents folder: one {id, role, lane, tokens, file} per agent-*.jsonl. A folder that is not
@@ -53,7 +74,10 @@ export function openAgents(dir) {
 	return names.filter((n) => /^agent-.+\.jsonl$/.test(n)).sort().map((n) => {
 		const file = path.join(dir, n);
 		const { role, lane } = briefOf(file);
-		return { id: n.slice('agent-'.length, -'.jsonl'.length), role, lane, tokens: contextSize(file), file };
+		const type = typeOf(file);
+		// A typed agent is its type (as warmRole reads a spawn); a general agent or an untyped one is its Role: line.
+		const typed = type && type !== 'general-purpose' ? type : null;
+		return { id: n.slice('agent-'.length, -'.jsonl'.length), role: typed || role, lane, tokens: contextSize(file), file };
 	});
 }
 
