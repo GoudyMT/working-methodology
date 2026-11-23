@@ -94,17 +94,20 @@ function lineValues(prompt, label) {
 }
 const lineValue = (prompt, label) => { const v = lineValues(prompt, label); return v.length ? v[0] : null; };
 const hasLine = (prompt, label) => lineValues(prompt, label).length > 0;
-// The first of the named roles that the brief's Role: value names as a whole word (not inside a longer or hyphenated word:
-// "the checker for U17" names checker; "rechecker" and "checkers-list" do not); null when none. Earliest in the value wins.
+// The role words a Role: value is scanned for.
+const ROLE_WORDS = ['builder', 'implementer', 'reviewer', 'lead', 'checker', 'tester', 'writer', 'test-writer'];
+// The role the brief's Role: value names: the earliest ROLE_WORDS word in it, as a whole word (not inside a longer or
+// hyphenated word), decides. "the checker for U17" names checker; "builder for the checker's findings" names builder;
+// "rechecker" and "checkers-list" name none. Returns it when it is one of names, else null.
 function roleNamed(prompt, names) {
 	const v = lineValue(prompt, 'role');
 	if (v === null) return null;
 	let best = null;
-	for (const n of names) {
+	for (const n of ROLE_WORDS) {
 		const m = new RegExp(`(?<![\\w-])${n}(?![\\w-])`, 'i').exec(v);
 		if (m && (best === null || m.index < best.at)) best = { n, at: m.index };
 	}
-	return best && best.n;
+	return best && names.includes(best.n) ? best.n : null;
 }
 // The first word of a Role: line after markup, lower-cased; '' when there is none.
 const roleOf = (prompt) => { const v = lineValue(prompt, 'role'); const m = v === null ? null : /^[*_`\s]*([a-z][\w-]*)/i.exec(v); return m ? m[1].toLowerCase() : ''; };
