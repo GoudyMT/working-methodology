@@ -4,7 +4,7 @@ import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
-import { FIX_EXIT, TAP_SID, approveIn, approvalLog, askContract, featureContract, g, read, sweepRepo } from './kit-helpers.mjs';
+import { FIX_EXIT, TAP_SID, approveIn, approvalLog, askContract, featureContract, g, makeTemp, ownerTaps, read, sweepRepo, tapEnv } from './kit-helpers.mjs';
 
 const RULES = (phrase, pad = 0) => ['# Agent teams', ...Array(pad).fill('pad'), '8. **Rules every brief carries**', `   Confirmation phrase: open with: ${phrase}`, ''].join('\n');
 const real = (p) => fs.realpathSync.native(p).split(path.sep).join('/').toLowerCase();
@@ -127,4 +127,51 @@ test('a worktree git cannot read gives FIX THE CONTRACT, logged', () => {
   assert.ok(last, 'nothing logged');
   assert.equal(last.decision, 'fix');
   assert.ok(last.reasons.some((x) => /worktree/i.test(x)), JSON.stringify(last.reasons));
+});
+
+// why: catches a worktree with no rules file of its own reading nothing, so the main checkout's block is never read or slot-checked (K357 C1)
+test('a worktree that lacks the rules file reads the main checkout\'s file, and a slotted block there still gives FIX THE CONTRACT', () => {
+  const clean = twoCheckouts();
+  fs.rmSync(path.join(clean.wt, 'standards'), { recursive: true });
+  const r = clear(clean.wt, path.join(clean.wt, 'sweeps', 'contract.json'));
+  assert.equal(r.status, 0, r.stdout + r.stderr);
+  const first = firstBrief(path.join(clean.wt, 'sweeps'));
+  assert.ok(first.includes(`${real(clean.dir)}/standards/agent-teams.md with the read tool`), `the brief names no absolute path to the main file: ${first}`);
+  assert.equal(recordedPhrase(clean.dir), 'Main Main', 'the canary phrase is the main checkout file\'s');
+  // The main checkout's block still holds a template slot: the fallback runs the slot check too.
+  const slotted = twoCheckouts();
+  fs.rmSync(path.join(slotted.wt, 'standards'), { recursive: true });
+  fs.writeFileSync(path.join(slotted.dir, 'standards', 'agent-teams.md'), ['# Agent teams', '8. **Rules every brief carries**', '   <PROJECT NAME> - RULES EVERY AGENT FOLLOWS', '   Confirmation phrase: open with: Main Main', ''].join('\n'));
+  const bad = clear(slotted.wt, path.join(slotted.wt, 'sweeps', 'contract.json'));
+  assert.equal(bad.status, FIX_EXIT, bad.stdout + bad.stderr);
+  assert.match(bad.stdout, /FIX THE CONTRACT/);
+  assert.doesNotMatch(bad.stdout, /APPROVED/);
+});
+
+// why: catches the owner's yes or resume missed because the asking session's transcript sits under a checkout key the lookup never reads (K357 C2)
+test('the owner yes is found from a worktree whether the asking session\'s transcript is under the worktree\'s folder or the main checkout\'s', () => {
+  const asked = (c) => {
+    const f = path.join(c.wt, 'sweeps', 'contract.json');
+    fs.writeFileSync(f, JSON.stringify(askContract()));
+    const ask = approveIn(c.wt, [f], {});
+    const m = ask.stdout.match(/`sweep yes ([0-9a-f]{6})`/);
+    assert.ok(m, ask.stdout + ask.stderr);
+    return { f, act: `sweep yes ${m[1]}` };
+  };
+  // The session ran in the worktree: its transcript is kept only under the worktree's own projects folder.
+  const own = twoCheckouts();
+  const a = asked(own);
+  const cfgOwn = makeTemp('cfg-');
+  ownerTaps(cfgOwn, own.wt, a.act);
+  const okOwn = approveIn(own.wt, [a.f, '--owner-yes'], tapEnv(cfgOwn));
+  assert.equal(okOwn.status, 0, okOwn.stdout + okOwn.stderr);
+  assert.equal(approvalLog(own.dir).pop().kind, 'owner-yes');
+  // The session ran in the main checkout and the yes runs from a sibling worktree: its key is the main checkout's.
+  const sib = twoCheckouts();
+  const b = asked(sib);
+  const cfgSib = makeTemp('cfg-');
+  ownerTaps(cfgSib, sib.dir, b.act);
+  const okSib = approveIn(sib.wt, [b.f, '--owner-yes'], tapEnv(cfgSib));
+  assert.equal(okSib.status, 0, okSib.stdout + okSib.stderr);
+  assert.equal(approvalLog(sib.dir).pop().kind, 'owner-yes');
 });
