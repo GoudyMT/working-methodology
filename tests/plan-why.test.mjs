@@ -136,7 +136,7 @@ test('plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and
 	const skillFile = path.resolve(path.dirname(PLAN_CHECK), '..', 'skills', 'agent-team-build', 'SKILL.md');
 	const skill = fs.existsSync(skillFile) ? fs.readFileSync(skillFile, 'utf8') : '';
 	const ticketAt = [...skill.matchAll(/Ticket: <id>/g)].map((m) => skill.slice(Math.max(0, m.index - 300), m.index + 300));
-	assert.ok(ticketAt.some((w) => /closeout/i.test(w) && /(tester|writer)/i.test(w)), 'SKILL.md tells the lead a tester or writer brief in closeout carries a `Ticket: <id>` line (closeout and tester or writer within 300 characters)');
+	assert.ok(ticketAt.some((w) => /closeout/i.test(w) && /\b(tester|writer)\b/i.test(w)), 'SKILL.md tells the lead a tester or writer brief in closeout carries a `Ticket: <id>` line (closeout and tester or writer within 300 characters)');
 	const field = (text, label) => (text.match(new RegExp(`^[\\s>*_\`+-]*${label}[*_\`]*:[*_\`]*[ \\t]*(.*)$`, 'im')) ?? [])[1];
 	for (const role of ['tester', 'builder']) {
 		const res = run(plan, '--brief', 'U1', '--role', role);
