@@ -66,17 +66,21 @@ const reason = (d) => (d && d.hookSpecificOutput && d.hookSpecificOutput.permiss
 // why: catches a tester spawn whose brief names a worktree with no kit-unit-files.txt is refused, naming the exact `unit-lock.mjs --tester --files` command (K360 S1)
 test('a tester spawn whose brief names a worktree with no kit-unit-files.txt is refused, naming the exact `unit-lock.mjs --tester --files` command', () => {
 	const wt = worktree(false);
-	const [tester, writer] = checkCalls(wt, [spawnCall('tester', wt), spawnCall('writer', wt)]);
+	const noLine = { subagent_type: 'tester', prompt: 'Write the tests for the unit.' };
+	const [tester, writer, unnamed] = checkCalls(wt, [spawnCall('tester', wt), spawnCall('writer', wt), noLine]);
 	assert.ok(denied(tester), `the tester spawn is refused, got ${JSON.stringify(tester)}`);
 	assert.ok(reason(tester).includes(COMMAND), `the refusal names the command: ${reason(tester)}`);
 	assert.ok(denied(writer), `the writer spawn is refused too, got ${JSON.stringify(writer)}`);
+	assert.ok(denied(unnamed), `a tester spawn with no Worktree line is checked against the hook's cwd, got ${JSON.stringify(unnamed)}`);
 });
 
 // why: catches a tester spawn with the list passes (K360 S1)
 test('a tester spawn with the list passes', () => {
 	const wt = worktree(false);
-	const [before] = checkCalls(wt, [spawnCall('tester', wt)]);
+	const isolated = { ...spawnCall('tester', wt), isolation: 'worktree' };
+	const [before, fresh] = checkCalls(wt, [spawnCall('tester', wt), isolated]);
 	assert.ok(denied(before), `the same worktree refuses before the list is written, got ${JSON.stringify(before)}`);
+	assert.equal(fresh, null, 'a spawn with isolation worktree passes: its worktree does not exist until the spawn');
 	fs.writeFileSync(git(wt, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/spawn-list.test.mjs\n');
 	const [tester, writer] = checkCalls(wt, [spawnCall('tester', wt), spawnCall('writer', wt)]);
 	assert.equal(tester, null);
