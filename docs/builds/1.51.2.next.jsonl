@@ -23,3 +23,11 @@
 {"text":"1.51.2 sweep L23 the 1.51.2 reworded file why line names patch 1.51.1","at":"2026-11-23T12:32:16.088Z"}
 {"text":"1.51.2 sweep L24 kit-tests \"every test job passed\" does not read the test-check results (ci.yml)","at":"2026-11-23T12:32:16.119Z"}
 {"text":"1.51.2 sweep L25 ci-budget leaves its own job out by exact name, and map-merge is not told how many parts to expect","at":"2026-11-23T12:32:16.151Z"}
+{"text":"1.51.2 after the sweep: handoff-gate passes a hand-back when its own checker crashes, under enforce too (hold-modes.test.mjs:628 and handoff-canary.test.mjs:55 pin it): fail closed or not is the owner call","at":"2026-11-23T14:05:22.025Z"}
+{"text":"1.51.2 after the sweep: handoff-gate turns a hold-mode.cjs load error into log mode, though it is now a high-tier hold (handoff-gate.cjs:17-23)","at":"2026-11-23T14:05:22.059Z"}
+{"text":"1.51.2 after the sweep: closeout check reads a closeout file from the working tree, so removing both the record sweep and the closeout file turns the ticket check off; read it from history","at":"2026-11-23T14:05:22.091Z"}
+{"text":"1.51.2 after the sweep: the agent-model closeout gate refuses a tester with no ticket, so a non-ticket medium or low fix after the sweep can get no tester once that hold enforces","at":"2026-11-23T14:05:22.123Z"}
+{"text":"1.51.2 after the sweep: plan-check --brief writes Lane: <lane id> as a placeholder; two unfilled briefs read as one lane to the warm hold","at":"2026-11-23T14:05:22.155Z"}
+{"text":"1.51.2 after the sweep: why-rule reads node:test import lines inside strings and comments (fails closed), and a slash after of, yield or await is read one fixed way, regex or division, so a deliberate trick can hide a test call","at":"2026-11-23T14:05:22.188Z"}
+{"text":"1.51.2 after the sweep: agent-model ROLE_WORDS leaves out scanner, researcher, drafter, orchestrator and test-reviewer, so \"Role: scanner for the checker claims\" reads as a checker","at":"2026-11-23T14:05:22.221Z"}
+{"text":"1.51.2 after the sweep: the team build skill does not say that sweep fixes get no review or check rounds: after the sweep, fixes are test-first and CI is the gate (the 1.51.2 lead ran two)","at":"2026-11-23T14:05:22.252Z"}
