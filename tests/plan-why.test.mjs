@@ -133,12 +133,20 @@ test('plan-check --brief U1 --role builder writes the builder brief: source file
 // why: catches a Tests line whose derived why is under six words is a plan fault (K368 S1)
 test('a Tests line whose derived why is under six words is a plan fault', () => {
 	// The counted why is the whole derived line: "catches a short line here" is five words, under six, so U1 faults.
-	const short = run(planText([unit('U1', ['a short line here -> S1'])]));
-	assert.equal(short.status, 1, out(short));
-	assert.match(out(short), /fault:[^\n]*U1/);
-	// "catches each why line is counted" is six words, the edge that checks clean.
-	const edge = run(planText([unit('U1', ['each why line is counted -> S1'])]));
-	assert.equal(edge.status, 0, out(edge));
+	// The fault is raised by --whys and by --brief, never by the default run (other plans use one-word test names).
+	const shortPlan = planText([unit('U1', ['a short line here -> S1'])]);
+	const edgePlan = planText([unit('U1', ['each why line is counted -> S1'])]);
+	const modes = [['--whys'], ['--brief', 'U1', '--role', 'tester']];
+	for (const mode of modes) {
+		const short = run(shortPlan, ...mode);
+		assert.equal(short.status, 1, `${mode.join(' ')}: ${out(short)}`);
+		assert.match(out(short), /U1/);
+		assert.ok(out(short).includes('a short line here'), `${mode.join(' ')} names the line:
+${out(short)}`);
+		// "catches each why line is counted" is six words, the edge that checks clean.
+		const edge = run(edgePlan, ...mode);
+		assert.equal(edge.status, 0, `${mode.join(' ')}: ${out(edge)}`);
+	}
 });
 
 // why: catches build-record --from-plan writes items[].tests from the plan and the tester RECORDs, so every new test is named (K368 S2)
