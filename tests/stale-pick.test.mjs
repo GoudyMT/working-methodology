@@ -51,6 +51,9 @@ test('--pick with a map whose sha is not an ancestor of HEAD exits 1 naming the 
 	// The control (S2): a map at an ancestor of HEAD still picks the changed test as before.
 	const madeHere = run(repo, ['--map', file]);
 	assert.equal(madeHere.status, 0, madeHere.stdout + madeHere.stderr);
+	// An ancestor includes itself: a map at HEAD is current, so the pick exits 0 before anything changes.
+	const atHead = run(repo, ['--changed', '--pick', file]);
+	assert.equal(atHead.status, 0, atHead.stdout + atHead.stderr);
 	fs.writeFileSync(file, testFile('void 1;'));
 	git(repo, 'commit', '-qam', 'change one');
 	const current = run(repo, ['--changed', '--pick', file]);
