@@ -64,10 +64,10 @@ test('a cleared contract writes each role\'s brief, with the rules block by line
   assert.match(r.stdout, /contract-brief-1\.md/);
 });
 
-// The build 11 sweep named the main checkout's untracked rules file from a worktree; K357 reads the worktree's own, by
-// its full path.
+// The build 11 sweep: the canary reads the phrase from the main checkout, so a brief written in a worktree sends the
+// reviewer to the main checkout's rules file too, by its full path (untracked notes are not in the worktree).
 // why: guards rule:agent-canary
-test('a brief written in a worktree names the worktree\'s own rules file', () => {
+test('a brief written in a worktree names the main checkout\'s rules file', () => {
   const dir = sweepRepo();
   fs.mkdirSync(path.join(dir, 'standards'));
   fs.writeFileSync(path.join(dir, 'standards', 'agent-teams.md'), ['8. **Rules every brief carries**', '   Confirmation phrase: open with: Word Word', ''].join('\n'));
@@ -75,13 +75,11 @@ test('a brief written in a worktree names the worktree\'s own rules file', () =>
   const wt = path.join(path.dirname(dir), `${path.basename(dir)}-wt`);
   g(dir, 'worktree', 'add', '-q', wt, '-b', 'feat/wt');
   fs.mkdirSync(path.join(wt, 'sweeps'), { recursive: true });
-  fs.mkdirSync(path.join(wt, 'standards'));
-  fs.copyFileSync(path.join(dir, 'standards', 'agent-teams.md'), path.join(wt, 'standards', 'agent-teams.md'));
   const r = approveRun(featureContract(), wt);
   assert.equal(r.status, 0, r.stdout);
   const b = read(path.join(wt, 'sweeps', 'contract-brief-1.md'));
-  const wtFile = fs.realpathSync.native(path.join(wt, 'standards', 'agent-teams.md')).split(path.sep).join('/');
-  assert.ok(b.toLowerCase().includes(`${wtFile.toLowerCase()} with the read tool at offset 1`), b.split('\n')[0]);
+  const mainFile = fs.realpathSync.native(path.join(dir, 'standards', 'agent-teams.md')).split(path.sep).join('/');
+  assert.ok(b.toLowerCase().includes(`${mainFile.toLowerCase()} with the read tool at offset 1`), b.split('\n')[0]);
 });
 
 // E24 option C (the owner, 2026-11-07): a cloud thread loads no repo hooks, so no call-cap hook or sweep guard holds
