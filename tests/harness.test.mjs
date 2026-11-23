@@ -208,6 +208,7 @@ test('runner slices split the shards over CI jobs: together every test exactly o
 	const half = run(dir, ['--map', '--slice', '0/2', '--shards', '2', ...files]);
 	assert.equal(half.status, 0, half.stdout + half.stderr);
 	assert.equal(fs.existsSync(path.join(dir, 'tests', '.map-part-0.json')), true);
+	assert.equal(fs.existsSync(path.join(dir, 'tests', '.map.json')), false);
 });
 
 // why: guards rule:test-and-review-cadence
