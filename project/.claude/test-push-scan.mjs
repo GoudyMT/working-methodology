@@ -1,7 +1,8 @@
 // The test-change hold of both pre-push hooks (rule:test-integrity). The hook passes the remote's URL; git gives the
 // refs on stdin as "lref lsha rref rsha". The remote's default branch and branch tips are asked of the remote here,
-// with the same reads the hook makes. Exit 0: nothing held. Exit 10: a test change or a retest: subject, named on
-// stdout. Exit 2: a read failed or the repo is shallow, which holds whatever the owner says.
+// with the same reads the hook makes. Either read holds a push: each pushed commit (A), and the net change each pushed
+// ref makes (B). Exit 0: nothing held. Exit 10: a test change or a retest: subject, named on stdout. Exit 2: a read
+// failed, the repo is shallow, or a remote value is not fetched, which holds whatever the owner says.
 import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
@@ -26,6 +27,7 @@ const SHALLOW = 'Push blocked: this repository is shallow, so the history a test
 
 class Unreadable extends Error {}
 class Shallow extends Error {}
+class Unfetched extends Error {}
 
 function git(args) {
 	const r = spawnSync('git', args, { env: ENV, encoding: 'utf8', maxBuffer: 1 << 30 });
@@ -86,31 +88,54 @@ function entries(out) {
 	return list;
 }
 
-// The "this change came from the remote" case: the branch side never changed the path since the default branch forked
-// (its first parent matches the merge base), and the merge's blob is one a remote branch already holds, so the merge
-// adds nothing the remote lacks. A deletion has no blob, so it is never from the remote: an undefined blob would
-// match a remote tip that also lacks the path. Anything else in a merge is held.
-function fromRemote(c, p, first, defTip, tips) {
-	if (!defTip) return false;
-	const base = mergeBase(first, defTip);
-	if (!base || tree(first).get(p) !== tree(base).get(p)) return false;
-	const blob = tree(c).get(p);
-	return blob !== undefined && tips.some((t) => tree(t).get(p) === blob);
+// git names the empty tree without a write; a new ref with no merge base is read against it.
+let empty = null;
+function emptyTree() {
+	if (empty === null) {
+		const r = spawnSync('git', ['hash-object', '-t', 'tree', '--stdin'], { env: ENV, input: '', encoding: 'utf8' });
+		if (r.status !== 0) throw new Unreadable('the empty tree cannot be named');
+		empty = r.stdout.trim();
+	}
+	return empty;
+}
+const treeOrNone = (rev) => (rev ? tree(rev) : new Map());
+
+// (B) The net change one pushed ref makes. Its base is the remote's own value of the ref; a new ref has none, so its base
+// is merge-base(pushed tip, default tip), or the empty tree when there is none. Renames are not detected, so a moved test
+// reads as a delete and an add. A test path that is not a fresh add is held, unless BOTH hold: the pushed tip has the
+// default tip's value at that path (the default branch already carries it), and the remote's value has the merge-base's
+// value (the branch did not make the change). Two absent values are equal: a path the default branch deleted is safe,
+// since the second part rules out a branch's own change. A new ref's second part is true by definition.
+function judgeRef(tip, rsha, rref, defTip, held) {
+	const fresh = ZERO.test(rsha);
+	const base = fresh ? (defTip && mergeBase(tip, defTip)) || emptyTree() : rsha;
+	const ownBase = fresh || !defTip ? null : mergeBase(rsha, defTip);
+	const short = tip.slice(0, SHORT);
+	for (const { st, paths } of entries(git(['diff-tree', '-r', '-z', '--no-renames', '--name-status', '--no-commit-id', base, tip]))) {
+		const p = paths[0];
+		if (st === 'A' || !isTest(p)) continue;
+		const onDefault = Boolean(defTip) && tree(tip).get(p) === tree(defTip).get(p);
+		const ownKept = fresh || treeOrNone(ownBase).get(p) === tree(rsha).get(p);
+		if (onDefault && ownKept) continue;
+		held.push(`${short} ${st} ${p} (net on ${rref})`);
+	}
 }
 
-// One pushed commit: its subject, then each test path it changes against its first parent (or the empty tree).
-function judge(c, held, defTip, tips) {
+// (A) One pushed commit: its subject, then each test path it changes against its first parent (or the empty tree).
+// A merge's diff is not read when a default branch is named, since a merge can take a change from a side branch and
+// judgeRef reads the net change of the ref that carries it. With no default branch nothing says where a merge's change
+// came from, so any change to a test path in a merge holds. The retest subject backstop reads every pushed commit.
+function judgeCommit(c, held, defTip) {
 	const parents = git(['rev-list', '--parents', '-n', '1', c]).trim().split(' ').slice(1);
 	const short = c.slice(0, SHORT);
 	const subject = git(['log', '-1', '--format=%s', c]).split('\n')[0];
 	if (RETEST.test(subject)) held.push(`${short} ${subject}`);
+	const merge = parents.length > 1;
+	if (merge && defTip) return;
 	const range = parents.length ? [parents[0], c] : ['--root', c];
 	for (const { st, paths } of entries(git(['diff-tree', '-r', '-z', '-M', '--name-status', '--no-commit-id', ...range]))) {
-		if (st === 'A') continue;
-		for (const p of paths.filter(isTest)) {
-			if (parents.length >= 2 && fromRemote(c, p, parents[0], defTip, tips)) continue;
-			held.push(`${short} ${st} ${p}`);
-		}
+		if (st === 'A' && !merge) continue;
+		for (const p of paths.filter(isTest)) held.push(`${short} ${st} ${p}`);
 	}
 }
 
@@ -120,10 +145,13 @@ function run(url, refs) {
 	const { def, heads } = remote(url);
 	const below = [...heads.values()].filter(local);
 	const defTip = def && heads.has(`refs/heads/${def}`) && local(heads.get(`refs/heads/${def}`)) ? heads.get(`refs/heads/${def}`) : null;
-	for (const [, lsha, , rsha] of refs) {
+	for (const [, lsha, rref, rsha] of refs) {
 		if (ZERO.test(lsha)) continue;
+		// The remote's value must be a commit here, or the net change of the ref cannot be read: a force push nobody fetched.
+		if (!ZERO.test(rsha) && !local(rsha)) throw new Unfetched(`Push blocked: the remote's ${rref} is at ${rsha}, which this repo has not fetched: fetch first, then push again.`);
 		const not = ZERO.test(rsha) ? below : [...below, rsha];
-		for (const c of git(['rev-list', lsha, '--not', ...not]).split('\n').filter(Boolean)) judge(c, held, defTip, below);
+		for (const c of git(['rev-list', lsha, '--not', ...not]).split('\n').filter(Boolean)) judgeCommit(c, held, defTip);
+		judgeRef(lsha, rsha, rref, defTip, held);
 	}
 	return [...new Set(held)];
 }
@@ -137,7 +165,7 @@ try {
 		process.exitCode = 10;
 	}
 } catch (e) {
-	const why = e instanceof Shallow ? SHALLOW : `Push blocked: the history of the push cannot be read (${e.message}), so a test change in it cannot be ruled out.`;
+	const why = e instanceof Shallow ? SHALLOW : e instanceof Unfetched ? e.message : `Push blocked: the history of the push cannot be read (${e.message}), so a test change in it cannot be ruled out.`;
 	process.stdout.write(`${why}\n`);
 	process.exitCode = 2;
 }
