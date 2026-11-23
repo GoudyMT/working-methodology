@@ -482,21 +482,22 @@ jobs:
           node scripts/test-run.mjs "${slow[@]}"
 
   # K311 (owner call 5): the minimal-code job. On a PR it flips the production lines the PR added and names every flip no
-  # test catches. Report only: it never fails the run, and it builds its own coverage map at the PR head first.
+  # test catches, within a 150 s budget (flip-plan.mjs runs the flips on parallel copies). Report only: it never fails the
+  # run. It reuses the base commit's coverage map from that commit's push run, and builds none of its own.
   minimal-code:
     if: github.event_name == 'pull_request'
+    needs: [unit-tests]
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 4
+    # actions: read finds the base commit's push run and its coverage map.
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        slice: [1, 2, 3, 4]
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -504,11 +505,26 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
-      - name: Coverage map at the PR head
-        run: node scripts/test-run.mjs --map || echo "the map run had failing tests; the report below uses what it recorded"
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
 
-      - name: Survivors in this slice (report only)
-        run: node scripts/mutation-check.mjs --base ${{ github.event.pull_request.base.sha }} --report --slice ${{ matrix.slice }}/4
+      - name: Coverage map for the base commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          rm -f tests/.map.json
+          run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --event push --commit "$BASE_SHA" --json databaseId,headSha,event,headBranch --jq "[.[] | select(.headSha == \"$BASE_SHA\" and .event == \"push\" and .headBranch == \"main\")][0].databaseId // empty")" || run_id=""
+          if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
+          echo "map from main's run: ${run_id:-none}"
+
+      - name: Flips within the budget (report only)
+        run: node scripts/flip-plan.mjs --base ${{ github.event.pull_request.base.sha }} --budget 150 || echo "flip-plan exit $? is report only, so this job still passes"
 
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
