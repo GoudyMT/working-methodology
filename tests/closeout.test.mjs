@@ -356,7 +356,8 @@ test('a test added by rename, or in a new test file, is still counted', () => {
 test('M5: a record with its sweep removed after the closeout commit fails the check', () => {
 	const gone = check(mk({ mutate: (rec) => { delete rec.sweep; } }));
 	assert.equal(gone.status, 1, `a record with no sweep but a closeout file fails: ${gone.stderr}`);
-	assert.match(gone.stderr, new RegExp(`${VERSION.replace(/\./g, '\\.')}\\.closeout\\.json[^\\n]*sweep|sweep[^\\n]*${VERSION.replace(/\./g, '\\.')}\\.closeout\\.json`), gone.stderr);
+	const v = VERSION.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+	assert.match(gone.stderr, new RegExp(`${v}\\.closeout\\.json[^\\n]*sweep|sweep[^\\n]*${v}\\.closeout\\.json`), gone.stderr);
 	assert.ok(!gone.stderr.includes('::'), `no orphan test is named: ${gone.stderr}`);
 	// control: with the sweep kept, the same repo is clean, so only the sweep decides the verdict
 	const kept = check(mk());

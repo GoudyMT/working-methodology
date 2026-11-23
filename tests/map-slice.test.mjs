@@ -23,7 +23,8 @@ const sh = (cwd, ...a) => {
 // The fixture's run is its own: the Windows slice this suite may run in is not passed on.
 const node = (cwd, script, args) => {
 	const { KIT_WINDOWS_SLICE: _w, ...base } = process.env;
-	return spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8', env: base });
+	// The fixture's tests write to the log this names, so no path is pasted into their code.
+	return spawnSync(process.execPath, [script, ...args], { cwd, encoding: 'utf8', env: { ...base, KIT_MAP_LOG: path.join(cwd, 'ran.log') } });
 };
 // A repo with one harnessed test file of four tests; each test logs its name and the shard it ran in. Committed on main.
 function fixture() {
@@ -31,7 +32,7 @@ function fixture() {
 	fs.mkdirSync(path.join(repo, 'tests'));
 	fs.writeFileSync(path.join(repo, '.gitignore'), 'tests/.map*.json\nran.log\n');
 	const log = path.join(repo, 'ran.log');
-	const body = (n) => `test('${n}', () => { fs.appendFileSync(${JSON.stringify(log)}, '${n} ' + process.env.KIT_SHARD + '\\n'); });`;
+	const body = (n) => `test('${n}', () => { fs.appendFileSync(process.env.KIT_MAP_LOG, '${n} ' + process.env.KIT_SHARD + '\\n'); });`;
 	fs.writeFileSync(path.join(repo, FILE), [`import { test } from ${HARNESS}; import fs from 'node:fs';`, ...ALL.map(body), ''].join('\n'));
 	sh(repo, 'init', '-q', '-b', 'main'); sh(repo, 'add', '.'); sh(repo, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
 	return { repo, log, sha: sh(repo, 'rev-parse', 'HEAD') };
