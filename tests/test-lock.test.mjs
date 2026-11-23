@@ -938,8 +938,8 @@ test('pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add
 	}
 });
 
-// why: catches a merge that deletes a test file pushed unheld when a remote tip also lacks it, since an absent blob reads as one a remote holds
-test('pre-push holds a merge that deletes an existing test file although a remote tip lacks it, and passes a merge bringing a blob a remote tip holds, in both hooks', () => {
+// why: catches a merge that deletes a test file pushed unheld when a remote tip also lacks it, and a merge of a blob only a side branch holds passed as trusted
+test('pre-push holds a merge that deletes an existing test file although a remote tip lacks it, passes a merge bringing a blob the remote main holds, and holds one only a side branch holds, in both hooks', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -961,21 +961,36 @@ test('pre-push holds a merge that deletes an existing test file although a remot
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
 		assert.notEqual(r.status, 0, `${hook} passed a merge that deletes tests/add.test.mjs: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
-		// Folded control: a merge that brings in a test blob a remote branch tip already holds is not held.
+		// Folded control: a merge brings a test blob the remote main holds, so it is not held. The blob goes to main first.
 		const ctl = pushRepo();
 		firstPushDone(ctl.dir);
 		git(ctl.dir, ['checkout', '-q', '-b', 'side', ctl.red]);
 		put(ctl.dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 		const tightened = commit(ctl.dir, 'test: tighten the add case');
-		git(ctl.dir, ['push', '-q', 'origin', `${tightened}:refs/heads/side`]);
+		git(ctl.dir, ['push', '-q', 'origin', `${tightened}:refs/heads/main`]);
 		git(ctl.dir, ['checkout', '-q', '-b', 'feat/x', ctl.red]);
 		put(ctl.dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
 		commit(ctl.dir, 'feat: tune add');
 		assert.equal(mergeRef(ctl.dir, 'side').status, 0, 'merging side is clean');
 		const ctlMerge = git(ctl.dir, ['rev-parse', 'HEAD']);
 		const ok = pushRun(hook, ctl.dir, ctl.bare, `refs/heads/feat/x ${ctlMerge} refs/heads/feat/x ${ZERO}\n`);
-		assert.equal(ok.status, 0, `${hook} held a merge whose test blob a remote tip holds: ${ok.stderr}`);
+		assert.equal(ok.status, 0, `${hook} held a merge whose test blob the remote main holds: ${ok.stderr}`);
 		assert.doesNotMatch(ok.stderr, HOLD_RE);
+		// The same merge with the blob only on the side branch: a side branch is not a trusted source, so it is held.
+		const only = pushRepo();
+		firstPushDone(only.dir);
+		git(only.dir, ['checkout', '-q', '-b', 'side', only.red]);
+		put(only.dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const onlyTight = commit(only.dir, 'test: tighten the add case');
+		git(only.dir, ['push', '-q', 'origin', `${onlyTight}:refs/heads/side`]);
+		git(only.dir, ['checkout', '-q', '-b', 'feat/x', only.red]);
+		put(only.dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		commit(only.dir, 'feat: tune add');
+		assert.equal(mergeRef(only.dir, 'side').status, 0, 'merging side is clean');
+		const onlyMerge = git(only.dir, ['rev-parse', 'HEAD']);
+		const held = pushRun(hook, only.dir, only.bare, `refs/heads/feat/x ${onlyMerge} refs/heads/feat/x ${ZERO}\n`);
+		assert.notEqual(held.status, 0, `${hook} passed a merge whose test blob only a side branch holds: ${held.stderr}`);
+		assert.match(held.stderr, HOLD_RE);
 	}
 });
 
@@ -1051,15 +1066,15 @@ test('pre-push passes an orphan branch that adds a weak test, then holds the mer
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
-		git(dir, ['checkout', '-q', '--orphan', 'orphan']);
+		git(dir, ['checkout', '-q', '--orphan', 'feat/orphan-weak']);
 		git(dir, ['rm', '-r', '-q', '-f', '.']);
 		put(dir, { 'tests/add.test.mjs': 'test("ok", () => {});\n' });
 		const orphan = commit(dir, 'test: add a weak add case');
 		// The orphan's first push is a fresh add of its test, so it passes.
-		const up = pushRun(hook, dir, bare, `refs/heads/orphan ${orphan} refs/heads/orphan ${ZERO}\n`);
+		const up = pushRun(hook, dir, bare, `refs/heads/feat/orphan-weak ${orphan} refs/heads/feat/orphan-weak ${ZERO}\n`);
 		assert.equal(up.status, 0, `${hook} held the orphan branch's first push, which only adds a test: ${up.stderr}`);
 		git(dir, ['checkout', '-q', 'main']);
-		assert.notEqual(mergeRef(dir, 'orphan', ['--allow-unrelated-histories']).status, 0, 'the two tests/add.test.mjs adds conflict');
+		assert.notEqual(mergeRef(dir, 'feat/orphan-weak', ['--allow-unrelated-histories']).status, 0, 'the two tests/add.test.mjs adds conflict');
 		// The merge keeps the weak copy over main's strong one.
 		put(dir, { 'tests/add.test.mjs': 'test("ok", () => {});\n' });
 		const merge = commit(dir, 'merge orphan');
