@@ -311,7 +311,7 @@ test('pre-push refuses a push whose range holds a retest: commit, names it and s
 });
 
 
-// why: guards rule:test-integrity (a retest: starting a longer push is held and named, and an update push of a retest the remote holds is not re-refused)
+// why: catches an update push that passes while the remote's main lacks the merge of a retest, or is held once that merge is on the remote's main
 test('pre-push refuses a three-commit push whose first commit is a retest:, naming that commit, and lets an update push pass when the remote holds that retest', () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -333,6 +333,8 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 		git(d2, ['push', '-q', 'origin', 'topic']);
 		git(d2, ['checkout', '-q', 'main']);
 		git(d2, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
+		// Main is pushed before the update, so the remote's main holds the merge the update carries.
+		git(d2, ['push', '-q', 'origin', 'main']);
 		git(d2, ['checkout', '-q', '-b', 'feat/x', r2]);
 		put(d2, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
 		const first = commit(d2, 'feat: first add');
@@ -343,6 +345,26 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 		const up = pushRun(PROJECT_PRE_PUSH, d2, b2, `refs/heads/feat/x ${next} refs/heads/feat/x ${first}\n`);
 		assert.equal(up.status, 0, `the update push goes through: ${up.stderr}`);
 		assert.doesNotMatch(up.stderr, /retest/);
+	}
+	// Main not pushed: the same update is held, since the remote's main lacks the merge the update carries.
+	{
+		const { dir: d3, red: r3, bare: b3 } = pushRepo();
+		git(d3, ['checkout', '-q', '-b', 'topic']);
+		put(d3, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		commit(d3, 'retest: tighten the add case');
+		git(d3, ['push', '-q', 'origin', 'topic']);
+		git(d3, ['checkout', '-q', 'main']);
+		git(d3, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
+		git(d3, ['checkout', '-q', '-b', 'feat/x', r3]);
+		put(d3, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+		const first3 = commit(d3, 'feat: first add');
+		git(d3, ['push', '-q', 'origin', 'feat/x']);
+		git(d3, ['merge', '-q', '--no-edit', 'main']);
+		put(d3, { 'src/util.js': 'export const id = (x) => x + 0;\n' });
+		const next3 = commit(d3, 'feat: tidy util');
+		const held3 = pushRun(PROJECT_PRE_PUSH, d3, b3, `refs/heads/feat/x ${next3} refs/heads/feat/x ${first3}\n`);
+		assert.notEqual(held3.status, 0, `the update push passed with main unpushed, so the remote lacks the retest's merge: ${held3.stderr}`);
+		assert.match(held3.stderr, HOLD_RE);
 	}
 });
 
