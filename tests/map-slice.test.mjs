@@ -94,6 +94,11 @@ test('two slices given --shards and a map with ms get the same time plan, longes
 	assert.equal(r1.status, 0, r1.stdout + r1.stderr);
 	assert.deepEqual(ranIn(log, '0/2'), ['b', 'c']);
 	assert.deepEqual(ranIn(log, '1/2'), ['a', 'd']);
+	// --plan names a slice's packing, so with no --slice it exits 2 and runs nothing, even with a current map.
+	fs.rmSync(log, { force: true });
+	const bare = node(repo, RUNNER, ['--shards', '1', '--plan', sha, file]);
+	assert.equal(bare.status, 2, bare.stdout + bare.stderr);
+	assert.equal(fs.existsSync(log), false, '--plan without --slice ran a test');
 	// The refusal half of the ruling: with --plan, a map of another sha, then no map at all, each exits 2 and runs no test.
 	fs.rmSync(log, { force: true });
 	fs.writeFileSync(mapPath, JSON.stringify(mapOf('1'.repeat(40))));
@@ -123,4 +128,9 @@ test('map-merge refuses parts from different shas with exit 1', () => {
 	const mixed = node(repo, MERGE, parts);
 	assert.equal(mixed.status, 1, mixed.stdout + mixed.stderr);
 	assert.equal(fs.existsSync(out), false, 'mixed shas wrote tests/.map.json');
+	// Same sha, but key a holds a different entry in each part: refused, and nothing written.
+	fs.writeFileSync(partPath(repo, '.map-part-1.json'), JSON.stringify({ sha, made: 'x', tests: { [`${FILE}::a`]: { lines: {}, reads: [], ms: 9 } } }));
+	const clash = node(repo, MERGE, parts);
+	assert.equal(clash.status, 1, clash.stdout + clash.stderr);
+	assert.equal(fs.existsSync(out), false, 'a key with different entries wrote tests/.map.json');
 });
