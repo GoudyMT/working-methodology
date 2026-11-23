@@ -26,14 +26,14 @@ const commit = (root, msg) => { git(root, 'add', '-A'); git(root, 'commit', '-q'
 const write = (root, rel, text) => { fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true }); fs.writeFileSync(path.join(root, rel), text); };
 const testFile = (names) => `import { test } from './harness.mjs';\n\n${names.map((n) => `// why: catches ${n} in a fixture file\ntest('${n}', () => {});\n`).join('\n')}`;
 
-const run = (script, args, root) => {
+const run = (script, args, root, extra = {}) => {
 	if (!fs.existsSync(script)) return { status: 127, stdout: '', stderr: `${path.basename(script)} is missing` };
-	const env = { ...process.env };
+	const env = { ...process.env, ...extra };
 	delete env.KIT_RECORD_ROOT;
 	const r = spawnSync(process.execPath, [script, ...args], { cwd: root, encoding: 'utf8', env });
 	return { status: r.status, stdout: r.stdout, stderr: r.stderr };
 };
-const check = (root) => run(CLOSEOUT, ['check', '--root', root], root);
+const check = (root, extra) => run(CLOSEOUT, ['check', '--root', root], root, extra);
 const buildRecordCheck = (root) => {
 	const env = { ...process.env, KIT_RECORD_ROOT: root };
 	const r = spawnSync(process.execPath, [BUILD_RECORD, 'check'], { cwd: root, encoding: 'utf8', env });
@@ -68,7 +68,7 @@ const row = (finding, tests = [], severity = 'high', files) => ({ id: `R${++rowN
 const closeoutOf = (findings, tickets) => (head) => ({ version: VERSION, head, findings, tickets });
 
 /** A repo: base commit, the one closeout commit, then the range's changes, then the build record. */
-function mk({ before, after, rows = [], closeout, mutate } = {}) {
+function mk({ before, between, after, rows = [], closeout, mutate } = {}) {
 	const root = kitTemp.makeTemp('closeout-');
 	git(root, 'init', '-q');
 	write(root, 'VERSION', `${VERSION}\n`);
@@ -77,6 +77,7 @@ function mk({ before, after, rows = [], closeout, mutate } = {}) {
 	commit(root, 'base');
 	if (before) before(root);
 	const sha = git(root, 'rev-parse', 'HEAD');
+	if (between) between(root);
 	if (closeout !== null) {
 		const body = closeout === undefined ? defaultCloseout(sha) : typeof closeout === 'function' ? closeout(sha) : closeout;
 		write(root, `docs/builds/${VERSION}.closeout.json`, typeof body === 'string' ? body : `${JSON.stringify(body, null, 2)}\n`);
@@ -147,6 +148,10 @@ test('a ticketed test passes, and a second test on the same ticket fails', () =>
 	const wrongArray = check(mk({ after: addTests('new one'), mutate: (rec) => { rec.sweep.fixes[0].test = 'tests/a.test.mjs::new one'; } }));
 	assert.equal(wrongArray.status, 1);
 	assert.ok(wrongArray.stderr.includes('tests/a.test.mjs::new one'), wrongArray.stderr);
+	// a fix row naming a finding the closeout file does not list is a fault naming that finding
+	const ghost = check(mk({ after: addTests('ghost'), rows: [row('F9', ['tests/a.test.mjs::ghost'])] }));
+	assert.equal(ghost.status, 1);
+	assert.match(ghost.stderr, /F9/);
 });
 
 // why: catches a ticketless test fails naming the file and the defer command (K369 S2)
@@ -159,6 +164,14 @@ test('a ticketless test fails naming the file and the defer command', () => {
 	const low = check(mk({ after: addTests('orphan'), rows: [row('F3', ['tests/a.test.mjs::orphan'], 'low')] }));
 	assert.equal(low.status, 1);
 	assert.ok(low.stderr.includes('tests/a.test.mjs::orphan'), low.stderr);
+	assert.ok(bare.stderr.includes('remove the test and defer it'), bare.stderr);
+	// a test made in a top-level for loop, or by a one-line forEach, is counted too
+	const looped = check(mk({ after: (root) => { write(root, 'tests/loop.test.mjs', "import { test } from './harness.mjs';\n\nfor (const n of ['x', 'y']) {\n\t// why: catches looped tests each need their own ticket\n\ttest(`looped ${n}`, () => {});\n}\n"); commit(root, 'loop'); } }));
+	assert.equal(looped.status, 1);
+	assert.ok(looped.stderr.includes('tests/loop.test.mjs'), looped.stderr);
+	const each = check(mk({ after: (root) => { write(root, 'tests/each.test.mjs', "import { test } from './harness.mjs';\n\n['x', 'y'].forEach((n) => test(`each ${n}`, () => {}));\n"); commit(root, 'each'); } }));
+	assert.equal(each.status, 1);
+	assert.ok(each.stderr.includes('tests/each.test.mjs'), each.stderr);
 	// a ticketless failure is logged too: one row for the run
 	const root = mk({ after: addTests('orphan') });
 	assert.equal(check(root).status, 1);
@@ -186,6 +199,10 @@ test("a new script, hook or CI file no ticket's fix names fails", () => {
 	const lowRow = check(mk({ after: hook, rows: [row('F3', [], 'low', ['user/kit-hooks/new-hook.cjs'])] }));
 	assert.equal(lowRow.status, 1);
 	assert.ok(lowRow.stderr.includes('user/kit-hooks/new-hook.cjs'), lowRow.stderr);
+	// guard files under project/.claude and user/skills need a ticket's row as well
+	const guards = check(mk({ after: (root) => { write(root, 'project/.claude/new-guard.cjs', '// new\n'); write(root, 'user/skills/pre-pr-sweep/new-step.mjs', '// new\n'); commit(root, 'add guards'); } }));
+	assert.equal(guards.status, 1);
+	for (const f of ['project/.claude/new-guard.cjs', 'user/skills/pre-pr-sweep/new-step.mjs']) assert.ok(guards.stderr.includes(f), `${f} not named: ${guards.stderr}`);
 	for (const f of ['scripts/new-tool.mjs', 'user/kit-hooks/new-hook.cjs', '.github/workflows/new-job.yml']) assert.ok(added.stderr.includes(f), `${f} not named: ${added.stderr}`);
 });
 
@@ -202,6 +219,32 @@ test('a second commit on the closeout file fails', () => {
 	} }));
 	assert.equal(twice.status, 1);
 	assert.ok(twice.stderr.includes(`${VERSION}.closeout.json`), twice.stderr);
+	// a second commit that only reformats the same JSON is still a second commit
+	const reformat = check(mk({ after: (root) => {
+		const file = path.join(root, 'docs', 'builds', `${VERSION}.closeout.json`);
+		fs.writeFileSync(file, JSON.stringify(JSON.parse(fs.readFileSync(file, 'utf8'))));
+		commit(root, 'closeout reformatted');
+	} }));
+	assert.equal(reformat.status, 1);
+	assert.match(reformat.stderr, /2 commits/);
+	// the version must be the one in VERSION, and the head a commit that resolves
+	const version = check(mk({ closeout: (head) => ({ ...defaultCloseout(head), version: '9.9.9' }) }));
+	assert.equal(version.status, 1);
+	assert.match(version.stderr, /9\.9\.9/);
+	const noHead = check(mk({ closeout: (head) => ({ ...defaultCloseout(head), head: 'not-a-commit' }) }));
+	assert.equal(noHead.status, 1);
+	assert.match(noHead.stderr, /not-a-commit/);
+	// a 7-character head that resolves to the same commit as the full sha passes
+	const short = check(mk({ closeout: (head) => defaultCloseout(head.slice(0, 7)) }));
+	assert.equal(short.status, 0, short.stderr);
+	// nothing may land between the swept head and the closeout commit: its parent must be the head
+	const between = mk({ between: (root) => { write(root, 'tests/a.test.mjs', testFile(['old one', 'sneaked in'])); commit(root, 'between'); } });
+	const gap = check(between);
+	assert.equal(gap.status, 1);
+	const closeoutAt = git(between, 'log', '--format=%H', '--', `docs/builds/${VERSION}.closeout.json`);
+	const parent = git(between, 'rev-parse', `${closeoutAt}^`);
+	const head = JSON.parse(fs.readFileSync(path.join(between, 'docs', 'builds', `${VERSION}.closeout.json`), 'utf8')).head;
+	assert.ok(gap.stderr.includes(parent.slice(0, 7)) && gap.stderr.includes(head.slice(0, 7)), `names parent and head: ${gap.stderr}`);
 });
 
 // why: catches 89 high fix rows on 6 high findings fails (K369 S5)
@@ -266,6 +309,25 @@ test('a test added by rename, or in a new test file, is still counted', () => {
 	// a test committed before the closeout commit was there already: it does not count
 	const early = check(mk({ before: (root) => { write(root, 'tests/a.test.mjs', testFile(['old one', 'early one'])); commit(root, 'early test'); } }));
 	assert.equal(early.status, 0, early.stderr);
+	// a renamed-from tag exempts only a name the closeout commit had and HEAD has lost
+	const never = check(mk({ after: (root) => { write(root, 'tests/a.test.mjs', `${testFile(['old one'])}\n// why: catches fresh one in a fixture file\n// renamed from: never here\ntest('fresh one', () => {});\n`); commit(root, 'tag a stranger'); } }));
+	assert.equal(never.status, 1);
+	assert.ok(never.stderr.includes('tests/a.test.mjs::fresh one'), never.stderr);
+	const copy = check(mk({ after: (root) => { write(root, 'tests/a.test.mjs', `${testFile(['old one'])}\n// why: catches a copy in a fixture file\n// renamed from: old one\ntest('a copy', () => {});\n`); commit(root, 'tag a copy'); } }));
+	assert.equal(copy.status, 1);
+	assert.ok(copy.stderr.includes('tests/a.test.mjs::a copy'), copy.stderr);
+	// HEAD a merge of main: the range ends at the PR head, so a test main gained is never charged to the patch
+	const merged = mk({ after: addTests('orphan') });
+	const pr = git(merged, 'rev-parse', 'HEAD');
+	git(merged, 'switch', '-q', '-c', 'side', git(merged, 'rev-list', '--max-parents=0', 'HEAD'));
+	write(merged, 'tests/m.test.mjs', testFile(['main gained']));
+	commit(merged, 'main moves on');
+	const prBase = git(merged, 'rev-parse', 'HEAD');
+	git(merged, 'merge', '-q', '--no-ff', '-m', 'merge', pr);
+	const viaMerge = check(merged, { PR_BASE: prBase });
+	assert.equal(viaMerge.status, 1);
+	assert.ok(viaMerge.stderr.includes('tests/a.test.mjs::orphan'), viaMerge.stderr);
+	assert.ok(!viaMerge.stderr.includes('m.test.mjs'), viaMerge.stderr);
 });
 
 // why: catches defer appends one JSON line to the next-patch file and prints "written, carry on" (K369 S8)
@@ -336,4 +398,10 @@ test('an unreadable closeout file or a shallow clone fails, logged', () => {
 	const shallowLog = logLines(dest);
 	assert.equal(shallowLog.length, 1);
 	assert.equal(shallowLog[0].hook, 'closeout');
+	// build-record runs closeout on check only: its changelog command writes no closeout log row
+	const unclosed = mk({ closeout: null });
+	const log = spawnSync(process.execPath, [BUILD_RECORD, 'changelog'], { cwd: unclosed, encoding: 'utf8', env: { ...process.env, KIT_RECORD_ROOT: unclosed } });
+	assert.equal(log.status, 0, log.stderr);
+	assert.ok(log.stdout.startsWith(`## ${VERSION}`), log.stdout);
+	assert.equal(logLines(unclosed).length, 0);
 });
