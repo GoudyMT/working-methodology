@@ -5,7 +5,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { FAKE_PHRASE, canary, canaryRepo, makeTemp, runHook } from './kit-helpers.mjs';
+import { FAKE_PHRASE, canary, canaryRepo, commitAll, g, makeTemp, runHook } from './kit-helpers.mjs';
 
 const ROLE = '{"role":"reviewer","commit":"abc1234"}';
 const FINDING = '{"id":"R1","severity":"medium","status":"CONFIRMED","where":"src/x.ts:4","claim":"a claim","proof":"the run","fix":"-"}';
@@ -128,4 +128,24 @@ test('M7: under enforce, a tester hand-back naming a commit that does not resolv
 	// control: the repo's own head resolves, so the same record is not refused
 	const head = spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
 	assert.equal(handBackEnforced(home, dir, 'm7b', message(head, listed)).stdout.trim(), '', 'a resolving commit is not refused');
+	// a commit that deletes a test file and adds one test with a proper why, listed in the RECORD, is not refused
+	const del = canaryRepo();
+	fs.mkdirSync(path.join(del, 'tests'));
+	fs.writeFileSync(path.join(del, 'tests', 'old.test.mjs'), "// why: catches an old test that the repo had before the delete\ntest('old', () => {});\n");
+	commitAll(del, 'test: first');
+	fs.rmSync(path.join(del, 'tests', 'old.test.mjs'));
+	fs.writeFileSync(path.join(del, 'tests', 'new.test.mjs'), "// why: catches a new test added in the same commit as a delete\ntest('fresh one', () => {});\n");
+	commitAll(del, 'test: delete one file and add another');
+	const delSha = g(del, 'rev-parse', 'HEAD').stdout.trim();
+	const freshTests = [{ name: 'fresh one', why: '// why: catches a new test added in the same commit as a delete' }];
+	assert.equal(handBackEnforced(home, del, 'm7d', message(delSha, freshTests)).stdout.trim(), '', 'a deleted test file is not an unreadable commit');
+	// a show that really fails (a test path that is a submodule entry, not a blob) is refused as unreadable
+	const sub = canaryRepo();
+	commitAll(sub, 'test: first');
+	g(sub, 'update-index', '--add', '--cacheinfo', '160000,1234567890abcdef1234567890abcdef12345678,tests/sub.test.mjs');
+	g(sub, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'test: add a submodule entry');
+	const subSha = g(sub, 'rev-parse', 'HEAD').stdout.trim();
+	const unread = oneObject(handBackEnforced(home, sub, 'm7e', message(subSha, listed)).stdout);
+	assert.ok(unread, 'a commit whose test path cannot be shown is refused');
+	assert.equal(unread.hookSpecificOutput.permissionDecision, 'deny');
 });

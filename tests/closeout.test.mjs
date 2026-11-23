@@ -173,7 +173,7 @@ test('a ticketless test fails naming the file and the defer command', () => {
 	assert.equal(each.status, 1);
 	assert.ok(each.stderr.includes('tests/each.test.mjs'), each.stderr);
 	// H4: a test written indented, with a variable name, through an alias or in a forEach over a named array is counted too
-	const offMargin = { indented: "\ttest('indented one', () => {});\n", named: "const NAME = 'named one';\ntest(NAME, () => {});\n", alias: "const t = test;\nt('alias one', () => {});\n", cases: "const CASES = ['a', 'b'];\nCASES.forEach((c) => test(`case ${c}`, () => {}));\n" };
+	const offMargin = { indented: "\ttest('indented one', () => {});\n", named: "const NAME = 'named one';\ntest(NAME, () => {});\n", alias: "const t = test;\nt('alias one', () => {});\n", cases: "const CASES = ['a', 'b'];\nCASES.forEach((c) => test(`case ${c}`, () => {}));\n", namedIt: "import { it } from 'node:test';\nit('a', () => {});\n", defaultImport: "import nt from 'node:test';\nnt('b', () => {});\n", renamedDynamic: "const { test: t } = await import('node:test');\nt('c', () => {});\n", afterRegex: "function f(){ return /`/.test(x); }\ntest('after-return-regex', () => {});\n" };
 	for (const [label, body] of Object.entries(offMargin)) {
 		const hidden = check(mk({ after: (root) => { write(root, 'tests/off.test.mjs', "import { test } from './harness.mjs';\n\n" + body); commit(root, 'off margin'); } }));
 		assert.equal(hidden.status, 1, `a new test written as ${label} needs a ticket: ${hidden.stderr}`);

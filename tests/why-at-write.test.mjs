@@ -96,6 +96,10 @@ test('H4: a why-less test written indented, with a variable name, through an ali
 		'variable name': "const NAME = 'adds';\ntest(NAME, () => {});\n",
 		alias: "const t = test;\nt('adds two numbers', () => {});\n",
 		forEach: "const CASES = ['a', 'b'];\nCASES.forEach((c) => test(`adds ${c}`, () => {}));\n",
+		'named it import': "import { it } from 'node:test';\nit('a', () => {});\n",
+		'default import': "import nt from 'node:test';\nnt('b', () => {});\n",
+		'renamed dynamic import': "const { test: t } = await import('node:test');\nt('c', () => {});\n",
+		'after a regex with a backtick': "function f(){ return /`/.test(x); }\ntest('after-return-regex', () => {});\n",
 	};
 	for (const [label, body] of Object.entries(forms)) {
 		const bad = fence(dir, 'Write', { file_path: target(dir), content: head + body });
