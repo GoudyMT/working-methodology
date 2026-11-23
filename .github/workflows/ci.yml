@@ -23,12 +23,21 @@ jobs:
   # E31: the suite runs on Linux, where it took 22 s against about 7 minutes on Windows (8 shards on the owner's PC,
   # 2026-11-09). The tests marked { windows: true } run on Windows (below), and are skipped here.
   unit-tests:
+    needs: [lanes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # actions: read finds main's run and its coverage map for a PR.
     permissions:
       contents: read
       actions: read
+    # The runners: lanes sizes them from the map's measured time, and each runs its slice of the suite.
+    strategy:
+      matrix: ${{ fromJSON(needs.lanes.outputs.unit) }}
+      fail-fast: false
+    # H1: a matrix or lanes value reaches a run line only through these, and each run checks it as an integer first.
+    env:
+      SHARD: ${{ matrix.shard }}
+      UNIT_N: ${{ needs.lanes.outputs.unit_n }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,17 +82,20 @@ jobs:
           S="$RUNNER_TEMP/base/scripts/spawn-check.mjs"; [ -f "$S" ] || { echo "the base has no spawn-check.mjs: this PR's copy runs"; S=scripts/spawn-check.mjs; }
           node "$S" .
 
-      # Push to main: every test, through the guarded runner, recording the coverage map, kept with this run.
+      # Push to main: this runner's slice of every test, through the guarded runner, recording its part of the coverage map.
+      # The map-merge job joins the parts into the whole map.
       - name: Every test, with the coverage map
         if: github.event_name != 'pull_request'
-        run: node scripts/test-run.mjs --map --shards 4
+        run: |
+          [[ "$SHARD" =~ ^[0-9]+$ && "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the shard values are not integers" >&2; exit 1; }
+          node scripts/test-run.mjs --map --slice "$SHARD/$UNIT_N" --shards 4
 
-      - name: Keep the coverage map
+      - name: Keep the coverage map part
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-map
-          path: tests/.map.json
+          name: test-map-part-${{ matrix.shard }}
+          path: tests/.map-part-${{ matrix.shard }}.json
           include-hidden-files: true
           retention-days: 30
 
@@ -131,28 +143,43 @@ jobs:
 
       - name: Every test
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
-        run: node scripts/test-run.mjs --shards 4
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          [[ "$SHARD" =~ ^[0-9]+$ && "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the shard values are not integers" >&2; exit 1; }
+          # M11: the slices pack by the base map's times only when the map was loaded; --plan without it exits 2.
+          plan=(); if [ -f tests/.map.json ]; then plan=(--plan "$BASE_SHA"); fi
+          node scripts/test-run.mjs --shards 4 --slice "$SHARD/$UNIT_N" "${plan[@]}"
 
       # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
       # It joins the changed run (--always), so a security test the change reaches runs once (K105); over half the suite
       # reached, the runner runs every test.
       - name: The tests the change reaches
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --changed --shards 4 --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          [[ "$SHARD" =~ ^[0-9]+$ && "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the shard values are not integers" >&2; exit 1; }
+          plan=(); if [ -f tests/.map.json ]; then plan=(--plan "$BASE_SHA"); fi
+          node scripts/test-run.mjs --changed --shards 4 --slice "$SHARD/$UNIT_N" "${plan[@]}" --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
 
   # T15 Part A: each test the PR adds or changes, held to the bar for a new test. Strict since K24 (the owner,
   # 2026-11-17): a finding fails the job; a test the time budget left unmeasured is named only.
   test-check:
     if: github.event_name == 'pull_request'
+    needs: [lanes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Four machines, each a quarter of the changed tests (K13): one ran past 15 minutes on a PR with 616.
+    # The slices: lanes sizes them at one per 100 changed tests (K13): one machine ran past 15 minutes on a PR with 616.
     # K95: two slices of PR 47 still ran past it measuring flips and reported nothing; 12 minutes of budget leaves
     # room to set up and to report, and names each test it could not check.
     strategy:
+      matrix: ${{ fromJSON(needs.lanes.outputs.check) }}
       fail-fast: false
-      matrix:
-        slice: [0, 1, 2, 3]
+    # H1: a matrix or lanes value reaches a run line only through these, and the run checks it as an integer first.
+    env:
+      SLICE: ${{ matrix.slice }}
+      CHECK_N: ${{ needs.lanes.outputs.check_n }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -190,13 +217,60 @@ jobs:
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          SLICE: ${{ matrix.slice }}
         # K105: a PR that moves VERSION carries its build record; each test its fix ledger names gets a verdict here.
         run: |
+          [[ "$SLICE" =~ ^[0-9]+$ && "$CHECK_N" =~ ^[0-9]+$ ]] || { echo "the slice values are not integers" >&2; exit 1; }
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
-          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice "$SLICE/$CHECK_N" --budget 120 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The one name the ruleset requires for the test check: it fails unless every slice passed, so the required check reports
+  # whatever the slice count is. A slice that failed or was skipped fails it.
+  test-check-all:
+    name: "test-check (all)"
+    if: always() && github.event_name == 'pull_request'
+    needs: [lanes, test-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every test-check slice passed
+        if: needs.test-check.result != 'success'
+        run: exit 1
+
+  # On a push to main, the parts of the coverage map from the unit runners, joined into the whole map (map-merge.mjs)
+  # that the next PR selects by and that sizes the jobs.
+  map-merge:
+    needs: [unit-tests]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Join the map parts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          gh run download "$RUN_ID" --repo "$REPO" --pattern 'test-map-part-*' --dir "$RUNNER_TEMP/parts"
+          mapfile -t parts < <(find "$RUNNER_TEMP/parts" -name '.map-part-*.json' | sort)
+          node scripts/map-merge.mjs "${parts[@]}"
+
+      - name: Keep the coverage map
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-map
+          path: tests/.map.json
+          include-hidden-files: true
+          retention-days: 30
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -254,11 +328,14 @@ jobs:
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
-          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 600 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 120 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # Windows starts a process about twice as slowly as Linux, so its fast lane has its own cap (the owner's pick,
+      # 2026-11-23): 60 s, where a hook test that starts git and node twenty times takes about 40 s.
       - name: Windows tests
         env:
           KIT_WINDOWS_SLICE: '1'
+          KIT_TEST_FAST_MS: '60000'
         run: node scripts/test-run.mjs --shards 2
 
       # The push guard's own proof: every command that must ask asks, every safe one passes.
@@ -276,9 +353,18 @@ jobs:
   lanes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # actions: read finds the coverage map that sizes the jobs: the base commit's on a PR, the previous main push's on a push.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       slow: ${{ steps.find.outputs.slow }}
       install: ${{ steps.install.outputs.install }}
+      unit: ${{ steps.size.outputs.unit }}
+      unit_n: ${{ steps.size.outputs.unit_n }}
+      check: ${{ steps.size.outputs.check }}
+      check_n: ${{ steps.size.outputs.check_n }}
+      mutation: ${{ steps.size.outputs.mutation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -304,6 +390,70 @@ jobs:
           git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || true
           lane="$(node "$RUNNER_TEMP/pr-scope.mjs" --install "$BASE_SHA" 2>/dev/null | grep -E '^install=(true|false)$' || true)"
           echo "${lane:-install=true}" >> "$GITHUB_OUTPUT"
+
+      # The map that sizes the jobs: the base commit's on a PR, the previous main push's on a push (its run, found through
+      # the API, as the unit job finds the map it selects by). None found, the size step takes its fallback.
+      - name: Coverage map for the sizing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SIZE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          rm -f tests/.map.json
+          run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --event push --commit "$SIZE_SHA" --json databaseId,headSha,event,headBranch --jq "[.[] | select(.headSha == \"$SIZE_SHA\" and .event == \"push\" and .headBranch == \"main\")][0].databaseId // empty")" || run_id=""
+          if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
+          echo "sizing map from main's run: ${run_id:-none}"
+
+      # Runner and slice counts from the map's measured time (scripts/ci-size.mjs). H1: the BASE commit's copy runs, never the
+      # PR's, with the base's test parser beside it; what it prints is checked below before any job reads it as a matrix. A PR
+      # counts its changed tests with --base (new or changed tests, a loop as one); a push has none. No map, or a base copy
+      # that cannot size (the base has no --base yet): four of each.
+      - name: Size the jobs
+        id: size
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          OUT="$RUNNER_TEMP/size.txt"
+          fixed() { printf '%s\n' 'unit={"shard":[0,1,2,3]}' 'check={"slice":[0,1,2,3]}' 'mutation={"slice":[1]}' > "$OUT"; }
+          if [ -f tests/.map.json ]; then
+            S="$RUNNER_TEMP/size-base"; mkdir -p "$S/scripts"
+            git archive "$BASE_SHA" scripts/test-check.mjs project/.claude/kit-temp.cjs user/kit-hooks/why-rule.cjs 2> /dev/null | tar -x -C "$S" || true
+            git show "$BASE_SHA:scripts/ci-size.mjs" > "$S/scripts/ci-size.mjs" 2> /dev/null || rm -f "$S/scripts/ci-size.mjs"
+            base=()
+            if [ "$EVENT" = "pull_request" ]; then base=(--base "$BASE_SHA"); fi
+            rm -f "$OUT"
+            if [ -f "$S/scripts/ci-size.mjs" ] && node "$S/scripts/ci-size.mjs" --map tests/.map.json "${base[@]}" --github-output "$OUT"; then :; else echo "the base's ci-size could not size this run: four of each"; fixed; fi
+          else
+            fixed
+          fi
+          unit="$(sed -n 's/^unit=//p' "$OUT")"
+          check="$(sed -n 's/^check=//p' "$OUT")"
+          mutation="$(sed -n 's/^mutation=//p' "$OUT")"
+          # Each output is {"shard":[0,...]} or {"slice":[0,...]}, with 1 to 6 entries; anything else stops the run here.
+          unit_re='^\{"shard":\[0(,[0-9]+)*\]\}$'
+          check_re='^\{"slice":\[0(,[0-9]+)*\]\}$'
+          mutation_re='^\{"slice":\[[0-9]+(,[0-9]+)*\]\}$'
+          [[ "$unit" =~ $unit_re && "$check" =~ $check_re && "$mutation" =~ $mutation_re ]] || { echo "ci-size printed a plan of the wrong shape" >&2; exit 1; }
+          # The runner lists must be exactly 0 to n-1, so no slice runs twice and none is skipped.
+          printf '%s' "$unit" | jq -e '.shard == [range(0; .shard | length)]' > /dev/null || { echo "the unit runner list is not 0 to n-1" >&2; exit 1; }
+          printf '%s' "$check" | jq -e '.slice == [range(0; .slice | length)]' > /dev/null || { echo "the check runner list is not 0 to n-1" >&2; exit 1; }
+          unit_n="$(printf '%s' "$unit" | jq '.shard | length')"
+          check_n="$(printf '%s' "$check" | jq '.slice | length')"
+          for n in "$unit_n" "$check_n"; do
+            [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le 6 ] || { echo "a plan of $n runners is not 1 to 6" >&2; exit 1; }
+          done
+          {
+            echo "unit=$unit"
+            echo "unit_n=$unit_n"
+            echo "check=$check"
+            echo "check_n=$check_n"
+            echo "mutation=$mutation"
+          } >> "$GITHUB_OUTPUT"
 
   # T15 D1 and D2: install, upgrade and the guards, on both systems the kit runs on.
   install-check:
@@ -377,21 +527,22 @@ jobs:
           node scripts/test-run.mjs "${slow[@]}"
 
   # K311 (owner call 5): the minimal-code job. On a PR it flips the production lines the PR added and names every flip no
-  # test catches. Report only: it never fails the run, and it builds its own coverage map at the PR head first.
+  # test catches, within a 150 s budget (flip-plan.mjs runs the flips on parallel copies). Report only: it never fails the
+  # run. It reuses the base commit's coverage map from that commit's push run, and builds none of its own.
   minimal-code:
     if: github.event_name == 'pull_request'
+    needs: [unit-tests]
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    timeout-minutes: 4
+    # actions: read finds the base commit's push run and its coverage map.
     permissions:
       contents: read
-    strategy:
-      fail-fast: false
-      matrix:
-        slice: [1, 2, 3, 4]
+      actions: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           fetch-depth: 0
+          fetch-tags: true
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
@@ -399,22 +550,42 @@ jobs:
           node-version: 22
           package-manager-cache: false
 
-      - name: Coverage map at the PR head
-        run: node scripts/test-run.mjs --map || echo "the map run had failing tests; the report below uses what it recorded"
+      - name: Prepare git identity
+        run: |
+          git config --global user.name "kit-ci"
+          git config --global user.email "kit-ci@users.noreply.github.com"
+          git config --global init.defaultBranch main
 
-      - name: Survivors in this slice (report only)
-        run: node scripts/mutation-check.mjs --base ${{ github.event.pull_request.base.sha }} --report --slice ${{ matrix.slice }}/4
+      - name: Coverage map for the base commit
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          rm -f tests/.map.json
+          run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --event push --commit "$BASE_SHA" --json databaseId,headSha,event,headBranch --jq "[.[] | select(.headSha == \"$BASE_SHA\" and .event == \"push\" and .headBranch == \"main\")][0].databaseId // empty")" || run_id=""
+          if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
+          echo "map from main's run: ${run_id:-none}"
+
+      - name: Flips within the budget (report only)
+        run: node scripts/flip-plan.mjs --base ${{ github.event.pull_request.base.sha }} --budget 150 || echo "flip-plan exit $? is report only, so this job still passes"
 
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
   kit-tests:
-    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check]
+    # Every other job of this run is in needs, except minimal-code, which the time budget skips by name.
+    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    # actions: read lets the time budget list this run's jobs.
+    permissions:
+      contents: read
+      actions: read
     steps:
       - name: Every test job passed
-        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')
+        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped') || (needs.map-merge.result != 'success' && needs.map-merge.result != 'skipped')
         run: exit 1
 
       # Skipped only when the lanes job found no install or guard change; one that ran must pass.
@@ -575,3 +746,17 @@ jobs:
         run: |
           git show "$PR_BASE:scripts/recall.mjs" > scripts/recall-gate-base.mjs
           node scripts/recall-gate-base.mjs gate "$PR_BASE" "$PR_HEAD"
+
+      # CI-C: the merge path's jobs are timed here, and a job over 180 s fails this required check, named with its
+      # slowest tests. The list is the run's own jobs, every one but this job and the --skip jobs (minimal-code, report
+      # only), fetched whole: the pages are merged into one {jobs:[...]} answer. A failed fetch fails the step; an
+      # unreadable answer fails the check.
+      - name: Time budget of the run's jobs
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -o pipefail
+          gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" | jq -s '{total_count: .[0].total_count, jobs: [.[].jobs[]]}' > "$RUNNER_TEMP/jobs.json"
+          node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs "$RUNNER_TEMP/jobs.json" --self kit-tests --skip minimal-code

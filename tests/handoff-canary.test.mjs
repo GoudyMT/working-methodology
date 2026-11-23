@@ -3,8 +3,9 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
-import { FAKE_PHRASE, canary, canaryRepo, makeTemp, runHook } from './kit-helpers.mjs';
+import { FAKE_PHRASE, canary, canaryRepo, commitAll, g, makeTemp, runHook } from './kit-helpers.mjs';
 
 const ROLE = '{"role":"reviewer","commit":"abc1234"}';
 const FINDING = '{"id":"R1","severity":"medium","status":"CONFIRMED","where":"src/x.ts:4","claim":"a claim","proof":"the run","fix":"-"}';
@@ -108,4 +109,43 @@ test('under enforce, a numeric agent_id that makes canary throw still prints the
 	// Folded control: a valid hand-back with a numeric agent_id is still not refused.
 	const valid = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'ROLE: reviewer', 'Not checked: nothing', 'RECORD:', ROLE, NOTE_CHECKED].join('\n');
 	assert.equal(handBackEnforced(home, dir, 8, valid).stdout.trim(), '', 'a valid hand-back with a numeric agent_id is not refused');
+});
+
+// why: catches M7 a tester hand-back naming a commit that does not resolve passing the enforce gate with its tests unchecked
+test('M7: under enforce, a tester hand-back naming a commit that does not resolve is refused', () => {
+	const home = enforceHome();
+	const dir = canaryRepo();
+	const BAD = '0123456789abcdef0123456789abcdef01234567';
+	const listed = [{ name: 'x', why: '// why: catches a listed test whose commit cannot be read' }];
+	const role = (commit, tests) => JSON.stringify({ role: 'tester', commit, clarity: 'clear', ...(tests ? { tests } : {}) });
+	const message = (commit, tests) => [`${FAKE_PHRASE}`, 'Prose the tester wrote.', 'ROLE: tester', 'Not checked: nothing', 'RECORD:', role(commit, tests), NOTE_CHECKED].join('\n');
+	const bad = oneObject(handBackEnforced(home, dir, 'm7a', message(BAD, listed)).stdout);
+	assert.ok(bad, 'a commit that resolves to nothing is refused');
+	assert.equal(bad.hookSpecificOutput.permissionDecision, 'deny');
+	assert.ok(bad.hookSpecificOutput.permissionDecisionReason.includes(BAD), `the reason names the commit: ${bad.hookSpecificOutput.permissionDecisionReason}`);
+	// control: the same unresolvable commit with no tests list is not refused
+	assert.equal(handBackEnforced(home, dir, 'm7c', message(BAD)).stdout.trim(), '', 'no tests listed: the commit is not checked');
+	// control: the repo's own head resolves, so the same record is not refused
+	const head = spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+	assert.equal(handBackEnforced(home, dir, 'm7b', message(head, listed)).stdout.trim(), '', 'a resolving commit is not refused');
+	// a commit that deletes a test file and adds one test with a proper why, listed in the RECORD, is not refused
+	const del = canaryRepo();
+	fs.mkdirSync(path.join(del, 'tests'));
+	fs.writeFileSync(path.join(del, 'tests', 'old.test.mjs'), "// why: catches an old test that the repo had before the delete\ntest('old', () => {});\n");
+	commitAll(del, 'test: first');
+	fs.rmSync(path.join(del, 'tests', 'old.test.mjs'));
+	fs.writeFileSync(path.join(del, 'tests', 'new.test.mjs'), "// why: catches a new test added in the same commit as a delete\ntest('fresh one', () => {});\n");
+	commitAll(del, 'test: delete one file and add another');
+	const delSha = g(del, 'rev-parse', 'HEAD').stdout.trim();
+	const freshTests = [{ name: 'fresh one', why: '// why: catches a new test added in the same commit as a delete' }];
+	assert.equal(handBackEnforced(home, del, 'm7d', message(delSha, freshTests)).stdout.trim(), '', 'a deleted test file is not an unreadable commit');
+	// a show that really fails (a test path that is a submodule entry, not a blob) is refused as unreadable
+	const sub = canaryRepo();
+	commitAll(sub, 'test: first');
+	g(sub, 'update-index', '--add', '--cacheinfo', '160000,1234567890abcdef1234567890abcdef12345678,tests/sub.test.mjs');
+	g(sub, '-c', 'user.email=t@t', '-c', 'user.name=t', 'commit', '-qm', 'test: add a submodule entry');
+	const subSha = g(sub, 'rev-parse', 'HEAD').stdout.trim();
+	const unread = oneObject(handBackEnforced(home, sub, 'm7e', message(subSha, listed)).stdout);
+	assert.ok(unread, 'a commit whose test path cannot be shown is refused');
+	assert.equal(unread.hookSpecificOutput.permissionDecision, 'deny');
 });

@@ -454,11 +454,11 @@ test('the call-cap hook meters a dollar ceiling in list-price dollars, re-reads 
     const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
     return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
   };
-  // Held back: three more calls ($0.054) and the report (5,000 output tokens, $0.05). 5 calls ($0.09): fits.
+  // Held back: two calls of the dearest call's cost ($0.036) and the report (5,000 output tokens, $0.05). 5 calls ($0.09): fits.
   assert.equal(hook(5).permissionDecision, 'allow');
-  const stop = hook(6);
-  assert.equal(stop.permissionDecision, 'deny', '$0.108 spent; with three more calls and the report it passes $0.20');
-  assert.match(stop.permissionDecisionReason, /Dollar ceiling reached \(\$0\.11 of \$0\.20\)[\s\S]*hand in your report/);
+  const stop = hook(7);
+  assert.equal(stop.permissionDecision, 'deny', '$0.126 spent; with two more calls and the report it passes $0.20');
+  assert.match(stop.permissionDecisionReason, /Dollar ceiling reached \(\$0\.13 of \$0\.20\)[\s\S]*hand in your report/);
   // Two calls re-reading 300,000 tokens each are 603,000 tokens, but $0.09: a re-read costs a twentieth of new input.
   assert.equal(hook(2, { read: 300000, ceiling: '0.40' }).permissionDecision, 'allow', '$0.09 spent, $0.185 held back');
   // A model the table does not know is priced as the dearest one (Opus 5.5), never as a cheap one.

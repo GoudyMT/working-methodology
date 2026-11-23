@@ -199,14 +199,16 @@ test('runner slices split the shards over CI jobs: together every test exactly o
 		assert.equal(r.status, 2, `--slice ${bad}: ${r.stdout}${r.stderr}`);
 	}
 	// The 1.23.0 sweep. Each runner picked its own shard count from its CPUs, so two slices could split the tests two
-	// ways, skipping some and running others twice: a slice needs --shards, the same on every runner. And a map is of
-	// the whole suite: one slice's map would stand at HEAD with half the tests.
+	// ways, skipping some and running others twice: a slice needs --shards, the same on every runner. A slice's map
+	// is a part: it writes its own tests/.map-part-<i>.json, which scripts/map-merge.mjs joins into the whole suite's map.
 	const none = run(dir, ['--slice', '0/3', ...files]);
 	assert.equal(none.status, 2, none.stdout + none.stderr);
 	assert.match(none.stderr, /--shards/);
+	fs.mkdirSync(path.join(dir, 'tests'));
 	const half = run(dir, ['--map', '--slice', '0/2', '--shards', '2', ...files]);
-	assert.equal(half.status, 2, half.stdout + half.stderr);
-	assert.match(half.stderr, /whole suite/);
+	assert.equal(half.status, 0, half.stdout + half.stderr);
+	assert.equal(fs.existsSync(path.join(dir, 'tests', '.map-part-0.json')), true);
+	assert.equal(fs.existsSync(path.join(dir, 'tests', '.map.json')), false);
 });
 
 // why: guards rule:test-and-review-cadence

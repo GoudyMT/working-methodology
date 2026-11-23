@@ -7,19 +7,15 @@
 const fs = require('fs');
 const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
+const { isTestFile, tests, whyFault } = require('./why-rule.cjs');
 
 // Roles whose edits need the lead's file list (their role bodies say so); a builder without one edits its worktree as before.
 // A plugin role is named kit:builder, so a role matches by its last name after a colon, as sweep-guard matches it.
 const LISTED_ROLE = /(^|:)(tester|writer)$/i;
 const BUILDER_ROLE = /(^|:)builder$/i;
-// U4 (build 24): the unit list's name, and unit-check's test-file rule (a test folder, or *.test.* / *.spec.*): a builder
-// edits neither, whatever list there is.
+// U4 (build 24): the unit list's name. A builder edits neither a test file (why-rule.cjs's isTestFile) nor the list,
+// whatever list there is.
 const LIST = 'kit-unit-files.txt';
-const TEST_DIRS = new Set(['test', 'tests', '__tests__', 'spec']);
-const isTestFile = (rel) => {
-	const parts = rel.split(/[\\/]/);
-	return parts.slice(0, -1).some((d) => TEST_DIRS.has(d)) || /\.(test|spec)\./.test(parts[parts.length - 1]);
-};
 
 // The real path, through any symlink or junction: git reports the worktree's real path, so the target must be
 // compared the same way. A file not yet written resolves through its nearest existing folder.
@@ -34,6 +30,49 @@ const norm = (p) => {
 	const s = p.trim().replace(/\\/g, '/').replace(/^(\.\/)+/, '');
 	return process.platform === 'win32' ? s.toLowerCase() : s;
 };
+
+// The text a write leaves in its file: Write's content, or the file with each Edit applied in turn. Null when an edit
+// cannot be applied (its old_string is absent or empty, or the content is not text), so the test cannot be parsed.
+function resultOf(tool, input, old) {
+	const apply = (text, e) => (text !== null && e && typeof e.old_string === 'string' && typeof e.new_string === 'string' && e.old_string && text.includes(e.old_string)
+		? (e.replace_all ? text.split(e.old_string).join(e.new_string) : text.replace(e.old_string, () => e.new_string)) : null);
+	if (tool === 'Write') return typeof input.content === 'string' ? input.content : null;
+	if (tool === 'Edit') return apply(old, input);
+	if (tool === 'MultiEdit') return Array.isArray(input.edits) ? input.edits.reduce(apply, old) : null;
+	return undefined;
+}
+
+// K368 S1-S5: a test file's write must give each new test( a why line whyFault passes, and a write this check cannot
+// parse is refused and logged. Returns the refusal for stderr, or null to let the write through.
+function whyRefusal(tool, input, rel, abs, root) {
+	const old = fs.existsSync(abs) ? fs.readFileSync(abs, 'utf8') : '';
+	const next = resultOf(tool, input, old);
+	if (next === undefined) return null;
+	if (next === null) {
+		try {
+			const common = safeSpawn.gitRead(root, ['rev-parse', '--path-format=absolute', '--git-common-dir'], { encoding: 'utf8' });
+			if (common.status === 0) fs.appendFileSync(path.join(common.stdout.trim(), 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'edit-fence', file: rel, tool, reason: 'unparsable' })}\n`);
+		} catch { /* the refusal stands without its log row */ }
+		return `Blocked: ${rel} is an unparsable test file: the ${tool} cannot be applied to it, so its tests cannot be checked. Stop and report it.`;
+	}
+	const oldTests = tests(old);
+	const nextTests = tests(next);
+	const faults = [];
+	// U21 C3: a name that newly repeats is refused outright, whatever its why, since the check reads only the last test of a name.
+	for (const name of nextTests.twice) {
+		if (!oldTests.twice.has(name)) faults.push(`test "${name}": two tests in this file share the name: the check reads only the last, so give each its own`);
+	}
+	for (const [name, body] of nextTests) {
+		// Judged: a new name, a name that newly repeats, and a test whose old why passed and whose new one does not. A legacy
+		// test that never had a passing why stays editable.
+		const fresh = !oldTests.has(name) || (nextTests.twice.has(name) && !oldTests.twice.has(name));
+		const regressed = oldTests.has(name) && !whyFault(oldTests.get(name)) && whyFault(body);
+		if (!fresh && !regressed) continue;
+		const fault = whyFault(body);
+		if (fault) faults.push(`test "${name}": ${fault}`);
+	}
+	return faults.length ? `Blocked: ${rel} cannot be saved as written. ${faults.join('; ')}. Give each test its own name and a usable why line above it, or report it if you cannot.` : null;
+}
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
@@ -74,6 +113,10 @@ function main() {
 		// A tester or writer edits only what the lead listed, so with no list it stops (a builder keeps its worktree edits).
 		process.stderr.write(`Blocked: ${input.agent_type} has no file list. The lead writes kit-unit-files.txt before the unit starts; stop and report it.\n`);
 		return 2;
+	}
+	if (isTestFile(rel)) {
+		const refusal = whyRefusal(input.tool_name, input.tool_input || {}, rel, target, root);
+		if (refusal) { process.stderr.write(`${refusal}\n`); return 2; }
 	}
 	return 0;
 }

@@ -18,7 +18,6 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
 | Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Risk | Category | Tester | Runs | Built by |
 |---|---|---|---|---|---|---|---|---|---|
 | U1 | | | | | low / medium / high | guard / logic / glue / data / docs | | parallel / alone / after Ux | builder / lead |
-
 - **Category and Tests** set the unit's test budget. Print the computed category with the kit's test-budget.mjs
   (`--files` with the unit's paths, `--risk` with its Risk, `--map` with the project's kit.config.json); the Category
   cell may raise it, never lower it. Each Tests line reads `<what it checks> -> <spec line or rule id>`, the lines split
@@ -37,6 +36,14 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
   "logged". A `wiring:` line (the guard is registered where it must run) may sit beside them, never in place of one.
   Example Tests cell: `| bypass: runs the guard through a wrapper and another shell -> <S1><br>repeat: runs the guard twice
   with the same verdict -> <S1><br>fail-closed: a broken guard blocks the call and is logged -> <S1> |`
+
+#### Retest unit (U1r) and lead ruling
+
+- **A retest unit** is a row named like U1r, "retest of U1", with the same files as U1 and `after U1` in Runs. It reruns
+  a unit whose tests the test review sent back. It is its own row, so its test lines are counted on their own.
+- **A lead ruling** is a decision the lead makes on the plan during the build. Write it under the unit as one line:
+  `lead ruling: <the decision> - proof: <the command, the quoted line or the record that answers it>`. A ruling with no
+  proof is not a ruling.
 
 ## Collision list (from a repo-wide search, never from memory)
 

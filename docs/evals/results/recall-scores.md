@@ -1238,3 +1238,40 @@ behaviour: b24-1.51.0 median 14 baseline 14 suite v2 control 6
 behaviour asked again: 5-layout (3 of 5 against 5, then 5 of 5 against 5)
 behaviour worse: none
 scored: e4d00f881251730e47d25d5ba32f8289d3c09014
+
+## Recall v12 - 1.51.2, leaner CI, safer sweeps and team build guards (2026-11-23)
+
+Candidate: the branch frozen at b9f65f1a in a clone, its user layer installed into its own throwaway Claude folder. Baseline: the released 1.51.1, from a clone of its tag, on its own throwaway Claude folder, run the same day (candidate 17:04Z to 17:25Z, release 17:25Z to 17:45Z). Control: no kit, on the release's throwaway folder. Every arm used one probe login, copied only between the throwaway folders and run one arm after another.
+
+Scored under the fixed gate (K198): two fresh blind scorers read all eleven runs together, a run's score is their average with no rounding up, the floor is 14, and a question that sums lower than the release is asked again alone before it can count as worse.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 0.5, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 14, 14, 14, 14, 14 | 13.5, 14, 14, 14, 14 | 0 |
+
+- **Scored: five-run median 14 of 14, same-day baseline 14, control 0.** The scorers split once, on a release answer to Q13 that said the closeout starts on its own but not that no keyword is needed. No question sums lower than the release, so none was asked again.
+- **The runs were named by side after blinding:** the runs were saved as b25-cand, b25-rel and b25-control, and the score step reads the side from the first word of a name, so a copy of the sealed map was made with only the names changed (cand-b25, base-b25, control-b25). The labels, hashes and times the scorers worked from are the same.
+- **Behaviour (suite v2, floor 14):** the branch 14, 14, 14, 14, 14; the released 1.51.1 runs 14, 14, 14, 13, 14 the same day; control 6. No scenario sums lower than the release.
+- **Not measured:** the user layer. Each arm carried its own global instructions into its probe, beside the owner's own ~/.claude/CLAUDE.md, which loads in every folder under the home folder.
+
+scorers: 2
+worse: none
+control: 0
+gate: b25-1.51.2 median 14 baseline 14 brief v2 keys v12
+behaviour: b25-1.51.2 median 14 baseline 14 suite v2 control 6
+behaviour worse: none
+scored: b9f65f1a271bac47bbcbc9fe9d227559c5ba4ac3

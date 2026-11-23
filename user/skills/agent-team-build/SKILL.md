@@ -147,7 +147,7 @@ message of each turn, which is what the lead receives.
 The build lead runs the batch as the overwatch lead. It is the build lead, not an extra role: it adds no seat to the roles table, and it keeps the lead's tools. Its run, in order:
 
 1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and build the lanes from plan-graph's output: units that touch one file share a lane.
-2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. Before a tester's or writer's spawn, the lead writes that agent's file list to `kit-unit-files.txt` with `node {{CLAUDE_HOME}}/kit-tools/unit-lock.mjs --tester --files <tests>`, so the files it may touch are fixed before it starts.
+2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. Right after a tester's or writer's spawn, the lead writes that agent's file list to `kit-unit-files.txt` in the agent's worktree (see "Lead lessons from this patch"), so the files it may touch are fixed before its first edit.
 3. **Answer lane questions.** Each question from a lane gets one answer, written in that lane's log.
 4. **Log every step.** Write each step as a JSON line (unit, step, at, by), and read the checklist after each merge: `node {{CLAUDE_HOME}}/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>`. After the tester's red commit, the lead locks the unit's row with `node {{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> --lock <unit>`; the count gate then checks the commit's new tests against that row with `node {{CLAUDE_HOME}}/kit-tools/unit-check.mjs <base>..<head> --plan <plan.md> --unit <id>`.
 5. **Spin down the teams.** Stop each agent once its lane hands back, and leave none running. The lead adds an `agent` key (the agent id it got back) to the role line of every hand-back record it saves.
@@ -155,6 +155,54 @@ The build lead runs the batch as the overwatch lead. It is the build lead, not a
 7. **One sweep.** Run the pre-PR sweep once, on the integrated branch.
 8. **Fixes in lanes.** Each finding the sweep names is fixed in its own lane, under the same merge rule.
 9. **CI gate, then the owner's yes.** Wait for CI to go green, then ask the owner's yes before any outward act.
+
+## Lead lessons from this patch
+
+Each lesson below came from a real run. Follow it as written.
+
+**Lanes and briefs.**
+- Run at most 4 lanes building at once.
+- Make each tester and builder brief from the plan with `plan-check.mjs <plan.md> --brief <unit> --role tester` (or
+  `--role builder`). `plan-check.mjs <plan.md> --whys` prints each test's name and why. Each brief starts with
+  `Plan:`, `Unit:`, `Role:` and `Worktree:` lines (the templates show them).
+- Whenever the base moves, re-run the plan's Claims and Collision greps on the new base before the next brief goes out.
+- A retest unit is its own row in the plan. A lead ruling goes in the plan as `lead ruling: <decision> - proof: <proof>`.
+
+**Isolated worktrees and the unit lock.**
+- Testers and builders run isolated, each in its own worktree. Its first step is to reset to the lane sha (the lane
+  sha is the base commit the brief names), never a bare `git reset` on the main checkout.
+- The edit fence reads the hook's folder, so the lead writes the lock right after the spawn, into the agent's
+  worktree, from a subshell: `(cd <agent worktree> && node {{CLAUDE_HOME}}/kit-tools/unit-lock.mjs --tester --files
+  <tests>)`. The lead's own folder never moves.
+- An isolated agent that stops with no change loses its worktree. Its brief says: make a wip commit before you stop to
+  ask.
+
+**Warm agents and check rounds.**
+- The agent-model hook holds a fresh tester or builder spawn while an open agent of the same lane is under 150000
+  tokens (`WARM_LIMIT` in `warm.mjs`): continue that agent with `SendMessage`. At or over 150000 tokens, the
+  agent-model hook holds the SendMessage instead: spawn a fresh agent and log the reset with `warm.mjs reset`.
+- A unit gets at most 2 check rounds. The agent-model hook enforces the cap and refuses a third checker spawn.
+
+**How many at once, and the log.**
+- Lead practice, not checked by code: up to 3 test reviewers and 2 checkers run at once. Start one more only when over 2 units wait for that role. The lane caps above are lead practice too.
+- Lead practice: log each start as a line of kind "scale" with its role, count, queue and at.
+- Read `date -u` before you write any time into a log. Never write a time from memory.
+
+**Review step: the closeout card.**
+1. After the sweep, the lead writes `docs/builds/<version>.closeout.json` and commits it once. There is no open command.
+2. Make one fix per finding. Each fix has its own commit.
+3. A finding you will not fix now goes to `closeout.mjs defer "<text>"`; it prints "written, carry on".
+4. Run `closeout.mjs check` last. A build record with a sweep and no passing closeout fails CI.
+
+| Step | The lead may | The lead may not |
+|---|---|---|
+| Findings | fix one finding per commit, or defer it | fix two findings in one commit |
+| Closeout file | write and commit it once | skip `closeout.mjs check` |
+| Tests | add one test per ticket | add a test beyond the ticket |
+
+The test count only goes down in closeout, except one test per ticket.
+
+In closeout and sweep fixes, a tester or writer brief carries a `Ticket: <id>` line naming its ticket. The agent-model hook refuses one without it.
 
 ## Who decides
 

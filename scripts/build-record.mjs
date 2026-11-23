@@ -9,14 +9,22 @@
 //   node scripts/build-record.mjs notes [<record>]       prints the release notes
 //   node scripts/build-record.mjs release [<record>] [<file>]  writes the notes to a file (default reports/) and
 //                                                        prints the one publish line, its title from the record
+//   node scripts/build-record.mjs --from-plan <plan.md> --records <folder>  prints each unit's tests as file::name keys
+//                                                        (JSON, no file written); a RECORD test the plan lacks is named
 // With no record named, the one for the version in VERSION is read.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkSection } from '../project/.claude/visuals.mjs';
+import { check } from '../user/kit-tools/handoff.mjs';
+import { planUnits, testLines, testOf } from '../user/kit-tools/plan-check.mjs';
+import { filesOf } from '../user/kit-tools/test-budget.mjs';
+import { findingsOf } from '../user/kit-tools/closeout.mjs';
+import safeSpawn from '../user/kit-tools/safe-spawn.cjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
+const CLOSEOUT = path.join(ROOT, 'user', 'kit-tools', 'closeout.mjs');
 export const KINDS = { added: 'Added', changed: 'Changed', fixed: 'Fixed', security: 'Security', removed: 'Removed' };
 const SEVERITIES = ['critical', 'high', 'medium', 'low'];
 export const SIX_DIMENSIONS = ['Privacy', 'Supply chain', 'Legal', 'Code security', 'Gaps, scaling, test value', 'Alignment'];
@@ -99,6 +107,12 @@ export function problems(rec) {
 		// Only an accepted line that names a high or critical stands in for its fix row (the build 14 sweep).
 		const hcAccepted = (s.accepted || []).filter((a) => /^(high|critical)\b/i.test(String(a))).length;
 		need(!Array.isArray(s.fixes) || hcRows + hcAccepted >= hcFound,`sweep has ${hcFound} high or critical finding(s) but ${hcRows} high or critical fix row(s)`);
+		// S5: one fix row per finding of each severity, the margin 0: a row past the findings of its severity is a fault.
+		for (const sev of ['critical', 'high']) {
+			const rows = (Array.isArray(s.fixes) ? s.fixes : []).filter((f) => f && f.severity === sev).length;
+			const got = (s.findings || {})[sev] || 0;
+			if (rows > got) out.push(`sweep has ${got} ${sev} finding(s) but ${rows} ${sev} fix row(s): one fix row per finding`);
+		}
 	}
 	need(!(rec.verification || []).some((v) => FIX_CLAIM.test(String(v))), 'a verification line states the fix-test claim: it is written from sweep.fixes, never typed');
 	need(rec.tests && Number.isInteger(rec.tests.before) && Number.isInteger(rec.tests.after), 'tests has no before and after count');
@@ -229,8 +243,16 @@ export function notes(rec) {
 	return out.join('\n');
 }
 
-/** The record for the version in VERSION, its path, and the checks against VERSION and CHANGELOG.md. */
-export function checkRepo(root, file) {
+/**
+ * The record for the version in VERSION, its path, and the checks against VERSION and CHANGELOG.md.
+ * Args:
+ *     root: the repo folder
+ *     file: the record's path, or none for docs/builds/<version>.json
+ *     opts.closeout: run the closeout check (K369); the CLI turns it on for check only
+ * Returns:
+ *     {at, rec, problems}
+ */
+export function checkRepo(root, file, { closeout = true } = {}) {
 	const version = fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
 	const at = file ? path.resolve(file) : path.join(root, 'docs', 'builds', `${version}.json`);
 	let rec;
@@ -239,13 +261,29 @@ export function checkRepo(root, file) {
 	if (rec.version !== version) found.push(`the record is for ${rec.version}, VERSION says ${version}`);
 	// The build 14 sweep: a row's severity and flags are typed, so a guard fix typed medium shipped with no test. In a
 	// repo, each row's commit must resolve, and a row with no test may not change a guard or gate file.
-	const inRepo = spawnSync('git', ['rev-parse', '--git-dir'], { cwd: root, encoding: 'utf8' }).status === 0;
+	const inRepo = safeSpawn.gitRead(root, ['rev-parse', '--git-dir'], { encoding: 'utf8' }).status === 0;
 	for (const f of (inRepo && rec.sweep && Array.isArray(rec.sweep.fixes) ? rec.sweep.fixes : [])) {
 		if (!f || typeof f.commit !== 'string' || !f.commit.trim()) continue;
-		const shown = spawnSync('git', ['show', '--name-only', '--format=', '--end-of-options', `${f.commit}^{commit}`], { cwd: root, encoding: 'utf8' });
+		const shown = safeSpawn.gitRead(root, ['show', '--name-only', '--format=', '--end-of-options', `${f.commit}^{commit}`], { encoding: 'utf8' });
 		if (shown.status !== 0) { found.push(`fix ${f.id} commit ${f.commit} is not a commit here`); continue; }
 		const guarded = shown.stdout.split('\n').filter((p) => GUARDED.test(p));
 		if (f.test === NO_TEST && guarded.length) found.push(`fix ${f.id} changes ${guarded.join(', ')}, a guard or gate file: mark it security and name its test`);
+	}
+	// K369 S1: a record with a sweep runs the closeout check, and its stderr lines are this check's problems.
+	if (closeout && inRepo && rec.sweep) {
+		const r = spawnSync(process.execPath, [CLOSEOUT, 'check', '--root', root], { cwd: root, encoding: 'utf8' });
+		const lines = String(r.stderr).split('\n').filter(Boolean);
+		if (r.status !== 0) found.push(...(lines.length ? lines : [`closeout check exited ${r.status}`]));
+	}
+	// K369 S5: a fix row takes its finding's severity from the closeout file, never its own.
+	const co = findingsOf(root, version);
+	if (co && rec.sweep && Array.isArray(rec.sweep.fixes)) {
+		rec.sweep.fixes.forEach((f, i) => {
+			if (!f) return;
+			const id = f.id || `row ${i + 1}`;
+			if (!f.finding || !co.has(f.finding)) found.push(`fix ${id} names no finding the closeout file lists`);
+			else if (co.get(f.finding) !== f.severity) found.push(`fix ${id} is ${f.severity} but its finding ${f.finding} is ${co.get(f.finding)}: a fix row takes its finding's severity`);
+		});
 	}
 	const log = fs.readFileSync(path.join(root, 'CHANGELOG.md'), 'utf8').replace(/\r\n/g, '\n');
 	const top = (log.split(/^(?=## \d)/m).find((part) => part.startsWith('## ')) || '').trimEnd();
@@ -253,10 +291,81 @@ export function checkRepo(root, file) {
 	return { at, rec, problems: found };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+/**
+ * The tests of each plan unit as "<first test file in its Files cell>::<test name>" keys, in the plan's order, from its
+ * Tests cell. A tester RECORD's "tests" names a test the plan lacks: it goes to notes, is not added, and is not a fault.
+ * Args:
+ *     planText: the plan's markdown text.
+ *     records: [{name, text}] for each .jsonl hand-back in the records folder.
+ * Returns:
+ *     {items: [{unit, tests}], notes: [stderr lines], faults: [stderr lines, which make the run exit 1]}.
+ */
+export function fromPlan(planText, records) {
+	const items = [];
+	const faults = [];
+	const notes = [];
+	const keysOf = new Map();
+	for (const u of planUnits(planText)) {
+		const file = filesOf(u.files).find((f) => /^tests\//.test(f));
+		if (!file) {
+			faults.push(`unit ${u.id} has no test file in its Files cell, so its tests cannot be keyed`);
+			continue;
+		}
+		const keys = testLines(u.tests).map((l) => `${file}::${testOf(l).name}`);
+		keysOf.set(u.id, keys);
+		items.push({ unit: u.id, tests: keys });
+	}
+	for (const { name, text } of records) {
+		const r = check(text);
+		if (!r.ok) {
+			faults.push(`record ${name} is not a valid hand-back: ${r.errors.join('; ')}`);
+			continue;
+		}
+		const role = r.roleLine || {};
+		if (role.role !== 'tester' || role.tests === undefined) continue;
+		if (!Array.isArray(role.tests) || !role.tests.every((k) => typeof k === 'string')) {
+			faults.push(`record ${name} has a tests value that is not a list of test keys`);
+			continue;
+		}
+		const unit = typeof role.unit === 'string' ? role.unit.trim() : '';
+		const planned = keysOf.get(unit) || [];
+		for (const key of role.tests) if (!planned.includes(key)) notes.push(`not in plan: ${unit} ${key}`);
+	}
+	return { items, notes, faults };
+}
+
+// --from-plan <plan.md> --records <folder>: the fromPlan result on stdout (JSON) and stderr; exit 2 on bad input.
+function fromPlanMain(args) {
+	if (args.length !== 3 || args[1] !== '--records') {
+		process.stderr.write('usage: node scripts/build-record.mjs --from-plan <plan.md> --records <folder>\n');
+		return 2;
+	}
+	let r;
+	try {
+		const planText = fs.readFileSync(args[0], 'utf8');
+		const records = fs.readdirSync(args[2]).filter((n) => n.endsWith('.jsonl')).sort()
+			.map((name) => ({ name, text: fs.readFileSync(path.join(args[2], name), 'utf8') }));
+		r = fromPlan(planText, records);
+	} catch (e) {
+		process.stderr.write(`build-record --from-plan: ${e.message}\n`);
+		return 2;
+	}
+	for (const n of r.notes) process.stderr.write(`${n}\n`);
+	if (r.faults.length) {
+		for (const f of r.faults) process.stderr.write(`${f}\n`);
+		return 1;
+	}
+	process.stdout.write(`${JSON.stringify({ items: r.items }, null, 2)}\n`);
+	return 0;
+}
+
+const RUN_DIRECTLY = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (RUN_DIRECTLY && process.argv[2] === '--from-plan') {
+	process.exitCode = fromPlanMain(process.argv.slice(3));
+} else if (RUN_DIRECTLY) {
 	const [cmd, file] = process.argv.slice(2);
 	const root = process.env.KIT_RECORD_ROOT ? path.resolve(process.env.KIT_RECORD_ROOT) : ROOT;
-	const r = checkRepo(root, cmd === 'body' ? undefined : file);
+	const r = checkRepo(root, cmd === 'body' ? undefined : file, { closeout: cmd === 'check' });
 	if (cmd === 'body') {
 		// The build 14 sweep: the published body's fix lines, from "High and critical findings" to "Deferred", must be the
 		// ones the record writes; a hand edit after the record wrote them is named.
@@ -283,7 +392,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	} else if (['changelog', 'pr', 'notes'].includes(cmd) && r.rec && !problems(r.rec).length) {
 		process.stdout.write({ changelog, pr: prBody, notes }[cmd](r.rec));
 	} else {
-		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>] | release [<record>] [<file>]\n');
+		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>] | release [<record>] [<file>] | --from-plan <plan.md> --records <folder>\n');
 		process.exitCode = r.rec ? 1 : 2;
 	}
 }

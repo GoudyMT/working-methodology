@@ -1,0 +1,33 @@
+{"text":"1.51.2 sweep L1 a unit range in a Unit: line (U17-U19) never counts the units inside it (agent-model.cjs idsOf)","at":"2026-11-23T12:32:15.353Z"}
+{"text":"1.51.2 sweep L2 a closeout Ticket: line passes on any id in the ticket free text (agent-model.cjs ticketNamed)","at":"2026-11-23T12:32:15.384Z"}
+{"text":"1.51.2 sweep L3 a hand-back log write that throws before the enforce deny is swallowed by the canary (handoff-gate.cjs)","at":"2026-11-23T12:32:15.416Z"}
+{"text":"1.51.2 sweep L4 a why line \"guards the owner\" in three words passes, and a made-up rule id passes at save and hand-back (why-rule.cjs)","at":"2026-11-23T12:32:15.451Z"}
+{"text":"1.51.2 sweep L5 a null entry in a closeout findings list crashes the check with no log row (closeout.mjs)","at":"2026-11-23T12:32:15.487Z"}
+{"text":"1.51.2 sweep L6 the sweep ask code names only the contract hash, so a yes to an earlier ask clears a later one (approve.mjs askCode)","at":"2026-11-23T12:32:15.519Z"}
+{"text":"1.51.2 sweep L7 legacy owner-yes lines with no head no longer clear, so secondPass misses those sweeps (approve.mjs)","at":"2026-11-23T12:32:15.551Z"}
+{"text":"1.51.2 sweep L8 flip-plan budget tests use equal flip costs, so fill order is unpinned (tests/flip-plan)","at":"2026-11-23T12:32:15.582Z"}
+{"text":"1.51.2 sweep L9 why-at-write drives only a tester on a .mjs test file (tests/why-at-write)","at":"2026-11-23T12:32:15.616Z"}
+{"text":"1.51.2 sweep L10 fast-cap uses one file with one test (tests/fast-cap)","at":"2026-11-23T12:32:15.648Z"}
+{"text":"1.51.2 sweep L11 ruling-proof refuses only \"trust me\", no near misses (tests/ruling-proof)","at":"2026-11-23T12:32:15.679Z"}
+{"text":"1.51.2 sweep L12 ci-budget pins the literal ci.yml shell line (tests/ci-budget)","at":"2026-11-23T12:32:15.712Z"}
+{"text":"1.51.2 sweep L13 two log-mode checks match any row naming a word, not the hold id (tests/warm-agents, tests/closeout-spawn)","at":"2026-11-23T12:32:15.744Z"}
+{"text":"1.51.2 sweep L14 stale-pick has no case for a map sha absent from the repo (tests/stale-pick)","at":"2026-11-23T12:32:15.776Z"}
+{"text":"1.51.2 sweep L15 the flip-plan parallel test is a wall-clock ratio, and the share test a 500 ms bound (tests/flip-plan, tests/spawn-list)","at":"2026-11-23T12:32:15.820Z"}
+{"text":"1.51.2 sweep L16 retest-step uses one-line Tests cells only (tests/retest-step)","at":"2026-11-23T12:32:15.852Z"}
+{"text":"1.51.2 sweep L17 the Windows job runs the 30 s Linux fast cap (test-run.mjs)","at":"2026-11-23T12:32:15.885Z"}
+{"text":"1.51.2 sweep L18 the fast cap reads only leaf testcase elements (test-run.mjs overCap)","at":"2026-11-23T12:32:15.918Z"}
+{"text":"1.51.2 sweep L19 the project CI templates use a tag, not a sha pin, for checkout in the new plan job","at":"2026-11-23T12:32:15.952Z"}
+{"text":"1.51.2 sweep L20 the python template does not say pytest-split must be in requirements","at":"2026-11-23T12:32:15.986Z"}
+{"text":"1.51.2 sweep L21 SKILL.md step 2 says the list file is in the worktree, it is at the git path; U13 text should say a non-isolated spawn","at":"2026-11-23T12:32:16.019Z"}
+{"text":"1.51.2 sweep L22 the round cap wording does not say it counts only briefs with Plan: and a Unit: id","at":"2026-11-23T12:32:16.056Z"}
+{"text":"1.51.2 sweep L23 the 1.51.2 reworded file why line names patch 1.51.1","at":"2026-11-23T12:32:16.088Z"}
+{"text":"1.51.2 sweep L24 kit-tests \"every test job passed\" does not read the test-check results (ci.yml)","at":"2026-11-23T12:32:16.119Z"}
+{"text":"1.51.2 sweep L25 ci-budget leaves its own job out by exact name, and map-merge is not told how many parts to expect","at":"2026-11-23T12:32:16.151Z"}
+{"text":"1.51.2 after the sweep: handoff-gate passes a hand-back when its own checker crashes, under enforce too (hold-modes.test.mjs:628 and handoff-canary.test.mjs:55 pin it): fail closed or not is the owner call","at":"2026-11-23T14:05:22.025Z"}
+{"text":"1.51.2 after the sweep: handoff-gate turns a hold-mode.cjs load error into log mode, though it is now a high-tier hold (handoff-gate.cjs:17-23)","at":"2026-11-23T14:05:22.059Z"}
+{"text":"1.51.2 after the sweep: closeout check reads a closeout file from the working tree, so removing both the record sweep and the closeout file turns the ticket check off; read it from history","at":"2026-11-23T14:05:22.091Z"}
+{"text":"1.51.2 after the sweep: the agent-model closeout gate refuses a tester with no ticket, so a non-ticket medium or low fix after the sweep can get no tester once that hold enforces","at":"2026-11-23T14:05:22.123Z"}
+{"text":"1.51.2 after the sweep: plan-check --brief writes Lane: <lane id> as a placeholder; two unfilled briefs read as one lane to the warm hold","at":"2026-11-23T14:05:22.155Z"}
+{"text":"1.51.2 after the sweep: why-rule reads node:test import lines inside strings and comments (fails closed), and a slash after of, yield or await is read one fixed way, regex or division, so a deliberate trick can hide a test call","at":"2026-11-23T14:05:22.188Z"}
+{"text":"1.51.2 after the sweep: agent-model ROLE_WORDS leaves out scanner, researcher, drafter, orchestrator and test-reviewer, so \"Role: scanner for the checker claims\" reads as a checker","at":"2026-11-23T14:05:22.221Z"}
+{"text":"1.51.2 after the sweep: the team build skill does not say that sweep fixes get no review or check rounds: after the sweep, fixes are test-first and CI is the gate (the 1.51.2 lead ran two)","at":"2026-11-23T14:05:22.252Z"}

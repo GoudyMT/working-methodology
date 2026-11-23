@@ -241,6 +241,10 @@ const git = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile
 // protocol off), with lazy fetch off too: a planted git.exe or a hook program in the repo config never runs.
 const baseGit = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8', env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
+// K357 S1: the checkout the contract sits in (a linked worktree's own, or the main checkout's); '' when git cannot read one.
+// Read once: the contract's folder does not move during a run, and each git start costs time on every approval.
+let topCache;
+const toplevel = () => { if (topCache === undefined) { const t = git('rev-parse', '--show-toplevel'); topCache = t.status === 0 ? t.stdout.trim() : ''; } return topCache; };
 
 // The log: one per repo, in its git folder.
 const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
@@ -357,6 +361,9 @@ function diffFacts() {
 	const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ':(top)').stdout.split('\n').filter(Boolean).filter((l) => !sweepPaper(l.slice(3)));
 	return {
 		base,
+		// The merge base the branch's diff is read from, as a commit: the log records it, so the same branch in another
+		// checkout reads the same base.
+		mergeBase: git('merge-base', base, 'HEAD').stdout.trim() || null,
 		baseName: short(base),
 		offBase,
 		staleBase,
@@ -387,7 +394,30 @@ const readsLarge = (r) => (Array.isArray(r.context) ? r.context : []).some((x) =
 const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '').length >= min;
 
 const rel = (f) => toPosix(path.relative(process.cwd(), f) || f);
-const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash);
+// An owner yes clears a decision only on the decision's own commit: both heads must be commit ids, and equal. A head
+// that is missing or unreadable clears nothing.
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const headOk = (h) => typeof h === 'string' && COMMIT_ID.test(h);
+const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash && headOk(y.head) && headOk(log[i].head) && y.head === log[i].head);
+
+// A decision the owner's yes could not clear for an unreadable head gets one row in the kit's guard log, so the
+// refusal to clear it is visible. A decision with no owner yes has nothing to clear and gets no row.
+const GUARD_LOG = LOG && path.join(path.dirname(LOG), 'kit-guard-open.log');
+function logUnreadableHeads(log) {
+	if (!GUARD_LOG) return;
+	// One row per uncleared line ever: a row already written for this contract and hash is kept, not repeated by each run.
+	const written = new Set();
+	try { for (const l of fs.readFileSync(GUARD_LOG, 'utf8').split('\n')) { try { const e = JSON.parse(l); if (e && e.cause === 'no readable head') written.add(`${e.contract}\n${e.hash}`); } catch { /* not a row */ } } } catch { /* no log yet */ }
+	log.forEach((d, i) => {
+		if (d.kind !== 'decision' || isCleared(log, i)) return;
+		const yes = log.filter((y, j) => j > i && y.kind === 'owner-yes' && y.contract === d.contract && y.hash === d.hash);
+		if (!yes.length || (headOk(d.head) && yes.every((y) => headOk(y.head)))) return;
+		const key = `${d.contract}\n${d.hash}`;
+		if (written.has(key)) return;
+		written.add(key);
+		fs.appendFileSync(GUARD_LOG, JSON.stringify({ at: new Date().toISOString(), hook: 'approve.mjs', cause: 'no readable head', contract: d.contract, hash: d.hash }) + '\n');
+	});
+}
 
 // The branch this checkout is on, recorded with each decision: a rebase rewrites the heads, not the name.
 const currentBranch = () => git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
@@ -506,6 +536,7 @@ function check(c, facts, log = []) {
 	const first = null;
 	{
 		// One sweep per branch: a plain contract after a sweep that ran here is a second pass, the owner's (rule:finding-pipeline).
+		logUnreadableHeads(log);
 		const done = facts && secondPass(log, facts.base);
 		if (done) why.push(`a second sweep on this branch is the owner's under the one-sweep loop (rule:finding-pipeline): ${rel(done)} already ran`);
 		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) fix.push('modifiers must be a list of names, like ["security-sensitive"]');
@@ -635,6 +666,9 @@ function decide() {
 	const s = state();
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
+	// K357 S6: a folder git finds but gives no work tree for (a worktree's own folder) cannot show its rule files or its
+	// session, so it is a fix, logged, never an approval read from another checkout.
+	if (!toplevel()) fix.unshift(`the contract's folder (${rel(path.dirname(contractFile))}) is a worktree git cannot read: git gives no work tree there, so its untracked rule files and session cannot be read; run approve.mjs on the contract from the branch's own checkout`);
 	// The build 11 sweep: a contract's text goes into its briefs, so one that carries the confirmation phrase would
 	// hand a reviewer what it must find by reading. Read as the canary reads it: letters and digits, any case.
 	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
@@ -681,7 +715,7 @@ function decide() {
 	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, runBudgets, runRoles);
 	// K182: the reviewer count and the dollars, said before the owner's yes and in the start notice.
 	const spendLine = ceilingUnit === 'dollars' ? `${runRoles.length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, roles: runRoles.map((r) => r.role || r.kind), head };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.mergeBase, lines: facts && facts.lines, roles: runRoles.map((r) => r.role || r.kind), head };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -748,11 +782,13 @@ const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
 // K218: a file git tracks is read as the merge base has it (the K128 pattern), so a branch cannot edit the rules its
 // own reviewers work under; with a sweep hash the base copy is written to the sweep's scratch folder and the brief
 // points there. A file git does not track (a project's untracked notes) is not part of the change under review, so it is
-// read from the main checkout, as in a worktree (the build 11 sweep). A file the branch adds has no base copy and gives
-// no block. A file the index names outside the repo is not read.
+// read from the contract's own checkout (the build 11 sweep; K357: its linked worktree, not the main checkout). A file
+// the branch adds has no base copy and gives no block. A file the index names outside the repo is not read.
 function rulesBlock(facts, hash) {
-	const commonDir = path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git');
-	const top = path.dirname(commonDir);
+	const commonDir = path.resolve((common.status === 0 ? common.stdout.trim() : '') || '.git');
+	const top = toplevel();
+	if (!top) return null;
+	const mainTop = path.dirname(commonDir);
 	const mb = facts && facts.base ? baseGit('merge-base', facts.base, 'HEAD').stdout.trim() : '';
 	const tracked = (f) => baseGit('ls-files', '--error-unmatch', '--', `:(top)${f}`).status === 0 || Boolean(mb && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0);
 	// The build 23a commit security review: where the base holds any of the rule files, only base copies count, so an
@@ -766,7 +802,9 @@ function rulesBlock(facts, hash) {
 			const r = baseGit('show', `${mb}:${f}`);
 			return r.status === 0 ? { text: r.stdout, base: true } : null;
 		}
-		try { return { text: fs.readFileSync(path.join(top, f), 'utf8'), base: false }; } catch { return null; }
+		// K357 C1: a worktree with no copy of its own untracked file reads the main checkout's, as the build 11 sweep did.
+		for (const root of [top, mainTop]) { try { return { text: fs.readFileSync(path.join(root, f), 'utf8'), base: false, root }; } catch { /* next root */ } }
+		return null;
 	};
 	let file = null;
 	const index = readRule('standards/INDEX.md');
@@ -776,7 +814,7 @@ function rulesBlock(facts, hash) {
 	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter((f) => f && inside(f))) {
 		const got = readRule(f);
 		if (!got) continue;
-		let where = toPosix(path.join(top, f));
+		let where = toPosix(path.join(got.root || top, f));
 		// The base copy sits in the git folder, which no tool writes, so it cannot be rewritten before a reviewer reads it.
 		if (got.base && hash) {
 			const dir = path.join(commonDir, `kit-sweep-${hash.slice(0, 8)}`);
@@ -1003,12 +1041,23 @@ const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
 // so, or the lead reads it as no answer and asks the owner the same wrong way again (build 11's resume).
 const unquotedNote = (act, since) => {
 	// New 2 (build 12): with no session to read, say which part is missing, not that the owner did not answer.
-	const gap = sessionGap({ repo: repoRoot() });
+	const gap = sessionGapAny();
 	if (gap) return ` No pop-up was read: ${gap}.`;
-	const u = unquotedYes(act, { since, repo: repoRoot() });
+	const u = unquotedYesAny(act, { since });
 	return u ? ` The owner's Yes at ${new Date(u.at).toISOString()} answered a question that names ${act} without backticks around it, so it counts for nothing: ask again with the act in backticks.` : '';
 };
-const repoRoot = () => path.dirname(path.dirname(LOG));
+// K357 S1, C2: a session's pop-ups are kept under the folder it ran in: the contract's own checkout, or the main checkout's
+// key (pushGrant reads both too). Each lookup reads every key and takes the newest.
+const repoRoots = () => {
+	const top = toplevel();
+	if (!top) return [path.dirname(path.dirname(LOG))];
+	const cd = common.status === 0 ? common.stdout.trim() : '';
+	return [...new Set([top, cd ? path.dirname(path.resolve(cd)) : top])];
+};
+const newest = (found) => found.filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
+const sessionYesAny = (act, opts = {}) => newest(repoRoots().map((repo) => sessionYes(act, { ...opts, repo })));
+const unquotedYesAny = (act, opts = {}) => newest(repoRoots().map((repo) => unquotedYes(act, { ...opts, repo })));
+const sessionGapAny = () => { const gaps = repoRoots().map((repo) => sessionGap({ repo })); return gaps.includes('') ? '' : gaps[0]; };
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
@@ -1034,7 +1083,7 @@ function ownerYes() {
 	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }
 	// The owner's tap on this ask's act, after the ask. Read before anything is written, so a refusal logs nothing.
 	const act = `sweep yes ${askCode(last.hash)}`;
-	const yes = sessionYes(act, { since: Date.parse(last.time), repo: repoRoot() });
+	const yes = sessionYesAny(act, { since: Date.parse(last.time) });
 	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask.${unquotedNote(act, Date.parse(last.time))} ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
 	if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered an ask; one answer is for one ask. Nothing logged.'); return 1; }
 	const proof = { proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() };
@@ -1049,10 +1098,14 @@ function ownerYes() {
 
 // A pause is the owner's to clear, so every ask while paused says how, and what to review first.
 function resumeHelp(s) {
+	// K357 S2: the resume reads the owner's Yes from the session that asked, so the line names that session's id. Unset,
+	// it names the variable and leaves the id to the one who runs it.
+	const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
+	const resume = /^[0-9a-f-]{36}$/i.test(sid) ? `CLAUDE_CODE_SESSION_ID=${sid} node ${toPosix(SELF)} --resume` : `node ${toPosix(SELF)} --resume, with CLAUDE_CODE_SESSION_ID set to the id of the session that asked`;
 	return [
 		`Auto-approval is paused since ${String(s.pausedAt || '').slice(0, 10) || 'an unknown date'}: ${s.paused}.`,
 		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes in the pop-up:`,
-		`    ${popUpHow(`sweep resume ${pauseCode(s)}`)}; after their Yes, node ${toPosix(SELF)} --resume.`,
+		`    ${popUpHow(`sweep resume ${pauseCode(s)}`)}; after their Yes, run ${resume}.`,
 		'    Until then every sweep goes to the owner. Carry this into the closeout handoff.',
 	];
 }
@@ -1474,7 +1527,7 @@ function main() {
 	if (has('--tap')) {
 		const act = String(opt('--tap') || '').trim();
 		if (!act) { console.log('Name the act: --tap "sweep resume <code>". Nothing logged.'); return 1; }
-		const yes = sessionYes(act, { repo: repoRoot() });
+		const yes = sessionYesAny(act);
 		const used = yes && tapUsed(state().log, yes.tap);
 		if (yes) { console.log(`This session holds the owner's Yes to \`${act}\` at ${new Date(yes.at).toISOString()}${used ? ', already used: one answer is for one ask' : ''}. Nothing logged.`); return used ? 1 : 0; }
 		console.log(`No Yes from the owner to \`${act}\` in this session.${unquotedNote(act, 0)} Nothing logged.`);
@@ -1485,7 +1538,7 @@ function main() {
 		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
 		// The owner's tap on this pause's act, after the pause.
 		const act = `sweep resume ${pauseCode(s)}`;
-		const yes = sessionYes(act, { since: Date.parse(s.pausedAt || 0), repo: repoRoot() });
+		const yes = sessionYesAny(act, { since: Date.parse(s.pausedAt || 0) });
 		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause.${unquotedNote(act, Date.parse(s.pausedAt || 0))} Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
 		if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered; one answer is for one pause. Nothing logged.'); return 1; }
 		write({ kind: 'resume', proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() });

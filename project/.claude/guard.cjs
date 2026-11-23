@@ -36,7 +36,8 @@ const USER = [
 	['canary.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	// E36 (build 24): follows its hold's mode (log or enforce); under log, a subagent whose model differs from its role file is written to the repo's log.
-	['agent-model.cjs', (t) => AGENTS.includes(t)],
+	// K364 (U18): a SendMessage to a warm agent over the limit is held here too.
+	['agent-model.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	// K150 (build 20): a local test run reaches only the tests the branch changed, unless the owner's pop-up says yes.
 	['test-scope.cjs', (t) => SHELLS.includes(t)],
 	// E18 (build 20): a choice pop-up opens with a plain overview, never item codes alone.

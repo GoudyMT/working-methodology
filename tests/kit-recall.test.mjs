@@ -426,7 +426,10 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   const job = (name) => ci.split(new RegExp(`^  ${name}:$`, 'm'))[1].split(/^  [a-z-]+:$/m)[0];
   const unit = job('unit-tests');
   assert.match(unit, /^    runs-on: ubuntu-latest$/m);
-  assert.match(unit, /^\s+run: node scripts\/test-run\.mjs --shards \d+$/m);
+  // The lanes job sizes the unit runners (a matrix of slices), and each runs its slice of the suite on Linux.
+  assert.match(unit, /^    needs: \[lanes\]$/m);
+  assert.match(unit, /^      matrix: \$\{\{ fromJSON\(needs\.lanes\.outputs\.unit\) \}\}$/m);
+  assert.match(unit, /^\s+node scripts\/test-run\.mjs --shards \d+ --slice "\$[A-Z_]+\/\$[A-Z_]+"( "\$\{[a-z_]+\[@\]\}")?$/m);
   const win = job('windows-tests');
   assert.match(win, /^    runs-on: windows-latest$/m);
   assert.match(win, /KIT_WINDOWS_SLICE: '1'[\s\S]*run: node scripts\/test-run\.mjs --shards \d+/);
@@ -434,12 +437,12 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
   // E32: the lanes job and the slow lane join the gate; a slow lane skipped for having no test passes.
-  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check\]$/m);
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all\]$/m); // pin: 1 (GitHub reads the needs line)
   // T15 D1/D2: the install check, skipped only when the lanes job found no install or guard change.
   assert.ok(gate.includes("if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')")); // pin: 1
   assert.match(job('install-check'), /^    if: needs\.lanes\.outputs\.install == 'true'$[\s\S]*os: \[ubuntu-latest, windows-latest\][\s\S]*run: \|[\s\S]*node scripts\/ci-install-check\.mjs$/m);
   assert.match(gate, /^    if: always\(\)$/m);
-  const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')";
+  const failed = "if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped') || (needs.map-merge.result != 'success' && needs.map-merge.result != 'skipped')";
   assert.ok(gate.includes(failed));
   assert.match(gate.split(failed)[1], /^\s+run: exit 1$/m);
   assert.doesNotMatch(ci, /continue-on-error/);
@@ -461,10 +464,18 @@ test('a PR runs the reached tests and the security set, or every test; main save
   const security = step('The tests the change reaches');
   for (const f of SECURITY_FILES) assert.ok(security.includes(`--always ${f}`), `${f} left out of the security set`);
   assert.doesNotMatch(ci, /- name: The security set\n/, 'the security set runs a second time');
-  // The map is kept by main's push run only, and a PR takes it from main's own push run of its base commit, never from
-  // the Actions cache, which a PR's earlier run can write (the security review of this build).
+  // The map is kept by main's push run only (each runner's part, then the map-merge job's whole map, which runs only
+  // off a PR), and a PR takes it from main's own push run of its base commit, never from the Actions cache, which a PR's
+  // earlier run can write (the security review of this build).
+  assert.ok(ci.includes('- name: Keep the coverage map part\n'), 'no step keeps each runner\'s part of the coverage map');
+  assert.match(ci, /^  map-merge:$/m, 'no map-merge job joins the parts');
+  const part = ci.split('- name: Keep the coverage map part\n')[1].split('- name:')[0];
+  assert.match(part, /if: github\.event_name != 'pull_request'[\s\S]*upload-artifact@[0-9a-f]{40}[\s\S]*name: test-map-part-/);
+  assert.match(step('Every test, with the coverage map'), /if: github\.event_name != 'pull_request'[\s\S]*--map/);
+  const merge = ci.split(/^  map-merge:$/m)[1].split(/^  [a-z-]+:$/m)[0];
+  assert.match(merge, /^    if: github\.event_name != 'pull_request'$/m);
   const keep = ci.split('- name: Keep the coverage map\n')[1].split('- name:')[0];
-  assert.match(keep, /if: github\.event_name != 'pull_request'[\s\S]*upload-artifact@[0-9a-f]{40}[\s\S]*name: test-map/);
+  assert.match(keep, /upload-artifact@[0-9a-f]{40}[\s\S]*name: test-map\n/);
   const load = ci.split('- name: Load the coverage map for the base commit\n')[1].split('- name:')[0];
   assert.match(load, /rm -f tests\/\.map\.json/);
   assert.match(load, /--branch main --event push --commit "\$BASE_SHA"/); // pin: 1

@@ -33,7 +33,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    the reasons it printed, in one AskUserQuestion pop-up whose question quotes the act it printed (`sweep yes <code>`)
    in a code span, with an option starting "Yes" and one starting "No", and wait. After the owner's Yes, log it with
    `approve.mjs <contract.json> --owner-yes` (it reads the tap from this session's record and refuses without it),
-   then go on. A pause is resumed the same way: the act is `sweep resume <code>`, then `approve.mjs --resume`. First
+   then go on. A pause is resumed the same way: the act is `sweep resume <code>`, then `approve.mjs --resume` run with CLAUDE_CODE_SESSION_ID set to the asking session's id (the pause ask prints the line). First
    push and launch gate always ask. A hook (`sweep-guard.cjs`) refuses any
    `reviewer` agent until the log clears this HEAD and this contract, so a new commit or an edited contract means
    running the script again. **Limits:** it stops slips, not a determined workaround: deleting or rewriting the log,

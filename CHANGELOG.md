@@ -1,5 +1,41 @@
 # Changelog
 
+## 1.51.2 - 2026-11-23
+
+CI sizes its runs from measured times within a 3 minute merge path; sweep approval reads the right worktree and commit; and the team build holds its own steps in code, from the test list to a ticket for each test added after the sweep.
+
+### Added
+- The test run maps the suite in slices (`--map --slice i/n`) and `map-merge.mjs` joins the parts into one coverage map, refusing parts from different commits.
+- A fast-lane test over 30 s fails the run, naming the test and its time; `KIT_TEST_FAST_MS` sets the cap, and tests/slow is exempt.
+- `ci-size.mjs` sizes the unit runners and slices from measured test times, at most 6 runners.
+- `flip-plan.mjs` picks the mutation flips, fits them to a time budget and runs them on parallel workers.
+- The required check fails when the merge path runs over its 3 minute budget; `ci-budget.mjs` measures every job but those its step skips by name.
+- A project's CI plan sizes its own test shards from its last test report.
+- Two tests pin the kit repo's filled rules block from 1.51.1 and the shipped template's slots, read as doc claims.
+- A tester or writer spawn is held until its worktree holds the unit's test file list, and the refusal prints the `unit-lock.mjs --tester` command.
+- A planned retest is its own checklist step, checked in order like any unit.
+- A lead's ruling in a plan passes only with its proof, a test or a probe.
+- A third check round on a unit is refused and what is open goes to the next patch list; rounds are counted per plan and unit id, and only review spawns spend them.
+- A new spawn for a role and lane is held while a warm one under 150,000 tokens is open; `warm.mjs` logs each context reset.
+- `plan-check --whys` and `--brief` print each unit's tests with their why lines and write the role briefs; a why under six words is a fault.
+- After the sweep a new test or script needs a ticket: `closeout.mjs check` holds the range after the closeout commit, and `closeout.mjs defer` records the rest for the next patch.
+- In closeout the hook refuses a review spawn and a tester with no ticket, and prints the defer command.
+
+### Changed
+- A lanes job in CI sizes the unit-tests and test-check runs from measured times before they start.
+- The minimal-code job reuses the base commit's coverage map and runs its flips inside the budget.
+- The project CI templates size shards and judge a 3 minute budget, and the fast-lane budget the lane report uses drops from 10 minutes to 3.
+- The team build skill and its brief templates carry the new steps: the test list first, exact test files, the round cap, the reset limit, the closeout card and the Plan, Unit, Role and Worktree lines.
+
+### Fixed
+- `test-run.mjs --pick` refuses a coverage map whose commit is not an ancestor of HEAD and asks for the test files by name.
+- Sweep approval reads the branch worktree's own rules file, falls back to the main checkout's, and names the session id it read.
+- The review hook's dollar reserve is twice the dearest call so far plus the report, so a review is no longer stopped before its final call.
+
+### Security
+- An owner yes clears a sweep only on the commit it was given for; a yes or a decision with no readable head never clears, and is logged once.
+- A test cannot be saved or handed back without its why line: the edit fence and the hand-back gate refuse it, a repeated test name included.
+
 ## 1.51.1 - 2026-11-23
 
 The kit repo carries its own filled rules block, named in a standards index, so a sweep run in the kit no longer reads the shipped template with its empty slots.

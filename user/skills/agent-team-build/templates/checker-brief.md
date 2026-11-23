@@ -1,5 +1,13 @@
 # Checker brief - <unit id>: <title>
 
+Plan: <path to the plan file>
+Unit: <unit id>
+Role: checker
+Worktree: <absolute path of the builder's worktree you read>
+Lane: <lane id>
+
+A unit gets at most 2 check rounds; the agent-model hook refuses a third.
+
 ## Project rules (one source - read it, never a pasted copy)
 
 Before anything else, read the "Rules every brief carries" item of rule:agent-team-adapter in full, to its last

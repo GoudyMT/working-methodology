@@ -25,6 +25,8 @@ const write = (dir, rel, text) => {
 	fs.writeFileSync(path.join(dir, rel), text);
 };
 const gitIn = (repo) => (...a) => spawnSync('git', ['-C', repo, '-c', 'user.name=t', '-c', 'user.email=t@t', '-c', 'commit.gpgsign=false', ...a], { encoding: 'utf8' });
+// A unit file list in the dir's git dir, so a writer spawn passes the list gate and reaches the model log.
+const listFor = (dir) => fs.writeFileSync(gitIn(dir)('rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt').stdout.trim(), 'tests/x.test.mjs\n');
 
 // ---------------------------------------------------------------------------------------------------------------
 // 1. pr-size.mjs
@@ -177,6 +179,7 @@ function hookSetup(roles = {}) {
 	}
 	const repo = makeTemp('amodel-repo-');
 	gitIn(repo)('init', '-q', '-b', 'main');
+	listFor(repo);
 	const log = path.join(repo, '.git', 'kit-agent-model.log');
 	const run = (tool_name, tool_input, cwd = repo) => {
 		const env = { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg, CLAUDE_PROJECT_DIR: repo, HOME: home, USERPROFILE: home };
@@ -247,6 +250,7 @@ test('the agent model log lands in the main repo git dir when the call runs in a
 	g('commit', '-qm', 'init');
 	const wt = path.join(makeTemp('amodel-wt-'), 'wt');
 	g('worktree', 'add', '-q', wt, '-b', 'feat/wt');
+	listFor(wt);
 	run('Agent', { subagent_type: 'writer', model: 'opus', prompt: 'x' }, wt);
 	assert.equal(lines().length, 1, 'no line in the main repo kit-agent-model.log');
 	const wtGitDir = path.resolve(wt, gitIn(wt)('rev-parse', '--git-dir').stdout.trim());
@@ -281,6 +285,7 @@ test('the agent model hook module returns null for a mismatched call', () => {
 	write(cfg, 'agents/writer.md', `---\nname: writer\nmodel: ${HAIKU}\n---\n`);
 	const repo = makeTemp('amodel-direct-repo-');
 	gitIn(repo)('init', '-q', '-b', 'main');
+	listFor(repo);
 	const home = makeTemp('amodel-direct-home-');
 	write(home, '.claude/agents/writer.md', `---\nname: writer\nmodel: ${HAIKU}\n---\n`);
 	const prev = { a: process.env.KIT_CLAUDE_HOME, b: process.env.CLAUDE_CONFIG_DIR, h: process.env.HOME, u: process.env.USERPROFILE };

@@ -13,7 +13,22 @@ concurrency:
 permissions:
   contents: read
 jobs:
+  plan:
+    # Sizes the fast matrix from the project's test timings (ci-plan.mjs). No timing report gives one shard.
+    runs-on: ubuntu-latest
+    outputs:
+      shards: ${{ steps.size.outputs.shards }}
+      started: ${{ steps.clock.outputs.started }}
+    steps:
+      - uses: actions/checkout@v4
+      - id: clock
+        run: echo "started=$(date +%s)" >> "$GITHUB_OUTPUT"
+      - id: size
+        run: node .claude/ci-plan.mjs --report test-timings.json
   fast:
+    needs: plan
+    strategy:
+      matrix: ${{ fromJSON(needs.plan.outputs.shards) }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -34,10 +49,8 @@ jobs:
       - run: node .claude/model-override.mjs check
       # A PR may narrow this run to what the change reaches (vitest related, jest --findRelatedTests) once the
       # narrowed run has missed nothing beside the whole suite; main always runs it whole.
-      # One lane until the tests take about 2 to 3 minutes; then shards (a matrix with jest --shard or vitest --shard).
-      # Both split by file count, so to finish together pack the files by last run time: a jest testSequencer with a
-      # shard method, or a duration-sorted file list (K123). On a private repo each shard is a billed job.
-      - run: <npm test>
+      # Shards come from the plan job's timing report; each shard is a billed job on a private repo.
+      - run: <npm test -- --shard=${{ matrix.shard }}/${{ strategy.job-total }}>
   lanes:
     # A job-level if cannot read files, so this job looks for a slow test and says so (as the kit's own CI does).
     runs-on: ubuntu-latest
@@ -61,10 +74,12 @@ jobs:
       - run: <npm run test:slow>
   ci:
     # The one required check: it fails if any lane failed, and passes when the slow lane had nothing to run.
-    needs: [fast, lanes, slow]
+    needs: [plan, fast, lanes, slow]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - run: |
           [ "${{ needs.fast.result }}" = success ] && [ "${{ needs.lanes.result }}" = success ] || exit 1
           case "${{ needs.slow.result }}" in success|skipped) ;; *) exit 1;; esac
+      - name: Fast lane budget (180 seconds)
+        run: test $(( $(date +%s) - ${{ needs.plan.outputs.started }} )) -le 180 || { echo "fast lane ran over its budget"; exit 1; }

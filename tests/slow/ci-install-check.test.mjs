@@ -1,16 +1,17 @@
 // T15 D1 and D2 (the owner, 2026-11-10): the install check proves in CI what the release verify proves on the
 // owner's PC, so it must go red on a broken install and on a guard that lets a push through.
-import { test } from './harness.mjs';
+import { test } from '../harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import kitTemp from '../project/.claude/kit-temp.cjs';
+import kitTemp from '../../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 
 // why: guards rule:outward-acts and the owner's rule never to lower a gate (2026-11-10): a check that passes a kit
 // whose push guard holds nothing, or whose install leaves a part unwired, is no check.
+// planted: {"file":"scripts/ci-install-check.mjs","was":"process.exitCode = main(process.argv.slice(2));","to":"process.exitCode = 0;"}
 test('the install check fails on a missing git hook, a push guard that holds nothing, and a hold of the wrong kind', () => {
 	const kit = kitTemp.makeTemp('ici-kit-');
 	const clone = spawnSync('git', ['clone', '--quiet', '--no-hardlinks', path.resolve('.'), kit], { encoding: 'utf8' });

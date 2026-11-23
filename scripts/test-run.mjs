@@ -9,11 +9,15 @@
 //   --shards <n>                                     processes to split the tests over (default: CPUs, at most 8)
 //   --slice <i>/<n>                                  run only slice i (from 0) of n: CI splits the suite over n jobs,
 //                                                    each running its own shards; files outside the harness run in slice 0.
-//                                                    It needs --shards, the same on every slice; it takes no --map
+//                                                    It needs --shards, the same on every slice. With --map, a slice writes
+//                                                    tests/.map-part-<i>.json, which scripts/map-merge.mjs joins into one map.
+//   --plan <sha>                                     with --slice: every slice packs its tests by the base map's times, longest
+//                                                    first, when tests/.map.json is of that sha; otherwise every slice exits 2.
 // Every run:
 // 1. refuses to start above 80% of the temp disk's inodes used (exit 2), and warns above 50%;
 // 2. sweeps the roots of finished or killed runs, before and after;
-// 3. fails when the temp folder holds more entries after than before, and names them.
+// 3. fails when the temp folder holds more entries after than before, and names them;
+// 4. fails a fast-lane test over the cap (30 s, or KIT_TEST_FAST_MS in ms); tests under tests/slow are exempt, and a --map run is.
 // A file that imports tests/harness.mjs is split over the shards; any other file runs whole, once.
 // The full suite still runs in CI at every push: a changed run is for the owner's machine.
 import fs from 'node:fs';
@@ -38,6 +42,26 @@ const real = (p) => {
 
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 
+// A fast-lane test over this many ms fails the run; KIT_TEST_FAST_MS sets another cap. tests/slow is exempt.
+const FAST_CAP_MS = 30000;
+// TAP names no file once several files share one node process, so the runner also writes a JUnit report, which names
+// each test's file and its time in seconds. Its reporter both writes stdout (the TAP the runner reads) and the file.
+const reporters = (xml) => ['--test-reporter=tap', '--test-reporter=junit', '--test-reporter-destination=stdout', `--test-reporter-destination=${xml}`];
+const unxml = (s) => s.replace(/&(#39|apos|quot|lt|gt|amp);/g, (_, e) => ({ '#39': "'", apos: "'", quot: '"', lt: '<', gt: '>', amp: '&' })[e]);
+// The tests in a JUnit report over the cap, with their file and time in ms (rounded up).
+// files: the test files the run that wrote this xml ran. Node 22's junit leaves the file attribute out, so a run of one
+// file names that file, and a run of several leaves it unnamed.
+function overCap(xml, cap, files) {
+	if (!fs.existsSync(xml)) return [];
+	const over = [];
+	for (const m of fs.readFileSync(xml, 'utf8').matchAll(/<testcase ([^>]*?)\/?>/g)) {
+		const at = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map(([, k, v]) => [k, unxml(v)]));
+		const ms = Math.ceil(Number(at.time) * 1000);
+		if (ms > cap) over.push({ name: at.name, file: at.file || (files.length === 1 ? files[0] : undefined), files, ms });
+	}
+	return over;
+}
+
 function parseArgs(args) {
 	const o = { shards: Math.min(8, os.availableParallelism()), map: false, changed: false, files: [], slice: null, always: [], pick: false };
 	for (let i = 0; i < args.length; i++) {
@@ -53,6 +77,7 @@ function parseArgs(args) {
 			// A slice out of range would run nothing and pass, so a bad one stops the run.
 			o.slice = m && Number(m[1]) < Number(m[2]) ? [Number(m[1]), Number(m[2])] : 'bad';
 		}
+		else if (args[i] === '--plan') o.plan = args[++i] || '';
 		else if (args[i] === '--map') o.map = true;
 		else if (args[i] === '--changed') o.changed = true;
 		else if (args[i] === '--owner-yes') o.ownerYes = true;
@@ -183,11 +208,13 @@ function changes(root, sha) {
  * Returns:
  *     { only: ["<file>::<name>" or "<file>::*"], why } - why is set when every test must run instead
  */
-function select(root, files) {
+function select(root, files, strict = false) {
 	const mapPath = path.join(root, MAP_FILE);
 	if (!fs.existsSync(mapPath)) return { why: `no coverage map at ${posix(MAP_FILE)} (make one with --map)` };
 	const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
 	if (git(root, 'cat-file', '-e', `${map.sha}^{commit}`).status !== 0) return { why: `the map's commit ${String(map.sha).slice(0, 12)} is not in this repo (make a new one with --map)` };
+	// A map off HEAD names the tests of another line of history; a strict caller (--pick) is refused, not given a pick.
+	if (strict && git(root, 'merge-base', '--is-ancestor', map.sha, 'HEAD').status !== 0) return { stale: map.sha };
 	const testFiles = new Map(files.map((f) => [posix(path.relative(root, real(f))), f]));
 	const only = new Set();
 	const entries = Object.entries(map.tests);
@@ -269,8 +296,14 @@ export async function main(argv) {
 		process.stderr.write('test-run: --slice needs --shards <n>, the same on every slice, or the slices split the tests differently\n');
 		return 2;
 	}
-	if (o.slice && o.map) {
-		process.stderr.write('test-run: a map is of the whole suite; --map with --slice would write one slice\'s map at HEAD\n');
+	// --plan packs the slices by the base map's times, so it takes a slice and the base map's sha.
+	if (o.plan !== undefined && !o.slice) {
+		process.stderr.write('test-run: --plan takes the sha of the base map, with --slice\n');
+		return 2;
+	}
+	const cap = process.env.KIT_TEST_FAST_MS === undefined ? FAST_CAP_MS : Number(process.env.KIT_TEST_FAST_MS);
+	if (!(cap > 0)) {
+		process.stderr.write('test-run: KIT_TEST_FAST_MS takes a number of ms above 0\n');
 		return 2;
 	}
 	const tmp = os.tmpdir();
@@ -282,6 +315,16 @@ export async function main(argv) {
 	if (use.level === 'warn') process.stderr.write(`test-run: warning, ${use.text}\n`);
 	const top = git(process.cwd(), 'rev-parse', '--show-toplevel');
 	const root = real(top.status === 0 ? path.resolve(top.stdout.trim()) : process.cwd());
+	// A slice packs by the base map only when that map is of the --plan commit. Missing, or of another sha, exits 2 before
+	// any test runs: a slice that packed by other times than its siblings' would run some tests twice and skip others.
+	if (o.plan !== undefined) {
+		let base = null;
+		try { base = JSON.parse(fs.readFileSync(path.join(root, MAP_FILE), 'utf8')); } catch { /* no base map: refused below */ }
+		if (base?.sha !== o.plan) {
+			process.stderr.write(`test-run: --plan ${o.plan.slice(0, 12)}: the map at ${posix(MAP_FILE)} is missing or of another commit\n`);
+			return 2;
+		}
+	}
 	if (o.map) {
 		const dirty = git(root, 'status', '--porcelain', '--untracked-files=no').stdout.trim();
 		if (dirty) {
@@ -295,6 +338,9 @@ export async function main(argv) {
 	// as growth, and a run killed outright is swept by the next one.
 	const runRoot = sessionRoot();
 	const testsDir = fs.existsSync(path.join(root, 'tests')) ? path.join(root, 'tests') : path.join(HERE, '..', 'tests');
+	// The slow lane's tests are exempt from the fast-lane cap.
+	const slowDir = real(path.join(testsDir, 'slow'));
+	const inSlow = (f) => { const r = path.relative(slowDir, real(f)); return !!r && !r.startsWith('..') && !path.isAbsolute(r); };
 	// K150 (build 20): a full run, or --changed, which widens to every test the change reaches, is CI's job; on the owner's
 	// machine it costs minutes and finds what CI finds (K59 was a notice, and build 19 reran about 170 tests anyway). It
 	// runs here only with --owner-yes, given after the owner's pop-up yes. A map needs every test; --pick runs
@@ -330,6 +376,7 @@ export async function main(argv) {
 	const files = o.files.length ? o.files : fs.readdirSync(testsDir).filter((f) => f.endsWith('.test.mjs')).map((f) => path.join(testsDir, f));
 	const harnessed = files.filter((f) => fs.readFileSync(f, 'utf8').includes('harness.mjs'));
 	const whole = files.filter((f) => !harnessed.includes(f));
+	if (files.some((f) => !inSlow(f))) process.stdout.write(`test-run: fast-lane cap ${cap} ms\n`);
 
 	const work = makeTemp('kit-run-');
 	const status = await (async () => {
@@ -342,7 +389,11 @@ export async function main(argv) {
 		let shards = o.shards;
 		if (o.only) env.KIT_ONLY = o.only;
 		if (o.changed) {
-			const pick = select(root, harnessed);
+			const pick = select(root, harnessed, o.pick);
+			if (pick.stale) {
+				process.stderr.write(`test-run: --pick: the map at ${posix(MAP_FILE)} is of ${pick.stale}, not an ancestor of HEAD; name the test files to run, or make a new map with --map\n`);
+				return 1;
+			}
 			if (!pick.why) {
 				// --always: files that run whatever the change reaches (CI's security set), added here so each test runs once.
 				for (const f of o.always) pick.only.push(`${posix(path.relative(root, real(f)))}::*`);
@@ -375,8 +426,10 @@ export async function main(argv) {
 		// K123 (build 17): with a map that kept each test's time, the tests are packed over every shard,
 		// longest first onto the least loaded, so the shards finish together; a test with no time goes round robin.
 		const totalShards = shards * (o.slice ? o.slice[1] : 1);
-		// The build 17 sweep: slices run on other machines, each with its own map (or none), so they split by name alone.
-		if (!o.map && !o.slice && shardFiles.length && totalShards > 1 && fs.existsSync(path.join(root, MAP_FILE))) {
+		// The build 17 sweep: slices run on other machines, each with its own map (or none), so they split by name alone,
+		// unless --plan names the base map's commit (checked above), which every slice then packs by.
+		const packs = o.slice ? o.plan !== undefined : !o.map;
+		if (packs && shardFiles.length && totalShards > 1 && fs.existsSync(path.join(root, MAP_FILE))) {
 			let times = {};
 			try { times = JSON.parse(fs.readFileSync(path.join(root, MAP_FILE), 'utf8')).tests || {}; } catch { /* no map to pack by */ }
 			const files = new Set(shardFiles.map((f) => posix(path.relative(root, real(f)))));
@@ -394,6 +447,7 @@ export async function main(argv) {
 		}
 		const t0 = Date.now();
 		const jobs = [];
+		const xmls = [];
 		// A slice runs its own shards of n x shards in all, so the slices together run each test once.
 		const [slice, slices] = o.slice || [0, 1];
 		const total = shards * slices;
@@ -401,22 +455,37 @@ export async function main(argv) {
 		if (shardFiles.length) {
 			for (let j = 0; j < shards; j++) {
 				const k = slice * shards + j;
-				jobs.push(runOne(['--test', '--test-reporter=tap', '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${k}/${total}` }, `${name}shard ${k + 1}/${total}`, path.join(work, `at-${j}.txt`)));
+				const xml = path.join(work, `junit-${k}.xml`);
+				xmls.push({ xml, files: shardFiles });
+				jobs.push(runOne(['--test', ...reporters(xml), '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${k}/${total}` }, `${name}shard ${k + 1}/${total}`, path.join(work, `at-${j}.txt`)));
 			}
 		}
-		if (whole.length && slice === 0) jobs.push(runOne(['--test', '--test-reporter=tap', ...whole], env, 'the unsharded files', path.join(work, 'at-whole.txt')));
+		if (whole.length && slice === 0) {
+			const xml = path.join(work, 'junit-whole.xml');
+			xmls.push({ xml, files: whole });
+			jobs.push(runOne(['--test', ...reporters(xml), ...whole], env, 'the unsharded files', path.join(work, 'at-whole.txt')));
+		}
 		const results = await Promise.all(jobs);
 		for (const r of results) if (r.status !== 0) process.stdout.write(r.out);
+		// A traced run (--map) measures every test, so the cap does not hold it: a main push still writes its map.
+		const late = o.map ? [] : xmls.flatMap((x) => overCap(x.xml, cap, x.files)).filter((t) => !(t.file ? inSlow(t.file) : t.files.every(inSlow)));
+		for (const t of late) {
+			const line = `test-run: fast-lane test over the cap: ${t.name} in ${t.file ? posix(path.relative(root, real(t.file))) : "one of the run's files"}, ${t.ms} ms (cap ${cap} ms)\n`;
+			process.stdout.write(line);
+			process.stderr.write(line); // test-check quotes a failed run from stderr
+		}
 		const sum = (k) => results.reduce((n, r) => n + r[k], 0);
 		const label = `${name}${shardFiles.length ? `${shards} shards` : 'no shards'}`;
 		const skipped = sum('skipped') ? `, skipped ${sum('skipped')}` : '';
 		process.stdout.write(`test-run: ${label}, pass ${sum('pass')}, fail ${sum('fail')}${skipped} in ${((Date.now() - t0) / 1000).toFixed(1)} s\n`);
 		if (o.map) {
+			// A slice writes its own part, which scripts/map-merge.mjs joins into the whole suite's map.
+			const out = o.slice ? path.join('tests', `.map-part-${o.slice[0]}.json`) : MAP_FILE;
 			const map = buildMap(env.KIT_MAP_DIR, root, mapSha);
-			fs.writeFileSync(path.join(root, MAP_FILE), JSON.stringify(map));
-			process.stdout.write(`test-run: map of ${Object.keys(map.tests).length} test(s) at ${mapSha.slice(0, 12)} in ${posix(MAP_FILE)}\n`);
+			fs.writeFileSync(path.join(root, out), JSON.stringify(map));
+			process.stdout.write(`test-run: map of ${Object.keys(map.tests).length} test(s) at ${mapSha.slice(0, 12)} in ${posix(out)}\n`);
 		}
-		return results.some((r) => r.status !== 0) ? 1 : 0;
+		return results.some((r) => r.status !== 0) || late.length ? 1 : 0;
 	})().finally(() => removeTemp(work));
 
 	sweepStale(runRoot);

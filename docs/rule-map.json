@@ -15,6 +15,7 @@
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
    "tests": [
+    "tests/call-cap-reserve.test.mjs",
     "tests/kit-install.test.mjs"
    ],
    "workflows": []
@@ -100,6 +101,7 @@
     "tests/handoff.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-install.test.mjs",
+    "tests/kit-rules-block.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/overwatch.test.mjs",
     "tests/plan-check.test.mjs",
@@ -186,7 +188,6 @@
     "project/.claude/test-push-scan.mjs"
    ],
    "tests": [
-    "tests/ci-install-check.test.mjs",
     "tests/ci-workflows.test.mjs",
     "tests/guard-dispatch.test.mjs",
     "tests/guard-prompts.test.mjs",
@@ -210,6 +211,7 @@
     "tests/rule-map.test.mjs",
     "tests/run-records-kept.test.mjs",
     "tests/safe-spawn.test.mjs",
+    "tests/slow/ci-install-check.test.mjs",
     "tests/test-check.test.mjs",
     "tests/test-value.test.mjs",
     "tests/use-check.test.mjs"
@@ -681,6 +683,7 @@
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
    "tests": [
+    "tests/approve-worktree.test.mjs",
     "tests/guard-dispatch.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
@@ -796,7 +799,8 @@
     "scripts/test-value.mjs"
    ],
    "tests": [
-    "tests/lane-state.test.mjs"
+    "tests/lane-state.test.mjs",
+    "tests/project-ci-shape.test.mjs"
    ],
    "workflows": []
   },
@@ -836,7 +840,9 @@
    "workflows": []
   },
   "test-value": {
-   "guards": [],
+   "guards": [
+    "user/kit-hooks/why-rule.cjs"
+   ],
    "scripts": [
     "scripts/mutation-check.mjs",
     "scripts/test-check.mjs"
@@ -853,7 +859,8 @@
     "tests/rule-map.test.mjs",
     "tests/test-check.test.mjs",
     "tests/test-format.test.mjs",
-    "tests/test-value.test.mjs"
+    "tests/test-value.test.mjs",
+    "tests/why-at-write.test.mjs"
    ],
    "workflows": []
   },

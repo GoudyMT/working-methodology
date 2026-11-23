@@ -18,7 +18,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { dollars, reportDollars } = require('./prices.cjs');
+const { price, dollars, reportDollars } = require('./prices.cjs');
 
 const LARGE_READ = 40 * 1024;
 const IDLE_MS = 5 * 60 * 1000;
@@ -231,10 +231,17 @@ function meter(input) {
 	if (inDollars) {
 		const spend = [...calls.values()].map((u) => dollars(u, u.model));
 		const used = spend.reduce((t, x) => t + x, 0);
-		const last = spend.length ? spend[spend.length - 1] : 0;
-		const prev = spend.length > 1 ? spend[spend.length - 2] : last;
-		const model = calls.size ? [...calls.values()].pop().model : '';
-		const reserve = 3 * last + 6 * Math.max(0, last - prev) + reportDollars(model);
+		const dearest = spend.length ? Math.max(...spend) : 0;
+		const lastCall = calls.size ? [...calls.values()].pop() : {};
+		const model = lastCall.model || '';
+		// The next call can cost as much as the dearest so far, and a second one of that cost is kept back too. The
+		// report is one more call: its output (reportDollars) and its input, the last call's whole context re-read at
+		// the cache-read price of the last call's model.
+		const context = ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce((t, k) => t + (Number(lastCall[k]) || 0), 0);
+		const reserve = 2 * dearest + reportDollars(model) + (context * price(model).cacheRead) / 1e6;
+		// An unknown model is priced at the dearest, which the reserve follows; the row says so, once per evaluation.
+		const unknown = [...calls.values()].find((u) => !price(u.model).known);
+		if (unknown) logOpen(input, `model ${String(unknown.model || 'none')} is not in the price table: priced at the dearest`);
 		const usd = (x) => `$${x.toFixed(2)}`;
 		if (used + reserve >= ceiling) return deny(`Dollar ceiling reached (${usd(used)} of ${usd(ceiling)}): more work would take your report past it. Only your hand-back still works: hand in your report now, with what you did not get to as "not checked".`);
 		return;

@@ -214,43 +214,47 @@ const minimalJob = () => {
 	return job.includes('runs-on:') && job.includes('steps:') ? job : '';
 };
 
-// why: guards rule:ci-gate (the minimal-code job runs on a pull request, in twelve minutes, over four slices)
-test('the minimal-code job runs on pull requests in twelve minutes over slices 1 to 4', () => {
+// why: guards rule:ci-gate (the minimal-code job runs on a pull request, in four minutes, after unit-tests)
+// renamed from: the minimal-code job runs on pull requests in twelve minutes over slices 1 to 4
+test('the minimal-code job runs on pull requests in four minutes after unit-tests', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
 	assert.match(job, /if: github\.event_name == 'pull_request'/);
-	assert.match(job, /^    timeout-minutes: 12$/m);
-	assert.match(job, /slice:\s*\[\s*1\s*,\s*2\s*,\s*3\s*,\s*4\s*\]/);
+	assert.match(job, /^    timeout-minutes: 4$/m);
+	assert.match(job, /^    needs: \[unit-tests\]$/m);
 });
 
-// why: guards rule:ci-gate (one run line names the script, the PR base sha, report mode and the matrix slice together)
-test('one run line runs the report for its slice against the PR base sha', () => {
+// why: guards rule:ci-gate (one run line names flip-plan, the PR base sha and the 150 budget together)
+// renamed from: one run line runs the report for its slice against the PR base sha
+test('one run line runs flip-plan against the PR base sha with budget 150', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
-	const run = job.split('\n').find((l) => l.includes('scripts/mutation-check.mjs'));
-	assert.ok(run, 'no run line names scripts/mutation-check.mjs');
-	for (const part of ['--base ${{ github.event.pull_request.base.sha }}', '--report', '--slice ${{ matrix.slice }}/4']) {
+	const run = job.split('\n').find((l) => l.includes('scripts/flip-plan.mjs'));
+	assert.ok(run, 'no run line names scripts/flip-plan.mjs');
+	for (const part of ['--base ${{ github.event.pull_request.base.sha }}', '--budget 150']) {
 		assert.ok(run.includes(part), `the run line lacks ${part}: ${run}`);
 	}
 });
 
-// why: guards rule:ci-gate (flip list measured against a map never built)
-test('the minimal-code job builds its map on a full checkout before the run line', () => {
+// why: guards rule:ci-gate (flip list measured against a map never downloaded)
+// renamed from: the minimal-code job builds its map on a full checkout before the run line
+test('the minimal-code job downloads the base commit map on a full checkout before the run line', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
 	assert.match(job, /^\s+fetch-depth: 0$/m, 'the checkout does not fetch full history');
-	const mapAt = job.indexOf('node scripts/test-run.mjs --map');
-	const runAt = job.indexOf('scripts/mutation-check.mjs');
-	assert.ok(mapAt >= 0, 'the job does not build the coverage map');
-	assert.ok(mapAt < runAt, 'the map is built after the run line');
+	const mapAt = job.search(/--commit "\$BASE_SHA"/);
+	const runAt = job.indexOf('scripts/flip-plan.mjs');
+	assert.ok(mapAt >= 0, 'the job does not download the base commit map');
+	assert.ok(mapAt < runAt, 'the map is downloaded after the run line');
 });
 
-// why: guards rule:ci-gate (no survivor or failing map test may turn the run red; the kit allows no continue-on-error in ci.yml)
-test('the minimal-code job cannot fail the run: no continue-on-error, the map step tolerates failing tests', () => {
+// why: guards rule:ci-gate (no survivor or failing report may turn the run red; the kit allows no continue-on-error in ci.yml)
+// renamed from: the minimal-code job cannot fail the run: no continue-on-error, the map step tolerates failing tests
+test('the minimal-code job cannot fail the run: no continue-on-error, the run line tolerates a failing report', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
 	assert.doesNotMatch(job, /continue-on-error/);
-	assert.match(job, /^        run: node scripts\/test-run\.mjs --map \|\| /m);
+	assert.match(job, /^        run: node scripts\/flip-plan\.mjs .* \|\| echo /m);
 });
 
 // why: guards rule:ci-gate (a job that reads a secret would run a PR's own code next to it, so the job holds none)
@@ -262,11 +266,12 @@ test('the minimal-code job reads no secrets and does not inherit them', () => {
 	assert.doesNotMatch(job, /secrets:\s*inherit/);
 });
 
-// why: guards rule:ci-gate (the job's token reads the repository only, so a PR's code cannot write with it)
-test('the minimal-code job grants contents: read and nothing else', () => {
+// why: guards rule:ci-gate (the job's token reads the repository and its runs only, so a PR's code cannot write with it)
+// renamed from: the minimal-code job grants contents: read and nothing else
+test('the minimal-code job grants contents and actions read and nothing else', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
 	const m = /^    permissions:\n((?:      .+\n)+)/m.exec(job);
 	assert.ok(m, 'the job sets no permissions block');
-	assert.deepEqual(m[1].trim().split('\n').map((l) => l.trim()), ['contents: read']);
+	assert.deepEqual(m[1].trim().split('\n').map((l) => l.trim()), ['contents: read', 'actions: read']);
 });

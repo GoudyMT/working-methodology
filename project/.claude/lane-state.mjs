@@ -5,14 +5,14 @@
 //   over-budget  the fast lane ran over the project's budget on the last 3 PR runs in a row: a finding, with the
 //                slowest tests and the next lever (measure, parallel, cancel stale runs, change-scoped selection, then
 //                moving tests to the slow lane, last)
-// Settings: .kit/lanes.json, all optional: { "slowDir": "tests/slow", "budgetMinutes": 10, "fast": "<command>",
+// Settings: .kit/lanes.json, all optional: { "slowDir": "tests/slow", "budgetMinutes": 3, "fast": "<command>",
 //   "slow": "<command>", "eval": "<command> or none", "evalThreshold": <n>, "levers": ["measure", ...] (applied) }.
 // Times: --times <file>, a JSON list of fast-lane runs, oldest first: [{ "minutes": n, "tests": [{ "name", "seconds" }] }].
 // Usage: node .claude/lane-state.mjs [--times <file>] [--json]   exit 0 one or two lanes, 1 over budget, 2 an error.
 import fs from 'node:fs';
 import path from 'node:path';
 
-const DEFAULTS = { slowDir: 'tests/slow', budgetMinutes: 10 };
+const DEFAULTS = { slowDir: 'tests/slow', budgetMinutes: 3 };
 // The order the levers are tried in before any test leaves the fast lane; the last is the last resort.
 const LEVERS = ['measure', 'parallel', 'cancel stale runs', 'change-scoped selection', 'move to the slow lane'];
 // Three runs in a row over the budget make it a finding: one slow run is noise.

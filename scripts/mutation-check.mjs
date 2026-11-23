@@ -42,7 +42,7 @@ const OPS = [
 	[/ <= /, ' > ', '<= to >'], [/ > (?!=)/, ' <= ', '> to <='], [/ < (?!=)/, ' >= ', '< to >='],
 	[/\breturn (?!;)/, 'return void ', 'return x to return void x'],
 ];
-function flip(line) {
+export function flip(line) {
 	const t = line.trim();
 	if (!t || t.startsWith('//') || t.startsWith('*') || t.startsWith('import ')) return null;
 	for (const [re, to, op] of OPS) if (re.test(line)) return { op, text: line.replace(re, to) };
@@ -73,7 +73,7 @@ function parseArgs(argv) {
 // The new-side line numbers each file changed since base: a flip outside them is not this change's.
 // The base is resolved to a commit first, so a word that starts with a dash is never read as a git option, and a
 // diff that fails stops the run: an empty scope from a typo would pass green having measured nothing (K41).
-function changedLines(root, base) {
+export function changedLines(root, base) {
 	const sha = git(root, 'rev-parse', '--verify', '--quiet', '--end-of-options', `${base}^{commit}`).stdout.trim();
 	if (!/^[0-9a-f]{40,64}$/.test(sha)) return null;
 	// A branch that deletes many megabytes of files can overflow the output buffer, which read as no commit. A deleted
@@ -94,7 +94,7 @@ function changedLines(root, base) {
 	return out;
 }
 
-function runTests(copy, keys, timeout, home, timing) {
+export function runTests(copy, keys, timeout, home, timing) {
 	return new Promise((resolve) => {
 		const only = path.join(copy, '.mutation-only.json');
 		fs.writeFileSync(only, JSON.stringify(keys));

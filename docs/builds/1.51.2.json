@@ -1,0 +1,699 @@
+{
+  "version": "1.51.2",
+  "date": "2026-11-23",
+  "level": "patch",
+  "area": "Delegation",
+  "title": "fix: leaner CI, safer sweeps and team build guards",
+  "headline": "CI sizes its runs from measured times within a 3 minute merge path; sweep approval reads the right worktree and commit; and the team build holds its own steps in code, from the test list to a ticket for each test added after the sweep.",
+  "alignment": "v1.51.2 is the patch after build 24 and 1.51.1. Its items are the CI rows CI-A to CI-D, K357, K360, K361, K362, K363, K364, K366, K368 and K369, each unit opened by a test-only commit. K359 shipped first as 1.51.1; this patch carries its two tests. K367 moves to 1.51.3.",
+  "items": [
+    {
+      "id": "U1",
+      "kind": "added",
+      "reach": "kit",
+      "text": "The test run maps the suite in slices (`--map --slice i/n`) and `map-merge.mjs` joins the parts into one coverage map, refusing parts from different commits.",
+      "evidence": "scripts/map-merge.mjs",
+      "tests": [
+        "tests/map-slice.test.mjs::--map with --slice 0/2 writes a part map holding only that slice's tests",
+        "tests/map-slice.test.mjs::map-merge of two part maps equals one whole-suite map (same keys, same ms)",
+        "tests/map-slice.test.mjs::two slices given --shards and a map with ms get the same time plan, longest first",
+        "tests/map-slice.test.mjs::map-merge refuses parts from different shas with exit 1",
+        "tests/slow/ci-install-check.test.mjs::the install check fails on a missing git hook, a push guard that holds nothing, and a hold of the wrong kind"
+      ]
+    },
+    {
+      "id": "U2",
+      "kind": "added",
+      "reach": "kit",
+      "text": "A fast-lane test over 30 s fails the run, naming the test and its time; `KIT_TEST_FAST_MS` sets the cap, and tests/slow is exempt.",
+      "evidence": "scripts/test-run.mjs",
+      "tests": [
+        "tests/fast-cap.test.mjs::a fast-lane test over 30 s fails naming the test and its time",
+        "tests/fast-cap.test.mjs::the same test under tests/slow passes",
+        "tests/fast-cap.test.mjs::KIT_TEST_FAST_MS overrides the cap"
+      ]
+    },
+    {
+      "id": "U3",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "`test-run.mjs --pick` refuses a coverage map whose commit is not an ancestor of HEAD and asks for the test files by name.",
+      "evidence": "scripts/test-run.mjs",
+      "tests": [
+        "tests/stale-pick.test.mjs::--pick with a map whose sha is not an ancestor of HEAD exits 1 naming the map sha and \"name the test files\""
+      ]
+    },
+    {
+      "id": "U4",
+      "kind": "added",
+      "reach": "kit",
+      "text": "`ci-size.mjs` sizes the unit runners and slices from measured test times, at most 6 runners.",
+      "evidence": "scripts/ci-size.mjs",
+      "tests": [
+        "tests/ci-size.test.mjs::predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6",
+        "tests/ci-size.test.mjs::600 changed tests give 6 test-check slices, 0 give 1",
+        "tests/ci-size.test.mjs::655 flips give 4 minimal-code slices, 3 give 1",
+        "tests/ci-size.test.mjs::a test missing from the map counts the map median",
+        "tests/ci-size.test.mjs::output is GitHub matrix JSON on GITHUB_OUTPUT lines"
+      ]
+    },
+    {
+      "id": "U5",
+      "kind": "added",
+      "reach": "kit",
+      "text": "`flip-plan.mjs` picks the mutation flips, fits them to a time budget and runs them on parallel workers.",
+      "evidence": "scripts/flip-plan.mjs",
+      "tests": [
+        "tests/flip-plan.test.mjs::only flips whose line or covering tests changed since the PR's last measured head are picked",
+        "tests/flip-plan.test.mjs::picked flips past 150 s of predicted time are named as carried, not run",
+        "tests/flip-plan.test.mjs::4 workers run flips at once and the verdicts match a serial run",
+        "tests/flip-plan.test.mjs::a flip stops at its first red test",
+        "tests/flip-plan.test.mjs::the report names every carried flip"
+      ]
+    },
+    {
+      "id": "U6",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "A lanes job in CI sizes the unit-tests and test-check runs from measured times before they start.",
+      "evidence": ".github/workflows/ci.yml",
+      "tests": [
+        "tests/ci-plan-job.test.mjs::lanes job runs ci-size.mjs and exposes the matrices as outputs",
+        "tests/ci-plan-job.test.mjs::unit-tests and test-check read their matrix from needs.lanes.outputs, with no new step before the judges",
+        "tests/ci-plan-job.test.mjs::main push builds the map in slices and a map-merge job uploads tests/.map.json",
+        "tests/ci-plan-job.test.mjs::a fixed-name job \"test-check (all)\" needs the sized test-check matrix and fails unless every slice passed, so the required check reports for any slice count"
+      ]
+    },
+    {
+      "id": "U7",
+      "kind": "changed",
+      "reach": "kit",
+      "text": "The minimal-code job reuses the base commit's coverage map and runs its flips inside the budget.",
+      "evidence": ".github/workflows/ci.yml",
+      "tests": [
+        "tests/minimal-code-job.test.mjs::the job sets git identity and init.defaultBranch, and fetches tags",
+        "tests/minimal-code-job.test.mjs::the job needs unit-tests and downloads the merged map instead of building one",
+        "tests/minimal-code-job.test.mjs::the job runs flip-plan with --budget 150 and timeout-minutes 4"
+      ]
+    },
+    {
+      "id": "U8",
+      "kind": "added",
+      "reach": "kit",
+      "text": "The required check fails when the merge path runs over its 3 minute budget; `ci-budget.mjs` measures every job but those its step skips by name.",
+      "evidence": "scripts/ci-budget.mjs",
+      "tests": [
+        "tests/ci-budget.test.mjs::a merge-path job at 181 s fails naming the job and its 5 slowest tests",
+        "tests/ci-budget.test.mjs::a job at 180 s passes",
+        "tests/ci-budget.test.mjs::queue wait is not counted, and the report says so",
+        "tests/ci-budget.test.mjs::a cancelled or skipped job is named, never passed silently",
+        "tests/ci-budget.test.mjs::a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)",
+        "tests/ci-budget.test.mjs::two runs on the same jobs JSON give the same verdict",
+        "tests/ci-budget.test.mjs::an unreadable jobs API answer fails the check and is logged"
+      ]
+    },
+    {
+      "id": "U9",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A project's CI plan sizes its own test shards from its last test report.",
+      "evidence": "project/.claude/ci-plan.mjs",
+      "tests": [
+        "tests/project-ci-plan.test.mjs::a jest or vitest JSON report of 400 s gives 4 shards at 110 s each",
+        "tests/project-ci-plan.test.mjs::a pytest durations file is read the same way",
+        "tests/project-ci-plan.test.mjs::no report gives 1 shard and says \"not measured\"",
+        "tests/project-ci-plan.test.mjs::over 6 shards exits 1 naming the 5 slowest tests",
+        "tests/project-ci-plan.test.mjs::output is matrix JSON for the template"
+      ]
+    },
+    {
+      "id": "U10",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "The project CI templates size shards and judge a 3 minute budget, and the fast-lane budget the lane report uses drops from 10 minutes to 3.",
+      "evidence": "project/.claude/lane-state.mjs",
+      "where": "The lane report on a project's fast lane",
+      "before": "Held to the slow lane budget",
+      "after": "Held to its own, shorter fast-lane budget",
+      "tests": [
+        "tests/project-ci-shape.test.mjs::each template has a plan job, a sized fast matrix and a budget step in ci, and ci-shape shows 0 gaps",
+        "tests/project-ci-shape.test.mjs::lane-state with no budget set judges against 3 minutes",
+        "tests/project-ci-shape.test.mjs::both testing.md copies say \"default 3 minutes\" and rules/testing.md stays at or under 14,000 bytes"
+      ]
+    },
+    {
+      "id": "U11",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "Sweep approval reads the branch worktree's own rules file, falls back to the main checkout's, and names the session id it read.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "where": "A sweep approved from a branch worktree",
+      "before": "Read the main checkout's rules file",
+      "after": "Reads the worktree's own file, else the main one",
+      "tests": [
+        "tests/approve-worktree.test.mjs::a contract on a branch checked out in a linked worktree reads that worktree's untracked rule files and merge base, not the main checkout's",
+        "tests/approve-worktree.test.mjs::the pause ask prints the session id the resume needs, and names CLAUDE_CODE_SESSION_ID when it is unset",
+        "tests/approve-worktree.test.mjs::a contract in the main checkout reads as before",
+        "tests/approve-worktree.test.mjs::a contract path through a symlink or a .. spelling resolves to the same worktree",
+        "tests/approve-worktree.test.mjs::two runs on the same contract give the same decision",
+        "tests/approve-worktree.test.mjs::a worktree git cannot read gives FIX THE CONTRACT, logged",
+        "tests/approve-worktree.test.mjs::a worktree that lacks the rules file reads the main checkout's file, and a slotted block there still gives FIX THE CONTRACT",
+        "tests/approve-worktree.test.mjs::the owner yes is found from a worktree whether the asking session's transcript is under the worktree's folder or the main checkout's"
+      ]
+    },
+    {
+      "id": "U26",
+      "kind": "security",
+      "reach": "projects",
+      "text": "An owner yes clears a sweep only on the commit it was given for; a yes or a decision with no readable head never clears, and is logged once.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "tests": [
+        "tests/approve-cleared.test.mjs::a contract refused on branch X, then approved on branch Y, leaves X's refusal uncleared, so a first contract on X is not read as a second sweep",
+        "tests/approve-cleared.test.mjs::an owner yes on the same commit still clears the refusal",
+        "tests/approve-cleared.test.mjs::an owner yes logged with no head does not clear a line that has one",
+        "tests/approve-cleared.test.mjs::the same log read twice gives the same verdict",
+        "tests/approve-cleared.test.mjs::a decision line whose head cannot be read stays uncleared, logged",
+        "tests/approve-cleared.test.mjs::a decision with an unreadable head and no owner yes writes no row, and the same uncleared line read by two runs writes one"
+      ]
+    },
+    {
+      "id": "U25",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "The review hook's dollar reserve is twice the dearest call so far plus the report, so a review is no longer stopped before its final call.",
+      "evidence": "user/kit-hooks/call-cap.cjs",
+      "where": "A review near its dollar ceiling",
+      "before": "Often stopped before its last call",
+      "after": "Keeps room for two calls and the report",
+      "tests": [
+        "tests/call-cap-reserve.test.mjs::ceiling $1.44, four cheap calls then one $0.14 call: the next tool is allowed, not refused with \"Dollar ceiling reached ($0.28 of $1.44)\"",
+        "tests/call-cap-reserve.test.mjs::a reviewer whose spend plus twice its dearest call plus the report reaches the ceiling is still stopped",
+        "tests/call-cap-reserve.test.mjs::a call on an unknown model is priced at the dearest model, so the reserve only grows, logged"
+      ]
+    },
+    {
+      "id": "U12",
+      "kind": "added",
+      "reach": "kit",
+      "text": "Two tests pin the kit repo's filled rules block from 1.51.1 and the shipped template's slots, read as doc claims.",
+      "evidence": "tests/kit-rules-block.test.mjs",
+      "tests": [
+        "tests/kit-rules-block.test.mjs::the kit repo's rules block, as approve.mjs resolves it, holds no slot from slots.mjs",
+        "tests/kit-rules-block.test.mjs::the shipped rules/agent-teams.md block still holds its template slot, so installs keep the reminder"
+      ]
+    },
+    {
+      "id": "U13",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A tester or writer spawn is held until its worktree holds the unit's test file list, and the refusal prints the `unit-lock.mjs --tester` command.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/spawn-list.test.mjs::a tester spawn whose brief names a worktree with no kit-unit-files.txt is refused, naming the exact `unit-lock.mjs --tester --files` command",
+        "tests/spawn-list.test.mjs::a tester spawn with the list passes",
+        "tests/spawn-list.test.mjs::a builder spawn is not affected",
+        "tests/spawn-list.test.mjs::a general-purpose agent briefed as tester (Role: tester line) is checked too",
+        "tests/spawn-list.test.mjs::the same spawn twice gives the same verdict",
+        "tests/spawn-list.test.mjs::a worktree whose git folder cannot be read lets the spawn through and is logged",
+        "tests/spawn-list.test.mjs::a Role line of \"tester (U13)\" or \"**tester**\" is read as tester",
+        "tests/spawn-list.test.mjs::a Worktree line in bold, indented or as a list item names the worktree",
+        "tests/spawn-list.test.mjs::a Worktree path on a share passes with one kit-guard-open.log row and no network wait"
+      ]
+    },
+    {
+      "id": "U14",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A planned retest is its own checklist step, checked in order like any unit.",
+      "evidence": "user/kit-tools/checklist.mjs",
+      "tests": [
+        "tests/retest-step.test.mjs::a plan unit whose Tests lines start \"retest:\" needs a retest step before merged",
+        "tests/retest-step.test.mjs::a retest step on a unit with no retest line is a fault",
+        "tests/retest-step.test.mjs::plan-check reads a retest unit's Files as tests only, and refuses a source file there",
+        "tests/retest-step.test.mjs::the checklist fails while the hook log holds a hook-error line with no lead report line naming it, so a build cannot be marked ready"
+      ]
+    },
+    {
+      "id": "U15",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A lead's ruling in a plan passes only with its proof, a test or a probe.",
+      "evidence": "user/kit-tools/plan-check.mjs",
+      "tests": [
+        "tests/ruling-proof.test.mjs::a note \"lead ruling: ...\" with no proof key fails check with \"missing `proof`\"",
+        "tests/ruling-proof.test.mjs::the same note with a proof naming a test or a probe passes"
+      ]
+    },
+    {
+      "id": "U16",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "The team build skill and its brief templates carry the new steps: the test list first, exact test files, the round cap, the reset limit, the closeout card and the Plan, Unit, Role and Worktree lines.",
+      "evidence": "user/skills/agent-team-build/SKILL.md",
+      "tests": [
+        "tests/brief-steps.test.mjs::the tester brief locks first, and the builder brief names exact test files and never --pick",
+        "tests/brief-steps.test.mjs::the plan template shows a retest unit and a \"lead ruling:\" proof line",
+        "tests/brief-steps.test.mjs::the skill names the reset limit and the 2-check-round cap with their enforcers",
+        "tests/brief-steps.test.mjs::the skill carries the lane cap, briefs from plan-check, and a base re-check; the tester brief carries stop-and-ask, plain commands and scratch",
+        "tests/brief-steps.test.mjs::the skill review step carries the closeout card and the may-or-may-not table",
+        "tests/brief-steps.test.mjs::the skill carries isolated worktrees, the lock after spawn, the wip commit, the 3 and 2 caps and date -u",
+        "tests/brief-steps.test.mjs::the tester, builder and checker brief templates each carry Plan:, Unit:, Role: and Worktree: lines"
+      ]
+    },
+    {
+      "id": "U17",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A third check round on a unit is refused and what is open goes to the next patch list; rounds are counted per plan and unit id, and only review spawns spend them.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/round-cap.test.mjs::a checker spawn for a unit with 2 checker records already is refused naming the unit and \"next patch list\"",
+        "tests/round-cap.test.mjs::a first and second check pass",
+        "tests/round-cap.test.mjs::a checker for another unit passes",
+        "tests/round-cap.test.mjs::the same unit spelled with other case or markup is still counted",
+        "tests/round-cap.test.mjs::a general-purpose agent briefed as a checker (Plan: and Unit: lines) is counted",
+        "tests/round-cap.test.mjs::the same spawn twice gives the same verdict",
+        "tests/round-cap.test.mjs::an unreadable records folder or a hook error blocks the spawn with \"hook error: lead review\" and is logged",
+        "tests/round-cap.test.mjs::any hook error on a checker spawn denies \"hook error: lead review\" with one kit-guard-open.log row",
+        "tests/round-cap.test.mjs::Plan and Unit lines with bold, list markers, a Units label or a second Unit line still count",
+        "tests/round-cap.test.mjs::a checker refused by another gate writes its row with denied:true and spends no round",
+        "tests/round-cap.test.mjs::two counted rounds on U7 under plan A do not cap U7 under plan B",
+        "tests/round-cap.test.mjs::tester and builder spawns with Plan and Unit lines spend no check round",
+        "tests/round-cap.test.mjs::a marked-up Plan line with no Unit line is refused like a plain one",
+        "tests/round-cap.test.mjs::a checker with no Plan line counts only rows with no plan",
+        "tests/round-cap.test.mjs::the same plan spelled another way is still the same plan"
+      ]
+    },
+    {
+      "id": "U18",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A new spawn for a role and lane is held while a warm one under 150,000 tokens is open; `warm.mjs` logs each context reset.",
+      "evidence": "user/kit-tools/warm.mjs",
+      "tests": [
+        "tests/warm-agents.test.mjs::a fresh tester spawn is held while a tester of that lane is open and under the limit",
+        "tests/warm-agents.test.mjs::a SendMessage to an agent over the limit is held and says reset",
+        "tests/warm-agents.test.mjs::with warm-agents set to log the held spawn passes and its log row is written",
+        "tests/warm-agents.test.mjs::every reset writes one JSON line with agent, role, tokens and reason",
+        "tests/warm-agents.test.mjs::the context size is the last call's input plus cache plus output tokens, as call-cap.cjs reads it",
+        "tests/warm-agents.test.mjs::a fresh spawn under another role name of the same table role is still held",
+        "tests/warm-agents.test.mjs::two reads of one transcript give one size",
+        "tests/warm-agents.test.mjs::an unreadable transcript lets the call through and is logged"
+      ]
+    },
+    {
+      "id": "U21",
+      "kind": "security",
+      "reach": "projects",
+      "text": "A test cannot be saved or handed back without its why line: the edit fence and the hand-back gate refuse it, a repeated test name included.",
+      "evidence": "user/kit-hooks/why-rule.cjs",
+      "where": "A test written without a why line",
+      "before": "Caught only by CI after the push",
+      "after": "Refused when the file is saved",
+      "tests": [
+        "tests/why-at-write.test.mjs::a Write to a test file whose new test( has no why line is refused, quoting whyFault's reason",
+        "tests/why-at-write.test.mjs::a why that is a bare spec id (\"S1: ...\") is refused the same way",
+        "tests/why-at-write.test.mjs::a test with a passing why line saves",
+        "tests/why-at-write.test.mjs::a tester RECORD that does not list each new test with its why is refused by handoff-gate",
+        "tests/why-at-write.test.mjs::an Edit that adds a test( to an existing file, or a MultiEdit, is checked the same as a Write",
+        "tests/why-at-write.test.mjs::the same write twice gives the same verdict",
+        "tests/why-at-write.test.mjs::a test file the hook cannot parse is refused and logged",
+        "tests/why-at-write.test.mjs::an Edit with replace_all that turns a later // MARK into a why-less test( is refused",
+        "tests/why-at-write.test.mjs::an Edit adding a second why-less test with an existing test's name is refused",
+        "tests/why-at-write.test.mjs::a why-less duplicate inserted above the original test of that name is refused",
+        "tests/why-at-write.test.mjs::an Edit that removes the why line from a test that had one is refused, a legacy why-less test stays editable",
+        "tests/why-at-write.test.mjs::a commit adding a test in a non-ASCII file name that the record does not list is denied",
+        "tests/why-at-write.test.mjs::a record why given as the bare text after // why: is accepted the same as the full line",
+        "tests/why-at-write.test.mjs::the gate refuses a record that gives a good why for a test with no why line at the commit",
+        "tests/why-at-write.test.mjs::a repeated why-less name beside a legacy why-less test is refused"
+      ]
+    },
+    {
+      "id": "U22",
+      "kind": "added",
+      "reach": "projects",
+      "text": "`plan-check --whys` and `--brief` print each unit's tests with their why lines and write the role briefs; a why under six words is a fault.",
+      "evidence": "user/kit-tools/plan-check.mjs",
+      "tests": [
+        "tests/plan-why.test.mjs::plan-check --whys prints each unit's test names and their why lines from its Tests cell",
+        "tests/plan-why.test.mjs::plan-check --brief U1 --role tester writes the tester brief from the row: files, test names, why lines and the unit-lock --tester command",
+        "tests/plan-why.test.mjs::plan-check --brief U1 --role builder writes the builder brief: source files, the exact test files to run, the lock commands",
+        "tests/plan-why.test.mjs::a Tests line whose derived why is under six words is a plan fault",
+        "tests/plan-why.test.mjs::build-record --from-plan writes items[].tests from the plan and the tester RECORDs, so every new test is named",
+        "tests/plan-why.test.mjs::a RECORD test missing from the plan is named, not added silently"
+      ]
+    },
+    {
+      "id": "U23",
+      "kind": "added",
+      "reach": "projects",
+      "text": "After the sweep a new test or script needs a ticket: `closeout.mjs check` holds the range after the closeout commit, and `closeout.mjs defer` records the rest for the next patch.",
+      "evidence": "user/kit-tools/closeout.mjs",
+      "tests": [
+        "tests/closeout.test.mjs::a build record with a sweep and no closeout file fails",
+        "tests/closeout.test.mjs::a ticketed test passes, and a second test on the same ticket fails",
+        "tests/closeout.test.mjs::a ticketless test fails naming the file and the defer command",
+        "tests/closeout.test.mjs::a new script, hook or CI file no ticket's fix names fails",
+        "tests/closeout.test.mjs::a second commit on the closeout file fails",
+        "tests/closeout.test.mjs::89 high fix rows on 6 high findings fails",
+        "tests/closeout.test.mjs::a fix row whose severity differs from its finding's severity fails",
+        "tests/closeout.test.mjs::defer appends one JSON line to the next-patch file and prints \"written, carry on\"",
+        "tests/closeout.test.mjs::the same range twice gives the same verdict",
+        "tests/closeout.test.mjs::an unreadable closeout file or a shallow clone fails, logged",
+        "tests/closeout.test.mjs::a test added by rename, or in a new test file, is still counted"
+      ]
+    },
+    {
+      "id": "U24",
+      "kind": "added",
+      "reach": "projects",
+      "text": "In closeout the hook refuses a review spawn and a tester with no ticket, and prints the defer command.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/closeout-spawn.test.mjs::a checker spawn while a closeout file is committed is refused, printing the defer command",
+        "tests/closeout-spawn.test.mjs::a tester whose brief names an unused ticket passes, and one without is refused",
+        "tests/closeout-spawn.test.mjs::no closeout file changes nothing",
+        "tests/closeout-spawn.test.mjs::a general agent briefed as checker is refused too",
+        "tests/closeout-spawn.test.mjs::holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier",
+        "tests/closeout-spawn.test.mjs::the same spawn twice gives the same verdict",
+        "tests/closeout-spawn.test.mjs::an unreadable closeout file or a hook error blocks the call with \"hook error: lead review\" and is logged",
+        "tests/closeout-spawn.test.mjs::a test-writer spawn with no Ticket line is refused",
+        "tests/closeout-spawn.test.mjs::Ticket: F10 against the tickets [\"F1\"] is refused",
+        "tests/closeout-spawn.test.mjs::an uncommitted VERSION edit in the working tree does not change the verdict",
+        "tests/closeout-spawn.test.mjs::a git failure inside the closeout gate refuses a checker with \"hook error: lead review\"",
+        "tests/closeout-spawn.test.mjs::a ticketed tester whose brief carries Plan and Unit lines passes in closeout",
+        "tests/closeout-spawn.test.mjs::a git that cannot run inside the closeout gate refuses the spawn"
+      ]
+    }
+  ],
+  "verification": [
+    "Every unit opened with a test-only commit and a test review; each risky unit had up to two check rounds.",
+    "Score gate passed at b9f65f1a: recall and behaviour 14, as 1.51.1 that day; none worse.",
+    "The one sweep found 6 high and 15 medium findings, each fixed here test-first; the 25 lows are on the next list."
+  ],
+  "decisions": [
+    {
+      "decision": "The new spawn holds ship in enforce mode",
+      "why": "The owner's pick for this patch; each hold has a tier, and the high tiers fail closed on a hook error."
+    },
+    {
+      "decision": "The warm limit is 150,000 tokens",
+      "why": "The owner's pick; a role at the limit counts as over."
+    },
+    {
+      "decision": "At most two check rounds a unit",
+      "why": "Past two, the lead finishes and CI is the gate."
+    },
+    {
+      "decision": "The Windows job has a 60 s fast cap",
+      "why": "Windows starts processes about twice as slowly; the owner's pick."
+    },
+    {
+      "decision": "K359 shipped first as 1.51.1",
+      "why": "The approver reads the rules block as main has it, so this patch's sweep needed the filled block on main; the owner's pick (2026-11-23)."
+    }
+  ],
+  "upgrading": "Run install user, then install project: the hooks `agent-model.cjs`, call-cap.cjs, edit-fence.cjs, handoff-gate.cjs and the new why-rule.cjs with holds.json, the kit tools closeout.mjs, warm.mjs, plan-check.mjs, checklist.mjs and flow-check.mjs, the sweep's approve.mjs, the team build skill and its brief templates, the CI templates and the testing rule change.",
+  "limits": "A review spawn with no Plan: line is counted apart from planned ones, and a relative plan path is keyed from the folder the hook runs in. The holds.json tier is set per hold but read in each gate's own code. The commit-shape tool miscounts a double-quoted test name. Plain `--changed` without `--pick` still trusts a coverage map off HEAD. The why parse is line based, not a full tokenizer: a test call reached through an array or `.call`, or hidden by a deliberate slash after a word that may be a name, is not seen; it stops slips, not a determined workaround. The hand-back gate passes a hand-back when its own check crashes, which goes to the owner.",
+  "tests": {
+    "before": 1821,
+    "after": 1985,
+    "flips": "declared tests at the base and on this branch; the PR run gives the final count"
+  },
+  "ciRounds": [
+    {
+      "round": 1,
+      "cause": "The fast cap could not name a test file node left out; guard tests had no planted bug; sentence pins had no label."
+    },
+    {
+      "round": 2,
+      "cause": "Closeout ignored sweep fix rows; Windows ran over the 30 s fast cap; tests left temp repos behind."
+    },
+    {
+      "round": 3,
+      "cause": "Approve read git again on every call, so the trial test ran over the cap; tests lacked tags; a temp repo was left."
+    },
+    {
+      "round": 4,
+      "cause": "Non-ASCII file names in tests and seven untagged tests."
+    },
+    {
+      "round": 5,
+      "cause": "The why parse missed regex marks in a test name; a fixture pasted a path into code; the rule map was stale."
+    },
+    {
+      "round": 6,
+      "cause": "The trial test ran over the 30 s cap again on Linux (second time)."
+    },
+    {
+      "round": 7,
+      "cause": "The sped-up trial test was named as adding no catch; proven instead by a planted bug. The workflow lint also failed here and was misread as a rollup only."
+    },
+    {
+      "round": 8,
+      "cause": "The workflow lint: a sweep fix wrote A && B || C in the sizing step; earlier rounds stopped before the lint ran."
+    }
+  ],
+  "holds": {
+    "enforce": [
+      "spawn-list",
+      "round-cap",
+      "warm-agents",
+      "closeout-spawn",
+      "handoff-gate"
+    ],
+    "logOnly": [
+      "agent-model"
+    ]
+  },
+  "sweep": {
+    "tier": "Feature (security-sensitive)",
+    "commit": "be137038c3364da3c625e0f023adc280e8cbf09a",
+    "dimensions": [
+      {
+        "name": "Privacy",
+        "result": "Clean: no personal data, local path or secret shape in the diff"
+      },
+      {
+        "name": "Supply chain",
+        "result": "No new dependency or action pin; the template checkout tag goes to the next list"
+      },
+      {
+        "name": "Legal",
+        "result": "Clean: no copied content"
+      },
+      {
+        "name": "Code security",
+        "result": "Four security roles: CI trusted the PR copy of the sizing script, two gates failed open, a test could dodge the why check, and the hand-back gate only logged; each fixed with a test"
+      },
+      {
+        "name": "Gaps, scaling, test value",
+        "result": "Budgets that clashed with the 3 minute step, runner sizing and slice packing fixed; test tidiness lows to the next list"
+      },
+      {
+        "name": "Alignment",
+        "result": "Briefs from plan-check now carry the lines the gates read; skill wording matched to the code"
+      }
+    ],
+    "findings": {
+      "critical": 0,
+      "high": 6,
+      "medium": 15,
+      "low": 25
+    },
+    "accepted": [],
+    "deferred": [
+      "low: 25 findings, the owner's pick (2026-11-23), in docs/builds/1.51.2.next.jsonl",
+      "after the sweep: 8 items from the review passes over the fixes and the automated reviews, in the same file; the hand-back crash pass stays a logged pass, the owner's pick (2026-11-23)"
+    ],
+    "fixes": [
+      {
+        "id": "fix-H1",
+        "finding": "H1",
+        "severity": "high",
+        "text": "the lanes job runs the base copy of ci-size.mjs, checks its outputs by shape and length, and run lines take matrix values only through env as integers",
+        "commit": "59cb6aaa",
+        "test": "tests/ci-plan-job.test.mjs::the lanes job runs the base commit's ci-size and no matrix value reaches a run line except through env",
+        "security": true
+      },
+      {
+        "id": "fix-H2",
+        "finding": "H2",
+        "severity": "high",
+        "text": "the test-check budgets on Linux and Windows are 120 s, inside the 180 s job budget",
+        "commit": "9365f0c7",
+        "test": "tests/ci-budget.test.mjs::the test-check budgets, Linux slice and Windows part, fit inside the 180 s job budget"
+      },
+      {
+        "id": "fix-H3",
+        "finding": "H3",
+        "severity": "high",
+        "text": "the closeout gate refuses on any git failure but no commit or no repository, and runs before any log write",
+        "commit": "a79aad1d",
+        "test": "tests/closeout-spawn.test.mjs::H3 a git that exits 128, or a log that cannot be written, still refuses a ticketless tester in closeout",
+        "security": true
+      },
+      {
+        "id": "fix-H4",
+        "finding": "H4",
+        "severity": "high",
+        "text": "the why check and the closeout count see test calls off the margin, with a non-literal name, through an alias or in a named forEach",
+        "commit": "19cf189a",
+        "test": "tests/why-at-write.test.mjs::H4: a why-less test written indented, with a variable name, through an alias or in a forEach is refused naming its line",
+        "security": true
+      },
+      {
+        "id": "fix-H5",
+        "finding": "H5",
+        "severity": "high",
+        "text": "the hand-back gate is in enforce mode, and its deny holds when the log write fails",
+        "commit": "bdbcc20b",
+        "test": "tests/hold-modes.test.mjs::H5: with holds.json as shipped, a hand-back whose RECORD lists a why-less new test is refused, even when the log write fails",
+        "security": true
+      },
+      {
+        "id": "fix-H6",
+        "finding": "H6",
+        "severity": "high",
+        "text": "`plan-check --brief` writes Plan, Unit id, Role, Worktree and Lane lines and a lock path beside itself; the templates carry Lane and the skill names the Ticket line",
+        "commit": "ff87f1c9",
+        "test": "tests/plan-why.test.mjs::plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and a lock path beside plan-check, and the templates carry Lane"
+      },
+      {
+        "id": "fix-M1",
+        "finding": "M1",
+        "severity": "medium",
+        "text": "the warm hold reads Role and Lane with the hook label rule and reads each open helper type",
+        "commit": "a79aad1d",
+        "test": "tests/warm-agents.test.mjs::M1 a typed tester and a bold-marked Role brief are open warm agents",
+        "security": true
+      },
+      {
+        "id": "fix-M2",
+        "finding": "M2",
+        "severity": "medium",
+        "text": "the plan key takes the first path token and drops trailing punctuation",
+        "commit": "a79aad1d",
+        "test": "tests/round-cap.test.mjs::M2 a plan spelled with a comma, dash, dot or fragment is the same plan",
+        "security": true
+      },
+      {
+        "id": "fix-M3",
+        "finding": "M3",
+        "severity": "medium",
+        "text": "the earliest whole role word in a Role line decides the role",
+        "commit": "7a5af5cb",
+        "test": "tests/round-cap.test.mjs::M3 a Role line that names the checker as a word counts as a checker",
+        "security": true
+      },
+      {
+        "id": "fix-M4",
+        "finding": "M4",
+        "severity": "medium",
+        "text": "a hold-mode load or mode error refuses for the high-tier holds",
+        "commit": "a79aad1d",
+        "test": "tests/round-cap.test.mjs::M4 a hold-mode.cjs that throws makes round-cap refuse",
+        "security": true
+      },
+      {
+        "id": "fix-M5",
+        "finding": "M5",
+        "severity": "medium",
+        "text": "a record with no sweep fails the check once a closeout file exists",
+        "commit": "bdbcc20b",
+        "test": "tests/closeout.test.mjs::M5: a record with its sweep removed after the closeout commit fails the check",
+        "security": true
+      },
+      {
+        "id": "fix-M6",
+        "finding": "M6",
+        "severity": "medium",
+        "text": "closeout reads its diff unquoted and NUL-split, and refuses a path still quoted",
+        "commit": "bdbcc20b",
+        "test": "tests/closeout.test.mjs::M6: a new test file with a non-ASCII name after the closeout commit needs a ticket",
+        "security": true
+      },
+      {
+        "id": "fix-M7",
+        "finding": "M7",
+        "severity": "medium",
+        "text": "under enforce a hand-back listing tests whose commit cannot be read is refused",
+        "commit": "b0fa5604",
+        "test": "tests/handoff-canary.test.mjs::M7: under enforce, a tester hand-back naming a commit that does not resolve is refused",
+        "security": true
+      },
+      {
+        "id": "fix-M8",
+        "finding": "M8",
+        "severity": "medium",
+        "text": "the dollar reserve holds the report call input: the last call context at its cache-read price",
+        "commit": "46b332f8",
+        "test": "tests/call-cap-reserve.test.mjs::a reviewer whose spend plus twice its dearest call plus the report reaches the ceiling is still stopped",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M9",
+        "finding": "M9",
+        "severity": "medium",
+        "text": "ci-size past six runners names the overage and exits 0 with six",
+        "commit": "9365f0c7",
+        "test": "tests/ci-size.test.mjs::prediction over 6x110 s exits 0 with 6 runners and names the 5 slowest tests",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M10",
+        "finding": "M10",
+        "severity": "medium",
+        "text": "the changed-test count comes from the test parse of base against head, read through its base flag",
+        "commit": "9365f0c7",
+        "test": "tests/ci-size.test.mjs::the changed-test count comes from the test parse of base against head, loops counted",
+        "security": true
+      },
+      {
+        "id": "fix-M11",
+        "finding": "M11",
+        "severity": "medium",
+        "text": "the unit slice steps pass the time plan when the map is present",
+        "commit": "9365f0c7",
+        "test": "tests/ci-plan-job.test.mjs::unit-tests and test-check read their matrix from needs.lanes.outputs, with no new step before the judges",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M12",
+        "finding": "M12",
+        "severity": "medium",
+        "text": "the fast cap does not apply to traced map runs",
+        "commit": "9365f0c7",
+        "test": "tests/fast-cap.test.mjs::a fast-lane test over 30 s fails naming the test and its time",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M13",
+        "finding": "M13",
+        "severity": "medium",
+        "text": "an over-cap test prints its cap line to stderr too",
+        "commit": "9365f0c7",
+        "test": "tests/fast-cap.test.mjs::a fast-lane test over 30 s fails naming the test and its time",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M14",
+        "finding": "M14",
+        "severity": "medium",
+        "text": "the skill states the warm limit as at or over 150000, names its hook, and labels the caps as lead practice",
+        "commit": "df15647f",
+        "test": "tests/brief-steps.test.mjs::the skill names the reset limit and the 2-check-round cap with their enforcers",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M15",
+        "finding": "M15",
+        "severity": "medium",
+        "text": "the cap sentence is pinned as one phrase",
+        "commit": "ff87f1c9",
+        "test": "tests/brief-steps.test.mjs::the skill carries isolated worktrees, the lock after spawn, the wip commit, the 3 and 2 caps and date -u",
+        "reason": "assertions inside an existing test, no new test"
+      }
+    ]
+  }
+}
