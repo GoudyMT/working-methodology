@@ -25,8 +25,8 @@ function verdict(ceilingLine, calls, cwd) {
 	fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
 	const lines = [{ message: { role: 'user', content: brief(ceilingLine) } }];
 	calls.forEach((c, i) => {
-		const { output, model, reread = 0 } = typeof c === 'number' ? { output: c, model: 'claude-sonnet-5-5' } : c;
-		lines.push({ message: { role: 'assistant', id: `m${i}`, model, usage: { input_tokens: 0, cache_read_input_tokens: reread,cache_creation_input_tokens: 0, output_tokens: output } } });
+		const { output, model, reread = 0, input = 0, create = 0 } = typeof c === 'number' ? { output: c, model: 'claude-sonnet-5-5' } : c;
+		lines.push({ message: { role: 'assistant', id: `m${i}`, model, usage: { input_tokens: input, cache_read_input_tokens: reread, cache_creation_input_tokens: create, output_tokens: output } } });
 	});
 	fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 	const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', ...(cwd ? { cwd } : {}), tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
@@ -68,6 +68,21 @@ test('a reviewer whose spend plus twice its dearest call plus the report reaches
 	assert.equal(justBelow.permissionDecision, 'deny', 'just below the new edge');
 	const aboveReread = verdict(`Dollar ceiling: $${edge2 + 1e-9}`, calls);
 	assert.equal(aboveReread.permissionDecision, 'allow', aboveReread.permissionDecisionReason);
+	// M8, second case: the dearest call is an earlier one (with a big context of its own), the last call is small, on a
+	// model with another cache-read price, and has all three input kinds. The report call re-reads the LAST call's whole
+	// context (input + cache read + cache creation) at the LAST call's model's cache-read price.
+	const first = { output: DEAR, model: 'claude-sonnet-5-5', reread: 1000000 };
+	const tail = { output: 500, model: 'claude-opus-5', input: 1000, reread: 3000, create: 2000 };
+	const calls2 = [first, ...CHEAP.slice(0, 3), tail];
+	const spend3 = calls2.map((c) => dollars({ output_tokens: c.output, input_tokens: c.input, cache_read_input_tokens: c.reread, cache_creation_input_tokens: c.create }, c.model));
+	const context = tail.input + tail.reread + tail.create;
+	const reread3 = dollars({ cache_read_input_tokens: context }, tail.model);
+	const edge3 = spend3.reduce((t, x) => t + x, 0) + (2 * Math.max(...spend3) + reportDollars(tail.model) + reread3);
+	assert.equal(Math.max(...spend3), spend3[0], 'the dearest call is the first one');
+	assert.equal(verdict(`Dollar ceiling: $${edge3}`, calls2).permissionDecision, 'deny', 'at the edge with the last call re-read at its own price');
+	assert.equal(verdict(`Dollar ceiling: $${edge3 - 1e-9}`, calls2).permissionDecision, 'deny', 'just below the edge');
+	const above3 = verdict(`Dollar ceiling: $${edge3 + 1e-9}`, calls2);
+	assert.equal(above3.permissionDecision, 'allow', above3.permissionDecisionReason);
 });
 
 // why: catches the dear call placed first, in the middle or last gives the same verdict, since the reserve reads the dearest call (K357 S1)
