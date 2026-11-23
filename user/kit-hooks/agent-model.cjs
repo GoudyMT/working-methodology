@@ -12,6 +12,8 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const LOG = 'kit-agent-model.log';
+const LIST = 'kit-unit-files.txt';
+const LIST_COMMAND = 'node user/kit-tools/unit-lock.mjs --tester --files';
 const FAMILIES = ['opus', 'sonnet', 'haiku'];
 const family = (m) => {
 	const s = String(m).toLowerCase();
@@ -35,9 +37,9 @@ function roleModel(type) {
 	return m ? m[1] : null;
 }
 
-// The git common folder of a repo folder (the main repo's .git, also from a linked worktree), or null outside one.
-function commonDir(cwd) {
-	const r = spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', 'rev-parse', '--path-format=absolute', '--git-common-dir'], {
+// One git rev-parse line run in a folder, or null when git fails (a folder git cannot read, or one that is not there).
+function gitLine(cwd, args) {
+	const r = spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', 'rev-parse', ...args], {
 		encoding: 'utf8',
 		timeout: 3000,
 		windowsHide: true,
@@ -45,6 +47,11 @@ function commonDir(cwd) {
 		env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' },
 	});
 	return r.status === 0 ? r.stdout.trim() : null;
+}
+
+// The git common folder of a repo folder (the main repo's .git, also from a linked worktree), or null outside one.
+function commonDir(cwd) {
+	return gitLine(cwd, ['--path-format=absolute', '--git-common-dir']);
 }
 
 // The hold's mode from hold-mode.cjs beside this file. A copy with no hold-mode.cjs beside it (the kit's tests copy this
@@ -112,6 +119,23 @@ function checkerWhy(prompt, cwd) {
 	return cell !== null && !filesOf(cell).some((f) => guardOf(f)) ? 'checker on a non-risky unit' : null;
 }
 
+// The role a spawn runs as for the list gate: tester or writer, by its subagent_type (a plugin prefix dropped, any case) or,
+// for a general agent, by its brief's Role: line. Null for every other spawn.
+function listRole(type, prompt) {
+	const bare = String(type).split(':').pop().toLowerCase();
+	if (bare === 'tester' || bare === 'writer') return bare;
+	if (bare !== 'general-purpose' && bare !== '') return null;
+	const line = /^role:(.*)$/im.exec(prompt);
+	const named = line ? line[1].trim().toLowerCase() : '';
+	return named === 'tester' || named === 'writer' ? named : null;
+}
+
+// The folder a spawn's brief names with its Worktree: line (resolved from the hook's cwd), else the hook's cwd.
+function worktreeOf(prompt, cwd) {
+	const line = /^worktree:(.*)$/im.exec(prompt);
+	return line && line[1].trim() ? path.resolve(cwd, line[1].trim()) : cwd;
+}
+
 // Appends one row to the repo's kit-agent-model.log; nothing when the folder is not a repo.
 function logRow(cwd, row, hold) {
 	const common = commonDir(cwd);
@@ -121,16 +145,18 @@ function logRow(cwd, row, hold) {
 // The hook's answer for one Agent call: a deny when the hold reads enforce and the model is of another family, else nothing.
 function check(input) {
 	let refuse = null;
+	let cwd = process.cwd();
 	try {
 		const call = input && input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
 		const type = call.subagent_type == null ? '' : String(call.subagent_type);
 		const model = call.model == null || call.model === '' ? null : String(call.model);
-		const cwd = String((input && input.cwd) || process.cwd());
+		cwd = String((input && input.cwd) || process.cwd());
+		const prompt = call.prompt == null ? '' : String(call.prompt);
 		const want = roleModel(type);
 		const hold = holdMode('agent-model');
 		const whys = [];
 		if (type === 'checker') {
-			const why = checkerWhy(call.prompt == null ? '' : String(call.prompt), cwd);
+			const why = checkerWhy(prompt, cwd);
 			if (why) whys.push(why);
 		}
 		if (want === undefined) whys.push(type ? `no role file for ${type}` : 'no subagent_type named');
@@ -140,8 +166,28 @@ function check(input) {
 			if (hold.mode === 'enforce') refuse = deny(`${why}: a role runs on its own model family. Call it with the role's model.`);
 		}
 		for (const why of whys) logRow(cwd, { type, model, want: want === undefined ? null : want, why }, hold);
+		// The list gate: a tester or writer spawn waits for kit-unit-files.txt in the worktree its brief names. Isolated spawns
+		// pass (their worktree does not exist until the spawn); a worktree git cannot read passes and is logged.
+		const role = listRole(type, prompt);
+		if (role && call.isolation !== 'worktree') {
+			const wt = worktreeOf(prompt, cwd);
+			const gate = holdMode('spawn-list');
+			const list = gitLine(wt, ['--path-format=absolute', '--git-path', LIST]);
+			if (list === null) {
+				logRow(cwd, { type: role, model, want: null, why: `worktree ${wt} cannot be read by git, so its list is not checked and the spawn passes` }, gate);
+			} else if (!fs.existsSync(list)) {
+				const why = `a ${role} spawn names worktree ${wt}, which has no ${LIST}`;
+				logRow(cwd, { type: role, model, want: null, why }, gate);
+				if (gate.mode === 'enforce') refuse = deny(`${why}. Run ${LIST_COMMAND} <test files> from that worktree, then spawn.`);
+			}
+		}
 	} catch {
-		/* a hook that fails never stops a call */
+		/* a hook that fails never stops a call; the row says the call passed unchecked */
+		try {
+			logRow(cwd, { type: '', model: null, want: null, why: 'hook error: the call passes unchecked' }, holdMode('agent-model'));
+		} catch {
+			/* the log itself failed: nothing more to do */
+		}
 	}
 	return refuse;
 }
