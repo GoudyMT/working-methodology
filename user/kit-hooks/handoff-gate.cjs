@@ -53,7 +53,7 @@ function untestedKeys(cwd, role) {
 	const parent = git(cwd, 'rev-parse', '--verify', '-q', `${sha}^`);
 	const base = parent.status === 0 ? parent.stdout.trim() : null;
 	// quotePath off: a non-ASCII file name would come back quoted, and no show could read it (as kit.mjs reads it).
-	const files = base ? git(cwd, '-c', 'core.quotePath=false', 'diff', '--name-only', base, sha) : git(cwd, '-c', 'core.quotePath=false', 'ls-tree', '-r', '--name-only', sha);
+	const files = base ? git(cwd, '-c', 'core.quotePath=false', 'diff', '--name-only', '--diff-filter=d', base, sha) : git(cwd, '-c', 'core.quotePath=false', 'ls-tree', '-r', '--name-only', sha);
 	if (files.status !== 0) return { ...none, unreadable: true };
 	const listed = Array.isArray(role.tests) ? role.tests : [];
 	const missing = [];
