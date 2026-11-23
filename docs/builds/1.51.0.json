@@ -1475,14 +1475,6 @@
     "reason": "a row in this fix round"
    },
    {
-    "id": "F17",
-    "severity": "high",
-    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
-    "commit": "4db0b830",
-    "test": "tests/flow-lock.test.mjs::L1: on win32 start matches a logged planPath that differs only in letter case",
-    "reason": "a row in this fix round"
-   },
-   {
     "id": "F18",
     "severity": "high",
     "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
@@ -2104,22 +2096,6 @@
     "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
     "commit": "2bf8f0d5",
     "test": "tests/test-lock.test.mjs::pre-push passes a merge of main that drops a test the feature never touched, and holds a drop of a test the branch added, in both hooks",
-    "reason": "a row in this fix round"
-   },
-   {
-    "id": "F96",
-    "severity": "high",
-    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
-    "commit": "2bf8f0d5",
-    "test": "tests/test-lock.test.mjs::pre-push passes a merge that only brings in a test file one parent already holds, in both hooks",
-    "reason": "a row in this fix round"
-   },
-   {
-    "id": "F97",
-    "severity": "high",
-    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
-    "commit": "2bf8f0d5",
-    "test": "tests/test-lock.test.mjs::pre-push passes a new orphan ref that only adds tests, in both hooks",
     "reason": "a row in this fix round"
    },
    {
