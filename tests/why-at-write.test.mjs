@@ -7,6 +7,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { createRequire } from 'node:module';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
@@ -100,6 +101,8 @@ test('H4: a why-less test written indented, with a variable name, through an ali
 		'default import': "import nt from 'node:test';\nnt('b', () => {});\n",
 		'renamed dynamic import': "const { test: t } = await import('node:test');\nt('c', () => {});\n",
 		'after a regex with a backtick': "function f(){ return /`/.test(x); }\ntest('after-return-regex', () => {});\n",
+		// `of` is a plain name, so the slash after it divides and must not hide the test call on its line.
+		'beside a division by a name of': "const of = 4;\nconst h = of / 2; test('why-less', () => {}); const k = h / 2;\n",
 	};
 	for (const [label, body] of Object.entries(forms)) {
 		const bad = fence(dir, 'Write', { file_path: target(dir), content: head + body });
@@ -116,6 +119,12 @@ test('H4: a why-less test written indented, with a variable name, through an ali
 		const ok = fence(dir, 'Write', { file_path: target(dir), content: head + body });
 		assert.equal(ok.code, 0, `${label} with a why line saves: ${ok.err}`);
 	}
+	// A long whitespace run after `import` is read in linear time, so the hook never stalls into a timeout that lets the call through.
+	// 600 spaces take seconds under overlapping whitespace runs (n^4) and well under a millisecond when the runs are disjoint.
+	const started = Date.now();
+	const parsed = createRequire(import.meta.url)('../user/kit-hooks/why-rule.cjs').testStarts(`import${' '.repeat(600)}x;\ntest('late', () => {});\n`);
+	assert.ok(Date.now() - started < 500, `600 spaces after import parse in under 0.5 s, took ${Date.now() - started} ms`);
+	assert.equal(parsed.length, 1, 'the test after the long run is still found');
 });
 
 // why: catches a test with a passing why line saves (K368 S1)
