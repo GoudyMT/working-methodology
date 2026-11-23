@@ -53,7 +53,6 @@
         "tests/ci-size.test.mjs::predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6",
         "tests/ci-size.test.mjs::600 changed tests give 6 test-check slices, 0 give 1",
         "tests/ci-size.test.mjs::655 flips give 4 minimal-code slices, 3 give 1",
-        "tests/ci-size.test.mjs::prediction over 6x110 s exits 0 with 6 runners and names the 5 slowest tests",
         "tests/ci-size.test.mjs::a test missing from the map counts the map median",
         "tests/ci-size.test.mjs::output is GitHub matrix JSON on GITHUB_OUTPUT lines"
       ]
@@ -189,9 +188,6 @@
       "tests": [
         "tests/call-cap-reserve.test.mjs::ceiling $1.44, four cheap calls then one $0.14 call: the next tool is allowed, not refused with \"Dollar ceiling reached ($0.28 of $1.44)\"",
         "tests/call-cap-reserve.test.mjs::a reviewer whose spend plus twice its dearest call plus the report reaches the ceiling is still stopped",
-        "tests/call-cap-reserve.test.mjs::the dear call placed first, in the middle or last gives the same verdict, since the reserve reads the dearest call",
-        "tests/call-cap-reserve.test.mjs::the same calls read twice give the same verdict",
-        "tests/call-cap-reserve.test.mjs::the token ceiling path keeps its own reserve, unchanged",
         "tests/call-cap-reserve.test.mjs::a call on an unknown model is priced at the dearest model, so the reserve only grows, logged"
       ]
     },
@@ -421,7 +417,7 @@
   "limits": "A review spawn with no Plan: line is counted apart from planned ones, and a relative plan path is keyed from the folder the hook runs in. The holds.json tier is set per hold but read in each gate's own code. The commit-shape tool miscounts a double-quoted test name. Plain `--changed` without `--pick` still trusts a coverage map off HEAD. The why parse is line based, not a full tokenizer: a test call reached through an array or `.call`, or hidden by a deliberate slash after a word that may be a name, is not seen; it stops slips, not a determined workaround. The hand-back gate passes a hand-back when its own check crashes, which goes to the owner.",
   "tests": {
     "before": 1821,
-    "after": 1988,
+    "after": 1985,
     "flips": "declared tests at the base and on this branch; the PR run gives the final count"
   },
   "holds": {
@@ -607,7 +603,7 @@
         "severity": "medium",
         "text": "ci-size past six runners names the overage and exits 0 with six",
         "commit": "9365f0c7",
-        "test": "tests/ci-size.test.mjs::predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6",
+        "test": "tests/ci-size.test.mjs::prediction over 6x110 s exits 0 with 6 runners and names the 5 slowest tests",
         "reason": "assertions inside an existing test, no new test"
       },
       {
