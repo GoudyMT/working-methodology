@@ -1,5 +1,12 @@
 # Changelog
 
+## 1.51.1 - 2026-11-23
+
+The kit repo carries its own filled rules block, named in a standards index, so a sweep run in the kit no longer reads the shipped template with its empty slots.
+
+### Fixed
+- The kit repo carries its own filled rules block in `standards/agent-team-adapter.md`, named by `standards/INDEX.md`; the shipped `rules/agent-teams.md` keeps its slots for installs to fill.
+
 ## 1.51.0 - 2026-11-22
 
 Every hand-back ends in a checked JSONL record; tests are written, reviewed and locked before the build starts, and a commit-shape check reads the order; one model table names the model and effort of every step, with floors a project cannot lower; and the build flow, the plan and the sweep fix lanes are checked by scripts.
