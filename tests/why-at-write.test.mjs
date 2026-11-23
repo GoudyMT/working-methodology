@@ -247,15 +247,15 @@ test('a test file the hook cannot parse is refused and logged', () => {
 
 // why: catches an Edit with replace_all true that turns a later // MARK into a why-less top-level test( passing the fence (K368 S3)
 test('an Edit with replace_all that turns a later // MARK into a why-less test( is refused', () => {
-	const start = '  // MARK\n' + testWith(GOOD_WHY, 'the old one') + '// MARK\n';
+	const start = '  /* // MARK */\n' + testWith(GOOD_WHY, 'the old one') + '// MARK\n';
 	const dir = unitRepo(start);
 	const input = { file_path: target(dir), old_string: '// MARK', new_string: "test('the late one', () => {});", replace_all: true };
 	const bad = fence(dir, 'Edit', input);
 	assert.equal(bad.code, 2, 'the replace_all edit leaves a why-less top-level test and is refused: ' + bad.err);
 	assert.ok(bad.err.includes(NO_WHY) && bad.err.includes('the late one'), 'stderr names the new test: ' + bad.err);
-	// control: without replace_all only the indented first MARK changes, so no new top-level test appears
+	// control: without replace_all only the first MARK, inside a comment, changes, so no new test appears
 	const once = fence(dir, 'Edit', { ...input, replace_all: false });
-	assert.equal(once.code, 0, 'a single replace of the indented MARK adds no top-level test: ' + once.err);
+	assert.equal(once.code, 0, 'a single replace of the MARK inside a comment adds no test:' + once.err);
 });
 
 // why: catches an Edit adding a second why-less test('old', ...) beside an existing test('old') passing the fence (K368 S1)
