@@ -53,6 +53,9 @@ test('the skill names the reset limit and the 2-check-round cap with their enfor
 	assert.match(s, either('reset', '150000|150K', 100), 'the 150000 limit sits beside a reset line');
 	assert.match(s, /at or over 150000/i, 'the limit reads "at or over 150000"');
 	assert.match(s, /agent-model hook[^.]{0,80}\bholds?\b|\bholds?\b[^.]{0,80}agent-model hook/i, 'the agent-model hook is named as the holder of the spawn');
+	assert.doesNotMatch(s, /`?warm\.mjs`?\s+holds/i, 'warm.mjs is not the holder: the agent-model hook is');
+	assert.match(s, /agent-model hook\s+holds[^.]*\b(?:under|below)\b[^.]*150000/i, 'the agent-model hook holds a fresh spawn while an open agent is under 150000');
+	assert.match(s, /agent-model hook\s+holds[^.]*SendMessage[^.]*\b(?:at or over|over)\s+150000|\b(?:at or over|over)\s+150000[^.]*agent-model hook\s+holds[^.]*SendMessage/i, 'the agent-model hook holds the SendMessage at or over 150000, so the lead spawns fresh');
 	const cap = '(?:at most|no more than)\\s+(?:2|two)\\s+check\\s+rounds?';
 	assert.match(s, new RegExp(cap, 'i'), 'states "at most 2 check rounds"');
 	assert.match(s, either(cap, 'agent-model|round-cap', 200), 'the round cap names its enforcer (agent-model or round-cap)');
