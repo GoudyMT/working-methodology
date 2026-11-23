@@ -133,22 +133,18 @@ test('L1: a clean log line for a different plan file name does not let this plan
 	fs.utimesSync(plan, old, old);
 	fs.writeFileSync(log, logLine({ plan: 'other-plan.md' }));
 	failed(start(plan), NO_LOG);
-});
-
-// why: catches a clean run logged under the plan's path in other letter case refused on win32, so a clean plan cannot start
-test('L1: on win32 start matches a logged planPath that differs only in letter case', { skip: process.platform !== 'win32' && 'letter case folds on win32 only; other platforms skip' }, () => {
-	const { dir, plan, log } = planRepo();
-	const old = new Date(Date.now() - 60000);
-	fs.utimesSync(plan, old, old);
-	const upper = plan.replace(/\\/g, '/').toUpperCase();
-	// Control: the same path in the plan's own case is a match, and the same name in another folder is not.
-	fs.writeFileSync(log, logLine({ planPath: plan.replace(/\\/g, '/') }));
-	assert.equal(start(plan).code, 0, 'the same-case planPath is a match');
-	fs.writeFileSync(log, logLine({ planPath: path.join(dir, 'elsewhere', 'plan.md').replace(/\\/g, '/') }));
-	failed(start(plan), NO_LOG);
-	fs.writeFileSync(log, logLine({ planPath: upper }));
-	const r = start(plan);
-	assert.equal(r.code, 0, `a planPath differing only in letter case is a match: ${r.out}`);
+	// Folded control (win32 only, where letter case folds): a logged planPath in the plan's own case is a match, the same
+	// name in another folder is not, and the path in other letter case is a match too.
+	if (process.platform === 'win32') {
+		const own = plan.replace(/\\/g, '/');
+		fs.writeFileSync(log, logLine({ planPath: own }));
+		assert.equal(start(plan).code, 0, 'the same-case planPath is a match');
+		fs.writeFileSync(log, logLine({ planPath: 'elsewhere/plan.md' }));
+		failed(start(plan), NO_LOG);
+		fs.writeFileSync(log, logLine({ planPath: own.toUpperCase() }));
+		const r = start(plan);
+		assert.equal(r.code, 0, `a planPath differing only in letter case is a match: ${r.out}`);
+	}
 });
 
 // why: catches the start check and the real plan-graph disagreeing about the log they share
@@ -537,7 +533,7 @@ test('H3 reviews: a second review finding R2 with no fixed line is refused and n
 	assert.equal(ok.code, 0, ok.out);
 });
 
-// why: catches the overwatch steps never naming the lock and the unit check, so a builder runs on an unlocked row (H4).
+// why: guards rule:agent-team-adapter (the overwatch steps name plan-check --lock and unit-check, so a builder never runs on an unlocked row)
 test('H4 SKILL.md: the overwatch steps name plan-check --lock and unit-check --plan --unit', () => {
 	const text = fs.readFileSync(SKILL, 'utf8');
 	const at = text.indexOf('## The overwatch lead');
@@ -548,7 +544,7 @@ test('H4 SKILL.md: the overwatch steps name plan-check --lock and unit-check --p
 	assert.match(section, /unit-check(\.mjs)?\b[^\n]*--plan[^\n]*--unit/);
 });
 
-// why: catches the split step naming lanes.mjs, a sweep-findings tool, for splitting a plan's units (H5).
+// why: guards rule:agent-team-adapter (the plan-and-split step names plan-graph for the unit split, never lanes.mjs, a sweep-findings tool)
 test('H5 SKILL.md: the plan-and-split step names plan-graph for the unit split and does not name lanes.mjs there', () => {
 	const text = fs.readFileSync(SKILL, 'utf8');
 	const step = text.split('\n').find((l) => l.includes('**Plan and split.**'));
