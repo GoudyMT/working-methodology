@@ -8,24 +8,45 @@
 // a clean check exits 0. A failing check appends one line {at, hook, cause} to <git common dir>/kit-guard-open.log.
 import fs from 'node:fs';
 import path from 'node:path';
-import { spawnSync } from 'node:child_process';
 import { pathToFileURL } from 'node:url';
+import safeSpawn from './safe-spawn.cjs';
 
 const TEST_FILE = /^tests\/.+\.test\.mjs$/;
 const TEST_LINE = /^test\((['"`])((?:\\.|(?!\1).)*)\1/;
-const RENAMED = /^\s*\/\/ renamed from: /;
+const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
+// test-check's LOOP rule: a top-level line that starts a loop which makes tests.
+const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
+const RENAMED = /^\s*\/\/ renamed from: (.+?)\s*$/;
 // The paths a new script, hook or CI file lives under.
-const NEW_KIND = /^(scripts\/|user\/kit-tools\/|user\/kit-hooks\/|project\/\.githooks\/|\.github\/)/;
+const NEW_KIND = /^(scripts\/|user\/kit-tools\/|user\/kit-hooks\/|project\/\.githooks\/|project\/\.claude\/|user\/skills\/|\.github\/)/;
 
 // A problem the check cannot read at all: the check fails on it, and logs it.
 class Unreadable extends Error {}
 
 const isTicket = (f) => ['high', 'critical'].includes(f.severity) || f.security === true || f.owner === true;
 
+// git in the repo at root, started through safe-spawn (-C root, read-only); a failure is unreadable.
 function git(root, args) {
-	const r = spawnSync('git', args, { cwd: root, encoding: 'utf8' });
+	const r = safeSpawn.gitRead(root, args, { encoding: 'utf8' });
 	if (r.status !== 0) throw new Unreadable(`git ${args[0]} failed: ${String(r.stderr).trim().split('\n')[0]}`);
 	return r.stdout;
+}
+
+// The full sha a name resolves to as a commit, or null when it names none. A name that starts with - is never one.
+function commitOf(root, name) {
+	if (typeof name !== 'string' || !name || name.startsWith('-')) return null;
+	const r = safeSpawn.gitRead(root, ['rev-parse', '--verify', '--quiet', `${name}^{commit}`], { encoding: 'utf8' });
+	return r.status === 0 ? r.stdout.trim() : null;
+}
+
+// The range's end: HEAD, or for a merge whose first parent is PR_BASE (set by the Build record step) its second parent,
+// the PR head, so the tests main gained are never charged to the patch.
+function rangeEnd(root) {
+	const base = process.env.PR_BASE;
+	if (!base) return 'HEAD';
+	const pb = commitOf(root, base);
+	if (pb === null) throw new Unreadable(`PR_BASE ${base} is no commit here`);
+	return commitOf(root, 'HEAD^2') !== null && commitOf(root, 'HEAD^1') === pb ? 'HEAD^2' : 'HEAD';
 }
 
 function versionOf(root) {
@@ -50,16 +71,24 @@ function readJson(file, rel) {
 	}
 }
 
-// The test names of one file's text: each name maps to whether a "// renamed from:" line sits in the comment block above it.
+// The test names of one file's text, each with the names its "// renamed from:" lines tag (the comment block above it).
+// A top-level loop that makes tests counts as test-check reads it: its first test( inside, up to the next line at the margin.
 function testsIn(text) {
 	const lines = text.replace(/\r\n/g, '\n').split('\n');
 	const out = new Map();
-	lines.forEach((l, i) => {
-		const m = TEST_LINE.exec(l);
-		if (!m) return;
+	const tagsAbove = (i) => {
 		let head = i;
 		while (head > 0 && /^\s*\/\//.test(lines[head - 1])) head--;
-		out.set(m[2].replace(/\\(.)/g, '$1'), lines.slice(head, i).some((c) => RENAMED.test(c)));
+		return lines.slice(head, i).map((c) => RENAMED.exec(c)).filter(Boolean).map((m) => m[1]);
+	};
+	lines.forEach((l, i) => {
+		const m = TEST_LINE.exec(l);
+		if (m) { out.set(m[2].replace(/\\(.)/g, '$1'), tagsAbove(i)); return; }
+		if (!LOOP.test(l)) return;
+		for (let j = i; j < lines.length && (j === i || !/^[^\s}\])]/.test(lines[j])); j++) {
+			const n = NAMED.exec(lines[j]);
+			if (n) { out.set(n[2].replace(/\\(.)/g, '$1'), tagsAbove(i)); break; }
+		}
 	});
 	return out;
 }
@@ -92,11 +121,16 @@ function problemsIn(root) {
 	}
 	const problems = [];
 	if (co.version !== version) problems.push(`${rel} says version ${co.version}, VERSION says ${version}`);
-	if (co.head !== rec.sweep.commit) problems.push(`${rel} names head ${co.head}, the record's sweep names ${rec.sweep.commit}`);
-	const commits = git(root, ['log', '--format=%H', '--', rel]).split('\n').filter(Boolean);
+	const head = commitOf(root, co.head);
+	if (head === null || head !== commitOf(root, rec.sweep.commit)) problems.push(`${rel} names head ${co.head}, the record's sweep names ${rec.sweep.commit}`);
+	const end = rangeEnd(root);
+	const commits = git(root, ['log', '--format=%H', end, '--', rel]).split('\n').filter(Boolean);
 	if (commits.length === 0) return [...problems, `${rel} is not committed: its one closeout commit writes it`];
 	if (commits.length > 1) problems.push(`${rel} has ${commits.length} commits: only its one closeout commit may touch it`);
 	const closeCommit = commits[commits.length - 1];
+	// Nothing may land between the swept head and the closeout commit: its parent must be that head.
+	const parent = commitOf(root, `${closeCommit}^`);
+	if (parent === null || parent !== head) problems.push(`the closeout commit ${closeCommit} has parent ${parent || 'none'}, but ${rel} names head ${co.head}: nothing may land between them`);
 
 	// The flags decide a ticket; a tickets list that disagrees with them is a fault naming the id.
 	const ticketIds = new Set(co.findings.filter(isTicket).map((f) => f.id));
@@ -108,17 +142,20 @@ function problemsIn(root) {
 	}
 
 	// The range after the closeout commit: each test it adds, and each new script, hook or CI file.
-	const changed = git(root, ['diff', '--name-status', '-M', closeCommit, 'HEAD']).split('\n').filter(Boolean).map((l) => l.split('\t'));
+	const changed = git(root, ['diff', '--name-status', '-M', closeCommit, end]).split('\n').filter(Boolean).map((l) => l.split('\t'));
 	const fresh = [];
 	for (const parts of changed) {
 		const status = parts[0];
 		const at = parts[parts.length - 1];
 		if (status === 'D' || !TEST_FILE.test(at)) continue;
-		const now = testsIn(git(root, ['show', `HEAD:${at}`]));
+		const now = testsIn(git(root, ['show', `${end}:${at}`]));
 		// A renamed file's tests are new under their new path; an edited file's tests are new when its old version lacks them.
 		const was = status === 'M' ? testsIn(git(root, ['show', `${closeCommit}:${at}`])) : new Map();
-		for (const [name, renamed] of now) {
-			if (!was.has(name) && !renamed) fresh.push(`${at}::${name}`);
+		for (const [name, tags] of now) {
+			if (was.has(name)) continue;
+			// A "renamed from" tag exempts only a name the closeout commit's file had and this file has lost.
+			if (tags.some((t) => was.has(t) && !now.has(t))) continue;
+			fresh.push(`${at}::${name}`);
 		}
 	}
 	fresh.sort();
@@ -129,7 +166,7 @@ function problemsIn(root) {
 	const filesOf = (it) => (Array.isArray(it.files) ? it.files : []);
 	const freshSet = new Set(fresh);
 	const addedSet = new Set(added);
-	const defer = (key) => `defer it: node user/kit-tools/closeout.mjs defer "${key}"`;
+	const defer = (key) => `remove the test and defer it: node user/kit-tools/closeout.mjs defer "${key}"`;
 	for (const key of fresh) {
 		const named = rows.filter((it) => namesOf(it).includes(key));
 		if (named.length === 0) problems.push(`${key} is a new test with no ticket: name it in one fix row whose finding is a ticket, or ${defer(key)}`);
@@ -211,7 +248,7 @@ function main(argv) {
 	if (rootArg !== null) root = path.resolve(rootArg);
 	else if (process.env.KIT_RECORD_ROOT) root = path.resolve(process.env.KIT_RECORD_ROOT);
 	else {
-		const top = spawnSync('git', ['rev-parse', '--show-toplevel'], { cwd: process.cwd(), encoding: 'utf8' });
+		const top = safeSpawn.gitRead(process.cwd(), ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
 		if (top.status !== 0) {
 			process.stderr.write('closeout: not in a git repo: name the repo with --root\n');
 			return 2;

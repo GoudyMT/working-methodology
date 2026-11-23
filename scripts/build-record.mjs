@@ -21,6 +21,7 @@ import { check } from '../user/kit-tools/handoff.mjs';
 import { planUnits, testLines, testOf } from '../user/kit-tools/plan-check.mjs';
 import { filesOf } from '../user/kit-tools/test-budget.mjs';
 import { findingsOf } from '../user/kit-tools/closeout.mjs';
+import safeSpawn from '../user/kit-tools/safe-spawn.cjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const CLOSEOUT = path.join(ROOT, 'user', 'kit-tools', 'closeout.mjs');
@@ -242,8 +243,16 @@ export function notes(rec) {
 	return out.join('\n');
 }
 
-/** The record for the version in VERSION, its path, and the checks against VERSION and CHANGELOG.md. */
-export function checkRepo(root, file) {
+/**
+ * The record for the version in VERSION, its path, and the checks against VERSION and CHANGELOG.md.
+ * Args:
+ *     root: the repo folder
+ *     file: the record's path, or none for docs/builds/<version>.json
+ *     opts.closeout: run the closeout check (K369); the CLI turns it on for check only
+ * Returns:
+ *     {at, rec, problems}
+ */
+export function checkRepo(root, file, { closeout = true } = {}) {
 	const version = fs.readFileSync(path.join(root, 'VERSION'), 'utf8').trim();
 	const at = file ? path.resolve(file) : path.join(root, 'docs', 'builds', `${version}.json`);
 	let rec;
@@ -252,16 +261,16 @@ export function checkRepo(root, file) {
 	if (rec.version !== version) found.push(`the record is for ${rec.version}, VERSION says ${version}`);
 	// The build 14 sweep: a row's severity and flags are typed, so a guard fix typed medium shipped with no test. In a
 	// repo, each row's commit must resolve, and a row with no test may not change a guard or gate file.
-	const inRepo = spawnSync('git', ['rev-parse', '--git-dir'], { cwd: root, encoding: 'utf8' }).status === 0;
+	const inRepo = safeSpawn.gitRead(root, ['rev-parse', '--git-dir'], { encoding: 'utf8' }).status === 0;
 	for (const f of (inRepo && rec.sweep && Array.isArray(rec.sweep.fixes) ? rec.sweep.fixes : [])) {
 		if (!f || typeof f.commit !== 'string' || !f.commit.trim()) continue;
-		const shown = spawnSync('git', ['show', '--name-only', '--format=', '--end-of-options', `${f.commit}^{commit}`], { cwd: root, encoding: 'utf8' });
+		const shown = safeSpawn.gitRead(root, ['show', '--name-only', '--format=', '--end-of-options', `${f.commit}^{commit}`], { encoding: 'utf8' });
 		if (shown.status !== 0) { found.push(`fix ${f.id} commit ${f.commit} is not a commit here`); continue; }
 		const guarded = shown.stdout.split('\n').filter((p) => GUARDED.test(p));
 		if (f.test === NO_TEST && guarded.length) found.push(`fix ${f.id} changes ${guarded.join(', ')}, a guard or gate file: mark it security and name its test`);
 	}
 	// K369 S1: a record with a sweep runs the closeout check, and its stderr lines are this check's problems.
-	if (inRepo && rec.sweep) {
+	if (closeout && inRepo && rec.sweep) {
 		const r = spawnSync(process.execPath, [CLOSEOUT, 'check', '--root', root], { cwd: root, encoding: 'utf8' });
 		const lines = String(r.stderr).split('\n').filter(Boolean);
 		if (r.status !== 0) found.push(...(lines.length ? lines : [`closeout check exited ${r.status}`]));
@@ -356,7 +365,7 @@ if (RUN_DIRECTLY && process.argv[2] === '--from-plan') {
 } else if (RUN_DIRECTLY) {
 	const [cmd, file] = process.argv.slice(2);
 	const root = process.env.KIT_RECORD_ROOT ? path.resolve(process.env.KIT_RECORD_ROOT) : ROOT;
-	const r = checkRepo(root, cmd === 'body' ? undefined : file);
+	const r = checkRepo(root, cmd === 'body' ? undefined : file, { closeout: cmd === 'check' });
 	if (cmd === 'body') {
 		// The build 14 sweep: the published body's fix lines, from "High and critical findings" to "Deferred", must be the
 		// ones the record writes; a hand edit after the record wrote them is named.
