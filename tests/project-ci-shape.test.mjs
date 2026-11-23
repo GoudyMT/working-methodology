@@ -92,6 +92,8 @@ test('each template has a plan job, a sized fast matrix and a budget step in ci,
 			body.some((l) => /\b180\b/.test(l) && (/^\s*(- )?run:/.test(l) || /\bseconds?\b/i.test(l))),
 			`${name}: the budget step carries 180 seconds on a run: line or a seconds field`,
 		);
+		// K401 (the owner's yes, 2026-11-23): a run over the budget is reported, never failed, so projects keep no per-run time gate.
+		assert.ok(!body.some((l) => /\bexit [1-9]/.test(l)), `${name}: the budget step is report only, with no exit on a run over it`);
 		const shape = shapeOf(file);
 		assert.equal(shape.status, 0, `${name}: ci-shape exit ${shape.status} ${shape.stderr}`);
 		assert.match(shape.stdout, /CI shape: 0 gap\(s\)/, `${name}: ci-shape reports gaps: ${shape.stdout}`);

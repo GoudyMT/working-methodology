@@ -32,11 +32,17 @@ function repo() {
 }
 
 // Writes the inputs into a fresh temp repo and runs the script there.
-function run(jobs, { timings, args = [], raw } = {}) {
+function run(jobs, { timings, args = [], raw, history } = {}) {
 	const dir = repo();
 	const jobsFile = path.join(dir, 'jobs.json');
 	fs.writeFileSync(jobsFile, raw !== undefined ? raw : JSON.stringify({ total_count: jobs.length, jobs }));
 	const argv = [SCRIPT, '--jobs', jobsFile];
+	// The earlier main runs, newest first, each a run-jobs answer.
+	if (history !== undefined) {
+		const hf = path.join(dir, 'history.json');
+		fs.writeFileSync(hf, JSON.stringify(history.map((js) => ({ total_count: js.length, jobs: js }))));
+		argv.push('--history', hf);
+	}
 	if (timings !== undefined) {
 		const tf = path.join(dir, 'timings.json');
 		fs.writeFileSync(tf, typeof timings === 'string' ? timings : JSON.stringify(timings));
@@ -49,8 +55,9 @@ function run(jobs, { timings, args = [], raw } = {}) {
 	return { ...r, log };
 }
 
-// why: catches a merge-path job at 181 s fails naming the job and its 5 slowest tests (CI-C S1)
-test('a merge-path job at 181 s fails naming the job and its 5 slowest tests', () => {
+// why: catches a merge-path job at 181 s that is not reported over the limit with its 5 slowest tests (CI-C S1, K401)
+// renamed from: a merge-path job at 181 s fails naming the job and its 5 slowest tests
+test('a merge-path job at 181 s is reported over the limit with its 5 slowest tests, and the check passes', () => {
 	const r = run([job('unit-tests (2)', 181), job('lint', 20)], {
 		timings: {
 			'unit-tests (2)': {
@@ -64,29 +71,30 @@ test('a merge-path job at 181 s fails naming the job and its 5 slowest tests', (
 			},
 		},
 	});
-	assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
-	assert.match(r.stderr, /unit-tests \(2\)/);
+	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+	assert.match(r.stdout, /unit-tests \(2\)/);
 	for (const slow of ['a.test.mjs::two', 'c.test.mjs::five', 'b.test.mjs::three', 'c.test.mjs::six', 'b.test.mjs::four']) {
-		assert.ok(r.stderr.includes(slow), `the 5 slowest tests omit ${slow}: ${r.stderr}`);
+		assert.ok(r.stdout.includes(slow), `the 5 slowest tests omit ${slow}: ${r.stdout}`);
 	}
 	for (const fast of ['a.test.mjs::one', 'c.test.mjs::seven']) {
-		assert.ok(!r.stderr.includes(fast), `a test outside the 5 slowest is named: ${fast}`);
+		assert.ok(!r.stdout.includes(fast), `a test outside the 5 slowest is named: ${fast}`);
 	}
-	assert.ok(!r.stderr.includes('lint'), 'a job inside the budget is named as a failure');
-	// A failing job absent from a present timings file, and one with under 5 timed tests, are named without a crash.
+	assert.match(r.stdout, /OVER unit-tests \(2\): 181 s, over the 180 s limit \(report only\)/);
+	assert.ok(!/OVER lint/.test(r.stdout), 'a job inside the budget is reported over');
+	// A job over the limit absent from a present timings file, and one with under 5 timed tests, are named without a crash.
 	const absent = run([job('unit-tests (2)', 181)], { timings: { 'other-job': { 'a::t': 1 } } });
-	assert.equal(absent.status, 1, `${absent.stdout}${absent.stderr}`);
-	assert.match(absent.stderr, /unit-tests \(2\)/);
-	assert.match(absent.stderr, /no per-test timings for this job/);
+	assert.equal(absent.status, 0, `${absent.stdout}${absent.stderr}`);
+	assert.match(absent.stdout, /unit-tests \(2\)/);
+	assert.match(absent.stdout, /no per-test timings for this job/);
 	const few = run([job('unit-tests (2)', 181)], { timings: { 'unit-tests (2)': { 'a::t1': 4, 'a::t2': 9 } } });
-	assert.equal(few.status, 1, `${few.stdout}${few.stderr}`);
-	assert.match(few.stderr, /unit-tests \(2\)/);
-	assert.ok(few.stderr.includes('a::t1') && few.stderr.includes('a::t2'), `a job with 2 timed tests omits them: ${few.stderr}`);
-	// Control: a failing job with no timings says so instead of inventing tests.
+	assert.equal(few.status, 0, `${few.stdout}${few.stderr}`);
+	assert.match(few.stdout, /unit-tests \(2\)/);
+	assert.ok(few.stdout.includes('a::t1') && few.stdout.includes('a::t2'), `a job with 2 timed tests omits them: ${few.stdout}`);
+	// Control: a job over the limit with no timings says so instead of inventing tests.
 	const bare = run([job('unit-tests (2)', 181)]);
-	assert.equal(bare.status, 1);
-	assert.match(bare.stderr, /unit-tests \(2\)/);
-	assert.match(bare.stderr, /no per-test timings for this job/);
+	assert.equal(bare.status, 0);
+	assert.match(bare.stdout, /unit-tests \(2\)/);
+	assert.match(bare.stdout, /no per-test timings for this job/);
 });
 
 // why: catches a job at 180 s passes (CI-C S1)
@@ -94,10 +102,11 @@ test('a job at 180 s passes', () => {
 	const r = run([job('unit-tests (1)', 180), job('lint', 20)]);
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
 	assert.ok(!r.stderr.includes('unit-tests (1)'), `a job at the limit is named as a failure: ${r.stderr}`);
-	// Control: the limit is the --limit argument, and the same job over a lower one fails at the line.
+	assert.ok(!/OVER unit-tests/.test(r.stdout), `a job at the limit is reported over: ${r.stdout}`);
+	// Control: the limit is the --limit argument, and the same job over a lower one is reported over it, report only.
 	const lower = run([job('unit-tests (1)', 180)], { args: ['--limit', '179'] });
-	assert.equal(lower.status, 1, `${lower.stdout}${lower.stderr}`);
-	assert.match(lower.stderr, /unit-tests \(1\)/);
+	assert.equal(lower.status, 0, `${lower.stdout}${lower.stderr}`);
+	assert.match(lower.stdout, /OVER unit-tests \(1\): 180 s, over the 179 s limit \(report only\)/);
 });
 
 // why: catches queue wait is not counted, and the report says so (CI-C S2)
@@ -148,19 +157,18 @@ test('a cancelled or skipped job is named, never passed silently', () => {
 // why: catches a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list) (CI-C S4)
 test('a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)', () => {
 	const r = run([job('unit-tests (1)', 30), job('brand-new-job-zz9', 200), job('another renamed job', 181)]);
-	assert.equal(r.status, 1, `${r.stdout}${r.stderr}`);
-	assert.match(r.stderr, /brand-new-job-zz9/);
-	assert.match(r.stderr, /another renamed job/);
+	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
+	assert.match(r.stdout, /OVER brand-new-job-zz9/);
+	assert.match(r.stdout, /OVER another renamed job/);
 	// Control: --self leaves out the checking job itself, however long it has run, and nothing else.
 	const self = run([job('budget-check', 500), job('unit-tests (1)', 30)], { args: ['--self', 'budget-check'] });
 	assert.equal(self.status, 0, `${self.stdout}${self.stderr}`);
+	assert.doesNotMatch(self.stdout, /budget-check/);
 	const notSelf = run([job('budget-check', 500), job('unit-tests (1)', 30)], { args: ['--self', 'other'] });
-	assert.equal(notSelf.status, 1, `${notSelf.stdout}${notSelf.stderr}`);
-	assert.match(notSelf.stderr, /budget-check/);
-	// --self is an exact name: a prefix of a job's name leaves that job measured, and it fails.
+	assert.match(notSelf.stdout, /OVER budget-check/);
+	// --self is an exact name: a prefix of a job's name leaves that job measured.
 	const prefix = run([job('budget-check', 500), job('unit-tests (1)', 30)], { args: ['--self', 'budget'] });
-	assert.equal(prefix.status, 1, `${prefix.stdout}${prefix.stderr}`);
-	assert.match(prefix.stderr, /budget-check/);
+	assert.match(prefix.stdout, /OVER budget-check/);
 	// --skip leaves a job out by name, with its matrix legs, whatever state it is in; each is named on a skipped line.
 	const stuck = { ...job('minimal-code (2)', 10), status: 'in_progress', conclusion: null, completed_at: null };
 	const skipRun = run(
@@ -180,8 +188,7 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 		assert.ok(said, `${name} is not named on a skipped line: ${skipRun.stdout}`);
 	}
 	const extra = run([job('minimal-code-extra', 181), job('minimal-code', 500)], { args: ['--skip', 'minimal-code'] });
-	assert.equal(extra.status, 1, `${extra.stdout}${extra.stderr}`);
-	assert.match(extra.stderr, /minimal-code-extra/);
+	assert.match(extra.stdout, /OVER minimal-code-extra/);
 	// The workflow runs it: the kit-tests job fetches the run's jobs into one file and runs the check, never tolerated.
 	const yml = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
 	const part = yml.split(/^  kit-tests:$/m)[1] || '';
@@ -211,7 +218,7 @@ test('two runs on the same jobs JSON give the same verdict', () => {
 	const first = run(jobs, { timings });
 	const second = run(jobs, { timings });
 	assert.equal(first.status, 1, `${first.stdout}${first.stderr}`);
-	assert.match(first.stderr, /unit-tests \(1\)/);
+	assert.match(first.stdout, /OVER unit-tests \(1\)/);
 	assert.match(first.stderr, /stopped-job/);
 	assert.match(first.stdout, /queue wait is not counted/);
 	assert.equal(second.status, first.status);
@@ -265,4 +272,34 @@ test('the test-check budgets, Linux slice and Windows part, fit inside the 180 s
 	assert.equal(budgets.length, 2, `the Linux slice and the Windows part each set a --budget, found ${JSON.stringify(budgets)}`);
 	// 180 s less setup (checkout, node, the base unpack) is about 120 s; a longer budget runs past the job's own limit.
 	for (const b of budgets) assert.ok(b >= 60 && b <= 120, `a test-check --budget of ${b} s is not between 60 and 120 s, so it does not fit the 180 s job budget`);
+});
+
+// K401 (the owner's yes, 2026-11-23): a job over the limit on one run is runner speed as often as a real slowdown, so the
+// check reports it and passes; the same job over the limit on 3 main runs in a row is a trend, named for a list row.
+// why: catches a job over the limit on 3 main runs in a row that is never named as a trend for a list row (K401)
+test('a job over the limit on 3 main runs in a row is named as a trend, and 2 in a row is not', () => {
+	const now = [job('windows-tests (0)', 190), job('lint', 20)];
+	const over = [job('windows-tests (0)', 185), job('lint', 20)];
+	const under = [job('windows-tests (0)', 120), job('lint', 20)];
+	const three = run(now, { history: [over, over] });
+	assert.equal(three.status, 0, `${three.stdout}${three.stderr}`);
+	assert.match(three.stdout, /TREND windows-tests \(0\): over the 180 s limit on 3 main runs in a row: open a list row/);
+	assert.match(three.stdout, /::warning::/);
+	assert.doesNotMatch(three.stdout, /TREND lint/);
+	// Two in a row (the newest earlier run under the limit) is not a trend, nor is a run with no history.
+	const two = run(now, { history: [under, over] });
+	assert.equal(two.status, 0, `${two.stdout}${two.stderr}`);
+	assert.doesNotMatch(two.stdout, /TREND/);
+	const none = run(now);
+	assert.doesNotMatch(none.stdout, /TREND/);
+	// Every run prints one compact JSON line of its job times, for the totals.
+	const json = (three.stdout.split('\n').find((l) => l.startsWith('ci-budget-json: ')) || '').slice('ci-budget-json: '.length);
+	const parsed = JSON.parse(json);
+	assert.equal(parsed.limit, 180);
+	assert.deepEqual(parsed.jobs, { lint: 20, 'windows-tests (0)': 190 });
+	assert.deepEqual(parsed.over, ['windows-tests (0)']);
+	assert.deepEqual(parsed.trend, ['windows-tests (0)']);
+	// A job that failed still fails the check: report only covers time, never a failed or timed-out job.
+	const failed = run([job('windows-tests (0)', 60, { conclusion: 'failure' })], { history: [over, over] });
+	assert.equal(failed.status, 1, `${failed.stdout}${failed.stderr}`);
 });
