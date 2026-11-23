@@ -204,6 +204,14 @@ test("a new script, hook or CI file no ticket's fix names fails", () => {
 	assert.equal(guards.status, 1);
 	for (const f of ['project/.claude/new-guard.cjs', 'user/skills/pre-pr-sweep/new-step.mjs']) assert.ok(guards.stderr.includes(f), `${f} not named: ${guards.stderr}`);
 	for (const f of ['scripts/new-tool.mjs', 'user/kit-hooks/new-hook.cjs', '.github/workflows/new-job.yml']) assert.ok(added.stderr.includes(f), `${f} not named: ${added.stderr}`);
+	// control: a new doc under project/.claude or user/skills is no script, so it needs no ticket
+	const docs = check(mk({ after: (root) => {
+		write(root, 'user/skills/new-skill/SKILL.md', '# new\n');
+		write(root, 'project/.claude/rules/new-rule.md', '# new\n');
+		write(root, 'user/skills/agent-team-build/templates/x-brief.md', '# new\n');
+		commit(root, 'add docs');
+	} }));
+	assert.equal(docs.status, 0, docs.stderr);
 });
 
 // why: catches a second commit on the closeout file fails (K369 S4)
@@ -290,6 +298,13 @@ test("a fix row whose severity differs from its finding's severity fails", () =>
 	assert.equal(lowered.status, 1);
 	assert.match(lowered.stderr, /F1/);
 	assert.match(lowered.stderr, /severity/i);
+	// a fix row whose finding is missing, or is no finding the closeout file lists, fails
+	const missing = buildRecordCheck(mk({ mutate: (rec) => { delete rec.sweep.fixes[1].finding; } }));
+	assert.equal(missing.status, 1);
+	assert.match(missing.stderr, /F3 names no finding/);
+	const unlisted = buildRecordCheck(mk({ mutate: (rec) => { rec.sweep.fixes[1].finding = 'F8'; } }));
+	assert.equal(unlisted.status, 1);
+	assert.match(unlisted.stderr, /F3 names no finding/);
 });
 
 // why: catches a test added by rename, or in a new test file, is still counted (K369 S6)
@@ -398,6 +413,12 @@ test('an unreadable closeout file or a shallow clone fails, logged', () => {
 	const shallowLog = logLines(dest);
 	assert.equal(shallowLog.length, 1);
 	assert.equal(shallowLog[0].hook, 'closeout');
+	// a PR_BASE that names no commit here fails, logged, and never falls back to HEAD
+	const noBase = mk();
+	const lost = check(noBase, { PR_BASE: 'origin/nope' });
+	assert.equal(lost.status, 1);
+	assert.match(lost.stderr, /PR_BASE origin\/nope is no commit here/);
+	assert.equal(logLines(noBase).length, 1);
 	// build-record runs closeout on check only: its changelog command writes no closeout log row
 	const unclosed = mk({ closeout: null });
 	const log = spawnSync(process.execPath, [BUILD_RECORD, 'changelog'], { cwd: unclosed, encoding: 'utf8', env: { ...process.env, KIT_RECORD_ROOT: unclosed } });
