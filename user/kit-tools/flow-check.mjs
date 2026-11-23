@@ -5,7 +5,7 @@
 // - reviews <unit> --dir <folder> - one review record (a second needs the lead's note), findings need a fix record
 // - reviewers <ledger.jsonl> - more than 3 units waiting while at most one reviewer is active
 // - rounds <unit> --dir <folder> - at most 2 FIX rounds from the checker per unit
-// - checklist <log.jsonl> --plan <plan.md> - each unit's last step, and the flow faults
+// - checklist <log.jsonl> --plan <plan.md> [--hooks <file>] - each unit's last step, and the flow faults; the hook log (default <git common dir>/kit-guard-open.log when it exists) needs a lead report per hook error
 // Exit 0 clean, 1 a fault named on stderr, 2 usage or unreadable input. Hand-backs are read with handoff.mjs's check.
 // A lead note is text in the record an agent writes, so these checks only log in this release; a lead-only answer file comes before they enforce.
 import fs from 'node:fs';
@@ -23,7 +23,7 @@ const MAX_FIX = 2;
 const say = (msg) => { process.stdout.write(`flow-check: ${msg}\n`); return 0; };
 const fault = (lines) => { for (const l of lines) process.stderr.write(`flow-check: ${l}\n`); return 1; };
 const bad = (msg) => { process.stderr.write(`flow-check: ${msg}\n`); return 2; };
-const usage = (msg = '') => bad(`${msg ? `${msg}; ` : ''}usage: flow-check.mjs start <plan.md> --role builder | agents <folder> | reviews <unit> --dir <folder> | reviewers <ledger.jsonl> | rounds <unit> --dir <folder> | checklist <log.jsonl> --plan <plan.md>`);
+const usage = (msg = '') => bad(`${msg ? `${msg}; ` : ''}usage: flow-check.mjs start <plan.md> --role builder | agents <folder> | reviews <unit> --dir <folder> | reviewers <ledger.jsonl> | rounds <unit> --dir <folder> | checklist <log.jsonl> --plan <plan.md> [--hooks <file>]`);
 const readText = (file) => fs.readFileSync(file, 'utf8');
 const lastRecordAt = (lines) => lines.map((l) => l.trim()).lastIndexOf('RECORD:');
 
@@ -192,13 +192,24 @@ function rounds(unit, dir) {
 	return say(`rounds: ${unit} has ${fix} FIX round(s), max ${MAX_FIX}`);
 }
 
-// checklist <log.jsonl> --plan <plan.md>: one line per plan unit on stdout (its last step, or not started), the flow
-// faults on stderr with exit 1. A log or plan that cannot be read, or a line that is not a step, exits 2.
-function checklistCmd(logFile, planFile) {
+// The hook log: --hooks <file> when given (it must be readable), else the plan folder's <git common dir>/kit-guard-open.log
+// when that file exists; null when there is none. A folder outside a git repository has no default.
+function hookLogOf(planFile, given) {
+	if (given !== undefined) return readText(given);
+	const dir = path.dirname(path.resolve(planFile));
+	const g = gitIn(dir, ['rev-parse', '--git-common-dir']);
+	if (g.status !== 0) return null;
+	const file = path.join(path.resolve(dir, g.stdout.trim()), 'kit-guard-open.log');
+	return fs.existsSync(file) ? readText(file) : null;
+}
+
+// checklist <log.jsonl> --plan <plan.md> [--hooks <file>]: one line per plan unit on stdout (its last step, or not started), the flow
+// faults on stderr with exit 1. A log, plan or hook log that cannot be read, or a line that is not a step, exits 2.
+function checklistCmd(logFile, planFile, hooksFile) {
 	let lines;
 	let faults;
 	try {
-		({ lines, faults } = checklist(readText(planFile), readText(logFile)));
+		({ lines, faults } = checklist(readText(planFile), readText(logFile), hookLogOf(planFile, hooksFile)));
 	} catch (e) {
 		if (e instanceof InputError) return bad(e.message);
 		throw e;
@@ -212,7 +223,7 @@ function main(argv) {
 	const flags = {};
 	const pos = [];
 	for (let i = 0; i < rest.length; i++) {
-		if (rest[i] === '--role' || rest[i] === '--dir' || rest[i] === '--plan') {
+		if (rest[i] === '--role' || rest[i] === '--dir' || rest[i] === '--plan' || rest[i] === '--hooks') {
 			if (rest[i + 1] === undefined) return usage(`${rest[i]} needs a value`);
 			flags[rest[i].slice(2)] = rest[++i];
 		} else pos.push(rest[i]);
@@ -232,7 +243,7 @@ function main(argv) {
 			if (pos.length !== 1 || flags.dir === undefined) return usage('rounds needs one unit and --dir <folder>');
 			return unitOk(pos[0]) ? rounds(pos[0], flags.dir) : bad(`unit ${JSON.stringify(pos[0])} is not a plain name`);
 		case 'checklist':
-			return pos.length === 1 && flags.plan !== undefined ? checklistCmd(pos[0], flags.plan) : usage('checklist needs one log and --plan <plan.md>');
+			return pos.length === 1 && flags.plan !== undefined ? checklistCmd(pos[0], flags.plan, flags.hooks) : usage('checklist needs one log and --plan <plan.md>');
 		default:
 			return usage();
 	}

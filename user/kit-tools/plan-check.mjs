@@ -16,8 +16,10 @@ import safeSpawn from './safe-spawn.cjs';
 import { check } from './handoff.mjs';
 import { budget, filesOf, readMap, InputError, CEILING, ORDER } from './test-budget.mjs';
 import { guardRowFaults } from './guard-rows.mjs';
+import { hasRetestLine } from './checklist.mjs';
 
 const COLUMNS = ['Id', 'Files', 'Runs', 'Risk', 'Category', 'Tests', 'Tester'];
+const TEST_FOLDER = /^tests\//;
 
 // A problem with an input the check cannot read. main() turns it into exit 2.
 class Unreadable extends Error {}
@@ -107,6 +109,11 @@ function checkPlan(text, map) {
 		raw.set(id, table.raws[n]);
 		if ((row[at.Files] || '').trim() === '') found.push(`unit ${id} has an empty Files cell`);
 		if ((row[at.Runs] || '').trim() === '') found.push(`unit ${id} has an empty Runs cell`);
+		if (hasRetestLine(row[at.Tests] || '')) {
+			for (const f of filesOf(row[at.Files] || '')) {
+				if (!TEST_FOLDER.test(f.replace(/\\/g, '/'))) found.push(`unit ${id} is a retest unit (a Tests line starts "retest:") and its Files hold ${f}: a retest changes tests only, so list test files alone`);
+			}
+		}
 		found.push(...budgetFaults(id, row, at, map, specRules(text, id)));
 	});
 	if (ids.size === 0) found.push('the Units table has no units');
