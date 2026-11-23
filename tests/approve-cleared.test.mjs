@@ -45,8 +45,11 @@ test('an owner yes on the same commit still clears the refusal', () => {
   const f = contractIn(dir);
   const other = path.join(dir, 'sweeps', 'other.json');
   const head = headOf(dir);
-  // Control: a yes on another commit comes first in the log and clears nothing; the yes on this commit clears its own.
-  chain(dir, [decisionAt(dir, other, head), yesFor(other, { head: OTHER_HEAD }), ranFor(other), decisionAt(dir, f, head), yesFor(f, { head }), ranFor(f)]);
+  // HEAD has moved on since the refusal: its own commit is the one before, and the yes names that commit, not HEAD.
+  const older = g(dir, 'rev-parse', 'HEAD~1').stdout.trim();
+  assert.notEqual(older, head);
+  // Control: a yes on another commit comes first in the log and clears nothing; the yes on the refusal's own commit clears it.
+  chain(dir, [decisionAt(dir, other, head), yesFor(other, { head: OTHER_HEAD }), ranFor(other), decisionAt(dir, f, older), yesFor(f, { head: older }), ranFor(f)]);
   const r = approveRun(featureContract(), dir);
   assert.match(r.stdout, /ASK THE OWNER[\s\S]*a second sweep on this branch/, r.stdout);
   assert.match(r.stdout, /contract\.json already ran/);
@@ -83,8 +86,24 @@ test('a decision line whose head cannot be read stays uncleared, logged', () => 
   const dir = sweepRepo();
   const f = contractIn(dir);
   const odd = { not: 'a commit' };
-  chain(dir, [decisionAt(dir, f, odd), yesFor(f, { head: odd }), ranFor(f)]);
+  const guardLog = path.join(dir, '.git', 'kit-guard-open.log');
+  const noHead = path.join(dir, 'sweeps', 'nohead.json');
+  const noYes = path.join(dir, 'sweeps', 'noyes.json');
+  const head = headOf(dir);
+  // Three uncleared lines: an unreadable head, a decision with no head, and a yes with no head.
+  chain(dir, [
+    decisionAt(dir, f, odd), yesFor(f, { head: odd }), ranFor(f),
+    { ...decisionAt(dir, noHead, head), head: undefined }, yesFor(noHead), ranFor(noHead),
+    decisionAt(dir, noYes, head), yesFor(noYes), ranFor(noYes),
+  ]);
   const r = approveRun(featureContract(), dir);
   assert.doesNotMatch(r.stdout, SECOND, r.stdout);
   assert.equal(r.status, 0, r.stdout);
+  // Lead answer: one row in <git common dir>/kit-guard-open.log per uncleared line, naming approve.mjs, "no readable head", the contract and its hash.
+  const rows = fs.existsSync(guardLog) ? read(guardLog).split('\n').filter(Boolean) : [];
+  for (const file of [f, noHead, noYes]) {
+    const name = path.basename(file);
+    const mine = rows.filter((l) => /approve/.test(l) && /no readable head/.test(l) && l.includes(name) && l.includes(`h-${name}`));
+    assert.equal(mine.length, 1, `${name}: rows ${JSON.stringify(rows)}`);
+  }
 });
