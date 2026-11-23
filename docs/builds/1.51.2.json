@@ -389,7 +389,7 @@
   "verification": [
     "Every unit opened with a test-only commit and a test review; each risky unit had up to two check rounds.",
     "Pending: the score gate on the owner's PC runs after the sweep, since rule text changed (docs/migrations/1.51.2-reworded.json).",
-    "The one sweep found 6 high and 15 medium findings, each fixed here test-first with two independent check rounds over the fixes; the 25 lows are on the next list."
+    "The one sweep found 6 high and 15 medium findings, each fixed here test-first; the 25 lows are on the next list."
   ],
   "decisions": [
     {
