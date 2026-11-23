@@ -106,7 +106,7 @@ test('plan-check --brief U1 --role tester writes the tester brief from the row: 
 		assert.ok(res.stdout.includes(`// why: catches ${name} (K368 S1)`), `the brief holds its why line: ${name}\n${res.stdout}`);
 	}
 	// The lock line ends at its last test file: no src path after it, and no other file.
-	assert.match(res.stdout, /node user\/kit-tools\/unit-lock\.mjs --tester --files tests\/a\.test\.mjs,tests\/b\.test\.mjs$/m, `the brief holds the tester lock command:\n${res.stdout}`);
+	assert.match(res.stdout, /node \S*unit-lock\.mjs --tester --files tests\/a\.test\.mjs,tests\/b\.test\.mjs$/m, `the brief holds the tester lock command:\n${res.stdout}`);
 	// An unknown unit and an unknown role each exit 1 and name what is unknown.
 	const noUnit = run(plan, '--brief', 'U9', '--role', 'tester');
 	assert.equal(noUnit.status, 1, out(noUnit));
@@ -126,8 +126,32 @@ test('plan-check --brief U1 --role builder writes the builder brief: source file
 	// Both test files run in one command, space-joined, and the command ends there.
 	assert.match(res.stdout, /node --test tests\/a\.test\.mjs tests\/c\.test\.mjs(?=\s|`|$)/m, `the brief holds the exact test run:\n${res.stdout}`);
 	// The lock line names the source files only, comma-joined, ends there, and leaves <red sha> as written.
-	assert.match(res.stdout, /node user\/kit-tools\/unit-lock\.mjs <red sha> --files src\/a\.mjs,src\/b\.mjs$/m, `the brief holds the builder lock command:\n${res.stdout}`);
+	assert.match(res.stdout, /node \S*unit-lock\.mjs <red sha> --files src\/a\.mjs,src\/b\.mjs$/m, `the brief holds the builder lock command:\n${res.stdout}`);
 	assert.ok(!res.stdout.includes('--pick'), `the builder brief never names --pick:\n${res.stdout}`);
+});
+
+// why: catches a plan-check brief with no Plan, Unit id, Role, Worktree or Lane line, a repo-relative lock path, or templates with no Lane line (H6)
+test('plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and a lock path beside plan-check, and the templates carry Lane', () => {
+	const plan = planText([unit('U1', ['the brief carries the lines the spawn hooks read -> S1'], '`src/a.mjs`, `tests/a.test.mjs` (new)')]);
+	const field = (text, label) => (text.match(new RegExp(`^[\\s>*_\`+-]*${label}[*_\`]*:[*_\`]*[ \\t]*(.*)$`, 'im')) ?? [])[1];
+	for (const role of ['tester', 'builder']) {
+		const res = run(plan, '--brief', 'U1', '--role', role);
+		assert.equal(res.status, 0, out(res));
+		assert.match(field(res.stdout, 'Plan') ?? '', /PLAN\.md/, `${role}: a Plan: line names the plan path:\n${res.stdout}`);
+		assert.equal((field(res.stdout, 'Unit') ?? '').trim().replace(/[*_`]/g, ''), 'U1', `${role}: the Unit: line is the unit id, not its title:\n${res.stdout}`);
+		assert.match(field(res.stdout, 'Role') ?? '', new RegExp(role), `${role}: a Role: line:\n${res.stdout}`);
+		assert.match(field(res.stdout, 'Worktree') ?? '', /\S/, `${role}: a Worktree: line:\n${res.stdout}`);
+		assert.match(field(res.stdout, 'Lane') ?? '', /\S/, `${role}: a Lane: line:\n${res.stdout}`);
+		const lock = res.stdout.match(/node\s+(\S*unit-lock\.mjs)/);
+		assert.ok(lock, `${role}: the brief names unit-lock.mjs:\n${res.stdout}`);
+		assert.equal(path.resolve(lock[1]), path.join(path.dirname(PLAN_CHECK), 'unit-lock.mjs'), `${role}: the lock path is built from plan-check's own folder, not repo-relative:\n${res.stdout}`);
+		assert.ok(fs.existsSync(path.resolve(lock[1])), `${role}: the lock path exists`);
+	}
+	const dir = path.resolve(path.dirname(PLAN_CHECK), '..', 'skills', 'agent-team-build', 'templates');
+	for (const name of ['tester-brief.md', 'builder-brief.md', 'checker-brief.md']) {
+		const text = fs.existsSync(path.join(dir, name)) ? fs.readFileSync(path.join(dir, name), 'utf8') : '';
+		assert.match(text, /^[\s>*_`+-]*Lane[*_`]*:[*_`]*[ \t]*[^\s*_`]/im, `${name} carries a Lane: line with text after the colon`);
+	}
 });
 
 // why: catches a Tests line whose derived why is under six words is a plan fault (K368 S1)

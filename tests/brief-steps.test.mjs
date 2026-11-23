@@ -51,6 +51,8 @@ test('the skill names the reset limit and the 2-check-round cap with their enfor
 	const s = SKILL();
 	assert.match(s, /warm\.mjs/, 'names warm.mjs');
 	assert.match(s, either('reset', '150000|150K', 100), 'the 150000 limit sits beside a reset line');
+	assert.match(s, /at or over 150000/i, 'the limit reads "at or over 150000"');
+	assert.match(s, /agent-model hook[^.]{0,80}\bholds?\b|\bholds?\b[^.]{0,80}agent-model hook/i, 'the agent-model hook is named as the holder of the spawn');
 	const cap = '(?:at most|no more than)\\s+(?:2|two)\\s+check\\s+rounds?';
 	assert.match(s, new RegExp(cap, 'i'), 'states "at most 2 check rounds"');
 	assert.match(s, either(cap, 'agent-model|round-cap', 200), 'the round cap names its enforcer (agent-model or round-cap)');
@@ -87,6 +89,9 @@ test('the skill carries isolated worktrees, the lock after spawn, the wip commit
 	assert.match(s, /right after (the )?spawn|immediately after (the )?spawn/i, 'the lock is written right after spawn');
 	assert.match(s, /subshell|lock[\s\S]{0,60}agent'?s worktree/i, 'the lock is written into the agent worktree from a subshell');
 	assert.match(s, /wip commit|commit[^\n]{0,20}\bwip\b/i, 'a wip commit before an agent stops to ask');
+	assert.match(s, /3 test reviewers and 2 checkers/, 'the cap sentence reads "3 test reviewers and 2 checkers"');
+	assert.match(s, either('lead practice', '3 test reviewers and 2 checkers', 200), 'the reviewer and checker caps are labelled lead practice');
+	assert.match(s, either('lead practice', 'kind\\W{0,3}scale', 200), 'the scale log line is labelled lead practice');
 	assert.match(s, either('\\b3\\b', 'reviewers?', 40), 'up to 3 reviewers');
 	assert.match(s, either('\\b2\\b', 'checkers?', 40), 'up to 2 checkers');
 	assert.match(s, /(over|more than) 2 units/i, 'one more only when over 2 units wait');
