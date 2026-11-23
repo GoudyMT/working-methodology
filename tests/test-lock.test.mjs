@@ -733,7 +733,7 @@ test('pre-push holds an edit of a test file whose name has a space, in both hook
 });
 
 // why: catches a test path with a newline in its name pushed unheld. Index-only, since git refuses such a path on Windows.
-test('pre-push holds an edit of a test file whose name has a newline, in both hooks', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows' }, () => {
+test('pre-push holds an edit of a test file whose name has a newline, in both hooks', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows; the Linux unit-tests job in .github/workflows/ci.yml runs it' }, () => {
 	const name = 'tests/add\ncase.test.mjs';
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
