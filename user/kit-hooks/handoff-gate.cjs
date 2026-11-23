@@ -8,6 +8,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawnSync } = require('child_process');
+const { isTestFile, tests, whyFault } = require('./why-rule.cjs');
 
 // git as test-scope.cjs runs it: the repo's own config may name a program git runs (fsmonitor), so that is off.
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
@@ -27,6 +28,42 @@ function recordIsCRLF(message) {
 	let at = -1;
 	lines.forEach((l, i) => { if (l.trim() === 'RECORD:') at = i; });
 	return at >= 0 && lines.slice(at).some((l) => l.endsWith('\r'));
+}
+
+// The RECORD's role line: the first JSON line after its RECORD: line, or null.
+function roleLineOf(message) {
+	const lines = message.split(/\r?\n/);
+	const at = lines.findIndex((l) => l.trim() === 'RECORD:');
+	for (const l of lines.slice(at + 1)) {
+		if (!l.trim().startsWith('{')) continue;
+		try { return JSON.parse(l); } catch { return null; }
+	}
+	return null;
+}
+
+// K368 S2: each test a role line's commit adds (a test file's test( that its first parent lacks) must be listed in the
+// role line's tests with a why line whyFault passes. Returns the file::name keys that are not, or [] when the commit
+// cannot be read (the checker already names a missing commit).
+function untestedKeys(cwd, role) {
+	const sha = typeof role.commit === 'string' ? role.commit : '';
+	if (!sha || git(cwd, 'rev-parse', '--verify', '-q', `${sha}^{commit}`).status !== 0) return [];
+	const parent = git(cwd, 'rev-parse', '--verify', '-q', `${sha}^`);
+	const base = parent.status === 0 ? parent.stdout.trim() : null;
+	const files = base ? git(cwd, 'diff', '--name-only', base, sha) : git(cwd, 'ls-tree', '-r', '--name-only', sha);
+	const listed = Array.isArray(role.tests) ? role.tests : [];
+	const missing = [];
+	for (const file of String(files.stdout || '').split(/\r?\n/).filter((f) => f && isTestFile(f))) {
+		const now = git(cwd, 'show', `${sha}:${file}`);
+		if (now.status !== 0) continue;
+		const was = base ? git(cwd, 'show', `${base}:${file}`) : null;
+		const had = new Set(was && was.status === 0 ? tests(was.stdout).keys() : []);
+		for (const name of tests(now.stdout).keys()) {
+			if (had.has(name)) continue;
+			const entry = listed.find((t) => t && t.name === name);
+			if (!entry || whyFault(String(entry.why || ''))) missing.push(`${file}::${name}`);
+		}
+	}
+	return missing;
 }
 
 // The decision for a hand-back: the PreToolUse deny object under enforce, else null. The caller decides what to print.
@@ -49,6 +86,8 @@ function run(input) {
 	}
 	const lines = String(r.stderr || '').split(/\r?\n/).filter(Boolean);
 	const errors = r.status === 1 ? lines : [];
+	const missing = untestedKeys(cwd, roleLineOf(message) || {});
+	if (missing.length) errors.push(`the role line's tests lack a why for each new test (list each as {name, why}): ${missing.join(', ')}`);
 	if (recordIsCRLF(message)) errors.push('CRLF line endings in the RECORD: block: end each line with LF');
 	if (errors.length) {
 		fs.appendFileSync(log, `${JSON.stringify({ ...row, errors })}\n`);
