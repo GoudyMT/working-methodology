@@ -403,10 +403,16 @@ const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) 
 const GUARD_LOG = LOG && path.join(path.dirname(LOG), 'kit-guard-open.log');
 function logUnreadableHeads(log) {
 	if (!GUARD_LOG) return;
+	// One row per uncleared line ever: a row already written for this contract and hash is kept, not repeated by each run.
+	const written = new Set();
+	try { for (const l of fs.readFileSync(GUARD_LOG, 'utf8').split('\n')) { try { const e = JSON.parse(l); if (e && e.cause === 'no readable head') written.add(`${e.contract}\n${e.hash}`); } catch { /* not a row */ } } } catch { /* no log yet */ }
 	log.forEach((d, i) => {
 		if (d.kind !== 'decision' || isCleared(log, i)) return;
 		const yes = log.filter((y, j) => j > i && y.kind === 'owner-yes' && y.contract === d.contract && y.hash === d.hash);
 		if (!yes.length || (headOk(d.head) && yes.every((y) => headOk(y.head)))) return;
+		const key = `${d.contract}\n${d.hash}`;
+		if (written.has(key)) return;
+		written.add(key);
 		fs.appendFileSync(GUARD_LOG, JSON.stringify({ at: new Date().toISOString(), hook: 'approve.mjs', cause: 'no readable head', contract: d.contract, hash: d.hash }) + '\n');
 	});
 }
