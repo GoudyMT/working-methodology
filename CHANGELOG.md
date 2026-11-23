@@ -2,7 +2,7 @@
 
 ## 1.51.2 - 2026-11-23
 
-CI sizes its runs from measured times and fails the merge path past 3 minutes; sweep approval reads the right worktree and commit; and the team build now holds its own steps in code: the test list before a tester starts, a why line on every test, at most two check rounds, warm roles reused, and a ticket for any test added after the sweep.
+CI sizes its runs from measured times within a 3 minute merge path; sweep approval reads the right worktree and commit; and the team build holds its own steps in code, from the test list to a ticket for each test added after the sweep.
 
 ### Added
 - The test run maps the suite in slices (`--map --slice i/n`) and `map-merge.mjs` joins the parts into one coverage map, refusing parts from different commits.

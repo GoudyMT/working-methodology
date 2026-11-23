@@ -3,8 +3,8 @@
   "date": "2026-11-23",
   "level": "patch",
   "area": "Delegation",
-  "title": "fix: CI within budget, safer sweeps and team build guards",
-  "headline": "CI sizes its runs from measured times and fails the merge path past 3 minutes; sweep approval reads the right worktree and commit; and the team build now holds its own steps in code: the test list before a tester starts, a why line on every test, at most two check rounds, warm roles reused, and a ticket for any test added after the sweep.",
+  "title": "fix: leaner CI, safer sweeps and team build guards",
+  "headline": "CI sizes its runs from measured times within a 3 minute merge path; sweep approval reads the right worktree and commit; and the team build holds its own steps in code, from the test list to a ticket for each test added after the sweep.",
   "alignment": "v1.51.2 is the patch after build 24 and 1.51.1. Its items are the CI rows CI-A to CI-D, K357, K360, K361, K362, K363, K364, K366, K368 and K369, each unit opened by a test-only commit. K359 shipped first as 1.51.1; this patch carries its two tests. K367 moves to 1.51.3.",
   "items": [
     {
@@ -134,8 +134,8 @@
       "text": "The project CI templates size shards and judge a 3 minute budget, and the fast-lane budget the lane report uses drops from 10 minutes to 3.",
       "evidence": "project/.claude/lane-state.mjs",
       "where": "The lane report on a project's fast lane",
-      "before": "Over budget only past 10 minutes",
-      "after": "Over budget past 3 minutes",
+      "before": "Held to the slow lane budget",
+      "after": "Held to its own, shorter fast-lane budget",
       "tests": [
         "tests/project-ci-shape.test.mjs::each template has a plan job, a sized fast matrix and a budget step in ci, and ci-shape shows 0 gaps",
         "tests/project-ci-shape.test.mjs::lane-state with no budget set judges against 3 minutes",
@@ -544,7 +544,7 @@
     }
   ],
   "verification": [
-    "Every unit opened with a test-only commit and a test review; each risky unit had up to two independent check rounds, the second closed by the lead.",
+    "Every unit opened with a test-only commit and a test review; each risky unit had up to two check rounds.",
     "Pending: the score gate on the owner's PC runs after the sweep, since rule text changed (docs/migrations/1.51.2-reworded.json).",
     "The one sweep found 6 high and 15 medium findings, each fixed here test-first with two independent check rounds over the fixes; the 25 lows are on the next list."
   ],
@@ -560,14 +560,6 @@
     {
       "decision": "At most two check rounds a unit",
       "why": "Past two rounds the lead finishes the fix and CI is the gate; what is still open goes to the next patch list."
-    },
-    {
-      "decision": "The minimal-code job stays report only",
-      "why": "The budget step skips it by name, so the merge path is not held by a report-only job (K311)."
-    },
-    {
-      "decision": "K367 moves to 1.51.3",
-      "why": "The owner's pick; its paper proof's 13 findings are its spec."
     },
     {
       "decision": "K359 shipped first as 1.51.1",
