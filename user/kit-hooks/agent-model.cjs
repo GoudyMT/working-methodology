@@ -212,6 +212,69 @@ function appendRound(common, row, hold) {
 	fs.appendFileSync(path.join(common, ROUNDS), `${JSON.stringify({ at: new Date().toISOString(), hook: 'agent-model', mode: hold.mode, ...(hold.missing ? { holdModeMissing: true } : {}), ...row })}\n`);
 }
 
+// K364 (U18): warm agents. A fresh tester or builder spawn is held while an open agent of its lane and table role is under
+// the limit, and a SendMessage to an agent at or over it is held. Both follow the warm-agents hold's enforce mode. The open
+// agents and the limit come from warm.mjs beside this folder's kit-tools. An error lets the call through and logs one row to
+// kit-guard-open.log (S7).
+const WARM_ROLES = new Map([['tester', 'tester'], ['test-writer', 'tester'], ['builder', 'builder'], ['implementer', 'builder']]);
+const LANE_LINE = /^[ \t]*lane:(.*)$/im;
+const ROLE_LINE = /^[ \t]*role:(.*)$/im;
+
+// The table role of a spawn: its subagent_type (plugin prefix dropped), else its brief's Role: line; null when neither is one.
+function warmRole(type, prompt) {
+	const bare = String(type).split(':').pop().trim().toLowerCase();
+	if (WARM_ROLES.has(bare)) return WARM_ROLES.get(bare);
+	const line = ROLE_LINE.exec(prompt);
+	return (line && WARM_ROLES.get(line[1].trim().toLowerCase())) || null;
+}
+
+// The Lane: line of a spawn's prompt, trimmed; null when there is none.
+function laneOf(prompt) {
+	const line = LANE_LINE.exec(prompt);
+	return line && line[1].trim() ? line[1].trim() : null;
+}
+
+// Runs decide(open, limit) for a call with a transcript: open() lists the session's agents, read only when asked. Its refusal
+// is kept under the warm-agents hold's enforce mode. Any error passes the call and logs one row to kit-guard-open.log (S7).
+function warmGate(cwd, input, decide) {
+	try {
+		if (!input || !input.transcript_path) return null;
+		const hold = holdMode('warm-agents');
+		const warm = require('../kit-tools/warm.mjs');
+		const dir = path.join(String(input.transcript_path).replace(/\.jsonl$/, ''), 'subagents');
+		const refusal = decide(() => warm.openAgents(dir), warm.WARM_LIMIT);
+		return refusal && hold.mode === 'enforce' ? refusal : null;
+	} catch (err) {
+		try {
+			const common = commonDir(cwd);
+			if (common) fs.appendFileSync(path.join(common, OPEN), `${JSON.stringify({ at: new Date().toISOString(), hook: 'agent-model', cause: String((err && err.message) || err) })}\n`);
+		} catch {
+			/* the open log itself failed: the call still passes */
+		}
+		return null;
+	}
+}
+
+// The warm check for a fresh spawn: held while an open agent of its lane and table role is under the limit.
+function warmSpawn(cwd, input, type, prompt) {
+	const role = warmRole(type, prompt);
+	const lane = laneOf(prompt);
+	if (!role || !lane) return null;
+	return warmGate(cwd, input, (open, limit) => {
+		const held = open().find((a) => a.lane === lane && WARM_ROLES.get(String(a.role).trim().toLowerCase()) === role && a.tokens < limit);
+		return held ? deny(`a ${role} of lane ${lane} is open (agent ${held.id}, ${held.tokens} tokens, under ${limit}): continue it with SendMessage`) : null;
+	});
+}
+
+// The warm check for a SendMessage: held when its target is at or over the limit.
+function warmMessage(cwd, input) {
+	const to = String((input.tool_input && input.tool_input.to) || '');
+	return warmGate(cwd, input, (open, limit) => {
+		const agent = open().find((a) => a.id === to);
+		return agent && agent.tokens >= limit ? deny(`agent ${agent.id} is at ${agent.tokens} tokens, over ${limit}: reset it (spawn a fresh one and log the reset with warm.mjs reset)`) : null;
+	});
+}
+
 // The hook's answer for one Agent call: a deny when the hold reads enforce and the model is of another family, else nothing.
 function check(input) {
 	let refuse = null;
@@ -221,6 +284,7 @@ function check(input) {
 		const type = call.subagent_type == null ? '' : String(call.subagent_type);
 		const model = call.model == null || call.model === '' ? null : String(call.model);
 		cwd = String((input && input.cwd) || process.cwd());
+		if (input && input.tool_name === 'SendMessage') return warmMessage(cwd, input);
 		const prompt = call.prompt == null ? '' : String(call.prompt);
 		const want = roleModel(type);
 		const hold = holdMode('agent-model');
@@ -253,6 +317,8 @@ function check(input) {
 		}
 		// The round cap: a checker spawn on a unit with two counted check rounds already is refused (K366).
 		if (isChecker(type, prompt)) refuse = roundGate(cwd, type, model, prompt) || refuse;
+		// The warm check (K364): a fresh tester or builder spawn while an open one of its lane is under the limit.
+		refuse = refuse || warmSpawn(cwd, input, type, prompt);
 	} catch {
 		/* a hook that fails never stops a call; the row says the call passed unchecked */
 		try {

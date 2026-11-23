@@ -3,6 +3,7 @@
     { "id": "agent-model", "hook": "agent-model.cjs", "mode": "log" },
     { "id": "handoff-gate", "hook": "handoff-gate.cjs", "mode": "log" },
     { "id": "spawn-list", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" },
-    { "id": "round-cap", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" }
+    { "id": "round-cap", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "warm-agents", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" }
   ]
 }
