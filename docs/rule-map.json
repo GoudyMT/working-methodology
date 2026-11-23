@@ -74,6 +74,7 @@
     "user/skills/release-notes/audit.mjs"
    ],
    "tests": [
+    "tests/handoff-canary.test.mjs",
     "tests/kit-hooks.test.mjs",
     "tests/kit-rules.test.mjs",
     "tests/kit-sweep.test.mjs",
@@ -180,7 +181,9 @@
     "project/.claude/guard-outward.cjs",
     "project/.githooks/pre-push"
    ],
-   "scripts": [],
+   "scripts": [
+    "project/.claude/test-push-scan.mjs"
+   ],
    "tests": [
     "tests/ci-install-check.test.mjs",
     "tests/ci-workflows.test.mjs",
@@ -493,7 +496,8 @@
     "tests/kit-hooks.test.mjs",
     "tests/kit-install.test.mjs",
     "tests/kit-rules.test.mjs",
-    "tests/merge-on-green.test.mjs"
+    "tests/merge-on-green.test.mjs",
+    "tests/test-lock.test.mjs"
    ],
    "workflows": []
   },
@@ -819,7 +823,9 @@
   },
   "test-integrity": {
    "guards": [],
-   "scripts": [],
+   "scripts": [
+    "project/.claude/test-push-scan.mjs"
+   ],
    "tests": [
     "tests/kit-recall.test.mjs",
     "tests/test-lock.test.mjs",
