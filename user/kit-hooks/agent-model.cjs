@@ -12,6 +12,7 @@ const path = require('path');
 const { spawnSync } = require('child_process');
 
 const LOG = 'kit-agent-model.log';
+const ROUNDS = 'kit-check-rounds.log';
 const LIST = 'kit-unit-files.txt';
 const LIST_COMMAND = 'node user/kit-tools/unit-lock.mjs --tester --files';
 const OPEN = 'kit-guard-open.log';
@@ -107,9 +108,9 @@ function filesOf(cell) {
 
 // The why for a checker call: no Plan line, a unit row whose Files hit no guard path, or null (risky, or nothing to say).
 function checkerWhy(prompt, cwd) {
-	const plan = /^Plan:[ \t]*(.+?)[ \t]*$/m.exec(prompt);
+	const plan = /^[ \t]*plan:[ \t]*(.+?)[ \t]*$/im.exec(prompt);
 	if (!plan) return 'checker with no plan named';
-	const unit = /^Unit:[ \t]*(\S+)/m.exec(prompt);
+	const unit = /^[ \t]*unit:[ \t]*(\S+)/im.exec(prompt);
 	if (!unit) return null;
 	let text;
 	try {
@@ -127,7 +128,7 @@ function listRole(type, prompt) {
 	const bare = String(type).split(':').pop().toLowerCase();
 	if (bare === 'tester' || bare === 'writer') return bare;
 	if (bare !== 'general-purpose' && bare !== '') return null;
-	const line = /^role:(.*)$/im.exec(prompt);
+	const line = /^[ \t]*role:(.*)$/im.exec(prompt);
 	const named = line ? line[1].trim().toLowerCase() : '';
 	return named === 'tester' || named === 'writer' ? named : null;
 }
@@ -138,25 +139,26 @@ function worktreeOf(prompt, cwd) {
 	return line && line[1].trim() ? path.resolve(cwd, line[1].trim()) : cwd;
 }
 
-// A checker spawn: subagent_type checker (a plugin prefix dropped, any case), or any type whose prompt has a Plan: and a Unit: line.
+// A checker spawn: subagent_type checker (a plugin prefix dropped, any case), or any type whose prompt has a Plan: and a Unit: line
+// (case folded, leading spaces allowed).
 function isChecker(type, prompt) {
-	return String(type).split(':').pop().toLowerCase() === 'checker' || (/^Plan:/m.test(prompt) && /^Unit:/m.test(prompt));
+	return String(type).split(':').pop().toLowerCase() === 'checker' || (/^[ \t]*plan:/im.test(prompt) && /^[ \t]*unit:/im.test(prompt));
 }
 
-// The units named by a spawn's Unit: line, comma-separated, as written.
+// The canonical unit ids in a text: each match of /[A-Z]+\d+[a-z]?/i, upper-cased, so case, markup and trailing text cannot change an id.
+const idsOf = (text) => (String(text).match(/[A-Z]+\d+[a-z]?/gi) || []).map((s) => s.toUpperCase());
+
+// The unit ids on a spawn's Unit: line; [] when there is no such line or it names no id.
 function unitsOf(prompt) {
-	const line = /^Unit:(.*)$/m.exec(prompt);
-	return line ? line[1].split(',').map((u) => u.trim()).filter(Boolean) : [];
+	const line = /^[ \t]*unit:(.*)$/im.exec(prompt);
+	return line ? idsOf(line[1]) : [];
 }
 
-// A unit's count key: case folded, with the * ` and _ markup stripped, so every spelling of one unit counts together.
-const unitKey = (u) => String(u).trim().toLowerCase().replace(/[*`_]/g, '').trim();
-
-// The counted check rounds per unit key in the repo's kit-agent-model.log: rows with round "check" that are not denied. A
+// The counted check rounds per unit id in the repo's kit-check-rounds.log: rows with round "check" that are not denied. A
 // missing log is zero rounds. A log that cannot be read, or a line that is not a check record, throws.
 function roundCounts(common) {
 	const counts = new Map();
-	const file = path.join(common, LOG);
+	const file = path.join(common, ROUNDS);
 	if (!fs.existsSync(file)) return counts;
 	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
 		if (!line.trim()) continue;
@@ -164,14 +166,15 @@ function roundCounts(common) {
 		if (!row || typeof row !== 'object') throw new Error('a log line is not a record');
 		if (row.round !== 'check' || row.denied === true) continue;
 		if (!Array.isArray(row.units)) throw new Error('a check row names no units list');
-		for (const key of new Set(row.units.map(unitKey))) counts.set(key, (counts.get(key) || 0) + 1);
+		for (const id of new Set(row.units.flatMap(idsOf))) counts.set(id, (counts.get(id) || 0) + 1);
 	}
 	return counts;
 }
 
-// The round cap for a checker spawn. A unit with ROUND_LIMIT counted rounds already is refused (under the round-cap hold's
-// enforce mode). Every checked spawn appends a check row, denied when refused. An error in this check refuses with
-// "hook error: lead review" whatever the hold says, and appends its cause to kit-guard-open.log.
+// The round cap for a checker spawn. A spawn whose Unit: line is missing or names no id, or a unit with ROUND_LIMIT counted
+// rounds already, is refused (under the round-cap hold's enforce mode). Every checked spawn appends a check row to the repo's
+// kit-check-rounds.log, denied when refused. An error in this check refuses with "hook error: lead review" whatever the hold
+// says, and appends its cause to kit-guard-open.log.
 function roundGate(cwd, type, model, prompt) {
 	const hold = holdMode('round-cap');
 	const units = unitsOf(prompt);
@@ -179,10 +182,13 @@ function roundGate(cwd, type, model, prompt) {
 	try {
 		common = commonDir(cwd);
 		const counts = common === null ? new Map() : roundCounts(common);
-		const capped = units.find((u) => (counts.get(unitKey(u)) || 0) >= ROUND_LIMIT);
-		const refuse = capped !== undefined && hold.mode === 'enforce';
-		logRow(cwd, { type, model, want: null, round: 'check', units, ...(refuse ? { denied: true } : {}) }, hold);
-		return refuse ? deny(`a third check round on ${capped} is refused: what is still open goes to the next patch list; CI is the gate.`) : null;
+		const capped = units.find((u) => (counts.get(u) || 0) >= ROUND_LIMIT);
+		const why = units.length === 0
+			? 'a checker spawn names no unit: its Unit: line must name a unit id, such as Unit: U17'
+			: capped !== undefined ? `a third check round on ${capped} is refused: what is still open goes to the next patch list; CI is the gate.` : null;
+		const refuse = why !== null && hold.mode === 'enforce';
+		if (common !== null) appendRound(common, { type, model, want: null, round: 'check', units, ...(refuse ? { denied: true } : {}) }, hold);
+		return refuse ? deny(why) : null;
 	} catch (err) {
 		const cause = String((err && err.message) || err);
 		try {
@@ -198,6 +204,11 @@ function roundGate(cwd, type, model, prompt) {
 function logRow(cwd, row, hold) {
 	const common = commonDir(cwd);
 	if (common) fs.appendFileSync(path.join(common, LOG), `${JSON.stringify({ at: new Date().toISOString(), hook: 'agent-model', mode: hold.mode, ...(hold.missing ? { holdModeMissing: true } : {}), ...row })}\n`);
+}
+
+// Appends one check row to the repo's kit-check-rounds.log (the git common folder), in the shape logRow writes.
+function appendRound(common, row, hold) {
+	fs.appendFileSync(path.join(common, ROUNDS), `${JSON.stringify({ at: new Date().toISOString(), hook: 'agent-model', mode: hold.mode, ...(hold.missing ? { holdModeMissing: true } : {}), ...row })}\n`);
 }
 
 // The hook's answer for one Agent call: a deny when the hold reads enforce and the model is of another family, else nothing.
