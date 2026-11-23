@@ -378,7 +378,7 @@ test('the builder brief template does not tell the builder to write its own file
 	for (const line of joined.split('\n')) {
 		assert.doesNotMatch(line, /\b(you|builder)\b[^.\n]*\b(write|create)\b[^.\n]*kit-unit-files/i, `a line tells the builder to write the list: ${line}`);
 	}
-	assert.match(joined, /the lead writes `kit-unit-files\.txt` with `unit-lock\.mjs` once the red commit lands/, 'the brief names the lead as the writer of kit-unit-files.txt');
+	assert.match(joined, /the lead writes `kit-unit-files\.txt` with `unit-lock\.mjs` once the red commit lands/, 'the brief names the lead as the writer of kit-unit-files.txt'); // pin: 3
 });
 
 // why: guards rule:test-integrity (retest(scope): commit slips past the exact match)

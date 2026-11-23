@@ -57,7 +57,7 @@ test('G1 spec G1: a guard unit with no bypass: row is refused naming that unit, 
 	const guardTwo = { ...guardRow([REPEAT, FAIL_CLOSED]), Id: 'U3', Files: '`user/kit-hooks/call-cap.cjs`' };
 	const twoGuards = runCheck(planText([guardRow([BYPASS, REPEAT, FAIL_CLOSED]), guardTwo]));
 	assert.equal(twoGuards.status, 1, out(twoGuards));
-	assert.match(out(twoGuards), /unit U3 is a guard unit with no bypass: row/);
+	assert.match(out(twoGuards), /unit U3 is a guard unit with no bypass: row/); // pin: 1
 	assert.doesNotMatch(out(twoGuards), /unit U1 is a guard unit/);
 });
 

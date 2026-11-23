@@ -111,7 +111,7 @@ test('B3 spec S3: the testCategories map sets categories by path or glob, and a 
 test('B4 spec S4: a Category above the computed one is raised to it, and one below is refused naming both', () => {
 	const raised = runBudget(['--files', 'src/a.mjs', '--category', 'guard']);
 	assert.equal(raised.status, 0, out(raised));
-	assert.match(raised.stdout, /^category: guard \(ceiling 25; raised from logic by the plan row\)/m);
+	assert.match(raised.stdout, /^category: guard \(ceiling 25; raised from logic by the plan row\)/m); // pin: 1
 	// Control: a lower given category is refused, and the message names both the given and the computed one.
 	const lower = runBudget(['--files', 'src/a.mjs', '--category', 'docs']);
 	assert.equal(lower.status, 1, out(lower));

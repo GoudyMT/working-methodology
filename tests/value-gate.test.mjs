@@ -114,7 +114,7 @@ test('mutation-check --value reports covering set, seconds, dollars and approx c
 	const nothing = catchNothingSection(first.stdout);
 	assert.match(nothing, /big is only called/, 'the never-catching test is listed in its section');
 	assert.doesNotMatch(nothing, /small is checked/, 'the test that catches a flip is not in the never-catching section');
-	assert.match(out, /Covering set \(greedy[^)]*\): 1 test\(s\) catch all 1 caught flip\(s\): tests\/calc\.test\.mjs::small is checked/, 'the covering set is the test that catches the flip');
+	assert.match(out, /Covering set \(greedy[^)]*\): 1 test\(s\) catch all 1 caught flip\(s\): tests\/calc\.test\.mjs::small is checked/, 'the covering set is the test that catches the flip'); // pin: 1
 	assert.match(out, /small is checked.*\d(\.\d+)?\s?s\b/, 'each test has its seconds');
 	assert.match(out, /not priced/, 'no CI rate set: dollars print "not priced"');
 	// Control: the configured rate turns the seconds into a dollar figure.
@@ -166,7 +166,7 @@ test('user/kit-tools/test-value.mjs runs the named mutation tool and prints its 
 	write(broken, 'kit.config.json', '{ not json');
 	const unreadable = spawnSync(process.execPath, [KIT_VALUE], { cwd: broken, encoding: 'utf8' });
 	assert.equal(unreadable.status, 0, unreadable.stdout + unreadable.stderr);
-	assert.match(unreadable.stdout, /not measured \(kit\.config\.json cannot be read\)/);
+	assert.match(unreadable.stdout, /not measured \(kit\.config\.json cannot be read\)/); // pin: 1
 });
 
 // why: guards rule:agent-team-adapter (the build skill tells the lead to fold or drop a test that catches nothing)
