@@ -14,6 +14,8 @@ const { spawnSync } = require('child_process');
 const LOG = 'kit-agent-model.log';
 const LIST = 'kit-unit-files.txt';
 const LIST_COMMAND = 'node user/kit-tools/unit-lock.mjs --tester --files';
+const OPEN = 'kit-guard-open.log';
+const ROUND_LIMIT = 2;
 const FAMILIES = ['opus', 'sonnet', 'haiku'];
 const family = (m) => {
 	const s = String(m).toLowerCase();
@@ -136,6 +138,62 @@ function worktreeOf(prompt, cwd) {
 	return line && line[1].trim() ? path.resolve(cwd, line[1].trim()) : cwd;
 }
 
+// A checker spawn: subagent_type checker (a plugin prefix dropped, any case), or any type whose prompt has a Plan: and a Unit: line.
+function isChecker(type, prompt) {
+	return String(type).split(':').pop().toLowerCase() === 'checker' || (/^Plan:/m.test(prompt) && /^Unit:/m.test(prompt));
+}
+
+// The units named by a spawn's Unit: line, comma-separated, as written.
+function unitsOf(prompt) {
+	const line = /^Unit:(.*)$/m.exec(prompt);
+	return line ? line[1].split(',').map((u) => u.trim()).filter(Boolean) : [];
+}
+
+// A unit's count key: case folded, with the * ` and _ markup stripped, so every spelling of one unit counts together.
+const unitKey = (u) => String(u).trim().toLowerCase().replace(/[*`_]/g, '').trim();
+
+// The counted check rounds per unit key in the repo's kit-agent-model.log: rows with round "check" that are not denied. A
+// missing log is zero rounds. A log that cannot be read, or a line that is not a check record, throws.
+function roundCounts(common) {
+	const counts = new Map();
+	const file = path.join(common, LOG);
+	if (!fs.existsSync(file)) return counts;
+	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+		if (!line.trim()) continue;
+		const row = JSON.parse(line);
+		if (!row || typeof row !== 'object') throw new Error('a log line is not a record');
+		if (row.round !== 'check' || row.denied === true) continue;
+		if (!Array.isArray(row.units)) throw new Error('a check row names no units list');
+		for (const key of new Set(row.units.map(unitKey))) counts.set(key, (counts.get(key) || 0) + 1);
+	}
+	return counts;
+}
+
+// The round cap for a checker spawn. A unit with ROUND_LIMIT counted rounds already is refused (under the round-cap hold's
+// enforce mode). Every checked spawn appends a check row, denied when refused. An error in this check refuses with
+// "hook error: lead review" whatever the hold says, and appends its cause to kit-guard-open.log.
+function roundGate(cwd, type, model, prompt) {
+	const hold = holdMode('round-cap');
+	const units = unitsOf(prompt);
+	let common = null;
+	try {
+		common = commonDir(cwd);
+		const counts = common === null ? new Map() : roundCounts(common);
+		const capped = units.find((u) => (counts.get(unitKey(u)) || 0) >= ROUND_LIMIT);
+		const refuse = capped !== undefined && hold.mode === 'enforce';
+		logRow(cwd, { type, model, want: null, round: 'check', units, ...(refuse ? { denied: true } : {}) }, hold);
+		return refuse ? deny(`a third check round on ${capped} is refused: what is still open goes to the next patch list; CI is the gate.`) : null;
+	} catch (err) {
+		const cause = String((err && err.message) || err);
+		try {
+			if (common) fs.appendFileSync(path.join(common, OPEN), `${JSON.stringify({ at: new Date().toISOString(), hook: 'agent-model', cause })}\n`);
+		} catch {
+			/* the open log itself failed: the refusal still stands */
+		}
+		return deny(`hook error: lead review (${cause})`);
+	}
+}
+
 // Appends one row to the repo's kit-agent-model.log; nothing when the folder is not a repo.
 function logRow(cwd, row, hold) {
 	const common = commonDir(cwd);
@@ -181,6 +239,8 @@ function check(input) {
 				if (gate.mode === 'enforce') refuse = deny(`${why}. Run ${LIST_COMMAND} <test files> from that worktree, then spawn.`);
 			}
 		}
+		// The round cap: a checker spawn on a unit with two counted check rounds already is refused (K366).
+		if (isChecker(type, prompt)) refuse = roundGate(cwd, type, model, prompt) || refuse;
 	} catch {
 		/* a hook that fails never stops a call; the row says the call passed unchecked */
 		try {
