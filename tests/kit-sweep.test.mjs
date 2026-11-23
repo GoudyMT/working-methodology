@@ -313,6 +313,7 @@ test('an installed approve.mjs reads the owner\'s taps only from the folder it w
 // Rule review 2026-10-31 (the owner approved): the trial review comes every 10 auto-approvals until two in a row
 // passed clean, then every 20; any other pause (a drift trip) puts it back to 10.
 // why: guards rule:sweep-auto-approval
+// planted: {"file":"user/skills/pre-pr-sweep/approve.mjs","was":"const reviewEvery = clean >= 2 ? TRIAL_EVERY_EARNED : TRIAL_EVERY;","to":"const reviewEvery = TRIAL_EVERY;"}
 test('the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it', () => {
   const r = approveRun(featureContract());
   outcome(r);
