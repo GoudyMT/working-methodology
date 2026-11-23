@@ -30,13 +30,13 @@ function adapterFile() {
 	return row[1];
 }
 
-// why: catches the kit repo's rules block, as approve.mjs resolves it, holds no slot from slots.mjs (K359 S1)
+// why: doc claim: the kit repo's rules block, as approve.mjs resolves it, holds no slot from slots.mjs (K359 S1)
 test("the kit repo's rules block, as approve.mjs resolves it, holds no slot from slots.mjs", () => {
 	const file = adapterFile();
 	assert.deepEqual(slotsIn(blockOf(file)), [], `${file} still holds a template slot`);
 });
 
-// why: catches the shipped rules/agent-teams.md block still holds its template slot, so installs keep the reminder (K359 S2)
+// why: doc claim: the shipped rules/agent-teams.md block still holds its template slot, so installs keep the reminder (K359 S2)
 test('the shipped rules/agent-teams.md block still holds its template slot, so installs keep the reminder', () => {
 	assert.ok(slotsIn(blockOf(SHIPPED)).includes('<PROJECT NAME>'), 'the shipped block keeps <PROJECT NAME>');
 	// The kit's own block is a different file, so filling it never empties the template.
