@@ -24,8 +24,9 @@ const { spawnSync } = require('child_process');
 const LOG = 'kit-agent-model.log';
 const ROUNDS = 'kit-check-rounds.log';
 const LIST = 'kit-unit-files.txt';
-// Built from this file's own folder, so the command runs outside the kit repo.
-const LIST_COMMAND = `node ${path.join(__dirname, '..', 'kit-tools', 'unit-lock.mjs')} --tester --files`;
+// Built from this file's own folder, so the command runs outside the kit repo; quoted with forward slashes, so it runs in
+// bash as well as PowerShell, and a folder with a space stays one argument.
+const LIST_COMMAND = `node "${path.join(__dirname, '..', 'kit-tools', 'unit-lock.mjs').replace(/\\/g, '/')}" --tester --files`;
 const OPEN = 'kit-guard-open.log';
 const ROUND_LIMIT = 2;
 const FAMILIES = ['opus', 'sonnet', 'haiku'];
@@ -162,10 +163,27 @@ function worktreeOf(prompt, cwd) {
 // True when the brief's Worktree: path is a network share (starts with \\ or //): git is never run on it.
 const isShare = (prompt) => /^(\\\\|\/\/)/.test(lineValue(prompt, 'worktree') || '');
 
-// A checker spawn: subagent_type checker (a plugin prefix dropped, any case), or any type whose prompt has a Plan: and a Unit: line
-// (read by lineValues; Units: reads as Unit:).
+// A checker spawn: subagent_type checker (a plugin prefix dropped, any case), or a general agent (general-purpose or no type)
+// whose Role: line says checker, or that has no Role: line and has a Plan: and a Unit: line (Units: reads as Unit:). Every
+// brief carries Plan: and Unit: lines, so a tester, builder or other typed agent, or a general agent with another role, is
+// never a checker and never spends a check round.
 function isChecker(type, prompt) {
-	return String(type).split(':').pop().toLowerCase() === 'checker' || (hasLine(prompt, 'plan') && hasLine(prompt, 'units?'));
+	const bare = String(type).split(':').pop().toLowerCase();
+	if (bare === 'checker') return true;
+	if (bare !== 'general-purpose' && bare !== '') return false;
+	const role = roleOf(prompt);
+	if (role === 'checker') return true;
+	return !role && hasLine(prompt, 'plan') && hasLine(prompt, 'units?');
+}
+
+// One key per plan file: the path token (before any " (" note, edge markup dropped), resolved from the hook's cwd, forward
+// slashes, lower case on Windows; so ./PLAN.md, PLAN.md (round 3) and _PLAN.md_ are the plan PLAN.md is. Null with no Plan: line.
+function planKey(raw, cwd) {
+	if (raw === null || raw === undefined) return null;
+	const token = String(raw).split(' (')[0].trim().replace(/^[*_`]+|[*_`]+$/g, '');
+	if (!token) return null;
+	const key = path.resolve(cwd, token).replace(/\\/g, '/');
+	return process.platform === 'win32' ? key.toLowerCase() : key;
 }
 
 // The canonical unit ids in a text: each match of /[A-Z]+\d+[a-z]?/i, upper-cased, so case, markup and trailing text cannot change an id.
@@ -177,9 +195,9 @@ function unitsOf(prompt) {
 }
 
 // The counted check rounds per unit id in the repo's kit-check-rounds.log: rows with round "check" that are not denied and
-// carry the same plan (a row with no plan, or a spawn with none, matches any). A missing log is zero rounds. A log that cannot
-// be read, or a line that is not a check record, throws.
-function roundCounts(common, plan) {
+// carry the same plan key. A spawn with no plan counts only rows with no plan; a row with no plan (written before rows carried
+// one) counts for every plan. A missing log is zero rounds. A log that cannot be read, or a line that is not a check record, throws.
+function roundCounts(common, plan, cwd) {
 	const counts = new Map();
 	const file = path.join(common, ROUNDS);
 	if (!fs.existsSync(file)) return counts;
@@ -188,7 +206,7 @@ function roundCounts(common, plan) {
 		const row = JSON.parse(line);
 		if (!row || typeof row !== 'object') throw new Error('a log line is not a record');
 		if (row.round !== 'check' || row.denied === true) continue;
-		if (row.plan != null && plan != null && row.plan !== plan) continue;
+		if (plan === null ? row.plan != null : row.plan != null && planKey(row.plan, cwd) !== plan) continue;
 		if (!Array.isArray(row.units)) throw new Error('a check row names no units list');
 		for (const id of new Set(row.units.flatMap(idsOf))) counts.set(id, (counts.get(id) || 0) + 1);
 	}
@@ -204,13 +222,14 @@ function roundCounts(common, plan) {
 function roundGate(cwd, type, model, prompt, prior) {
 	const hold = holdMode('round-cap');
 	const units = unitsOf(prompt);
-	const plan = lineValue(prompt, 'plan');
 	let common = null;
 	try {
+		const plan = planKey(lineValue(prompt, 'plan'), cwd);
 		common = commonDir(cwd);
 		if (common === null) throw new Error(`git cannot read the common folder of ${cwd}`);
-		const counts = roundCounts(common, plan);		const capped = units.find((u) => (counts.get(u) || 0) >= ROUND_LIMIT);
-		const why = units.length === 0 && /^[ \t]*plan:/im.test(prompt)
+		const counts = roundCounts(common, plan, cwd);
+		const capped = units.find((u) => (counts.get(u) || 0) >= ROUND_LIMIT);
+		const why = units.length === 0 && plan !== null
 			? 'a checker spawn names no unit: its Unit: line must name a unit id, such as Unit: U17'
 			: capped !== undefined ? `a third check round on ${capped} is refused: what is still open goes to the next patch list; CI is the gate.` : null;
 		const refuse = why !== null && hold.mode === 'enforce';
