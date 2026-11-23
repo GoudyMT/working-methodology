@@ -75,6 +75,16 @@ const whyOf = (name) => `catches ${name}`;
 // The why line written above a test: its row id is the Title's leading K code, or the unit id (an R row).
 const whyLine = (t, rowId) => `// why: ${whyOf(t.name)}${t.rule ? ` (${rowId} ${t.rule})` : ''}`;
 
+// A test line whose derived why has fewer than six words is a plan fault, named by its unit and its line. Only --whys and
+// --brief raise it: a plan with one-word test names checks clean in the default run.
+const WHY_MIN_WORDS = 6;
+function shortWhys(u) {
+	return testLines(u.tests).map(testOf).flatMap((t) => {
+		const words = whyOf(t.name).split(/\s+/).length;
+		return words < WHY_MIN_WORDS ? [`${u.id}: "${t.name}" has a why of ${words} words, under ${WHY_MIN_WORDS}`] : [];
+	});
+}
+
 // The Units table's rows: each unit's id, Title, Files and Tests cells, and its row id (the leading K code of its Title,
 // else its unit id). A plan with no Units table or without these columns cannot be read.
 export function planUnits(text) {
@@ -360,8 +370,11 @@ function main(argv) {
 			throw new Unreadable(`cannot read plan ${args.plan}: ${e.code || e.message}`);
 		}
 		if (args.whys) {
-			process.stdout.write(whysText(planUnits(text)));
-			return 0;
+			const all = planUnits(text);
+			process.stdout.write(whysText(all));
+			const shorts = all.flatMap(shortWhys);
+			for (const f of shorts) process.stdout.write(`fault: ${f}\n`);
+			return shorts.length ? 1 : 0;
 		}
 		if (args.brief !== null) {
 			const unit = planUnits(text).find((u) => u.id === args.brief);
@@ -371,6 +384,11 @@ function main(argv) {
 			}
 			if (!unit) {
 				process.stderr.write(`plan-check: unit ${args.brief} is not in the Units table\n`);
+				return 1;
+			}
+			const shorts = shortWhys(unit);
+			if (shorts.length) {
+				for (const f of shorts) process.stderr.write(`plan-check: fault: ${f}\n`);
 				return 1;
 			}
 			process.stdout.write(briefText(unit, args.role));
