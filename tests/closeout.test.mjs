@@ -63,16 +63,19 @@ const record = (sha) => ({
 	},
 	tests: { before: 10, after: 12 },
 });
-const row = (finding, tests, severity = 'high') => ({ id: `R-${finding}-${tests.length}-${tests[0].length}`, kind: 'fixed', text: `A fix for ${finding}.`, evidence: 'commit', finding, severity, tests });
+let rowNo = 0;
+const row = (finding, tests = [], severity = 'high', files) => ({ id: `R${++rowNo}`, kind: 'fixed', text: `A fix for ${finding}.`, evidence: 'commit', finding, severity, ...(tests.length ? { tests } : {}), ...(files ? { files } : {}) });
+const closeoutOf = (findings, tickets) => (head) => ({ version: VERSION, head, findings, tickets });
 
 /** A repo: base commit, the one closeout commit, then the range's changes, then the build record. */
-function mk({ after, rows = [], closeout, mutate } = {}) {
+function mk({ before, after, rows = [], closeout, mutate } = {}) {
 	const root = kitTemp.makeTemp('closeout-');
 	git(root, 'init', '-q');
 	write(root, 'VERSION', `${VERSION}\n`);
 	write(root, 'tests/a.test.mjs', testFile(['old one']));
 	write(root, 'scripts/old.mjs', '// old\n');
 	commit(root, 'base');
+	if (before) before(root);
 	const sha = git(root, 'rev-parse', 'HEAD');
 	if (closeout !== null) {
 		const body = closeout === undefined ? defaultCloseout(sha) : typeof closeout === 'function' ? closeout(sha) : closeout;
@@ -102,6 +105,10 @@ test('a build record with a sweep and no closeout file fails', () => {
 	const none = buildRecordCheck(mk({ closeout: null }));
 	assert.equal(none.status, 1, none.stdout);
 	assert.match(none.stderr, /closeout/i);
+	// no sweep and no closeout file: nothing is owed, so closeout check passes
+	const noSweep = check(mk({ closeout: null, mutate: (rec) => { delete rec.sweep; } }));
+	assert.equal(noSweep.status, 0, noSweep.stderr);
+	assert.equal(noSweep.stderr, '');
 });
 
 // why: catches a ticketed test passes, and a second test on the same ticket fails (K369 S2)
@@ -114,6 +121,32 @@ test('a ticketed test passes, and a second test on the same ticket fails', () =>
 	const twice = check(mk({ after: addTests('new one', 'new two'), rows: [row('F1', ['tests/a.test.mjs::new one']), row('F1', ['tests/a.test.mjs::new two'])] }));
 	assert.equal(twice.status, 1);
 	assert.match(twice.stderr, /F1/);
+	// one row naming two new tests fails: each new test needs its own ticket
+	const both = check(mk({ after: addTests('new one', 'new two'), rows: [row('F1', ['tests/a.test.mjs::new one', 'tests/a.test.mjs::new two'])] }));
+	assert.equal(both.status, 1);
+	assert.match(both.stderr, /F1/);
+	// one test in two rows fails
+	const split = check(mk({ after: addTests('new one'), rows: [row('F1', ['tests/a.test.mjs::new one']), row('F2', ['tests/a.test.mjs::new one'], 'medium')] }));
+	assert.equal(split.status, 1);
+	assert.ok(split.stderr.includes('tests/a.test.mjs::new one'), split.stderr);
+	// the flags decide: an owner finding listed passes, an unflagged medium that is not listed fails
+	const flags = [finding('F1', 'high'), finding('F4', 'low', { owner: true }), finding('F5', 'medium')];
+	const owned = check(mk({ closeout: closeoutOf(flags, ['F1', 'F4']), after: addTests('owned'), rows: [row('F4', ['tests/a.test.mjs::owned'], 'low')] }));
+	assert.equal(owned.status, 0, owned.stderr);
+	const plain = check(mk({ closeout: closeoutOf(flags, ['F1', 'F4']), after: addTests('unflagged'), rows: [row('F5', ['tests/a.test.mjs::unflagged'], 'medium')] }));
+	assert.equal(plain.status, 1);
+	assert.ok(plain.stderr.includes('tests/a.test.mjs::unflagged'), plain.stderr);
+	// a tickets list that disagrees with the flags is a fault naming the id, whichever way it disagrees
+	const unlisted = check(mk({ closeout: closeoutOf([finding('F1', 'high'), finding('F2', 'medium', { security: true })], ['F1']) }));
+	assert.equal(unlisted.status, 1);
+	assert.match(unlisted.stderr, /F2/);
+	const overlisted = check(mk({ closeout: closeoutOf([finding('F1', 'high'), finding('F3', 'low')], ['F1', 'F3']) }));
+	assert.equal(overlisted.status, 1);
+	assert.match(overlisted.stderr, /F3/);
+	// ticket checks read the record's items rows: a sweep.fixes row naming the test is no ticket for it
+	const wrongArray = check(mk({ after: addTests('new one'), mutate: (rec) => { rec.sweep.fixes[0].test = 'tests/a.test.mjs::new one'; } }));
+	assert.equal(wrongArray.status, 1);
+	assert.ok(wrongArray.stderr.includes('tests/a.test.mjs::new one'), wrongArray.stderr);
 });
 
 // why: catches a ticketless test fails naming the file and the defer command (K369 S2)
@@ -126,6 +159,13 @@ test('a ticketless test fails naming the file and the defer command', () => {
 	const low = check(mk({ after: addTests('orphan'), rows: [row('F3', ['tests/a.test.mjs::orphan'], 'low')] }));
 	assert.equal(low.status, 1);
 	assert.ok(low.stderr.includes('tests/a.test.mjs::orphan'), low.stderr);
+	// a ticketless failure is logged too: one row for the run
+	const root = mk({ after: addTests('orphan') });
+	assert.equal(check(root).status, 1);
+	const logged = logLines(root);
+	assert.equal(logged.length, 1);
+	assert.equal(logged[0].hook, 'closeout');
+	assert.ok(typeof logged[0].cause === 'string' && logged[0].cause.length > 0);
 });
 
 // why: catches a new script, hook or CI file no ticket's fix names fails (K369 S3)
@@ -139,6 +179,13 @@ test("a new script, hook or CI file no ticket's fix names fails", () => {
 		commit(root, 'add files');
 	} }));
 	assert.equal(added.status, 1);
+	// a ticket's fix row that names the file lets it in; the same file on a non-ticket row fails
+	const hook = (root) => { write(root, 'user/kit-hooks/new-hook.cjs', '// new\n'); commit(root, 'add hook'); };
+	const named = check(mk({ after: hook, rows: [row('F1', [], 'high', ['user/kit-hooks/new-hook.cjs'])] }));
+	assert.equal(named.status, 0, named.stderr);
+	const lowRow = check(mk({ after: hook, rows: [row('F3', [], 'low', ['user/kit-hooks/new-hook.cjs'])] }));
+	assert.equal(lowRow.status, 1);
+	assert.ok(lowRow.stderr.includes('user/kit-hooks/new-hook.cjs'), lowRow.stderr);
 	for (const f of ['scripts/new-tool.mjs', 'user/kit-hooks/new-hook.cjs', '.github/workflows/new-job.yml']) assert.ok(added.stderr.includes(f), `${f} not named: ${added.stderr}`);
 });
 
@@ -171,6 +218,19 @@ test('89 high fix rows on 6 high findings fails', () => {
 	assert.equal(many.status, 1);
 	assert.match(many.stderr, /89/);
 	assert.match(many.stderr, /\b6\b/);
+	// the margin is 0: one row over fails
+	const seven = buildRecordCheck(mk({ closeout, mutate: rows(7) }));
+	assert.equal(seven.status, 1);
+	assert.match(seven.stderr, /\b7\b/);
+	// a critical row beyond the critical findings fails, though the total of high and critical rows is met
+	const crit = closeoutOf([finding('C1', 'critical'), finding('H1', 'high')], ['C1', 'H1']);
+	const fix = (id, of, severity, sha) => ({ id, finding: of, severity, text: `fix ${id} of the parser`, commit: sha, test: 'tests/a.test.mjs::old one' });
+	const mixed = (second) => (rec, sha) => { rec.sweep.findings = { critical: 1, high: 1, medium: 0, low: 0 }; rec.sweep.fixes = [fix('X1', 'C1', 'critical', sha), second(sha)]; };
+	const fits = buildRecordCheck(mk({ closeout: crit, mutate: mixed((sha) => fix('X2', 'H1', 'high', sha)) }));
+	assert.equal(fits.status, 0, fits.stderr);
+	const twoCrit = buildRecordCheck(mk({ closeout: crit, mutate: mixed((sha) => fix('X2', 'C1', 'critical', sha)) }));
+	assert.equal(twoCrit.status, 1);
+	assert.match(twoCrit.stderr, /critical/i);
 });
 
 // why: catches a fix row whose severity differs from its finding's severity fails (K369 S5)
@@ -182,6 +242,11 @@ test("a fix row whose severity differs from its finding's severity fails", () =>
 	assert.equal(differs.status, 1);
 	assert.match(differs.stderr, /F3/);
 	assert.match(differs.stderr, /severity/i);
+	// a high finding whose row says medium: an accepted line holds the high count, so only the severity is wrong
+	const lowered = buildRecordCheck(mk({ mutate: (rec) => { rec.sweep.fixes[0].severity = 'medium'; rec.sweep.accepted = ['high: F1 is accepted by the owner']; } }));
+	assert.equal(lowered.status, 1);
+	assert.match(lowered.stderr, /F1/);
+	assert.match(lowered.stderr, /severity/i);
 });
 
 // why: catches a test added by rename, or in a new test file, is still counted (K369 S6)
@@ -198,6 +263,9 @@ test('a test added by rename, or in a new test file, is still counted', () => {
 		commit(root, 'rename test');
 	} }));
 	assert.equal(tagged.status, 0, tagged.stderr);
+	// a test committed before the closeout commit was there already: it does not count
+	const early = check(mk({ before: (root) => { write(root, 'tests/a.test.mjs', testFile(['old one', 'early one'])); commit(root, 'early test'); } }));
+	assert.equal(early.status, 0, early.stderr);
 });
 
 // why: catches defer appends one JSON line to the next-patch file and prints "written, carry on" (K369 S8)
@@ -217,6 +285,16 @@ test('defer appends one JSON line to the next-patch file and prints "written, ca
 	assert.equal(go('a second one').status, 0);
 	assert.equal(lines().length, 2);
 	assert.equal(JSON.parse(lines()[0]).text, 'carry the parser edge over');
+	assert.equal(first.stdout.trim(), 'written, carry on');
+	// --root names the repo when the working folder is another one and no env names it
+	const elsewhere = kitTemp.makeTemp('closeout-cwd-');
+	const bare = { ...process.env };
+	delete bare.KIT_RECORD_ROOT;
+	const rooted = fs.existsSync(CLOSEOUT) ? spawnSync(process.execPath, [CLOSEOUT, 'defer', 'by root flag', '--root', root], { cwd: elsewhere, encoding: 'utf8', env: bare }) : { status: 127, stdout: '', stderr: 'missing' };
+	assert.equal(rooted.status, 0, rooted.stderr);
+	assert.equal(rooted.stdout.trim(), 'written, carry on');
+	assert.equal(lines().length, 3);
+	assert.equal(JSON.parse(lines()[2]).text, 'by root flag');
 });
 
 // why: catches the same range twice gives the same verdict (K369 S6)
