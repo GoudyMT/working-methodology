@@ -1,6 +1,13 @@
 # Builder brief - <unit id>: <title>
 
+Plan: <path to the plan file>
+Unit: <unit id>
+Role: builder
+Worktree: <absolute path of your own worktree>
+
 You are building ONE unit. Everything you need is below; you have no other context.
+The lead can make this brief from the plan row: `node {{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> --brief <unit>
+--role builder`.
 
 ## Project rules (one source - read it, never a pasted copy)
 
@@ -24,7 +31,9 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 - **Files you may change:** <exact list>
 - **Files you may create:** <exact list> | none
 - **Read first:** <files, tests and docs, each with why>
-- **Red tests (the tester's red commit <sha>; never edit them), and the failure each must show:** <...>
+- **Red tests (the tester's red commit <sha>; never edit them), and the failure each must show:** <the exact test
+  files, one path each, and the failure each must show>. Name the exact test files; do not use `--pick` to find
+  them.
 - If a test looks wrong, stop and report it; never work around a test.
 - **Tests are a floor:** one test per plan line. The builder must never add or drop a test; a test that looks wrong is a stop.
 - **Done when:** <observable conditions>; within this unit's size-budget share: <each budget and the bytes this
@@ -36,9 +45,7 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 
 ## Commands (exact)
 
-- Unit tests: <the covering tests, by lookup where the runner has a coverage map (the kit's: `node scripts/test-run.mjs
-  --changed --pick` prints them; run the ones this unit changed with `node --test <file>`, as a `--changed` run is CI's);
-  else the touched files' tests; CI runs the rest>
+- Unit tests: <the exact test files, run each with `node --test <file>`; CI runs the rest>
 - Type-check: <...>
 - Lint: <...>
 - Commit format: <format and one example>
