@@ -26,6 +26,9 @@ const CLARITY_ROLE = /(^|[^a-z0-9])(tester|test-reviewer)([^a-z0-9]|$)/i;
 // A finding key, plain or decoded from \u escapes.
 const FINDING_KEY_RE = new RegExp(`"(${FINDING_KEYS.join('|')})"\\s*:`);
 const decodeEscapes = (t) => String(t).replace(/\\u([0-9a-fA-F]{4})/g, (_, h) => String.fromCharCode(parseInt(h, 16)));
+// K363: a lead's guard ruling ("lead ruling:", any case) rests on a proof: a test file (holds `.test.`) or a probe.
+const isRuling = (o) => typeof o.note === 'string' && o.writer === 'lead' && /^\s*lead ruling:/i.test(o.note);
+const rulingProofOk = (p) => /\.test\./.test(p) || p.trim().startsWith('probe:');
 
 // A key error names the key in backticks, so a retry prompt can point at exactly the field to repair.
 function keyErrors(obj, keys) {
@@ -99,13 +102,17 @@ export function check(text, expect = {}) {
 		}
 		if (!isObject(obj)) return fail('unknown line shape');
 		const hasOther = ['notChecked', 'note'].some((k) => k in obj);
-		if (hasOther && FINDING_KEYS.some((k) => k in obj)) return fail('unknown line shape, mixes finding and note keys');
+		const ruling = 'note' in obj && isRuling(obj);
+		if (hasOther && FINDING_KEYS.some((k) => k in obj && !(ruling && k === 'proof'))) return fail('unknown line shape, mixes finding and note keys');
 		if ('notChecked' in obj) {
 			const errs = keyErrors(obj, ['notChecked']);
 			errs.forEach(fail);
 			if (!errs.length) out.notChecked++;
 		} else if ('note' in obj) {
-			const errs = keyErrors(obj, ['note', 'writer']);
+			const errs = keyErrors(obj, ruling ?['note', 'writer', 'proof'] : ['note', 'writer']);
+			if (ruling && typeof obj.proof === 'string' && obj.proof.trim() !== '' && !rulingProofOk(obj.proof)) {
+				errs.push('`proof` must name a test file (holds `.test.`) or start with `probe:`');
+			}
 			errs.forEach(fail);
 			if (!errs.length) { out.notes++; notes.push(obj); }
 		} else if (FINDING_KEYS.some((k) => k in obj)) {
