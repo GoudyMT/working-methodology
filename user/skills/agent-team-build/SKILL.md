@@ -179,13 +179,13 @@ Each lesson below came from a real run. Follow it as written.
 
 **Warm agents and check rounds.**
 - `warm.mjs` holds a tester or builder spawn while an open agent of the same lane is under `WARM_LIMIT` (150000
-  tokens): continue that agent with `SendMessage`. Over 150000 tokens, reset it: spawn a fresh agent and log the reset
-  with `warm.mjs reset`.
+  tokens): continue that agent with `SendMessage`. At or over 150000 tokens, reset it: spawn a fresh agent and log the reset
+  with `warm.mjs reset`. The agent-model hook holds the spawn until you do.
 - A unit gets at most 2 check rounds. The agent-model hook enforces the cap and refuses a third checker spawn.
 
 **How many at once, and the log.**
-- Up to 3 test reviewers and 2 checkers run at once. Start one more only when over 2 units wait for that role.
-- Log each start as a line of kind "scale" with its role, count, queue and at.
+- Lead practice, not checked by code: up to 3 test reviewers and 2 checkers run at once. Start one more only when over 2 units wait for that role. The lane caps above are lead practice too.
+- Lead practice: log each start as a line of kind "scale" with its role, count, queue and at.
 - Read `date -u` before you write any time into a log. Never write a time from memory.
 
 **Review step: the closeout card.**
@@ -201,6 +201,8 @@ Each lesson below came from a real run. Follow it as written.
 | Tests | add one test per ticket | add a test beyond the ticket |
 
 The test count only goes down in closeout, except one test per ticket.
+
+In closeout and sweep fixes, a tester or writer brief carries a `Ticket: <id>` line naming its ticket. The agent-model hook refuses one without it.
 
 ## Who decides
 

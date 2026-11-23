@@ -4,6 +4,7 @@ Plan: <path to the plan file>
 Unit: <unit id>
 Role: tester
 Worktree: <absolute path of your own worktree>
+Lane: <lane id>
 
 You write ONE unit's failing tests, and nothing else. Everything you need is below; you have no other context.
 The lead can make this brief from the plan row: `node {{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> --brief <unit>

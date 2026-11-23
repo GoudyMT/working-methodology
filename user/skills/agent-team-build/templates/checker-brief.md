@@ -4,6 +4,7 @@ Plan: <path to the plan file>
 Unit: <unit id>
 Role: checker
 Worktree: <absolute path of the builder's worktree you read>
+Lane: <lane id>
 
 A unit gets at most 2 check rounds; the agent-model hook refuses a third.
 

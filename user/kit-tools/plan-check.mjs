@@ -113,23 +113,26 @@ function whysText(units) {
 }
 
 // --brief: one unit's brief for its tester or its builder, from its row. The test files are the Files cell's tests/ paths.
-function briefText(u, role) {
+function briefText(u, role, planPath) {
+	const lockTool = path.join(import.meta.dirname, 'unit-lock.mjs').replace(/\\/g, '/');
+	const lock = /\s/.test(lockTool) ? `"${lockTool}"` : lockTool;
+	const lines = [`Plan: ${planPath}`, `Unit: ${u.id}`, `Role: ${role}`, 'Worktree: <absolute path of your own worktree>', 'Lane: <lane id>', ''];
 	const files = filesOf(u.files);
 	const tests = files.filter((f) => TEST_FOLDER.test(f.replace(/\\/g, '/')));
 	const src = files.filter((f) => !TEST_FOLDER.test(f.replace(/\\/g, '/')));
 	if (role === 'tester') {
-		return [`# Tester brief: ${u.id}`, '', `Unit: ${u.title.trim()}`, `Files: ${u.files.trim()}`, '',
+		return [`# Tester brief: ${u.id}`, '', ...lines, `Title: ${u.title.trim()}`, `Files: ${u.files.trim()}`, '',
 			'Write each test first, with its name and its why line as given:', '',
 			...testLines(u.tests).flatMap((l) => {
 				const t = testOf(l);
 				return [`- ${t.name}`, `  ${whyLine(t, u.rowId)}`];
 			}), '',
-			'Lock before the unit runs, from the repo root:', '', '```', `node user/kit-tools/unit-lock.mjs --tester --files ${tests.join(',')}`, '```', ''].join('\n');
+			'Lock before the unit runs, from the repo root:', '', '```', `node ${lock} --tester --files ${tests.join(',')}`, '```', ''].join('\n');
 	}
-	return [`# Builder brief: ${u.id}`, '', `Unit: ${u.title.trim()}`, '',
+	return [`# Builder brief: ${u.id}`, '', ...lines, `Title: ${u.title.trim()}`, '',
 		`Source files (edit these): ${src.join(', ')}`, `Tests (locked, never edit): ${tests.join(', ')}`, '',
 		'Run only these tests:', '', '```', `node --test ${tests.join(' ')}`, '```', '',
-		'Lock after the red commit, with its sha:', '', '```', `node user/kit-tools/unit-lock.mjs <red sha> --files ${src.join(',')}`, '```', ''].join('\n');
+		'Lock after the red commit, with its sha:', '', '```', `node ${lock} <red sha> --files ${src.join(',')}`, '```', ''].join('\n');
 }
 
 // The rule ids ("- S1: ...") under a unit's "### <id> spec" section, in order. None when the plan has no such section.
@@ -391,7 +394,7 @@ function main(argv) {
 				for (const f of shorts) process.stderr.write(`plan-check: fault: ${f}\n`);
 				return 1;
 			}
-			process.stdout.write(briefText(unit, args.role));
+			process.stdout.write(briefText(unit, args.role, args.plan));
 			return 0;
 		}
 		const plan = checkPlan(text, mapOf(args.plan));
