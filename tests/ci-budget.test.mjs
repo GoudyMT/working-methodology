@@ -204,6 +204,13 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 		`the step does not run the base copy when it exists, in one line: ${line}`,
 	);
 	assert.match(line, /--skip minimal-code(\s|$)/);
+	// The 1.51.3 sweep (M8): a failed fetch of the earlier main runs warns and skips the trend; it never fails the check.
+	assert.match(kit, /if fetch_history; then[\s\S]*?else\s+echo "::warning::the earlier main runs could not be read/);
+	// M6: the Windows step takes its slice and its count from the matrix itself, so no part can be dropped unseen.
+	const win = (yml.split(/^  windows-tests:$/m)[1] || '').split(/^  [A-Za-z0-9_-]+:$/m)[0];
+	assert.match(win, /PART: \$\{\{ strategy\.job-index \}\}/);
+	assert.match(win, /PARTS: \$\{\{ strategy\.job-total \}\}/);
+	assert.match(win, /--slice "\$PART\/\$PARTS"/);
 	assert.doesNotMatch(line, /\|\|/);
 	assert.doesNotMatch(kit, /continue-on-error/);
 	const needs = (/^    needs: \[(.*)\]$/m.exec(kit) || [])[1];
