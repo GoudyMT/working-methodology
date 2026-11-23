@@ -239,7 +239,17 @@ test("an Edit adding a second why-less test with an existing test's name is refu
 	assert.equal(bad.code, 2, 'a second test of an existing name with no why is refused: ' + bad.err);
 	assert.ok(bad.err.includes(NO_WHY), 'stderr quotes whyFault: ' + bad.err);
 	const ok = fence(dir, 'Edit', { file_path: target(dir), old_string: start, new_string: start + testWith(GOOD_WHY, 'the old one') });
-	assert.equal(ok.code, 0, 'a second test of that name with a good why saves: ' + ok.err);
+	assert.equal(ok.code, 2, 'a second test of that name is refused even with a good why: ' + ok.err);
+	assert.ok(ok.err.includes('share the name') && ok.err.includes('the old one'), 'stderr names the duplicate name: ' + ok.err);
+});
+
+// why: catches an Edit inserting a why-less duplicate above the original test of that name passing the fence (K368 S1)
+test('a why-less duplicate inserted above the original test of that name is refused', () => {
+	const start = testWith(GOOD_WHY, 'the old one');
+	const dir = unitRepo(start);
+	const above = fence(dir, 'Edit', { file_path: target(dir), old_string: start, new_string: testWith('', 'the old one') + start });
+	assert.equal(above.code, 2, 'a why-less duplicate above the original is refused: ' + above.err);
+	assert.ok(above.err.includes('share the name') && above.err.includes('the old one'), 'stderr names the duplicate name: ' + above.err);
 });
 
 // why: catches an Edit that removes the why line from an existing test that had one passing the fence (K368 S1)
@@ -320,5 +330,6 @@ test('a repeated why-less name beside a legacy why-less test is refused', () => 
 	assert.equal(bad.code, 2, 'a second why-less test of the legacy name is refused: ' + bad.err);
 	assert.ok(bad.err.includes(NO_WHY) && bad.err.includes('the old one'), 'stderr names the test: ' + bad.err);
 	const ok = fence(dir, 'Edit', { file_path: target(dir), old_string: legacy, new_string: legacy + testWith(GOOD_WHY, 'the old one') });
-	assert.equal(ok.code, 0, 'a second test of that name with a good why saves: ' + ok.err);
+	assert.equal(ok.code, 2, 'a second test of that name is refused even with a good why: ' + ok.err);
+	assert.ok(ok.err.includes('share the name') && ok.err.includes('the old one'), 'stderr names the duplicate name: ' + ok.err);
 });
