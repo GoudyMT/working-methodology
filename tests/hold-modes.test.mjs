@@ -87,12 +87,14 @@ function holdModeDir(holdsFile) {
 const modeOf = (dir) => require(path.join(dir, 'hold-mode.cjs')).mode;
 
 // why: guards rule:kit-standards (a build hold missing from holds.json is never checked)
-test('holds.json lists the agent-model and handoff-gate holds, both in log mode', () => {
+// renamed from: holds.json lists the agent-model and handoff-gate holds, both in log mode
+test('holds.json lists the agent-model hold in log mode and the handoff-gate hold in enforce mode', () => {
 	let holds;
 	assert.doesNotThrow(() => { holds = JSON.parse(fs.readFileSync(REAL_HOLDS, 'utf8')).holds; }, 'user/kit-hooks/holds.json reads as JSON with a holds list');
 	const byId = Object.fromEntries(holds.map((h) => [h.id, h]));
 	assert.deepEqual(byId['agent-model'] && { hook: byId['agent-model'].hook, mode: byId['agent-model'].mode }, { hook: 'agent-model.cjs', mode: 'log' });
-	assert.deepEqual(byId['handoff-gate'] && { hook: byId['handoff-gate'].hook, mode: byId['handoff-gate'].mode }, { hook: 'handoff-gate.cjs', mode: 'log' });
+	// H5 (the owner's yes to enforce, 2026-11-23): the hand-back gate enforces, high tier
+	assert.deepEqual(byId['handoff-gate'] && { hook: byId['handoff-gate'].hook, mode: byId['handoff-gate'].mode, tier: byId['handoff-gate'].tier }, { hook: 'handoff-gate.cjs', mode: 'enforce', tier: 'high' });
 });
 
 // why: guards rule:kit-standards (a listed log hold read back as enforce)
@@ -491,6 +493,36 @@ test('handoff-gate logs the missing-clarity warning for a valid tester record, a
 	assert.match(JSON.stringify(rows()[0].warnings), /missing clarity/);
 	assert.equal(send(clear).status, 0);
 	assert.equal(rows().length, 1, 'a record with clarity adds no row');
+});
+
+// why: catches H5 a why-less new test in a hand-back RECORD reaching the lead because the shipped handoff-gate hold only logs
+test('H5: with holds.json as shipped, a hand-back whose RECORD lists a why-less new test is refused, even when the log write fails', () => {
+	const cwd = kitTemp.makeTemp('handoff-h5-repo-');
+	git(cwd, ['init', '-q', '-b', 'main']);
+	fs.mkdirSync(path.join(cwd, 'tests'));
+	fs.writeFileSync(path.join(cwd, 'tests', 'a.test.mjs'), "// why: catches an old one that the repo already had in it\ntest('old one', () => {});\n");
+	git(cwd, ['add', '-A']);
+	git(cwd, ['commit', '-q', '-m', 'test: first']);
+	fs.appendFileSync(path.join(cwd, 'tests', 'a.test.mjs'), "test('new one', () => {});\n");
+	git(cwd, ['add', '-A']);
+	git(cwd, ['commit', '-q', '-m', 'test: add a why-less one']);
+	const sha = git(cwd, ['rev-parse', 'HEAD']);
+	const FIELDS = { id: 'F1', severity: 'low', status: 'red', where: 'tests/a.test.mjs:2', claim: 'c', proof: 'p', fix: '-' };
+	const role = { role: 'tester', commit: sha, clarity: 'clear', tests: [{ name: 'new one', why: '// why: catches a new one that the record lists with a why' }] };
+	const message = ['Prose.', 'RECORD:', JSON.stringify(role), JSON.stringify(FIELDS)].join('\n');
+	const send = () => spawnSync(process.execPath, [path.resolve('user/kit-hooks/handoff-gate.cjs')], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd }) });
+	const refused = send();
+	assert.equal(refused.status, 0, refused.stderr);
+	let out = null;
+	assert.doesNotThrow(() => { out = JSON.parse(refused.stdout); }, `a decision is printed: ${refused.stdout}`);
+	assert.equal(out && out.hookSpecificOutput && out.hookSpecificOutput.permissionDecision, 'deny', `the why-less new test is refused: ${refused.stdout}`);
+	assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('tests/a.test.mjs::new one'), out.hookSpecificOutput.permissionDecisionReason);
+	// the deny holds when the log cannot be written: the log path is a directory
+	const common = path.join(cwd, '.git');
+	fs.rmSync(path.join(common, 'kit-guard-open.log'), { force: true });
+	fs.mkdirSync(path.join(common, 'kit-guard-open.log'));
+	const unlogged = send();
+	assert.match(unlogged.stdout, /"permissionDecision":"deny"/, `no deny when the log write fails: ${unlogged.stdout}`);
 });
 
 // why: guards rule:agent-role-table (a model named in full or in capitals must not pass the family check under enforce)

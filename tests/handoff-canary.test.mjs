@@ -3,6 +3,7 @@
 import { test } from './harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { FAKE_PHRASE, canary, canaryRepo, makeTemp, runHook } from './kit-helpers.mjs';
 
@@ -108,4 +109,19 @@ test('under enforce, a numeric agent_id that makes canary throw still prints the
 	// Folded control: a valid hand-back with a numeric agent_id is still not refused.
 	const valid = [`${FAKE_PHRASE}`, 'Prose the reviewer wrote.', 'ROLE: reviewer', 'Not checked: nothing', 'RECORD:', ROLE, NOTE_CHECKED].join('\n');
 	assert.equal(handBackEnforced(home, dir, 8, valid).stdout.trim(), '', 'a valid hand-back with a numeric agent_id is not refused');
+});
+
+// why: catches M7 a tester hand-back naming a commit that does not resolve passing the enforce gate with its tests unchecked
+test('M7: under enforce, a tester hand-back naming a commit that does not resolve is refused', () => {
+	const home = enforceHome();
+	const dir = canaryRepo();
+	const role = (commit) => JSON.stringify({ role: 'tester', commit, clarity: 'clear' });
+	const message = (commit) => [`${FAKE_PHRASE}`, 'Prose the tester wrote.', 'ROLE: tester', 'Not checked: nothing', 'RECORD:', role(commit), NOTE_CHECKED].join('\n');
+	const bad = oneObject(handBackEnforced(home, dir, 'm7a', message('0123456789abcdef0123456789abcdef01234567')).stdout);
+	assert.ok(bad, 'a commit that resolves to nothing is refused');
+	assert.equal(bad.hookSpecificOutput.permissionDecision, 'deny');
+	assert.match(bad.hookSpecificOutput.permissionDecisionReason, /0123456789abcdef|commit/, bad.hookSpecificOutput.permissionDecisionReason);
+	// control: the repo's own head resolves, so the same record is not refused
+	const head = spawnSync('git', ['-C', dir, 'rev-parse', 'HEAD'], { encoding: 'utf8' }).stdout.trim();
+	assert.equal(handBackEnforced(home, dir, 'm7b', message(head)).stdout.trim(), '', 'a resolving commit is not refused');
 });

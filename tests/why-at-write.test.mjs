@@ -87,6 +87,26 @@ test('a why that is a bare spec id ("S1: ...") is refused the same way', () => {
 	assert.ok(short.err.includes('too short to name the failure it catches'), 'stderr quotes the too-short reason: ' + short.err);
 });
 
+// why: catches H4 why-less tests written indented, with a variable name, through an alias or in a forEach saving unrefused
+test('H4: a why-less test written indented, with a variable name, through an alias or in a forEach is refused naming its line', () => {
+	const dir = unitRepo();
+	const head = "import { test } from './harness.mjs';\n\n";
+	const forms = {
+		indented: "\ttest('adds two numbers', () => {});\n",
+		'variable name': "const NAME = 'adds';\ntest(NAME, () => {});\n",
+		alias: "const t = test;\nt('adds two numbers', () => {});\n",
+		forEach: "const CASES = ['a', 'b'];\nCASES.forEach((c) => test(`adds ${c}`, () => {}));\n",
+	};
+	for (const [label, body] of Object.entries(forms)) {
+		const bad = fence(dir, 'Write', { file_path: target(dir), content: head + body });
+		assert.equal(bad.code, 2, `a why-less test written as ${label} is refused: ${bad.err}`);
+		assert.ok(bad.err.includes(NO_WHY), `${label}: stderr quotes whyFault: ${bad.err}`);
+	}
+	// control: the indented form with a passing why line saves
+	const ok = fence(dir, 'Write', { file_path: target(dir), content: `${head}\t${GOOD_WHY}\n\ttest('adds two numbers', () => {});\n` });
+	assert.equal(ok.code, 0, 'an indented test with a why saves: ' + ok.err);
+});
+
 // why: catches a test with a passing why line saves (K368 S1)
 test('a test with a passing why line saves', () => {
 	const dir = unitRepo();

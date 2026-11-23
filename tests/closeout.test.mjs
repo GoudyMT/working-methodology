@@ -172,6 +172,13 @@ test('a ticketless test fails naming the file and the defer command', () => {
 	const each = check(mk({ after: (root) => { write(root, 'tests/each.test.mjs', "import { test } from './harness.mjs';\n\n['x', 'y'].forEach((n) => test(`each ${n}`, () => {}));\n"); commit(root, 'each'); } }));
 	assert.equal(each.status, 1);
 	assert.ok(each.stderr.includes('tests/each.test.mjs'), each.stderr);
+	// H4: a test written indented, with a variable name, through an alias or in a forEach over a named array is counted too
+	const offMargin = { indented: "\ttest('indented one', () => {});\n", named: "const NAME = 'named one';\ntest(NAME, () => {});\n", alias: "const t = test;\nt('alias one', () => {});\n", cases: "const CASES = ['a', 'b'];\nCASES.forEach((c) => test(`case ${c}`, () => {}));\n" };
+	for (const [label, body] of Object.entries(offMargin)) {
+		const hidden = check(mk({ after: (root) => { write(root, 'tests/off.test.mjs', "import { test } from './harness.mjs';\n\n" + body); commit(root, 'off margin'); } }));
+		assert.equal(hidden.status, 1, `a new test written as ${label} needs a ticket: ${hidden.stderr}`);
+		assert.ok(hidden.stderr.includes('tests/off.test.mjs'), `${label}: ${hidden.stderr}`);
+	}
 	// a ticketless failure is logged too: one row for the run
 	const root = mk({ after: addTests('orphan') });
 	assert.equal(check(root).status, 1);
@@ -343,6 +350,28 @@ test('a test added by rename, or in a new test file, is still counted', () => {
 	assert.equal(viaMerge.status, 1);
 	assert.ok(viaMerge.stderr.includes('tests/a.test.mjs::orphan'), viaMerge.stderr);
 	assert.ok(!viaMerge.stderr.includes('m.test.mjs'), viaMerge.stderr);
+});
+
+// why: catches M5 a record with its sweep block removed after the closeout commit passing the closeout check unchecked
+test('M5: a record with its sweep removed after the closeout commit fails the check', () => {
+	const gone = check(mk({ after: addTests('orphan'), mutate: (rec) => { delete rec.sweep; } }));
+	assert.equal(gone.status, 1, `a record with no sweep but a closeout file fails: ${gone.stderr}`);
+	assert.match(gone.stderr, /closeout/, gone.stderr);
+	// control: with the sweep kept, the same repo fails on the orphan test, so only the sweep decides the first verdict
+	const kept = check(mk({ after: addTests('orphan') }));
+	assert.equal(kept.status, 1);
+	assert.ok(kept.stderr.includes('tests/a.test.mjs::orphan'), kept.stderr);
+});
+
+// why: catches M6 a new test file with a non-ASCII name read as a quoted path and so left uncounted after closeout
+test('M6: a new test file with a non-ASCII name after the closeout commit needs a ticket', () => {
+	const name = 'tests/café.test.mjs';
+	const fresh = check(mk({ after: (root) => { write(root, name, testFile(['in an accented file'])); commit(root, 'accented file'); } }));
+	assert.equal(fresh.status, 1, `the accented file's test needs a ticket: ${fresh.stderr}`);
+	assert.ok(fresh.stderr.includes(`${name}::in an accented file`), fresh.stderr);
+	// control: the same test in an ASCII-named file is counted the same way
+	const plain = check(mk({ after: (root) => { write(root, 'tests/cafe.test.mjs', testFile(['in an accented file'])); commit(root, 'plain file'); } }));
+	assert.equal(plain.status, 1);
 });
 
 // why: catches defer appends one JSON line to the next-patch file and prints "written, carry on" (K369 S8)
