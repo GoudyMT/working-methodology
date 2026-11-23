@@ -11,6 +11,11 @@ import { fileURLToPath } from 'node:url';
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATES = ['ci-node.yml', 'ci-python.yml'].map((f) => ({ name: f, file: path.join(REPO, 'project', '_Templates', f) }));
 
+// The template's lines with its comment lines dropped: a comment can say 180 or run ci-plan.mjs and mean nothing.
+function codeLines(file) {
+	return fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n').filter((l) => !/^\s*#/.test(l));
+}
+
 // The lines of one top-level job under jobs: (its key at two spaces), up to the next job.
 function jobLines(lines, job) {
 	const at = lines.findIndex((l) => l === `  ${job}:`);
@@ -23,19 +28,24 @@ function jobLines(lines, job) {
 	return out;
 }
 
+// The lines of the one step holding line `at`: from its "- " line to the next line at or left of that indent.
+function stepOf(lines, at) {
+	let start = at;
+	while (start > 0 && !/^\s*- /.test(lines[start])) start--;
+	const indent = lines[start].search(/\S/);
+	const out = [];
+	for (let i = start; i < lines.length; i++) {
+		if (i > start && lines[i].trim() && lines[i].search(/\S/) <= indent) break;
+		out.push(lines[i]);
+	}
+	return out;
+}
+
 // The lines of the one step whose name says budget, from its name line to the next step at the same indent.
 function budgetStep(lines) {
 	const at = lines.findIndex((l) => /^\s*- name:.*budget/i.test(l));
 	if (at < 0) return [];
-	const indent = lines[at].search(/\S/);
-	const out = [lines[at]];
-	for (let i = at + 1; i < lines.length; i++) {
-		const l = lines[i];
-		if (l.trim() && l.search(/\S/) < indent) break;
-		if (l.search(/\S/) === indent && /^\s*- /.test(l)) break;
-		out.push(l);
-	}
-	return out;
+	return stepOf(lines, at);
 }
 
 // Runs the report from a temp project that holds the template as its one workflow.
@@ -53,12 +63,16 @@ function shapeOf(templateFile) {
 // why: catches each template has a plan job, a sized fast matrix and a budget step in ci, and ci-shape shows 0 gaps (CI-D S1)
 test('each template has a plan job, a sized fast matrix and a budget step in ci, and ci-shape shows 0 gaps', () => {
 	for (const { name, file } of TEMPLATES) {
-		const lines = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n').split('\n');
+		const lines = codeLines(file);
 		const plan = jobLines(lines, 'plan');
-		assert.ok(plan.some((l) => /node \.claude\/ci-plan\.mjs/.test(l)), `${name}: plan job runs node .claude/ci-plan.mjs`);
+		const runAt = plan.findIndex((l) => /^\s*(- )?run:.*node \.claude\/ci-plan\.mjs/.test(l));
+		assert.ok(runAt >= 0, `${name}: plan job has a run: line that runs node .claude/ci-plan.mjs`);
+		const shardsOut = plan.map((l) => /^\s+shards:\s*\$\{\{\s*steps\.([\w-]+)\.outputs\.shards\s*\}\}/.exec(l)).find(Boolean);
+		assert.ok(shardsOut, `${name}: plan job exposes outputs.shards from a step`);
+		const planStepId = shardsOut[1];
 		assert.ok(
-			plan.some((l) => /^\s+shards:\s*\$\{\{\s*steps\.[\w-]+\.outputs\.shards\s*\}\}/.test(l)),
-			`${name}: plan job exposes outputs.shards`,
+			stepOf(plan, runAt).some((l) => new RegExp(`^\\s*(- )?id:\\s*${planStepId}\\s*$`).test(l)),
+			`${name}: the ci-plan.mjs step carries id: ${planStepId}, the step the shards output reads`,
 		);
 		const fast = jobLines(lines, 'fast');
 		assert.ok(
@@ -69,9 +83,14 @@ test('each template has a plan job, a sized fast matrix and a budget step in ci,
 			fast.some((l) => /^\s+matrix:\s*\$\{\{\s*fromJSON\(needs\.plan\.outputs\.shards\)\s*\}\}/.test(l)),
 			`${name}: fast job matrix reads fromJSON(needs.plan.outputs.shards)`,
 		);
+		// 180 is seconds: on a run: line or a seconds field, never the step name and never timeout-minutes (180 minutes).
 		const step = budgetStep(jobLines(lines, 'ci'));
 		assert.ok(step.length > 0, `${name}: ci job holds a step whose name says budget`);
-		assert.ok(step.some((l) => /\b180\b/.test(l)), `${name}: the budget step carries 180 in its run or timeout`);
+		const body = step.slice(1).filter((l) => !/timeout-minutes/.test(l));
+		assert.ok(
+			body.some((l) => /\b180\b/.test(l) && (/^\s*(- )?run:/.test(l) || /\bseconds?\b/i.test(l))),
+			`${name}: the budget step carries 180 seconds on a run: line or a seconds field`,
+		);
 		const shape = shapeOf(file);
 		assert.equal(shape.status, 0, `${name}: ci-shape exit ${shape.status} ${shape.stderr}`);
 		assert.match(shape.stdout, /CI shape: 0 gap\(s\)/, `${name}: ci-shape reports gaps: ${shape.stdout}`);
