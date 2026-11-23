@@ -1,0 +1,344 @@
+{
+  "version": "1.51.2",
+  "head": "be137038c3364da3c625e0f023adc280e8cbf09a",
+  "findings": [
+    {
+      "id": "H1",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "CI lanes runs the PR copy of ci-size.mjs and pastes matrix values into run lines"
+    },
+    {
+      "id": "H2",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "test-check and Windows budgets of 720 s and 600 s clash with the 180 s job budget"
+    },
+    {
+      "id": "H3",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "the closeout gate fails open on a git error and on a log error before it runs"
+    },
+    {
+      "id": "H4",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "an indented or aliased test call escapes the why check and the ticket check"
+    },
+    {
+      "id": "H5",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "the hand-back gate ships in log mode, so a why-less hand-back is never refused"
+    },
+    {
+      "id": "H6",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "plan-check --brief writes no Plan, Role, Worktree or Lane line and a title for the unit id"
+    },
+    {
+      "id": "M1",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "the warm hold reads raw Role and Lane lines and misses typed agents"
+    },
+    {
+      "id": "M2",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "the plan key forks on a comma, a dash, a trailing dot or a fragment"
+    },
+    {
+      "id": "M3",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a Role line that names checker after another word is not a checker"
+    },
+    {
+      "id": "M4",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a hold-mode load error turns the high-tier holds to log"
+    },
+    {
+      "id": "M5",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "removing sweep from the record after closeout turns the ticket check off"
+    },
+    {
+      "id": "M6",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a quoted non-ASCII path in the closeout diff is skipped"
+    },
+    {
+      "id": "M7",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "the hand-back test check fails open on an unreadable commit or show"
+    },
+    {
+      "id": "M8",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the dollar reserve leaves out the report call input"
+    },
+    {
+      "id": "M9",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "ci-size fails the lanes job past six runners"
+    },
+    {
+      "id": "M10",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "the changed-test count reads top-level test lines, not changed tests"
+    },
+    {
+      "id": "M11",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "no CI slice step passes the time plan, so slice 0 carries the most"
+    },
+    {
+      "id": "M12",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the fast cap applies to traced map runs on main"
+    },
+    {
+      "id": "M13",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "an over-cap test makes test-check quote the map-written line"
+    },
+    {
+      "id": "M14",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the skill states the warm limit, the holder and the caps loosely"
+    },
+    {
+      "id": "M15",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the brief-steps pins accept a swapped cap sentence"
+    },
+    {
+      "id": "L1",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "unit range"
+    },
+    {
+      "id": "L2",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "ticket ids from free text"
+    },
+    {
+      "id": "L3",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "hand-back log throw"
+    },
+    {
+      "id": "L4",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "owner why word count"
+    },
+    {
+      "id": "L5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "null closeout finding"
+    },
+    {
+      "id": "L6",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "ask code names no commit"
+    },
+    {
+      "id": "L7",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "legacy owner yes lines"
+    },
+    {
+      "id": "L8",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "flip-plan equal costs"
+    },
+    {
+      "id": "L9",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "why-at-write writer role"
+    },
+    {
+      "id": "L10",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "fast-cap one file"
+    },
+    {
+      "id": "L11",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "ruling-proof near misses"
+    },
+    {
+      "id": "L12",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "ci-budget literal pin"
+    },
+    {
+      "id": "L13",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "log row matched by word"
+    },
+    {
+      "id": "L14",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "stale-pick absent sha"
+    },
+    {
+      "id": "L15",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "flip-plan timing ratio"
+    },
+    {
+      "id": "L16",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "retest-step one-line cells"
+    },
+    {
+      "id": "L17",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "Windows fast cap"
+    },
+    {
+      "id": "L18",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "leaf testcase only"
+    },
+    {
+      "id": "L19",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "template action tag"
+    },
+    {
+      "id": "L20",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "pytest-split comment"
+    },
+    {
+      "id": "L21",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "skill list path wording"
+    },
+    {
+      "id": "L22",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "round cap wording"
+    },
+    {
+      "id": "L23",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "reworded why patch number"
+    },
+    {
+      "id": "L24",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "kit-tests reads no test-check"
+    },
+    {
+      "id": "L25",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "budget self name and map part count"
+    }
+  ],
+  "tickets": [
+    "H1",
+    "H2",
+    "H3",
+    "H4",
+    "H5",
+    "H6",
+    "M1",
+    "M2",
+    "M3",
+    "M4",
+    "M5",
+    "M6",
+    "M7",
+    "M10"
+  ]
+}
