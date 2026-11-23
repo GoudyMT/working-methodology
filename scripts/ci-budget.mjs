@@ -75,9 +75,10 @@ function loadHistory(file) {
 	return runs;
 }
 
-// A completed, successful job's time in ms, or undefined.
+// A completed job's time in ms, or undefined. The 1.51.3 sweep: a job cancelled or failed past the limit still ran that
+// long, so its conclusion does not hide its time (main's own runs cancel each other).
 function timeOf(job) {
-	if (job?.status !== 'completed' || job.conclusion !== 'success') return undefined;
+	if (job?.status !== 'completed') return undefined;
 	const ms = Date.parse(job.completed_at) - Date.parse(job.started_at);
 	return Number.isFinite(ms) && ms >= 0 ? ms : undefined;
 }
@@ -139,6 +140,8 @@ function check(opts) {
 			err.push(`FAIL ${v.name}: ${v.reason}`);
 		} else if (v.over) {
 			out.push(`OVER ${v.name}: ${v.ms / 1000} s, over the ${limit} s limit (report only)`, ...slowest(timings, v.name));
+			// The 1.51.3 sweep: an annotation on every run, a PR's too, so a slow job is seen where it was made.
+			out.push(`::warning::${v.name} ran ${v.ms / 1000} s, over the ${limit} s limit`);
 		} else {
 			out.push(`${v.name}: ${v.ms / 1000} s`);
 		}
@@ -153,7 +156,14 @@ function check(opts) {
 		out.push(`::warning::${name} ran over the ${limit} s budget on ${TREND_RUNS} main runs in a row`);
 	}
 	const jobsMs = Object.fromEntries(verdicts.filter((v) => v.ms !== undefined).map((v) => [v.name, v.ms / 1000]));
-	out.push(`ci-budget-json: ${JSON.stringify({ limit, jobs: jobsMs, over, trend })}`);
+	// The 1.51.3 sweep: the line names its run, so totals can tell runs and attempts apart, and keeps failed jobs' times.
+	const failedJobs = verdicts.filter((v) => v.reason !== undefined).map((v) => {
+		const ms = timeOf(jobs.find((j) => j.name === v.name));
+		return { name: v.name, s: ms === undefined ? null : ms / 1000, reason: v.reason };
+	});
+	const env = process.env;
+	const run = { run: env.GITHUB_RUN_ID ?? null, attempt: env.GITHUB_RUN_ATTEMPT ?? null, sha: env.GITHUB_SHA ?? null, event: env.GITHUB_EVENT_NAME ?? null };
+	out.push(`ci-budget-json: ${JSON.stringify({ ...run, limit, jobs: jobsMs, over, trend, failed: failedJobs })}`);
 	return { code: failed ? 1 : 0, out: `${out.join('\n')}\n`, err: err.length ? `${err.join('\n')}\n` : '' };
 }
 
