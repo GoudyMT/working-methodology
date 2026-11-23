@@ -73,7 +73,7 @@ test('a reviewer whose spend plus twice its dearest call plus the report reaches
 	// context (input + cache read + cache creation) at the LAST call's model's cache-read price.
 	const first = { output: DEAR, model: 'claude-sonnet-5-5', reread: 1000000 };
 	const tail = { output: 500, model: 'claude-opus-5', input: 1000, reread: 3000, create: 2000 };
-	const calls2 = [first, ...CHEAP.slice(0, 3), tail];
+	const calls2 = [first, ...CHEAP.slice(0, 3).map((o) => ({ output: o, model: 'claude-sonnet-5-5' })), tail];
 	const spend3 = calls2.map((c) => dollars({ output_tokens: c.output, input_tokens: c.input, cache_read_input_tokens: c.reread, cache_creation_input_tokens: c.create }, c.model));
 	const context = tail.input + tail.reread + tail.create;
 	const reread3 = dollars({ cache_read_input_tokens: context }, tail.model);
