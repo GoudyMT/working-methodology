@@ -2,8 +2,8 @@
   "version": "1.51.3",
   "date": "2026-11-23",
   "level": "patch",
-  "area": "CI",
-  "title": "fix: CI reports job and test time instead of failing on it",
+  "area": "Kit tooling",
+  "title": "fix: time over a limit is a report and a trend, not a failure",
   "headline": "A job or test over its time limit is reported, not failed, and a job over on 3 main runs in a row is named as a trend; the Windows tests run over 2 runners.",
   "alignment": "v1.51.3 is the fix that let 1.51.2 ship: main went red after its merge only because the Windows job ran 189 s against the 180 s limit. It brings K401 and K384 forward from 1.51.4, and the release carries 1.51.2 with it.",
   "items": [
