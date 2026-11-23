@@ -32,15 +32,18 @@ function git(cwd, args) {
 
 // A repo with VERSION committed and a kit-unit-files.txt, so a tester spawn is never held for its list. closeout is the
 // text of the closeout file, committed in HEAD ('commit'), left in the working tree only ('tree'), or absent (null).
-function repo(closeout, where = 'commit') {
+// file names the closeout file (default: this VERSION's); where 'none' makes no commit at all.
+function repo(closeout, where = 'commit', file = CLOSEOUT) {
 	const dir = kitTemp.makeTemp('closeout-spawn-repo-');
 	git(dir, ['init', '-q', '-b', 'main']);
 	fs.writeFileSync(path.join(dir, 'VERSION'), `${VERSION}\n`);
 	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
-	if (closeout !== null && where === 'commit') fs.writeFileSync(path.join(dir, CLOSEOUT), closeout);
-	git(dir, ['add', '-A']);
-	git(dir, ['commit', '-q', '-m', 'start']);
-	if (closeout !== null && where === 'tree') fs.writeFileSync(path.join(dir, CLOSEOUT), closeout);
+	if (where !== 'none') {
+		if (closeout !== null && where === 'commit') fs.writeFileSync(path.join(dir, file), closeout);
+		git(dir, ['add', '-A']);
+		git(dir, ['commit', '-q', '-m', 'start']);
+	}
+	if (closeout !== null && where === 'tree') fs.writeFileSync(path.join(dir, file), closeout);
 	fs.writeFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/closeout-spawn.test.mjs\n');
 	return dir;
 }
@@ -56,9 +59,9 @@ const CONFIG = (() => {
 })();
 
 // Runs the real agent-model.cjs once per call, in order, from cwd; one decision per call, null when it lets the call through.
-function checkCalls(cwd, calls) {
+function checkCalls(cwd, calls, hookDir = HOOK_DIR) {
 	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); process.stdout.write(JSON.stringify(a.calls.map((c) => m.check({ tool_name: 'Agent', tool_input: c, cwd: a.cwd }))));";
-	const args = JSON.stringify({ hookDir: HOOK_DIR, calls, cwd });
+	const args = JSON.stringify({ hookDir, calls, cwd });
 	const r = spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env: isolatedEnv({ KIT_CLAUDE_HOME: CONFIG, CLAUDE_CONFIG_DIR: CONFIG, KIT_TEST_ARGS: args }), encoding: 'utf8' });
 	assert.equal(r.status, 0, `agent-model.cjs check ran: ${r.stderr}`);
 	return JSON.parse(r.stdout);
@@ -80,6 +83,17 @@ test('a checker spawn while a closeout file is committed is refused, printing th
 	const tree = repo(closeoutJson(['F1']), 'tree');
 	const [uncommitted] = checkCalls(tree, [checker()]);
 	assert.equal(uncommitted, null, 'a closeout file only in the working tree does not count');
+	// The refusal follows the closeout-spawn hold: a copy of the hook folder with that hold at log lets the call through and logs it.
+	const hookDir = kitTemp.makeTemp('closeout-spawn-hooks-');
+	fs.cpSync(HOOK_DIR, hookDir, { recursive: true });
+	const holds = JSON.parse(fs.readFileSync(HOLDS, 'utf8'));
+	holds.holds = holds.holds.filter((h) => h.id !== 'closeout-spawn').concat({ id: 'closeout-spawn', hook: 'agent-model.cjs', mode: 'log', tier: 'high' });
+	fs.writeFileSync(path.join(hookDir, 'holds.json'), JSON.stringify(holds));
+	const logDir = repo(closeoutJson(['F1']));
+	const [logged] = checkCalls(logDir, [checker()], hookDir);
+	assert.equal(logged, null, `under log the checker spawn is not refused, got ${JSON.stringify(logged)}`);
+	const rows = fs.readFileSync(path.join(git(logDir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-agent-model.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+	assert.ok(rows.some((r) => JSON.stringify(r).includes('closeout') && r.denied !== true), `the would-be refusal is logged, got ${JSON.stringify(rows)}`);
 });
 
 // why: catches a tester whose brief names an unused ticket passes, and one without is refused (K369 S2)
@@ -92,6 +106,12 @@ test('a tester whose brief names an unused ticket passes, and one without is ref
 	assert.ok(denied(unknown), `a tester naming an id outside the tickets is refused, got ${JSON.stringify(unknown)}`);
 	const [builder] = checkCalls(dir, [{ subagent_type: 'builder', prompt: 'Build the unit.' }]);
 	assert.equal(builder, null, 'other roles are not held');
+	const [bareWriter] = checkCalls(dir, [tester(null, 'writer')]);
+	assert.ok(denied(bareWriter), `a writer with no Ticket: line is refused, got ${JSON.stringify(bareWriter)}`);
+	const prefixed = repo(closeoutJson(['F10']));
+	const [wholeId, kitTester] = checkCalls(prefixed, [tester('F1'), tester(null, 'kit:tester')]);
+	assert.ok(denied(wholeId), `Ticket: F1 does not match the ticket F10, got ${JSON.stringify(wholeId)}`);
+	assert.ok(denied(kitTester), `a kit:tester spawn with no ticket is refused, got ${JSON.stringify(kitTester)}`);
 });
 
 // why: catches no closeout file changes nothing (K369 S3)
@@ -102,6 +122,17 @@ test('no closeout file changes nothing', () => {
 	assert.equal(bare, null, `a ticketless tester is not held without a closeout file, got ${JSON.stringify(bare)}`);
 	assert.equal(builder, null);
 	assert.equal(readRows(openFile(dir)).length, 0, 'no log row when there is nothing to read');
+	const older = repo(closeoutJson(['F1']), 'commit', 'docs/builds/1.50.0.closeout.json');
+	const [oldChecker, oldTester] = checkCalls(older, [checker(), tester(null)]);
+	assert.equal(oldChecker, null, `another version's closeout file does not count, got ${JSON.stringify(oldChecker)}`);
+	assert.equal(oldTester, null, `a ticketless tester passes when only another version has a file, got ${JSON.stringify(oldTester)}`);
+	assert.equal(readRows(openFile(older)).length, 0, 'no log row for another version');
+	const fresh = repo(closeoutJson(['F1']), 'none');
+	const [freshChecker, freshTester, freshBuilder] = checkCalls(fresh, [checker(), tester(null), { subagent_type: 'builder', prompt: 'Build the unit.' }]);
+	assert.equal(freshChecker, null, `a repo with no commit yet holds nothing, got ${JSON.stringify(freshChecker)}`);
+	assert.equal(freshTester, null, `a ticketless tester passes in a repo with no commit, got ${JSON.stringify(freshTester)}`);
+	assert.equal(freshBuilder, null);
+	assert.equal(readRows(openFile(fresh)).length, 0, 'no log row for a repo with no commit');
 	const closed = repo(closeoutJson(['F1']));
 	const [held] = checkCalls(closed, [checker()]);
 	assert.ok(denied(held), 'the same spawn in a repo with the file is held');
@@ -116,6 +147,9 @@ test('a general agent briefed as checker is refused too', () => {
 	assert.ok(denied(noTicket), `a general agent briefed Role: tester with no ticket is refused, got ${JSON.stringify(noTicket)}`);
 	assert.equal(withTicket, null, 'a briefed tester with a listed ticket passes');
 	assert.equal(other, null, 'a briefed builder is not held');
+	const [briefedWriter, testWriter] = checkCalls(dir, [tester(null, 'general-purpose', 'writer'), tester(null, 'general-purpose', 'test-writer')]);
+	assert.ok(denied(briefedWriter), `a general agent briefed Role: writer with no ticket is refused, got ${JSON.stringify(briefedWriter)}`);
+	assert.ok(denied(testWriter), `a general agent briefed Role: test-writer with no ticket is refused, got ${JSON.stringify(testWriter)}`);
 });
 
 // why: catches holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier (K369 S6)
@@ -154,6 +188,14 @@ test('an unreadable closeout file or a hook error blocks the call with "hook err
 	assert.ok(rows.length >= 1, 'a row in kit-guard-open.log');
 	assert.equal(rows[0].hook, 'agent-model');
 	assert.ok(rows[0].cause && rows[0].at, 'the row carries its cause and time');
+	const noList = repo('{}\n');
+	const [listChecker, listTester, listBuilder] = checkCalls(noList, [checker(), tester('F1'), { subagent_type: 'builder', prompt: 'Build the unit.' }]);
+	assert.ok(denied(listChecker), `a closeout file with no tickets array is unreadable, got ${JSON.stringify(listChecker)}`);
+	assert.match(reason(listChecker), /hook error: lead review/);
+	assert.ok(denied(listTester), `a tester spawn is blocked too, got ${JSON.stringify(listTester)}`);
+	assert.match(reason(listTester), /hook error: lead review/);
+	assert.equal(listBuilder, null, 'a builder spawn needs no check, so it passes');
+	assert.ok(readRows(openFile(noList)).length >= 1, 'the missing tickets array is logged');
 	const clean = repo(closeoutJson(['F1']));
 	const [fine] = checkCalls(clean, [tester('F1')]);
 	assert.equal(fine, null, 'a readable file is not an error');
