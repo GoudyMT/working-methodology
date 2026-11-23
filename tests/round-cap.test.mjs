@@ -314,10 +314,14 @@ test('M2 a plan spelled with a comma, dash, dot or fragment is the same plan', (
 // why: catches M3 a Role line naming the checker as a phrase escaping the round cap
 test('M3 a Role line that names the checker as a word counts as a checker', () => {
 	const phrased = (role) => ({ subagent_type: 'general-purpose', prompt: `Plan: PLAN.md\nUnit: U17\nRole: ${role}\nCheck.` });
-	const [, , third] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased('the checker for U17')]);
-	assert.ok(denied(third), `"Role: the checker for U17" is a checker and is the third round, got ${JSON.stringify(third)}`);
-	const [, , tester] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased('the tester for U17')]);
-	assert.equal(tester, null, `a tester phrase is no checker, got ${JSON.stringify(tester)}`);
+	for (const role of ['the checker for U17', 'second checker']) {
+		const [, , third] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased(role)]);
+		assert.ok(denied(third), `"Role: ${role}" is a checker and is the third round, got ${JSON.stringify(third)}`);
+	}
+	for (const role of ['the tester for U17', 'checkers-list', 'rechecker']) {
+		const [, , other] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased(role)]);
+		assert.equal(other, null, `"Role: ${role}" is no checker, got ${JSON.stringify(other)}`);
+	}
 });
 
 // why: catches M4 a hold-mode.cjs that throws leaving the round-cap hold open for a checker
@@ -327,4 +331,10 @@ test('M4 a hold-mode.cjs that throws makes round-cap refuse', () => {
 	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), "'use strict';\nexports.mode = () => { throw new Error('holds unreadable'); };\n");
 	const [spawn] = checkCalls(repo(), [checker('U17')], hookDir);
 	assert.ok(denied(spawn), `a throwing hold-mode refuses the checker spawn, got ${JSON.stringify(spawn)}`);
+	const loadDir = kitTemp.makeTemp('round-cap-hooks-');
+	fs.cpSync(HOOK_DIR, loadDir, { recursive: true });
+	fs.writeFileSync(path.join(loadDir, 'hold-mode.cjs'), "'use strict';\nthrow new Error('hold-mode failed to load');\n");
+	const [loadFail] = checkCalls(repo(), [checker('U17')], loadDir);
+	assert.ok(denied(loadFail), `a hold-mode.cjs that throws at load refuses the checker spawn, got ${JSON.stringify(loadFail)}`);
+	assert.match(reason(loadFail), /hook error/, 'the refusal names the hook error');
 });

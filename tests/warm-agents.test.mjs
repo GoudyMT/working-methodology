@@ -243,8 +243,11 @@ test('M1 a typed tester and a bold-marked Role brief are open warm agents', () =
 	// Agent a1 has no Role line: its type is in agent-a1.meta.json, as sweep-guard.cjs reads it.
 	fs.writeFileSync(path.join(s.subagents, 'agent-a1.jsonl'), `${[user('Lane: A\nDo the unit.'), assistant('m-a1', usage(50000))].join('\n')}\n`);
 	fs.writeFileSync(path.join(s.subagents, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'tester' }));
-	fs.writeFileSync(path.join(s.subagents, 'agent-a2.jsonl'), `${[user('- **Role:** Tester\n- **Lane:** B\nDo the unit.'), assistant('m-a2', usage(50000))].join('\n')}\n`);
-	const [typed, marked] = checkInputs(repo(), s, [spawn('tester', 'A'), spawn('tester', 'B')]);
+	fs.writeFileSync(path.join(s.subagents, 'agent-a2.jsonl'), `${[user('- **Role:** Tester for U3 (lane B)\n- **Lane:** B\nDo the unit.'), assistant('m-a2', usage(50000))].join('\n')}\n`);
+	fs.writeFileSync(path.join(s.subagents, 'agent-a3.jsonl'), `${[user('Lane: C\nDo the unit.'), assistant('m-a3', usage(50000))].join('\n')}\n`);
+	fs.writeFileSync(path.join(s.subagents, 'agent-a3.meta.json'), JSON.stringify({ agentType: 'kit:tester' }));
+	const [typed, marked, plugin] = checkInputs(repo(), s, [spawn('tester', 'A'), spawn('tester', 'B'), spawn('tester', 'C')]);
+	assert.ok(denied(plugin), `a kit:tester agent of lane C holds a fresh tester, got ${JSON.stringify(plugin)}`);
 	assert.ok(denied(typed), `a typed tester of lane A with no Role line holds a fresh tester, got ${JSON.stringify(typed)}`);
 	assert.ok(denied(marked), `a "- **Role:** Tester" brief of lane B holds a fresh tester, got ${JSON.stringify(marked)}`);
 });

@@ -74,7 +74,7 @@ const denied = (d) => d && d.hookSpecificOutput && d.hookSpecificOutput.permissi
 const reason = (d) => (d && d.hookSpecificOutput && d.hookSpecificOutput.permissionDecisionReason) || '';
 const DEFER = /closeout\.mjs defer "/;
 
-// why: catches a checker spawn while a closeout file is committed is refused, printing the defer command (K369 S1)
+// why: catches a checker spawn while a closeout file is committed is refused, printing the defer command, and a throwing hold-mode.cjs failing open (K369 S1, M4)
 test('a checker spawn while a closeout file is committed is refused, printing the defer command', () => {
 	const dir = repo(closeoutJson(['F1']));
 	const [spawn] = checkCalls(dir, [checker()]);
@@ -155,6 +155,9 @@ test('a general agent briefed as checker is refused too', () => {
 	const [briefedWriter, testWriter] = checkCalls(dir, [tester(null, 'general-purpose', 'writer'), tester(null, 'general-purpose', 'test-writer')]);
 	assert.ok(denied(briefedWriter), `a general agent briefed Role: writer with no ticket is refused, got ${JSON.stringify(briefedWriter)}`);
 	assert.ok(denied(testWriter), `a general agent briefed Role: test-writer with no ticket is refused, got ${JSON.stringify(testWriter)}`);
+	const [phraseTester, phraseWriter] = checkCalls(dir, [tester(null, 'general-purpose', 'the tester for F1'), tester(null, 'general-purpose', 'second writer')]);
+	assert.ok(denied(phraseTester), `"Role: the tester for F1" with no ticket is refused, got ${JSON.stringify(phraseTester)}`);
+	assert.ok(denied(phraseWriter), `"Role: second writer" with no ticket is refused, got ${JSON.stringify(phraseWriter)}`);
 });
 
 // why: catches holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier (K369 S6)
@@ -278,12 +281,25 @@ test('a git that cannot run inside the closeout gate refuses the spawn', () => {
 // why: catches H3 a git exit 128 or an unwritable agent log letting a ticketless tester through the closeout gate
 test('H3 a git that exits 128, or a log that cannot be written, still refuses a ticketless tester in closeout', () => {
 	const broken = repo(closeoutJson(['F1']));
-	fs.writeFileSync(path.join(broken, '.git', 'HEAD'), 'ref: refs/heads/\n');
-	const [sick] = checkCalls(broken, [tester(null)]);
+	fs.rmSync(path.join(broken, '.git'), { recursive: true, force: true });
+	fs.writeFileSync(path.join(broken, '.git'), 'gitdir: ./missing\n');
+	const probe = spawnSync('git', ['-C', broken, 'rev-parse', '--verify', '-q', 'HEAD'], { env: isolatedEnv(), encoding: 'utf8' });
+	assert.equal(probe.status, 128, `the fixture must make git exit 128, got ${probe.status}: ${probe.stderr}`);
+	const [sick, sickWriter] = checkCalls(broken, [tester(null), tester(null, 'writer')]);
 	assert.ok(denied(sick), `a rev-parse that exits 128 refuses the ticketless tester, got ${JSON.stringify(sick)}`);
+	assert.match(reason(sick), /hook error|closeout/, 'refused by the closeout gate, not another');
+	assert.ok(denied(sickWriter), `and the ticketless writer, got ${JSON.stringify(sickWriter)}`);
+	// Control: a plain folder that is not a repo has no closeout, so a ticketless tester passes.
+	const plain = kitTemp.makeTemp('closeout-spawn-plain-');
+	const [plainTester] = checkCalls(plain, [tester(null)]);
+	assert.equal(plainTester, null, `a folder that is not a repo holds nothing, got ${JSON.stringify(plainTester)}`);
+	// The list file stays, so the list gate passes and only the closeout gate can refuse. A no-type spawn logs a row first,
+	// and the log is a folder there, so the write throws.
 	const dir = repo(closeoutJson(['F1']));
-	fs.rmSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']));
 	fs.mkdirSync(path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-agent-model.log'));
-	const [logged] = checkCalls(dir, [tester(null)]);
+	const [logged, loggedWriter] = checkCalls(dir, [tester(null, '', 'tester'), tester(null, '', 'writer')]);
 	assert.ok(denied(logged), `a log write error cannot let a ticketless tester through in closeout, got ${JSON.stringify(logged)}`);
+	assert.match(reason(logged), /hook error|closeout/, 'refused by the closeout gate, not the list gate');
+	assert.doesNotMatch(reason(logged), /kit-unit-files/);
+	assert.ok(denied(loggedWriter), `nor a ticketless writer, got ${JSON.stringify(loggedWriter)}`);
 });
