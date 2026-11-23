@@ -1072,3 +1072,28 @@ test('pre-push holds a merge into main that restores the copy a remote branch ho
 	}
 });
 
+// why: catches a feature tip's test edit that a merge of main resolves back to main's copy pushed unheld, since the merge still differs from the feature tip it sits on
+test('pre-push holds a merge of main that resolves a feature test edit back to main, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// The remote feat/x holds an edit to tests/add.test.mjs.
+		git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'test: tighten the add case');
+		git(dir, ['push', '-q', 'origin', `${edit}:refs/heads/feat/x`]);
+		// Main changes the same test, so the merge conflicts and is resolved to main's copy.
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		commit(dir, 'test: tighten the main case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		git(dir, ['checkout', '-q', 'feat/x']);
+		assert.notEqual(mergeRef(dir, 'main').status, 0, 'the two test edits conflict');
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		const merge = commit(dir, 'merge main');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${edit}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge that resolves the feature test edit back to main's copy: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
