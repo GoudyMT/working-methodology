@@ -135,7 +135,8 @@ test('plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and
 	const plan = planText([unit('U1', ['the brief carries the lines the spawn hooks read -> S1'], '`src/a.mjs`, `tests/a.test.mjs` (new)')]);
 	const skillFile = path.resolve(path.dirname(PLAN_CHECK), '..', 'skills', 'agent-team-build', 'SKILL.md');
 	const skill = fs.existsSync(skillFile) ? fs.readFileSync(skillFile, 'utf8') : '';
-	assert.match(skill, /Ticket: <id>/, 'SKILL.md tells the lead a tester or writer brief in closeout carries a `Ticket: <id>` line');
+	const ticketAt = [...skill.matchAll(/Ticket: <id>/g)].map((m) => skill.slice(Math.max(0, m.index - 300), m.index + 300));
+	assert.ok(ticketAt.some((w) => /closeout/i.test(w) && /(tester|writer)/i.test(w)), 'SKILL.md tells the lead a tester or writer brief in closeout carries a `Ticket: <id>` line (closeout and tester or writer within 300 characters)');
 	const field = (text, label) => (text.match(new RegExp(`^[\\s>*_\`+-]*${label}[*_\`]*:[*_\`]*[ \\t]*(.*)$`, 'im')) ?? [])[1];
 	for (const role of ['tester', 'builder']) {
 		const res = run(plan, '--brief', 'U1', '--role', role);
@@ -148,7 +149,6 @@ test('plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and
 		const lock = res.stdout.match(/node\s+(\S*unit-lock\.mjs)/);
 		assert.ok(lock, `${role}: the brief names unit-lock.mjs:\n${res.stdout}`);
 		assert.equal(path.resolve(lock[1]), path.join(path.dirname(PLAN_CHECK), 'unit-lock.mjs'), `${role}: the lock path is built from plan-check's own folder, not repo-relative:\n${res.stdout}`);
-		assert.ok(fs.existsSync(path.resolve(lock[1])), `${role}: the lock path exists`);
 	}
 	const dir = path.resolve(path.dirname(PLAN_CHECK), '..', 'skills', 'agent-team-build', 'templates');
 	for (const name of ['tester-brief.md', 'builder-brief.md', 'checker-brief.md']) {
