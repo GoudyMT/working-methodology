@@ -107,3 +107,20 @@ test('a decision line whose head cannot be read stays uncleared, logged', () => 
     assert.equal(mine.length, 1, `${name}: rows ${JSON.stringify(rows)}`);
   }
 });
+
+// why: catches an uncleared line logged again on every run, or a line with no owner yes logged at all (K357 C4)
+test('a decision with an unreadable head and no owner yes writes no row, and the same uncleared line read by two runs writes one', () => {
+  const dir = sweepRepo();
+  const f = contractIn(dir);
+  const noYes = path.join(dir, 'sweeps', 'noyes.json');
+  const guardLog = path.join(dir, '.git', 'kit-guard-open.log');
+  const rowsFor = (file) => (fs.existsSync(guardLog) ? read(guardLog).split('\n').filter(Boolean) : []).filter((l) => /no readable head/.test(l) && l.includes(path.basename(file)));
+  const odd = { not: 'a commit' };
+  chain(dir, [decisionAt(dir, noYes, odd), decisionAt(dir, f, odd), yesFor(f, { head: odd }), ranFor(f)]);
+  approveRun(featureContract(), dir);
+  assert.equal(rowsFor(noYes).length, 0, 'a line the owner never said yes to has nothing to clear and gets no row');
+  assert.equal(rowsFor(f).length, 1, 'the first run logs the uncleared line');
+  approveRun(featureContract(), dir);
+  assert.equal(rowsFor(f).length, 1, `a second run over the same line wrote another row: ${read(guardLog)}`);
+  assert.equal(rowsFor(noYes).length, 0, 'still no row for the line with no yes');
+});
