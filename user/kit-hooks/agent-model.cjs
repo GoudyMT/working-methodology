@@ -146,7 +146,7 @@ function isChecker(type, prompt) {
 }
 
 // The canonical unit ids in a text: each match of /[A-Z]+\d+[a-z]?/i, upper-cased, so case, markup and trailing text cannot change an id.
-const idsOf = (text) => (String(text).match(/[A-Z]+\d+[a-z]?/gi) || []).map((s) => s.toUpperCase());
+const idsOf = (text) => (String(text).match(/[A-Z]+\d+[a-z]?/gi) || []).map((s) => s.toUpperCase().replace(/^([A-Z]+)0+(?=\d)/, '$1'));
 
 // The unit ids on a spawn's Unit: line; [] when there is no such line or it names no id.
 function unitsOf(prompt) {
@@ -171,8 +171,9 @@ function roundCounts(common) {
 	return counts;
 }
 
-// The round cap for a checker spawn. A spawn whose Unit: line is missing or names no id, or a unit with ROUND_LIMIT counted
-// rounds already, is refused (under the round-cap hold's enforce mode). Every checked spawn appends a check row to the repo's
+// The round cap for a checker spawn. A spawn with a Plan: line whose Unit: line is missing or names no id, or a unit with
+// ROUND_LIMIT counted rounds already, is refused (under the round-cap hold's enforce mode). A bare checker with no Plan: line
+// is not refused for its missing id. Every checked spawn appends a check row to the repo's
 // kit-check-rounds.log, denied when refused. An error in this check refuses with "hook error: lead review" whatever the hold
 // says, and appends its cause to kit-guard-open.log.
 function roundGate(cwd, type, model, prompt) {
@@ -183,7 +184,7 @@ function roundGate(cwd, type, model, prompt) {
 		common = commonDir(cwd);
 		const counts = common === null ? new Map() : roundCounts(common);
 		const capped = units.find((u) => (counts.get(u) || 0) >= ROUND_LIMIT);
-		const why = units.length === 0
+		const why = units.length === 0 && /^[ \t]*plan:/im.test(prompt)
 			? 'a checker spawn names no unit: its Unit: line must name a unit id, such as Unit: U17'
 			: capped !== undefined ? `a third check round on ${capped} is refused: what is still open goes to the next patch list; CI is the gate.` : null;
 		const refuse = why !== null && hold.mode === 'enforce';
