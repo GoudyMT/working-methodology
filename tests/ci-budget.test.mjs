@@ -205,7 +205,7 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 	);
 	assert.match(line, /--skip minimal-code(\s|$)/);
 	// The 1.51.3 sweep (M8): a failed fetch of the earlier main runs warns and skips the trend; it never fails the check.
-	assert.match(kit, /if fetch_history; then[\s\S]*?else\s+echo "::warning::the earlier main runs could not be read/);
+	assert.match(kit, /if fetch_history; then[\s\S]*?else\s+echo "::warning::the earlier main runs could not be read/); // pin: 1 (GitHub reads the workflow line)
 	// M6: the Windows step takes its slice and its count from the matrix itself, so no part can be dropped unseen.
 	const win = (yml.split(/^  windows-tests:$/m)[1] || '').split(/^  [A-Za-z0-9_-]+:$/m)[0];
 	assert.match(win, /PART: \$\{\{ strategy\.job-index \}\}/);
@@ -290,8 +290,8 @@ test('a job over the limit on 3 main runs in a row is named as a trend, and 2 in
 	const under = [job('windows-tests (0)', 120), job('lint', 20)];
 	const three = run(now, { history: [over, over] });
 	assert.equal(three.status, 0, `${three.stdout}${three.stderr}`);
-	assert.match(three.stdout, /TREND windows-tests \(0\): over the 180 s limit on 3 main runs in a row: open a list row/);
-	assert.match(three.stdout, /^::warning::windows-tests \(0\) ran over the 180 s budget on 3 main runs in a row$/m);
+	assert.match(three.stdout, /TREND windows-tests \(0\): over the 180 s limit on 3 main runs in a row: open a list row/); // pin: 1 (the TREND line opens a list row)
+	assert.match(three.stdout, /^::warning::windows-tests \(0\) ran over the 180 s budget on 3 main runs in a row$/m); // pin: 1 (GitHub reads a ::warning:: line)
 	assert.doesNotMatch(three.stdout, /TREND lint/);
 	// The 1.51.3 sweep: every job over the limit is a warning on any run, a PR's included, not only a trend.
 	assert.match(three.stdout, /^::warning::windows-tests \(0\) ran 190 s, over the 180 s limit$/m);
