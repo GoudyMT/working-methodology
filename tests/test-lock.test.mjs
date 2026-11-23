@@ -311,7 +311,7 @@ test('pre-push refuses a push whose range holds a retest: commit, names it and s
 });
 
 
-// why: guards rule:test-integrity (a retest: starting a longer push is held and named, and an update push of a retest the remote holds is not re-refused)
+// why: catches an update push that passes while the remote's main lacks the merge of a retest, or is held once that merge is on the remote's main
 test('pre-push refuses a three-commit push whose first commit is a retest:, naming that commit, and lets an update push pass when the remote holds that retest', () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -333,6 +333,8 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 		git(d2, ['push', '-q', 'origin', 'topic']);
 		git(d2, ['checkout', '-q', 'main']);
 		git(d2, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
+		// Main is pushed before the update, so the remote's main holds the merge the update carries.
+		git(d2, ['push', '-q', 'origin', 'main']);
 		git(d2, ['checkout', '-q', '-b', 'feat/x', r2]);
 		put(d2, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
 		const first = commit(d2, 'feat: first add');
@@ -343,6 +345,26 @@ test('pre-push refuses a three-commit push whose first commit is a retest:, nami
 		const up = pushRun(PROJECT_PRE_PUSH, d2, b2, `refs/heads/feat/x ${next} refs/heads/feat/x ${first}\n`);
 		assert.equal(up.status, 0, `the update push goes through: ${up.stderr}`);
 		assert.doesNotMatch(up.stderr, /retest/);
+	}
+	// Main not pushed: the same update is held, since the remote's main lacks the merge the update carries.
+	{
+		const { dir: d3, red: r3, bare: b3 } = pushRepo();
+		git(d3, ['checkout', '-q', '-b', 'topic']);
+		put(d3, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		commit(d3, 'retest: tighten the add case');
+		git(d3, ['push', '-q', 'origin', 'topic']);
+		git(d3, ['checkout', '-q', 'main']);
+		git(d3, ['merge', '-q', '--no-ff', '-m', 'merge topic', 'topic']);
+		git(d3, ['checkout', '-q', '-b', 'feat/x', r3]);
+		put(d3, { 'src/add.js': 'export const add = (a, b) => a + b + 0;\n' });
+		const first3 = commit(d3, 'feat: first add');
+		git(d3, ['push', '-q', 'origin', 'feat/x']);
+		git(d3, ['merge', '-q', '--no-edit', 'main']);
+		put(d3, { 'src/util.js': 'export const id = (x) => x + 0;\n' });
+		const next3 = commit(d3, 'feat: tidy util');
+		const held3 = pushRun(PROJECT_PRE_PUSH, d3, b3, `refs/heads/feat/x ${next3} refs/heads/feat/x ${first3}\n`);
+		assert.notEqual(held3.status, 0, `the update push passed with main unpushed, so the remote lacks the retest's merge: ${held3.stderr}`);
+		assert.match(held3.stderr, HOLD_RE);
 	}
 });
 
@@ -711,7 +733,7 @@ test('pre-push holds an edit of a test file whose name has a space, in both hook
 });
 
 // why: catches a test path with a newline in its name pushed unheld. Index-only, since git refuses such a path on Windows.
-test('pre-push holds an edit of a test file whose name has a newline, in both hooks', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows' }, () => {
+test('pre-push holds an edit of a test file whose name has a newline, in both hooks', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows; the Linux unit-tests job in .github/workflows/ci.yml runs it' }, () => {
 	const name = 'tests/add\ncase.test.mjs';
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
@@ -916,8 +938,8 @@ test('pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add
 	}
 });
 
-// why: catches a merge that deletes a test file pushed unheld when a remote tip also lacks it, since an absent blob reads as one a remote holds
-test('pre-push holds a merge that deletes an existing test file although a remote tip lacks it, and passes a merge bringing a blob a remote tip holds, in both hooks', () => {
+// why: catches a merge that deletes a test file pushed unheld when a remote tip also lacks it, and a merge of a blob only a side branch holds passed as trusted
+test('pre-push holds a merge that deletes an existing test file although a remote tip lacks it, passes a merge bringing a blob the remote main holds, and holds one only a side branch holds, in both hooks', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -939,21 +961,36 @@ test('pre-push holds a merge that deletes an existing test file although a remot
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
 		assert.notEqual(r.status, 0, `${hook} passed a merge that deletes tests/add.test.mjs: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
-		// Folded control: a merge that brings in a test blob a remote branch tip already holds is not held.
+		// Folded control: a merge brings a test blob the remote main holds, so it is not held. The blob goes to main first.
 		const ctl = pushRepo();
 		firstPushDone(ctl.dir);
 		git(ctl.dir, ['checkout', '-q', '-b', 'side', ctl.red]);
 		put(ctl.dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 		const tightened = commit(ctl.dir, 'test: tighten the add case');
-		git(ctl.dir, ['push', '-q', 'origin', `${tightened}:refs/heads/side`]);
+		git(ctl.dir, ['push', '-q', 'origin', `${tightened}:refs/heads/main`]);
 		git(ctl.dir, ['checkout', '-q', '-b', 'feat/x', ctl.red]);
 		put(ctl.dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
 		commit(ctl.dir, 'feat: tune add');
 		assert.equal(mergeRef(ctl.dir, 'side').status, 0, 'merging side is clean');
 		const ctlMerge = git(ctl.dir, ['rev-parse', 'HEAD']);
 		const ok = pushRun(hook, ctl.dir, ctl.bare, `refs/heads/feat/x ${ctlMerge} refs/heads/feat/x ${ZERO}\n`);
-		assert.equal(ok.status, 0, `${hook} held a merge whose test blob a remote tip holds: ${ok.stderr}`);
+		assert.equal(ok.status, 0, `${hook} held a merge whose test blob the remote main holds: ${ok.stderr}`);
 		assert.doesNotMatch(ok.stderr, HOLD_RE);
+		// The same merge with the blob only on the side branch: a side branch is not a trusted source, so it is held.
+		const only = pushRepo();
+		firstPushDone(only.dir);
+		git(only.dir, ['checkout', '-q', '-b', 'side', only.red]);
+		put(only.dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const onlyTight = commit(only.dir, 'test: tighten the add case');
+		git(only.dir, ['push', '-q', 'origin', `${onlyTight}:refs/heads/side`]);
+		git(only.dir, ['checkout', '-q', '-b', 'feat/x', only.red]);
+		put(only.dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
+		commit(only.dir, 'feat: tune add');
+		assert.equal(mergeRef(only.dir, 'side').status, 0, 'merging side is clean');
+		const onlyMerge = git(only.dir, ['rev-parse', 'HEAD']);
+		const held = pushRun(hook, only.dir, only.bare, `refs/heads/feat/x ${onlyMerge} refs/heads/feat/x ${ZERO}\n`);
+		assert.notEqual(held.status, 0, `${hook} passed a merge whose test blob only a side branch holds: ${held.stderr}`);
+		assert.match(held.stderr, HOLD_RE);
 	}
 });
 
@@ -1001,3 +1038,200 @@ test('pre-push reads the test-change helper exit: 10 holds with or without a nam
 		assert.notEqual(r.status, 0, `${hook} passed a push with its test-change helper missing: ${r.stderr}`);
 	}
 });
+
+// why: catches a merge to main that restores a weak test copy and drops another test pushed unheld, since its diff against a first parent forked before the test existed is empty
+test('pre-push holds a merge to main that restores a weak test copy and drops another test, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// Main holds the strong copy and a second test; the remote main holds both.
+		put(dir, { 'tests/strong.test.mjs': 'test("strong", () => {});\n', 'tests/other.test.mjs': 'test("other", () => {});\n' });
+		const mainTip = commit(dir, 'test: add the strong and other cases');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		// The branch forks from red, before either test existed, and adds a weak copy of the strong one.
+		git(dir, ['checkout', '-q', '-b', 'old', red]);
+		put(dir, { 'tests/strong.test.mjs': 'test("ok", () => {});\n' });
+		commit(dir, 'feat: add the strong case');
+		// -s ours keeps the branch's tree, so the merge holds the weak copy and no other test; its first parent is the branch.
+		assert.equal(mergeRef(dir, 'main', ['-s', 'ours']).status, 0, 'the ours merge is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/main ${merge} refs/heads/main ${mainTip}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge to main that restores a weak tests/strong.test.mjs and drops tests/other.test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a weak test pushed on an orphan branch, then merged into main keeping its copy, passed unheld since the orphan's own push is a fresh add
+test('pre-push passes an orphan branch that adds a weak test, then holds the merge that keeps that copy in main, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		git(dir, ['checkout', '-q', '--orphan', 'feat/orphan-weak']);
+		git(dir, ['rm', '-r', '-q', '-f', '.']);
+		put(dir, { 'tests/add.test.mjs': 'test("ok", () => {});\n' });
+		const orphan = commit(dir, 'test: add a weak add case');
+		// The orphan's first push is a fresh add of its test, so it passes.
+		const up = pushRun(hook, dir, bare, `refs/heads/feat/orphan-weak ${orphan} refs/heads/feat/orphan-weak ${ZERO}\n`);
+		assert.equal(up.status, 0, `${hook} held the orphan branch's first push, which only adds a test: ${up.stderr}`);
+		git(dir, ['checkout', '-q', 'main']);
+		assert.notEqual(mergeRef(dir, 'feat/orphan-weak', ['--allow-unrelated-histories']).status, 0, 'the two tests/add.test.mjs adds conflict');
+		// The merge keeps the weak copy over main's strong one.
+		put(dir, { 'tests/add.test.mjs': 'test("ok", () => {});\n' });
+		const merge = commit(dir, 'merge orphan');
+		const r = pushRun(hook, dir, bare, `refs/heads/main ${merge} refs/heads/main ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge into main that keeps the orphan's weak tests/add.test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a merge into main that restores the copy a remote branch holds over main's newer copy, pushed unheld since its first parent is that branch
+test('pre-push holds a merge into main that restores the copy a remote branch holds, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// The remote branch feat/a holds the copy "adds two".
+		git(dir, ['checkout', '-q', '-b', 'feat/a', red]);
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const featA = commit(dir, 'test: tighten the add case');
+		git(dir, ['push', '-q', 'origin', `${featA}:refs/heads/feat/a`]);
+		// Main moves on to a newer copy and the remote main takes it.
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		const mainTip = commit(dir, 'test: tighten the main case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		// The merge takes feat/a's tree, so its diff against its first parent is empty while main's copy is replaced.
+		git(dir, ['checkout', '-q', 'feat/a']);
+		assert.equal(mergeRef(dir, 'main', ['-s', 'ours']).status, 0, 'the ours merge is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/main ${merge} refs/heads/main ${mainTip}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge into main that restores the copy remote feat/a holds: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a feature tip's test edit that a merge of main resolves back to main's copy pushed unheld, since the merge still differs from the feature tip it sits on
+test('pre-push holds a merge of main that resolves a feature test edit back to main, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// The remote feat/x holds an edit to tests/add.test.mjs.
+		git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'test: tighten the add case');
+		git(dir, ['push', '-q', 'origin', `${edit}:refs/heads/feat/x`]);
+		// Main changes the same test, so the merge conflicts and is resolved to main's copy.
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		commit(dir, 'test: tighten the main case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		git(dir, ['checkout', '-q', 'feat/x']);
+		assert.notEqual(mergeRef(dir, 'main').status, 0, 'the two test edits conflict');
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		const merge = commit(dir, 'merge main');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${edit}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge that resolves the feature test edit back to main's copy: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a merge of a main that dropped a test the feature never touched held, and a test the feature added then dropped in a merge passed, since only the first is a net change from main
+test('pre-push passes a merge of main that drops a test the feature never touched, and holds a drop of a test the branch added, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// main holds tests/old.test.mjs, and the remote main holds it too.
+		put(dir, { 'tests/old.test.mjs': 'test("old", () => {});\n' });
+		commit(dir, 'test: add the old case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		// feat/y forks from main before the drop and never touches tests/old.test.mjs.
+		git(dir, ['checkout', '-q', '-b', 'feat/y']);
+		put(dir, { 'src/util.js': 'export const id = (x) => x + 2;\n' });
+		const featY = commit(dir, 'feat: tune util');
+		git(dir, ['push', '-q', 'origin', `${featY}:refs/heads/feat/y`]);
+		// A PR drops the old test on main, and the remote main takes the drop.
+		git(dir, ['checkout', '-q', 'main']);
+		git(dir, ['rm', '-q', 'tests/old.test.mjs']);
+		commit(dir, 'test: drop the old case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		git(dir, ['checkout', '-q', 'feat/y']);
+		assert.equal(mergeRef(dir, 'main').status, 0, 'merging main is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const ok = pushRun(hook, dir, bare, `refs/heads/feat/y ${merge} refs/heads/feat/y ${featY}\n`);
+		assert.equal(ok.status, 0, `${hook} held a merge of main that drops a test the branch never touched: ${ok.stderr}`);
+		assert.doesNotMatch(ok.stderr, HOLD_RE);
+		// Control: a test feat/z adds itself, then a merge with main drops, is held.
+		git(dir, ['checkout', '-q', '-b', 'feat/z', red]);
+		put(dir, { 'tests/mine.test.mjs': 'test("mine", () => {});\n' });
+		const mine = commit(dir, 'test: add the mine case');
+		git(dir, ['push', '-q', 'origin', `${mine}:refs/heads/feat/z`]);
+		assert.equal(mergeRef(dir, 'main', ['--no-commit']).status, 0, 'merging main is clean');
+		git(dir, ['rm', '-q', 'tests/mine.test.mjs']);
+		const dropped = commit(dir, 'merge main and drop the mine case');
+		const held = pushRun(hook, dir, bare, `refs/heads/feat/z ${dropped} refs/heads/feat/z ${mine}\n`);
+		assert.notEqual(held.status, 0, `${hook} passed a merge that drops a test the branch added: ${held.stderr}`);
+		assert.match(held.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a push whose remote value this clone never fetched passed or held without saying so, since the hold must fail closed and name the fix
+test('pre-push holds a push whose remote value is not a local commit, and says fetch first, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// Another clone pushes feat/x, so the remote holds a commit this clone never fetched.
+		const parent = kitTemp.makeTemp('lock-other-');
+		git(parent, ['clone', '-q', bare, 'clone']);
+		const other = path.join(parent, 'clone');
+		git(other, ['checkout', '-q', '-b', 'feat/x', 'origin/main']);
+		put(other, { 'src/util.js': 'export const id = (x) => x + 5;\n' });
+		const remoteOnly = commit(other, 'feat: tune util elsewhere');
+		git(other, ['push', '-q', 'origin', 'feat/x']);
+		// This clone's feat/x is a different commit, and it names the remote's value as the old one.
+		git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 3;\n' });
+		const tip = commit(dir, 'feat: tune add');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${tip} refs/heads/feat/x ${remoteOnly}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a push whose remote value this clone never fetched: ${r.stderr}`);
+		assert.match(r.stderr, /fetch first/);
+	}
+});
+
+// why: catches a merge that changes a test path passed on a remote with no default branch, since a missing default must hold the change, not let it through
+test('pre-push holds a merge that changes a test path on a remote with no default branch, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, bare } = pushRepo();
+		firstPushDone(dir);
+		// The bare repo's HEAD names a branch the remote does not have, so ls-remote reports no default branch.
+		fs.writeFileSync(path.join(bare, 'HEAD'), 'ref: refs/heads/no-default\n');
+		git(dir, ['checkout', '-q', '-b', 'feat/x', 'main']);
+		put(dir, { 'src/util.js': 'export const id = (x) => x + 4;\n' });
+		const featX = commit(dir, 'feat: tune util');
+		git(dir, ['push', '-q', 'origin', `${featX}:refs/heads/feat/x`]);
+		// Main changes its test on the local side only; merging it into feat/x brings that change into the merge.
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		commit(dir, 'test: tighten the main case');
+		git(dir, ['checkout', '-q', 'feat/x']);
+		assert.equal(mergeRef(dir, 'main').status, 0, 'merging main is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${featX}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge that changes a test path on a remote with no default branch: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a new orphan ref that only adds tests held, since a ref with no merge base is a fresh add and must pass
+test('pre-push passes a new orphan ref that only adds tests, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, bare } = pushRepo();
+		firstPushDone(dir);
+		git(dir, ['checkout', '-q', '--orphan', 'feat/new-tests']);
+		git(dir, ['rm', '-r', '-q', '-f', '.']);
+		put(dir, { 'tests/fresh.test.mjs': 'test("fresh", () => {});\n' });
+		const fresh = commit(dir, 'test: add the fresh case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/new-tests ${fresh} refs/heads/feat/new-tests ${ZERO}\n`);
+		assert.equal(r.status, 0, `${hook} held a new orphan ref that only adds tests: ${r.stderr}`);
+		assert.doesNotMatch(r.stderr, HOLD_RE);
+	}
+});
+
