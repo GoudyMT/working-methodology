@@ -1,0 +1,130 @@
+{
+  "version": "1.51.3",
+  "head": "b72b1a4c049ad7e472b457c775f76d3fb25d9855",
+  "findings": [
+    {
+      "id": "H1",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "the fast-cap --map and unset-cap exit checks pass whether or not the cap is applied, now that it never fails a run"
+    },
+    {
+      "id": "M1",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a cancelled or failed earlier main run breaks the 3-in-a-row trend, even for a job that ran past the limit"
+    },
+    {
+      "id": "M2",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the trend test holds no 2-run case with the older run under, no history longer than 2 runs and no job missing or under now"
+    },
+    {
+      "id": "M3",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the trend warning is matched bare, the JSON line is parsed in one case only, and the failed-job check asserts only the exit"
+    },
+    {
+      "id": "M4",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a job over the limit is only a plain log line: no annotation on any run, so a PR that slows CI shows nothing"
+    },
+    {
+      "id": "M5",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the JSON line names no run, attempt, commit or event, and leaves out failed jobs and their times"
+    },
+    {
+      "id": "M6",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the Windows parts list and the slice count in the run line are separate literals, so a part dropped leaves tests unrun with CI green"
+    },
+    {
+      "id": "M7",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "the project template comment names a lane-state trend that nothing feeds"
+    },
+    {
+      "id": "M8",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "a failed fetch of the earlier main runs turns main's required check red for a report-only trend"
+    },
+    {
+      "id": "M9",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "3 in a row misses a job over on 2 of every 3 main runs, and growth below the limit has no signal"
+    },
+    {
+      "id": "M10",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "each Windows leg is judged alone, so the Windows suite can grow to about 360 s in all with no line"
+    },
+    {
+      "id": "L1",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "a re-run of an older main run reads later main runs as its history"
+    },
+    {
+      "id": "L2",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "a renamed job or a shard that moves matrix index starts its trend afresh"
+    },
+    {
+      "id": "L3",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "without --plan the Windows split packs by order, so part 0 carries most one-test files"
+    },
+    {
+      "id": "L4",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "with the 30 s cap on Windows a known 40 s hook test prints an over-cap line every run"
+    },
+    {
+      "id": "L5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "a stderr check in the 180 s budget test is now always true"
+    },
+    {
+      "id": "L6",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "no test holds ci.yml passing --history on a main push"
+    }
+  ],
+  "tickets": [
+    "H1",
+    "M1",
+    "M4"
+  ]
+}

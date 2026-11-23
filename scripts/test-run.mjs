@@ -17,7 +17,8 @@
 // 1. refuses to start above 80% of the temp disk's inodes used (exit 2), and warns above 50%;
 // 2. sweeps the roots of finished or killed runs, before and after;
 // 3. fails when the temp folder holds more entries after than before, and names them;
-// 4. fails a fast-lane test over the cap (30 s, or KIT_TEST_FAST_MS in ms); tests under tests/slow are exempt, and a --map run is.
+// 4. reports a fast-lane test over the cap (30 s, or KIT_TEST_FAST_MS in ms), never failing the run (K401); tests under
+//    tests/slow are exempt, and a --map run is.
 // A file that imports tests/harness.mjs is split over the shards; any other file runs whole, once.
 // The full suite still runs in CI at every push: a changed run is for the owner's machine.
 import fs from 'node:fs';
@@ -42,7 +43,8 @@ const real = (p) => {
 
 const git = (cwd, ...a) => spawnSync('git', a, { cwd, encoding: 'utf8' });
 
-// A fast-lane test over this many ms fails the run; KIT_TEST_FAST_MS sets another cap. tests/slow is exempt.
+// A fast-lane test over this many ms is reported (K401, the owner's yes 2026-11-23: runner speed alone made 7 of PR 71's
+// 29 reds, so time is a report and a trend, not a gate); KIT_TEST_FAST_MS sets another cap. tests/slow is exempt.
 const FAST_CAP_MS = 30000;
 // TAP names no file once several files share one node process, so the runner also writes a JUnit report, which names
 // each test's file and its time in seconds. Its reporter both writes stdout (the TAP the runner reads) and the file.
@@ -470,9 +472,9 @@ export async function main(argv) {
 		// A traced run (--map) measures every test, so the cap does not hold it: a main push still writes its map.
 		const late = o.map ? [] : xmls.flatMap((x) => overCap(x.xml, cap, x.files)).filter((t) => !(t.file ? inSlow(t.file) : t.files.every(inSlow)));
 		for (const t of late) {
-			const line = `test-run: fast-lane test over the cap: ${t.name} in ${t.file ? posix(path.relative(root, real(t.file))) : "one of the run's files"}, ${t.ms} ms (cap ${cap} ms)\n`;
+			const line = `test-run: fast-lane test over the cap (report only): ${t.name} in ${t.file ? posix(path.relative(root, real(t.file))) : "one of the run's files"}, ${t.ms} ms (cap ${cap} ms)\n`;
 			process.stdout.write(line);
-			process.stderr.write(line); // test-check quotes a failed run from stderr
+			process.stderr.write(line);
 		}
 		const sum = (k) => results.reduce((n, r) => n + r[k], 0);
 		const label = `${name}${shardFiles.length ? `${shards} shards` : 'no shards'}`;
@@ -485,7 +487,7 @@ export async function main(argv) {
 			fs.writeFileSync(path.join(root, out), JSON.stringify(map));
 			process.stdout.write(`test-run: map of ${Object.keys(map.tests).length} test(s) at ${mapSha.slice(0, 12)} in ${posix(out)}\n`);
 		}
-		return results.some((r) => r.status !== 0) || late.length ? 1 : 0;
+		return results.some((r) => r.status !== 0) ? 1 : 0;
 	})().finally(() => removeTemp(work));
 
 	sweepStale(runRoot);

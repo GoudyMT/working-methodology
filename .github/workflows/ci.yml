@@ -273,10 +273,16 @@ jobs:
           retention-days: 30
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
-  # guards' own proofs, since the guards guard a Windows machine.
+  # guards' own proofs, since the guards guard a Windows machine. K384 (the owner's yes, 2026-11-23): the suite runs over
+  # 2 runners (one ran 157 s, four ran 45 s in the trial); the test check's Windows part and the guard proofs run once,
+  # on part 0.
   windows-tests:
     runs-on: windows-latest
     timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        part: [0, 1]
     steps:
       # Vendor paths are long; without this a deep checkout can pass the 260-character Windows limit.
       - run: git config --global core.longpaths true
@@ -320,7 +326,7 @@ jobs:
           git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       - name: Test check, Windows part
-        if: github.event_name == 'pull_request'
+        if: github.event_name == 'pull_request' && matrix.part == 0
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -330,20 +336,25 @@ jobs:
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
           node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 120 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
-      # Windows starts a process about twice as slowly as Linux, so its fast lane has its own cap (the owner's pick,
-      # 2026-11-23): 60 s, where a hook test that starts git and node twenty times takes about 40 s.
+      # The 30 s per-test cap is a report on every lane (K401), so Windows needs no cap of its own.
       - name: Windows tests
+        shell: bash
         env:
           KIT_WINDOWS_SLICE: '1'
-          KIT_TEST_FAST_MS: '60000'
-        run: node scripts/test-run.mjs --shards 2
+          # The 1.51.3 sweep: the slice and the count come from the matrix itself, so a part added or dropped above
+          # cannot leave tests unrun.
+          PART: ${{ strategy.job-index }}
+          PARTS: ${{ strategy.job-total }}
+        run: node scripts/test-run.mjs --shards 2 --slice "$PART/$PARTS"
 
       # The push guard's own proof: every command that must ask asks, every safe one passes.
       - name: Push guard proof
+        if: matrix.part == 0
         run: node project/.claude/guard-outward-check.cjs
 
       # The delete guard's own proof: every delete outside the session's folder and the project asks.
       - name: Delete guard proof
+        if: matrix.part == 0
         run: node project/.claude/guard-delete-check.cjs
 
   # E32 (option C, the owner 2026-11-10): two lanes on the same PR. The fast lane is unit-tests above; large tests
@@ -747,16 +758,38 @@ jobs:
           git show "$PR_BASE:scripts/recall.mjs" > scripts/recall-gate-base.mjs
           node scripts/recall-gate-base.mjs gate "$PR_BASE" "$PR_HEAD"
 
-      # CI-C: the merge path's jobs are timed here, and a job over 180 s fails this required check, named with its
-      # slowest tests. The list is the run's own jobs, every one but this job and the --skip jobs (minimal-code, report
-      # only), fetched whole: the pages are merged into one {jobs:[...]} answer. A failed fetch fails the step; an
-      # unreadable answer fails the check.
+      # CI-C: the merge path's jobs are timed here. K401 (the owner's yes, 2026-11-23): a job over 180 s is reported with
+      # its slowest tests, never failed; on a main push the 2 main runs before this one are read too, and a job over on all
+      # 3 is named as a trend for a list row. A failed, timed-out or unfinished job still fails. The list is the run's own
+      # jobs, every one but this job and the --skip jobs (minimal-code, report only), fetched whole: the pages are merged
+      # into one {jobs:[...]} answer. A failed fetch fails the step; an unreadable answer fails the check.
       - name: Time budget of the run's jobs
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
+          EVENT: ${{ github.event_name }}
+          REF: ${{ github.ref }}
         run: |
           set -o pipefail
           gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$RUN_ID/jobs?per_page=100" | jq -s '{total_count: .[0].total_count, jobs: [.[].jobs[]]}' > "$RUNNER_TEMP/jobs.json"
-          node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs "$RUNNER_TEMP/jobs.json" --self kit-tests --skip minimal-code
+          history=()
+          # The history is a report's input: the 1.51.3 sweep made a failed fetch skip the trend, never fail the check.
+          fetch_history() {
+            # L1 (the 1.51.3 sweep): only runs older than this one, so a re-run of an old push never reads later ones.
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=20" --jq '[.workflow_runs[] | select(.run_number < (env.RUN_NUMBER | tonumber))][:2][].id' > "$RUNNER_TEMP/prev.txt" || return 1
+            : > "$RUNNER_TEMP/history.jsonl"
+            while read -r id; do
+              gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" | jq -s -c '{total_count: .[0].total_count, jobs: [.[].jobs[]]}' >> "$RUNNER_TEMP/history.jsonl" || return 1
+            done < "$RUNNER_TEMP/prev.txt"
+            jq -s '.' "$RUNNER_TEMP/history.jsonl" > "$RUNNER_TEMP/history.json"
+          }
+          if [ "$EVENT" = "push" ] && [ "$REF" = "refs/heads/main" ]; then
+            if fetch_history; then
+              history=(--history "$RUNNER_TEMP/history.json")
+            else
+              echo "::warning::the earlier main runs could not be read: no trend this run"
+            fi
+          fi
+          node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs "$RUNNER_TEMP/jobs.json" --self kit-tests --skip minimal-code "${history[@]}"
