@@ -9,10 +9,12 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { pathToFileURL } from 'node:url';
+import { createRequire } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
+const require = createRequire(import.meta.url);
 const HOOK_DIR = path.resolve('user/kit-hooks');
 const WARM = path.resolve('user/kit-tools/warm.mjs');
 const LIMIT = 150000;
@@ -52,9 +54,30 @@ const user = (text) => JSON.stringify({ message: { role: 'user', content: text }
 const assistant = (id, u) => JSON.stringify({ message: { role: 'assistant', id, usage: u, content: [{ type: 'text', text: 'x' }] } });
 
 // An agent's transcript: its brief, then one assistant call whose context is `tokens`.
-function agent(s, id, { role, lane, tokens }) {
+// With calls (a list of context sizes) the transcript streams several calls, the last one setting the size.
+function agent(s, id, { role, lane, tokens, calls }) {
 	const brief = `${role ? `Role: ${role}\n` : ''}${lane ? `Lane: ${lane}\n` : ''}Do the unit.`;
-	fs.writeFileSync(path.join(s.subagents, `agent-${id}.jsonl`), `${[user(brief), assistant(`m-${id}`, usage(tokens))].join('\n')}\n`);
+	const sizes = calls || [tokens];
+	const lines = [user(brief), ...sizes.map((t, i) => assistant(`m-${id}-${i}`, usage(t)))];
+	fs.writeFileSync(path.join(s.subagents, `agent-${id}.jsonl`), `${lines.join('\n')}\n`);
+}
+
+// The real guard.cjs as Claude Code runs it: a copy of the project guards, a Claude folder holding agent-model.cjs with
+// its hold files and warm.mjs (stamped as install user records them), and the call on stdin. Returns the hook output.
+function guardRun(cwd, s, tool_name, tool_input) {
+	const dir = kitTemp.makeTemp('warm-guard-');
+	for (const f of ['guard.cjs', 'owner-proof.cjs', 'task-gate.cjs', 'guard-outward.cjs', 'guard-delete.cjs', 'guard-read.cjs', 'owner-yes.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, f));
+	const cfg = kitTemp.makeTemp('warm-cfg-');
+	fs.mkdirSync(path.join(cfg, 'kit-hooks'));
+	for (const f of ['agent-model.cjs', 'hold-mode.cjs', 'holds.json', 'safe-spawn.cjs']) if (fs.existsSync(path.join(HOOK_DIR, f))) fs.copyFileSync(path.join(HOOK_DIR, f), path.join(cfg, 'kit-hooks', f));
+	fs.mkdirSync(path.join(cfg, 'kit-tools'));
+	if (fs.existsSync(WARM)) fs.copyFileSync(WARM, path.join(cfg, 'kit-tools', 'warm.mjs'));
+	const files = {};
+	for (const f of fs.readdirSync(path.join(cfg, 'kit-hooks'))) files[`kit-hooks/${f}`] = require('node:crypto').createHash('sha256').update(fs.readFileSync(path.join(cfg, 'kit-hooks', f))).digest('hex');
+	fs.writeFileSync(path.join(cfg, 'kit-install.json'), JSON.stringify({ files }));
+	const r = spawnSync(process.execPath, [path.join(dir, 'guard.cjs')], { input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name, tool_input, cwd, transcript_path: s.transcript }), encoding: 'utf8', env: { ...process.env, CLAUDE_CONFIG_DIR: cfg, KIT_CLAUDE_HOME: cfg, CLAUDE_PROJECT_DIR: dir } });
+	assert.equal(r.status, 0, r.stderr);
+	return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : {};
 }
 
 // Runs the real agent-model.cjs once per input in order; one decision per input, null when it lets the call through.
@@ -82,10 +105,28 @@ test('a fresh tester spawn is held while a tester of that lane is open and under
 	assert.equal(otherLane, null, 'another lane is not held');
 	assert.equal(noLane, null, 'a spawn with no Lane line is not held');
 	assert.equal(builder, null, 'a builder is not held by an open tester');
+	const [checker, general] = checkInputs(dir, s, [spawn('checker', 'A'), spawn('general-purpose', 'A')]);
+	assert.equal(checker, null, 'a checker spawn is not held by an open tester');
+	assert.equal(general, null, 'a general-purpose spawn with no Role line is not held');
 	const over = session();
 	agent(over, 'a9', { role: 'tester', lane: 'A', tokens: 200000 });
 	const [fresh] = checkInputs(dir, over, [spawn('tester', 'A')]);
 	assert.equal(fresh, null, 'an open tester over the limit does not hold a fresh spawn');
+	// At the limit counts as over: 149999 holds, 150000 and 150001 do not.
+	const edge = session();
+	agent(edge, 'e1', { role: 'tester', lane: 'D', tokens: LIMIT - 1 });
+	agent(edge, 'e2', { role: 'tester', lane: 'E', tokens: LIMIT });
+	agent(edge, 'e3', { role: 'tester', lane: 'F', tokens: LIMIT + 1 });
+	const [justUnder, atLimit, past] = checkInputs(dir, edge, [spawn('tester', 'D'), spawn('tester', 'E'), spawn('tester', 'F')]);
+	assert.ok(denied(justUnder), `149999 tokens is under the limit and holds, got ${JSON.stringify(justUnder)}`);
+	assert.equal(atLimit, null, '150000 tokens is over and holds nothing');
+	assert.equal(past, null, '150001 tokens holds nothing');
+	// A streamed agent follows its last call, not the sum of its calls.
+	const streamed = session();
+	agent(streamed, 's1', { role: 'tester', lane: 'C', calls: [100000, 90000, 80000] });
+	const [byLast] = checkInputs(dir, streamed, [spawn('tester', 'C')]);
+	assert.ok(denied(byLast), `the last call (80000) is under the limit, so the spawn is held, got ${JSON.stringify(byLast)}`);
+	assert.match(reason(byLast), /agent s1, 80000 tokens/);
 });
 
 // why: catches a SendMessage to an agent over the limit is held and says reset (K364 S2)
@@ -98,6 +139,17 @@ test('a SendMessage to an agent over the limit is held and says reset', () => {
 	assert.ok(denied(over), `the message to the agent over the limit is held, got ${JSON.stringify(over)}`);
 	assert.match(reason(over), /agent a2 is at 200000 tokens, over 150000: reset it \(spawn a fresh one and log the reset with warm\.mjs reset\)/);
 	assert.equal(under, null, 'a message to an agent under the limit goes through');
+	const edge = session();
+	agent(edge, 'e2', { role: 'tester', lane: 'E', tokens: LIMIT });
+	agent(edge, 's1', { role: 'tester', lane: 'C', calls: [100000, 90000, 80000] });
+	const [atLimit, byLast] = checkInputs(dir, edge, [message('e2'), message('s1')]);
+	assert.ok(denied(atLimit), `a message to an agent at 150000 is refused, got ${JSON.stringify(atLimit)}`);
+	assert.match(reason(atLimit), /agent e2 is at 150000 tokens, over 150000/);
+	assert.equal(byLast, null, 'a streamed agent whose last call is 80000 is under the limit, whatever the sum');
+	const viaGuard = guardRun(dir, s, 'SendMessage', { to: 'a2', message: 'next unit' });
+	assert.equal(viaGuard.permissionDecision, 'deny', `guard.cjs routes SendMessage to agent-model.cjs, got ${JSON.stringify(viaGuard)}`);
+	assert.match(viaGuard.permissionDecisionReason || '', /agent a2 is at 200000 tokens, over 150000: reset it/);
+	assert.equal(guardRun(dir, s, 'SendMessage', { to: 'a1', message: 'next unit' }).permissionDecision, undefined, 'a message under the limit passes through guard.cjs');
 	const holds = JSON.parse(fs.readFileSync(path.join(HOOK_DIR, 'holds.json'), 'utf8')).holds;
 	assert.deepEqual(holds.filter((h) => h.id === 'warm-agents').map((h) => h.mode), ['enforce'], 'holds.json lists warm-agents in enforce mode');
 });
@@ -120,9 +172,12 @@ test('every reset writes one JSON line with agent, role, tokens and reason', () 
 	assert.deepEqual(JSON.parse(first.stdout.trim()), rows[0], 'the row is printed');
 	run(['--agent', 'b1', '--role', 'builder', '--tokens', '160000', '--reason', 'drift', '--log', log]);
 	assert.equal(readRows(log).length, 2, 'the next reset appends');
-	const missing = run(['--agent', 'b2', '--role', 'builder', '--tokens', '1', '--log', log]);
-	assert.equal(missing.status, 2, 'a missing flag exits 2');
-	assert.equal(readRows(log).length, 2, 'a refused reset writes nothing');
+	const flags = { '--agent': 'b2', '--role': 'builder', '--tokens': '1', '--reason': 'drift', '--log': log };
+	for (const omit of Object.keys(flags)) {
+		const args = Object.entries(flags).filter(([k]) => k !== omit).flat();
+		assert.equal(run(args).status, 2, `a missing ${omit} exits 2`);
+		assert.equal(readRows(log).length, 2, `a reset missing ${omit} writes nothing`);
+	}
 });
 
 // A transcript with streamed lines: m1 twice, m2 twice (the last line of each message holds its final usage), then a user line.
@@ -139,6 +194,9 @@ test("the context size is the last call's input plus cache plus output tokens, a
 	const warm = await import(pathToFileURL(WARM).href);
 	assert.equal(typeof warm.contextSize, 'function', 'warm.mjs exports contextSize');
 	assert.equal(warm.contextSize(sizedTranscript()), 5 + 20 + 200 + 3000, 'the last message, at its last line: input + cache read + cache creation + output');
+	const shrinking = path.join(kitTemp.makeTemp('warm-shrink-'), 'agent-s2.jsonl');
+	fs.writeFileSync(shrinking, `${[user('brief'), assistant('m1', usage(100000)), assistant('m2', usage(500))].join('\n')}\n`);
+	assert.equal(warm.contextSize(shrinking), 500, 'the last message sets the size, even when an earlier one was larger');
 	assert.throws(() => warm.contextSize(path.join(kitTemp.makeTemp('warm-none-'), 'agent-none.jsonl')), 'an unreadable file throws');
 });
 
