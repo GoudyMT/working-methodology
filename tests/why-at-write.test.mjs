@@ -71,6 +71,9 @@ test("a Write to a test file whose new test( has no why line is refused, quoting
 	fs.appendFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'src/add.js\n');
 	const src = fence(dir, 'Write', { file_path: path.join(dir, 'src/add.js'), content: testWith('', 'adds two numbers') });
 	assert.equal(src.code, 0, 'a non-test file is let through: ' + src.err);
+	put(dir, 'src/add.js', 'export const add = (a, b) => a + b;\n');
+	const srcEdit = fence(dir, 'Edit', { file_path: path.join(dir, 'src/add.js'), old_string: 'a + b;', new_string: 'a + b;\n' + testWith('', 'adds two numbers') });
+	assert.equal(srcEdit.code, 0, 'an Edit on a non-test file is let through: ' + srcEdit.err);
 });
 
 // why: catches a why that is a bare spec id ("S1: ...") is refused the same way (K368 S1)
@@ -79,6 +82,9 @@ test('a why that is a bare spec id ("S1: ...") is refused the same way', () => {
 	const bad = fence(dir, 'Write', { file_path: target(dir), content: testWith('// why: S1: the fence refuses it', 'adds two numbers') });
 	assert.equal(bad.code, 2, 'a spec id as the why is refused: ' + bad.err);
 	assert.ok(bad.err.includes(BAD_SHAPE), 'stderr quotes whyFault: ' + bad.err);
+	const short = fence(dir, 'Write', { file_path: target(dir), content: testWith('// why: catches a short one', 'adds two numbers') });
+	assert.equal(short.code, 2, 'a catches why under six words is refused: ' + short.err);
+	assert.ok(short.err.includes('too short to name the failure it catches'), 'stderr quotes the too-short reason: ' + short.err);
 });
 
 // why: catches a test with a passing why line saves (K368 S1)
@@ -105,8 +111,8 @@ test('a tester RECORD that does not list each new test with its why is refused b
 	git(dir, ['init', '-q', '-b', 'main']);
 	put(dir, TEST_REL, testWith(GOOD_WHY, 'the old one'));
 	commit(dir, 'test: first');
-	put(dir, TEST_REL, testWith(GOOD_WHY, 'the old one') + testWith(GOOD_WHY, 'the new one'));
-	const sha = commit(dir, 'test: add the new one');
+	put(dir, TEST_REL, testWith(GOOD_WHY, 'the old one') + testWith(GOOD_WHY, 'the new one') + testWith(GOOD_WHY, 'the other one'));
+	const sha = commit(dir, 'test: add the new ones');
 	const finding = { id: 'R1', severity: 'low', status: 'open', where: '-', claim: 'c', proof: 'p', fix: '-' };
 	const record = (extra) => ['Prose.', 'RECORD:', JSON.stringify({ role: 'tester', commit: sha, clarity: 'clear', ...extra }), JSON.stringify(finding)].join('\n');
 	const send = (message) => {
@@ -116,14 +122,33 @@ test('a tester RECORD that does not list each new test with its why is refused b
 	};
 	const reasonOf = (out) => (out && out.hookSpecificOutput && out.hookSpecificOutput.permissionDecision === 'deny' ? out.hookSpecificOutput.permissionDecisionReason : null);
 	const key = TEST_REL + '::the new one';
+	const otherKey = TEST_REL + '::the other one';
 	const missing = reasonOf(send(record({})));
 	assert.ok(missing, 'a record with no tests field is refused');
-	assert.ok(missing.includes(key), 'the refusal names the new test: ' + missing);
-	const badWhy = reasonOf(send(record({ tests: [{ name: 'the new one', why: '// why: S2: the record lists it' }] })));
+	assert.ok(missing.includes(key) && missing.includes(otherKey), 'the refusal names both new tests: ' + missing);
+	const badWhy = reasonOf(send(record({ tests: [{ name: 'the new one', why: '// why: S2: the record lists it' }, { name: 'the other one', why: GOOD_WHY }] })));
 	assert.ok(badWhy, 'a tests entry whose why fails whyFault is refused');
 	assert.ok(badWhy.includes(key), 'the refusal names the test: ' + badWhy);
-	const good = send(record({ tests: [{ name: 'the new one', why: GOOD_WHY }] }));
-	assert.equal(good, null, 'a record listing the new test with a passing why passes: ' + JSON.stringify(good));
+	const onlyOne = reasonOf(send(record({ tests: [{ name: 'the new one', why: GOOD_WHY }] })));
+	assert.ok(onlyOne, 'a record listing only one of two new tests is refused');
+	assert.ok(onlyOne.includes(otherKey) && !onlyOne.includes(key), 'the refusal names the unlisted test only: ' + onlyOne);
+	const wrongName = reasonOf(send(record({ tests: [{ name: 'some different name', why: GOOD_WHY }] })));
+	assert.ok(wrongName, 'a record listing a different name only is refused');
+	assert.ok(wrongName.includes(key) && wrongName.includes(otherKey), 'the refusal names both new tests: ' + wrongName);
+	const empty = reasonOf(send(record({ tests: [] })));
+	assert.ok(empty, 'an empty tests list is refused');
+	assert.ok(empty.includes(key) && empty.includes(otherKey), 'the refusal names both new tests: ' + empty);
+	const both = { tests: [{ name: 'the new one', why: GOOD_WHY }, { name: 'the other one', why: GOOD_WHY }] };
+	const good = send(record(both));
+	assert.equal(good, null, 'a record listing both new tests with passing whys passes: ' + JSON.stringify(good));
+	// log mode: the same bad record is not refused, and one row names the file::name
+	fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), JSON.stringify({ holds: [{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode: 'log' }] }) + '\n');
+	const before = guardLog(dir);
+	const logged = send(record({ tests: [{ name: 'the new one', why: GOOD_WHY }] }));
+	assert.equal(logged, null, 'under log the bad record is not refused: ' + JSON.stringify(logged));
+	const added = guardLog(dir).slice(before.length);
+	assert.equal(added.length, 1, 'one new row in kit-guard-open.log: ' + added.join('\n'));
+	assert.ok(added[0].includes(otherKey), 'the row names the file::name: ' + added[0]);
 });
 
 // why: catches an Edit that adds a test( to an existing file, or a MultiEdit, is checked the same as a Write (K368 S3)
@@ -144,6 +169,15 @@ test('an Edit that adds a test( to an existing file, or a MultiEdit, is checked 
 		const ok = run(GOOD_WHY);
 		assert.equal(ok.code, 0, label + ' with a passing why saves: ' + ok.err);
 	}
+	// only new tests are judged: a file whose existing test has no why still takes a new test with a good why
+	const legacy = testWith('', 'the legacy one');
+	const dir2 = unitRepo(legacy);
+	const add = (why) => fence(dir2, 'Edit', { file_path: target(dir2), old_string: legacy, new_string: legacy + testWith(why, 'the added one') });
+	const addGood = add(GOOD_WHY);
+	assert.equal(addGood.code, 0, 'a new test with a good why saves beside a legacy why-less test: ' + addGood.err);
+	const addBad = add('');
+	assert.equal(addBad.code, 2, 'a why-less new test is refused beside a legacy one: ' + addBad.err);
+	assert.ok(addBad.err.includes(NO_WHY) && addBad.err.includes('the added one'), 'it names the new test, not the legacy one: ' + addBad.err);
 });
 
 // why: catches the same write twice gives the same verdict (K368 S4)
@@ -177,8 +211,9 @@ test('a test file the hook cannot parse is refused and logged', () => {
 		assert.equal(r.code, 2, label + ' is refused: ' + r.err);
 		assert.ok(r.err.includes('sample.test.mjs'), label + ' names the file: ' + r.err);
 		assert.ok(r.err.includes('unparsable'), label + ' says unparsable: ' + r.err);
-		const now = guardLog(dir).length;
-		assert.equal(now, rows + 1, label + ' adds one row to kit-guard-open.log');
-		rows = now;
+		const all = guardLog(dir);
+		assert.equal(all.length, rows + 1, label + ' adds one row to kit-guard-open.log');
+		assert.ok(all[all.length - 1].includes('sample.test.mjs') && all[all.length - 1].includes('unparsable'), label + ' row holds the file and unparsable: ' + all[all.length - 1]);
+		rows = all.length;
 	}
 });
