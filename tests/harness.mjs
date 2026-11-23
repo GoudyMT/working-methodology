@@ -75,6 +75,9 @@ function mapped(name, idx, fn) {
 // KIT_TEST_PLATFORM stands in for the platform, for the harness's own test only.
 const WINDOWS_SLICE = process.env.KIT_WINDOWS_SLICE === '1';
 const PLATFORM = process.env.KIT_TEST_PLATFORM || process.platform;
+// L3 (the 1.51.3 sweep): most files hold one Windows test, so a round robin from shard 0 put them all on the first
+// runner; in the Windows slice each file starts at a shard its name picks, and every test still runs once.
+const START = WINDOWS_SLICE ? [...FILE].reduce((h, c) => (h * 31 + c.charCodeAt(0)) >>> 0, 7) % SHARDS : 0;
 // E32: a fast-lane test runs on one machine, so it has the medium size's time limit (300 s, the reference Bazel
 // sets); one over it fails with node:test's own message naming the limit, and is fixed or moved to the slow lane.
 const LIMIT_MS = Number(process.env.KIT_TEST_LIMIT_MS) || 300000;
@@ -91,7 +94,7 @@ export function test(name, ...rest) {
 	const idx = count++;
 	// K123: a packed test runs in the shard the runner gave it; one it has no time for, round robin.
 	const packed = PACK && Object.prototype.hasOwnProperty.call(PACK, `${FILE}::${name}`) ? PACK[`${FILE}::${name}`] : null;
-	if (packed === null ? idx % SHARDS !== SHARD : packed !== SHARD) return undefined;
+	if (packed === null ? (idx + START) % SHARDS !== SHARD : packed !== SHARD) return undefined;
 	if (ONLY && !ONLY.has(`${FILE}::${name}`) && !ONLY.has(`${FILE}::*`)) return undefined;
 	if (!MAP && !AT) return nodeTest(name, ...rest);
 	let fn = rest.pop();
