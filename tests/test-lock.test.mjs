@@ -1024,3 +1024,26 @@ test('pre-push holds a merge to main that restores a weak test copy and drops an
 	}
 });
 
+// why: catches a weak test pushed on an orphan branch, then merged into main keeping its copy, passed unheld since the orphan's own push is a fresh add
+test('pre-push passes an orphan branch that adds a weak test, then holds the merge that keeps that copy in main, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		git(dir, ['checkout', '-q', '--orphan', 'orphan']);
+		git(dir, ['rm', '-r', '-q', '-f', '.']);
+		put(dir, { 'tests/add.test.mjs': 'test("ok", () => {});\n' });
+		const orphan = commit(dir, 'test: add a weak add case');
+		// The orphan's first push is a fresh add of its test, so it passes.
+		const up = pushRun(hook, dir, bare, `refs/heads/orphan ${orphan} refs/heads/orphan ${ZERO}\n`);
+		assert.equal(up.status, 0, `${hook} held the orphan branch's first push, which only adds a test: ${up.stderr}`);
+		git(dir, ['checkout', '-q', 'main']);
+		assert.notEqual(mergeRef(dir, 'orphan', ['--allow-unrelated-histories']).status, 0, 'the two tests/add.test.mjs adds conflict');
+		// The merge keeps the weak copy over main's strong one.
+		put(dir, { 'tests/add.test.mjs': 'test("ok", () => {});\n' });
+		const merge = commit(dir, 'merge orphan');
+		const r = pushRun(hook, dir, bare, `refs/heads/main ${merge} refs/heads/main ${red}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge into main that keeps the orphan's weak tests/add.test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
