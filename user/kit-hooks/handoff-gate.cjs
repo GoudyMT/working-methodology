@@ -42,25 +42,30 @@ function roleLineOf(message) {
 }
 
 // K368 S2: each test a role line's commit adds (a test file's test( that its first parent lacks) must be listed in the
-// role line's tests with a why line whyFault passes. Returns the file::name keys that are not, or [] when the commit
-// cannot be read (the checker already names a missing commit).
+// role line's tests with a why line whyFault passes, and must carry a passing why line at the commit itself. A why given
+// as bare text is read with its "// why: " label. Returns the file::name keys that fail, or [] when the commit cannot be
+// read: then no test is judged, and nothing else checks that commit.
 function untestedKeys(cwd, role) {
 	const sha = typeof role.commit === 'string' ? role.commit : '';
 	if (!sha || git(cwd, 'rev-parse', '--verify', '-q', `${sha}^{commit}`).status !== 0) return [];
 	const parent = git(cwd, 'rev-parse', '--verify', '-q', `${sha}^`);
 	const base = parent.status === 0 ? parent.stdout.trim() : null;
-	const files = base ? git(cwd, 'diff', '--name-only', base, sha) : git(cwd, 'ls-tree', '-r', '--name-only', sha);
+	// quotePath off: a non-ASCII file name would come back quoted, and no show could read it (as kit.mjs reads it).
+	const files = base ? git(cwd, '-c', 'core.quotePath=false', 'diff', '--name-only', base, sha) : git(cwd, '-c', 'core.quotePath=false', 'ls-tree', '-r', '--name-only', sha);
 	const listed = Array.isArray(role.tests) ? role.tests : [];
 	const missing = [];
 	for (const file of String(files.stdout || '').split(/\r?\n/).filter((f) => f && isTestFile(f))) {
 		const now = git(cwd, 'show', `${sha}:${file}`);
 		if (now.status !== 0) continue;
 		const was = base ? git(cwd, 'show', `${base}:${file}`) : null;
+		const nowTests = tests(now.stdout);
 		const had = new Set(was && was.status === 0 ? tests(was.stdout).keys() : []);
-		for (const name of tests(now.stdout).keys()) {
+		for (const name of nowTests.keys()) {
 			if (had.has(name)) continue;
 			const entry = listed.find((t) => t && t.name === name);
-			if (!entry || whyFault(String(entry.why || ''))) missing.push(`${file}::${name}`);
+			const raw = entry ? String(entry.why || '').trim() : '';
+			const listedWhy = /^\/\/ why:/.test(raw) ? raw : `// why: ${raw}`;
+			if (!entry || whyFault(listedWhy) || whyFault(nowTests.get(name))) missing.push(`${file}::${name}`);
 		}
 	}
 	return missing;

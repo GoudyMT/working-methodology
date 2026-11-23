@@ -35,7 +35,7 @@ const norm = (p) => {
 // cannot be applied (its old_string is absent or empty, or the content is not text), so the test cannot be parsed.
 function resultOf(tool, input, old) {
 	const apply = (text, e) => (text !== null && e && typeof e.old_string === 'string' && typeof e.new_string === 'string' && e.old_string && text.includes(e.old_string)
-		? text.replace(e.old_string, () => e.new_string) : null);
+		? (e.replace_all ? text.split(e.old_string).join(e.new_string) : text.replace(e.old_string, () => e.new_string)) : null);
 	if (tool === 'Write') return typeof input.content === 'string' ? input.content : null;
 	if (tool === 'Edit') return apply(old, input);
 	if (tool === 'MultiEdit') return Array.isArray(input.edits) ? input.edits.reduce(apply, old) : null;
@@ -55,14 +55,19 @@ function whyRefusal(tool, input, rel, abs, root) {
 		} catch { /* the refusal stands without its log row */ }
 		return `Blocked: ${rel} is an unparsable test file: the ${tool} cannot be applied to it, so its tests cannot be checked. Stop and report it.`;
 	}
-	const had = new Set(tests(old).keys());
+	const oldTests = tests(old);
+	const nextTests = tests(next);
 	const faults = [];
-	for (const [name, body] of tests(next)) {
-		if (had.has(name)) continue;
+	for (const [name, body] of nextTests) {
+		// Judged: a new name, a name that newly repeats, and a test whose old why passed and whose new one does not. A legacy
+		// test that never had a passing why stays editable.
+		const fresh = !oldTests.has(name) || (nextTests.twice.has(name) && !oldTests.twice.has(name));
+		const regressed = oldTests.has(name) && !whyFault(oldTests.get(name)) && whyFault(body);
+		if (!fresh && !regressed) continue;
 		const fault = whyFault(body);
 		if (fault) faults.push(`test "${name}": ${fault}`);
 	}
-	return faults.length ? `Blocked: ${rel} adds a test without a usable why line. ${faults.join('; ')}. Put a why line above each new test( and report it if you cannot.` : null;
+	return faults.length ? `Blocked: ${rel} has a test without a usable why line. ${faults.join('; ')}. Put a why line above each new or changed test( and report it if you cannot.` : null;
 }
 
 function main() {
