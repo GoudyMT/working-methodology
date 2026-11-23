@@ -46,6 +46,7 @@
    ],
    "tests": [
     "tests/guard-rows.test.mjs",
+    "tests/hold-modes.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-plugin.test.mjs",
     "tests/kit-rules.test.mjs",
@@ -806,7 +807,8 @@
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
    "tests": [
-    "tests/harness.test.mjs"
+    "tests/harness.test.mjs",
+    "tests/test-lock.test.mjs"
    ],
    "workflows": []
   },
