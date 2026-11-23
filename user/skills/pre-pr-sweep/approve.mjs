@@ -242,7 +242,9 @@ const git = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile
 const baseGit = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8', env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
 // K357 S1: the checkout the contract sits in (a linked worktree's own, or the main checkout's); '' when git cannot read one.
-const toplevel = () => { const t = git('rev-parse', '--show-toplevel'); return t.status === 0 ? t.stdout.trim() : ''; };
+// Read once: the contract's folder does not move during a run, and each git start costs time on every approval.
+let topCache;
+const toplevel = () => { if (topCache === undefined) { const t = git('rev-parse', '--show-toplevel'); topCache = t.status === 0 ? t.stdout.trim() : ''; } return topCache; };
 
 // The log: one per repo, in its git folder.
 const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
@@ -783,7 +785,7 @@ const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
 // read from the contract's own checkout (the build 11 sweep; K357: its linked worktree, not the main checkout). A file
 // the branch adds has no base copy and gives no block. A file the index names outside the repo is not read.
 function rulesBlock(facts, hash) {
-	const commonDir = path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git');
+	const commonDir = path.resolve((common.status === 0 ? common.stdout.trim() : '') || '.git');
 	const top = toplevel();
 	if (!top) return null;
 	const mainTop = path.dirname(commonDir);
@@ -1049,7 +1051,7 @@ const unquotedNote = (act, since) => {
 const repoRoots = () => {
 	const top = toplevel();
 	if (!top) return [path.dirname(path.dirname(LOG))];
-	const cd = git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+	const cd = common.status === 0 ? common.stdout.trim() : '';
 	return [...new Set([top, cd ? path.dirname(path.resolve(cd)) : top])];
 };
 const newest = (found) => found.filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
