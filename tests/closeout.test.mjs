@@ -70,7 +70,7 @@ const closeoutOf = (findings, tickets) => (head) => ({ version: VERSION, head, f
 /** A repo: base commit, the one closeout commit, then the range's changes, then the build record. */
 function mk({ before, between, after, rows = [], closeout, mutate } = {}) {
 	const root = kitTemp.makeTemp('closeout-');
-	git(root, 'init', '-q');
+	git(root, 'init', '-q', '-b', 'main');
 	write(root, 'VERSION', `${VERSION}\n`);
 	write(root, 'tests/a.test.mjs', testFile(['old one']));
 	write(root, 'scripts/old.mjs', '// old\n');
