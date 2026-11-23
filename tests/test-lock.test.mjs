@@ -1047,3 +1047,28 @@ test('pre-push passes an orphan branch that adds a weak test, then holds the mer
 	}
 });
 
+// why: catches a merge into main that restores the copy a remote branch holds over main's newer copy, pushed unheld since its first parent is that branch
+test('pre-push holds a merge into main that restores the copy a remote branch holds, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// The remote branch feat/a holds the copy "adds two".
+		git(dir, ['checkout', '-q', '-b', 'feat/a', red]);
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const featA = commit(dir, 'test: tighten the add case');
+		git(dir, ['push', '-q', 'origin', `${featA}:refs/heads/feat/a`]);
+		// Main moves on to a newer copy and the remote main takes it.
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		const mainTip = commit(dir, 'test: tighten the main case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		// The merge takes feat/a's tree, so its diff against its first parent is empty while main's copy is replaced.
+		git(dir, ['checkout', '-q', 'feat/a']);
+		assert.equal(mergeRef(dir, 'main', ['-s', 'ours']).status, 0, 'the ours merge is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/main ${merge} refs/heads/main ${mainTip}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge into main that restores the copy remote feat/a holds: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
