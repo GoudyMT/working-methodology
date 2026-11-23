@@ -1,5 +1,5 @@
 // K366 (patch 1.51.1, U17): the hook refuses a third check round. agent-model.cjs counts a unit's check rounds in its own
-// log, <git common dir>/kit-agent-model.log: each allowed checker spawn appends {at, hook, type, round:"check", units:[...]},
+// log, <git common dir>/kit-check-rounds.log: each allowed checker spawn appends {at, hook, type, round:"check", units:[...]},
 // a refused one has denied:true and never counts. A checker spawn is subagent_type checker, or any type whose prompt has
 // Plan: and Unit: lines (units comma-separated, normalized by case and by * ` _ markup). A unit with 2 counted rows is
 // refused (hold id round-cap, enforce). An unreadable log blocks with "hook error: lead review" and one row in
@@ -32,7 +32,8 @@ function repo() {
 	return dir;
 }
 const common = (dir) => git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-const logFile = (dir) => path.join(common(dir), 'kit-agent-model.log');
+const logFile = (dir) => path.join(common(dir), 'kit-check-rounds.log');
+const agentLog = (dir) => path.join(common(dir), 'kit-agent-model.log');
 const openFile = (dir) => path.join(common(dir), 'kit-guard-open.log');
 const readRows = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
 
@@ -102,6 +103,7 @@ test('a first and second check pass', () => {
 	const batchRows = readRows(logFile(batch)).filter((r) => r.round === 'check');
 	assert.equal(batchRows.length, 1);
 	assert.deepEqual(batchRows[0].units, ['U17', 'U18'], 'a batch spawn appends one row naming each unit');
+	assert.equal(readRows(agentLog(dir)).filter((r) => r.round === 'check').length, 0, 'kit-agent-model.log keeps meaning a finding: no round row from a checker spawn');
 });
 
 // why: catches a checker for another unit passes (K366 S2)
@@ -121,6 +123,18 @@ test('the same unit spelled with other case or markup is still counted', () => {
 	const spellings = ['u17', '**U17**', '`U17`', '_u17_'];
 	const results = checkCalls(dir, spellings.map(checker));
 	spellings.forEach((s, i) => assert.ok(denied(results[i]), `${s} counts as U17 and is refused, got ${JSON.stringify(results[i])}`));
+	const trailing = ['U17.', 'U17 (fix round)', 'u17, (U18)'];
+	const trailed = checkCalls(dir, trailing.map(checker));
+	trailing.forEach((s, i) => assert.ok(denied(trailed[i]), `Unit: ${s} counts as U17 and is refused, got ${JSON.stringify(trailed[i])}`));
+	const lines = [
+		{ subagent_type: 'checker', prompt: 'plan: PLAN.md\nunit: U17\nCheck the unit.' },
+		{ subagent_type: 'general-purpose', prompt: '  PLAN: PLAN.md\n   Unit: U17\nCheck the unit.' },
+	];
+	const lined = checkCalls(dir, lines);
+	lined.forEach((d, i) => assert.ok(denied(d), `lower-case or indented lines still count, got ${JSON.stringify(d)} for ${JSON.stringify(lines[i].prompt)}`));
+	const [noUnit, noId] = checkCalls(dir, [{ subagent_type: 'checker', prompt: 'Plan: PLAN.md\nCheck the unit.' }, checker('the whole patch')]);
+	assert.ok(denied(noUnit), `a checker spawn with no Unit: line is refused, got ${JSON.stringify(noUnit)}`);
+	assert.ok(denied(noId), `a checker spawn whose Unit: line holds no id is refused, got ${JSON.stringify(noId)}`);
 });
 
 // why: catches a general-purpose agent briefed as a checker (Plan: and Unit: lines) is counted (K366 S3)
