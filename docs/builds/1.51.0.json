@@ -806,7 +806,8 @@
     "tests/test-count.test.mjs::C6 spec C6: an add finding with no breaks named is refused, and one that names its break passes",
     "tests/test-count.test.mjs::C7 spec C7: a swap with no replacement or with empty or missing keeps is refused, and one that keeps its assertions passes",
     "tests/test-count.test.mjs::C8 spec C8: tester.md states one test per plan line, controls fold into their partner test, and tests are a floor",
-    "tests/test-count.test.mjs::C9 spec C9: test-reviewer.md names swap and redundant and says an add names its break"
+    "tests/test-count.test.mjs::C9 spec C9: test-reviewer.md names swap and redundant and says an add names its break",
+    "tests/test-count.test.mjs::C7 spec C7: a swap with no replacement or with empty or missing keeps is refused"
    ]
   },
   {
@@ -1415,6 +1416,766 @@
     "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them",
     "commit": "ec25029c",
     "test": "no test: no real input",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F10",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::H2 agents: a .jsonl with no exact RECORD: line is named and exits 1; a keyed hand-back is not named",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F11",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::H3 reviews: a fix file that does not mark review finding R1 fixed is refused, and one with a fixed line passes",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F12",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::H3 reviews: a second review finding R2 with no fixed line is refused and named, and fixed lines for R1 and R2 pass",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F13",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::H5 SKILL.md: the plan-and-split step names plan-graph for the unit split and does not name lanes.mjs there",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F14",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::H5 lanes: a markdown plan exits 2 with stderr and empty stdout; controls: all-fixed prints nothing, one open finding prints one lane",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F15",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1 start: refuses a plan plan-check refuses, matches the log by full path, and a clean run of this plan still starts",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F16",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: a later clean line wins over an older faulty one: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F17",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: on win32 start matches a logged planPath that differs only in letter case",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F18",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: start exits 0 when the latest log line has no faults and is newer than the plan file: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F19",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: start exits 1 when the plan has no plan-graph log line, and 0 once a clean line is logged",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F20",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: start exits 1 when the plan has no plan-graph log line: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F21",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: the latest log line for the plan wins over an older clean one: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F22",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L1: the latest log line for the plan wins, whichever of two lines is older",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F23",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L3: agents exits 0 when one agent is a builder on two units: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F24",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L3: agents exits 0 when testers and builders are different agent ids: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F25",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L3: agents exits 1 when one agent id is both tester and builder, and 0 when the ids differ or one builds two units",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F26",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L3: agents exits 1 when one agent id is both tester and builder: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F27",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L9: on one non-risky unit the checker call logs the row and the builder call does not: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F28",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check (a further case)",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::L9: on one non-risky unit the checker call logs the row; a builder call and a Risk high unit log nothing",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F29",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/guard-rows.test.mjs::G6 spec G6: batch-plan.md shows the bypass:, repeat: and fail-closed or fail-open rows near the word guard: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F30",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/guard-rows.test.mjs::G6 spec G6: the batch-plan.md guard example, read as a Tests cell, passes plan-check, and drops refused without its bypass row",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F31",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/guard-rows.test.mjs::G7 spec G7: tester.md tells the tester to write the bypass:, repeat: and fail-closed or fail-open rows for a guard unit: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F32",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/guard-rows.test.mjs::G7 spec G7: the tags tester.md names for a guard unit are the rows guardRowFaults accepts, and dropping bypass: is a fault",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F33",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff-canary.test.mjs::under enforce, a hand-back with no phrase and a broken RECORD block gets one deny naming both reasons",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F34",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff-canary.test.mjs::under enforce, a numeric agent_id that makes canary throw still prints the gate deny as one JSON object",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F35",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff.test.mjs::a clarity of assumed is refused for any tester-named role, not only the exact word",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F36",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff.test.mjs::a finding merged onto the role line is refused, not passed and dropped",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F37",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff.test.mjs::a lead answer written inside a hand-back is refused, so asked clarity is not settled by the agent",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F38",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff.test.mjs::a record refused only for clarity asked with no lead answer counts as refused, not open",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F39",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/handoff.test.mjs::check --review refuses a review file whose earlier RECORD block holds findings the gate would not read",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F40",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model denies a full or capitalised model name of another family, passes its own full id, and repeats its verdict",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F41",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model marks a log row holdModeMissing when hold-mode.cjs is absent, and not when it is present",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F42",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model never refuses a call with no role file under enforce, and logs the enforce mode",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F43",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model never refuses in build 24, even when its hold reads enforce: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F44",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model reads a corrupt holds.json or an unknown mode as enforce, and logs the mode it read",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F45",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model reads a plugin role name as its bare role file, refusing a mismatch under enforce",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F46",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::handoff-gate logs a row with checkerExit when handoff.mjs exits with a code other than 0 or 1, and prints nothing",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F47",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::handoff-gate logs the missing-clarity warning for a valid tester record, and not once clarity is given",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F48",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::handoff-gate refuses a broken RECORD block under enforce, and stays silent for a valid one or under log",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F49",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::handoff-gate refuses a non-JSON line, a missing role line, a missing field, and a CRLF broken record under enforce",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F50",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::hold-check exits 1 when a hold names its hook by a path, even when that path is a real file",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F51",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::hold-check exits 2 for a base that is no commit, a base holds.json that is no list, and a bad argument",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F52",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::hold-check reads a duplicate hold id as enforce unless every entry for it says log",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F53",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back (a further case)",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::hold-check with no --base takes the highest v* version when a lower one was tagged later",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F54",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/kit-sweep-budget.test.mjs::a finding above the RECORD line in another shape is refused, not silently dropped",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F55",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/kit-sweep-budget.test.mjs::a finding above the RECORD line with every key escaped, and no plain id key, is refused",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F56",
+    "severity": "medium",
+    "text": "CI runs the model table after the token step and runs the hold check; the table checks measured models and skill files (a further case)",
+    "commit": "6f672a5f",
+    "test": "tests/model-table.test.mjs::a role whose rules skill file is missing is a fault naming the role and the path, and a present one is not",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F57",
+    "severity": "medium",
+    "text": "CI runs the model table after the token step and runs the hold check; the table checks measured models and skill files (a further case)",
+    "commit": "6f672a5f",
+    "test": "tests/model-table.test.mjs::the real kit passes the model-list and rules-skill checks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F58",
+    "severity": "high",
+    "text": "The build guide names the row lock, the count gate and the tester file list, and splits units by the plan graph (a further case)",
+    "commit": "05d66a0c",
+    "test": "tests/overwatch.test.mjs::C23 spec 1: a unit with Risk high and no guard file is an error when merged with no check step, and clean with one",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F59",
+    "severity": "high",
+    "text": "The build guide names the row lock, the count gate and the tester file list, and splits units by the plan graph (a further case)",
+    "commit": "05d66a0c",
+    "test": "tests/overwatch.test.mjs::C24 spec 1: a unit with Category guard and no guard file is an error when merged with no check step, and clean with one",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F60",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back (a further case)",
+    "commit": "6c639ecb",
+    "test": "tests/slots.test.mjs::the brief writer refuses a rules block still holding <data boundary>, <secret files>, <safe logger> or <scanner>",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F61",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/test-budget.test.mjs::B12 cell: a mixed Files cell reads its bare guard name, so a logic Category on it is refused; an all-backticked cell does the same",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F62",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/test-budget.test.mjs::B2 spec S2: Risk high or a GUARD_PATHS file fires guard, and the list is imported from tester-model.mjs: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F63",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them (a further case)",
+    "commit": "ec25029c",
+    "test": "tests/test-budget.test.mjs::B2 spec S2: Risk high or any GUARD_PATHS entry fires guard, and a near-miss folder name does not",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F64",
+    "severity": "high",
+    "text": "The count gate counts every red commit, counts added tests only and runs its command with no shell (a further case)",
+    "commit": "23d3ca64",
+    "test": "tests/test-count.test.mjs::C7 spec C7: a swap with no replacement or with empty or missing keeps is refused, and one that keeps its assertions passes: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F65",
+    "severity": "high",
+    "text": "The count gate counts every red commit, counts added tests only and runs its command with no shell (a further case)",
+    "commit": "23d3ca64",
+    "test": "tests/test-count.test.mjs::H4 unit-check: a row with no lock, or a locks file with no key for it, is reported not locked and does not pass",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F66",
+    "severity": "high",
+    "text": "The count gate counts every red commit, counts added tests only and runs its command with no shell (a further case)",
+    "commit": "23d3ca64",
+    "test": "tests/test-count.test.mjs::M5 count gate: two red commits, 2 tests in a.test.mjs then 1 test in b.test.mjs, against a 3-line Tests cell pass",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F67",
+    "severity": "high",
+    "text": "The count gate counts every red commit, counts added tests only and runs its command with no shell (a further case)",
+    "commit": "23d3ca64",
+    "test": "tests/test-count.test.mjs::M5 count gate: with countCommand, one test added to a file that holds five counts as 1",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F68",
+    "severity": "high",
+    "text": "The count gate counts every red commit, counts added tests only and runs its command with no shell (a further case)",
+    "commit": "23d3ca64",
+    "test": "tests/test-count.test.mjs::a countCommand whose program cannot start is reported as could not start, and a startable one is not",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F69",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::edit fence checks a builder edit in a worktree under .claude/worktrees against that worktree list",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F70",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::edit fence reads a plugin role name kit:builder or kit:tester as the builder or tester role",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F71",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a Retest: commit in any letter case, and passes Retesting: as a word that is no type",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F72",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit of existing test files, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F73",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a fix:, feat: or test: commit that edits an existing test file, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F74",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a fixup! retest: commit, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F75",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a git revert that carries a test change, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F76",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge into main that restores the copy a remote branch holds, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F77",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge of main that resolves a feature test edit back to main, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F78",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge that changes a test path on a remote with no default branch, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F79",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge that deletes an existing test file although a remote tip lacks it, passes a merge bringing a blob the remote main holds, and holds one only a side branch holds, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F80",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge that restores an older copy of a test over the remote tip, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F81",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge to main that restores a weak test copy and drops another test, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F82",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge whose resolution changes a test file away from both parents, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F83",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a push whose remote value is not a local commit, and says fetch first, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F84",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a push whose test edit sits mid-range, and a new branch carrying a test edit, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F85",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a test edit that a git replace object hides, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F86",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a test edit that a root graft hides, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F87",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a test edit under any spelling of its type, in both hooks, and repeats its verdict",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F88",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a type change of a test file, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F89",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add-only change, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F90",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds an edit of Tests/X.Test.mjs in upper case, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F91",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds an edit of a test file whose name has a newline, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F92",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds an edit of a test file whose name has a space, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F93",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds an orphan root merge that takes its test file over the remote v1, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F94",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds every push from a shallow repository, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F95",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push passes a merge of main that drops a test the feature never touched, and holds a drop of a test the branch added, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F96",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push passes a merge that only brings in a test file one parent already holds, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F97",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push passes a new orphan ref that only adds tests, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F98",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push passes an orphan branch that adds a weak test, then holds the merge that keeps that copy in main, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F99",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push reads the test-change helper exit: 10 holds with or without a named commit, 1, 2 and 3 hold, 0 passes, a missing helper holds, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F100",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push refuses a new branch whose range holds a retest: commit: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F101",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push refuses a new branch with a retest: commit, refuses a key on a new branch, and passes a clean push whose remote head this repo never fetched",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F102",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push refuses a three-commit push whose first commit is a retest:, naming that commit, and lets an update push pass when the remote holds that retest",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F103",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push refuses a three-commit push whose first commit is a retest:, naming that commit: names no test at HEAD: name a test the file holds",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F104",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it (a further case)",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::unit-lock --tester writes a test-only list with no red line, and refuses a source file",
     "reason": "a row in this fix round"
    }
   ]
