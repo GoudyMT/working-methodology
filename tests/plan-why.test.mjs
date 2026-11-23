@@ -133,6 +133,9 @@ test('plan-check --brief U1 --role builder writes the builder brief: source file
 // why: catches a plan-check brief with no Plan, Unit id, Role, Worktree or Lane line, a repo-relative lock path, or templates with no Lane line (H6)
 test('plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and a lock path beside plan-check, and the templates carry Lane', () => {
 	const plan = planText([unit('U1', ['the brief carries the lines the spawn hooks read -> S1'], '`src/a.mjs`, `tests/a.test.mjs` (new)')]);
+	const skillFile = path.resolve(path.dirname(PLAN_CHECK), '..', 'skills', 'agent-team-build', 'SKILL.md');
+	const skill = fs.existsSync(skillFile) ? fs.readFileSync(skillFile, 'utf8') : '';
+	assert.match(skill, /Ticket: <id>/, 'SKILL.md tells the lead a tester or writer brief in closeout carries a `Ticket: <id>` line');
 	const field = (text, label) => (text.match(new RegExp(`^[\\s>*_\`+-]*${label}[*_\`]*:[*_\`]*[ \\t]*(.*)$`, 'im')) ?? [])[1];
 	for (const role of ['tester', 'builder']) {
 		const res = run(plan, '--brief', 'U1', '--role', role);
