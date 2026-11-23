@@ -62,31 +62,49 @@ test("--map with --slice 0/2 writes a part map holding only that slice's tests",
 test('map-merge of two part maps equals one whole-suite map (same keys, same ms)', () => {
 	const { repo, sha } = fixture();
 	// Each part holds its own times: the merge must keep every key's ms as its part recorded it.
-	const partA = { [`${FILE}::a`]: { lines: { 'scripts/x.mjs': [1, 2] }, reads: [], ms: 12 }, [`${FILE}::c`]: { lines: { 'scripts/x.mjs': [3] }, reads: ['scripts/y.mjs'], ms: 7 } };
-	const partB = { [`${FILE}::b`]: { lines: { 'scripts/x.mjs': [4, 5] }, reads: [], ms: 40 }, [`${FILE}::d`]: { lines: {}, reads: [], ms: 0 } };
+	// a sits in both parts with one entry: the merge must keep it once.
+	const shared = { lines: { 'scripts/x.mjs': [1, 2] }, reads: [], ms: 12 };
+	const partA = { [`${FILE}::a`]: shared, [`${FILE}::c`]: { lines: { 'scripts/x.mjs': [3] }, reads: ['scripts/y.mjs'], ms: 7 } };
+	const partB = { [`${FILE}::a`]: shared, [`${FILE}::b`]: { lines: { 'scripts/x.mjs': [4, 5] }, reads: [], ms: 40 }, [`${FILE}::d`]: { lines: {}, reads: [], ms: 0 } };
 	fs.writeFileSync(partPath(repo, '.map-part-0.json'), JSON.stringify({ sha, made: 'x', tests: partA }));
 	fs.writeFileSync(partPath(repo, '.map-part-1.json'), JSON.stringify({ sha, made: 'x', tests: partB }));
 	const r = node(repo, MERGE, ['tests/.map-part-0.json', 'tests/.map-part-1.json']);
 	assert.equal(r.status, 0, r.stdout + r.stderr);
-	const merged = JSON.parse(fs.readFileSync(partPath(repo, '.map.json'), 'utf8'));
+	const text = fs.readFileSync(partPath(repo, '.map.json'), 'utf8');
+	const merged = JSON.parse(text);
 	assert.equal(merged.sha, sha);
 	assert.deepEqual(merged.tests, { ...partA, ...partB });
+	// JSON.parse would hide a repeated key, so the key is counted in the file's text.
+	assert.equal(text.split(`"${FILE}::a"`).length - 1, 1);
 });
 
 // why: catches two slices given --shards and a map with ms get the same time plan, longest first (CI-A S3)
 test('two slices given --shards and a map with ms get the same time plan, longest first', () => {
 	const { repo, log, sha } = fixture();
 	const file = path.join(repo, FILE);
-	// ms a 10, b 100, c 5, d 90: longest first puts b and c on one shard, a and d on the other. Round robin by name
-	// would put a and c together, so the split shows which packing ran.
-	const ms = { a: 10, b: 100, c: 5, d: 90 };
-	fs.writeFileSync(partPath(repo, '.map.json'), JSON.stringify({ sha, made: 'x', tests: Object.fromEntries(Object.entries(ms).map(([n, t]) => [`${FILE}::${n}`, { lines: {}, reads: [], ms: t }])) }));
+	// ms a 11, b 100, c 5, d 90: longest first puts b and c on one shard, a and d on the other. Round robin by name
+	// would put a and c together, so the split shows which packing ran. No two shard totals tie at any step.
+	const ms = { a: 11, b: 100, c: 5, d: 90 };
+	const mapOf = (s) => ({ sha: s, made: 'x', tests: Object.fromEntries(Object.entries(ms).map(([n, t]) => [`${FILE}::${n}`, { lines: {}, reads: [], ms: t }])) });
+	const mapPath = partPath(repo, '.map.json');
+	fs.writeFileSync(mapPath, JSON.stringify(mapOf(sha)));
 	const r0 = node(repo, RUNNER, ['--slice', '0/2', '--shards', '1', '--plan', sha, file]);
 	assert.equal(r0.status, 0, r0.stdout + r0.stderr);
 	const r1 = node(repo, RUNNER, ['--slice', '1/2', '--shards', '1', '--plan', sha, file]);
 	assert.equal(r1.status, 0, r1.stdout + r1.stderr);
 	assert.deepEqual(ranIn(log, '0/2'), ['b', 'c']);
 	assert.deepEqual(ranIn(log, '1/2'), ['a', 'd']);
+	// The refusal half of the ruling: with --plan, a map of another sha, then no map at all, each exits 2 and runs no test.
+	fs.rmSync(log, { force: true });
+	fs.writeFileSync(mapPath, JSON.stringify(mapOf('1'.repeat(40))));
+	const other = node(repo, RUNNER, ['--slice', '0/2', '--shards', '1', '--plan', sha, file]);
+	assert.equal(other.status, 2, other.stdout + other.stderr);
+	assert.deepEqual(ranIn(log, '0/2'), []);
+	fs.rmSync(log, { force: true });
+	fs.rmSync(mapPath);
+	const gone = node(repo, RUNNER, ['--slice', '0/2', '--shards', '1', '--plan', sha, file]);
+	assert.equal(gone.status, 2, gone.stdout + gone.stderr);
+	assert.deepEqual(ranIn(log, '0/2'), []);
 });
 
 // why: catches map-merge refuses parts from different shas with exit 1 (CI-A S4)
