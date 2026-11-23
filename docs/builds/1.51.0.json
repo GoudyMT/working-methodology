@@ -1300,42 +1300,124 @@
  ],
  "sweep": {
   "tier": "Feature (security-sensitive)",
-  "commit": "pending",
+  "commit": "11b70ac",
   "dimensions": [
    {
     "name": "Privacy",
-    "result": "Pending: the sweep has not run"
+    "result": "Clean: no personal data or local path in the diff"
    },
    {
     "name": "Supply chain",
-    "result": "Pending: the sweep has not run"
+    "result": "Clean: no new dependency or action pin"
    },
    {
     "name": "Legal",
-    "result": "Pending: the sweep has not run"
+    "result": "Clean: no copied content"
    },
    {
     "name": "Code security",
-    "result": "Pending: the sweep has not run"
+    "result": "Three security roles plus a paired cloud run: the push hold read subjects only and merges hid test edits; now held by the net change of each ref, with replace, graft, shallow and parse failures held"
    },
    {
     "name": "Gaps, scaling, test value",
-    "result": "Pending: the sweep has not run"
+    "result": "Holds set to enforce now refuse; flow tools wired into the documented flow and installed layout; weak tests tightened; minimal-code timing goes to the CI-time study"
    },
    {
     "name": "Alignment",
-    "result": "Pending: the sweep has not run"
+    "result": "Rule and role text matched to the code; retest named in the commit rule"
    }
   ],
   "findings": {
    "critical": 0,
-   "high": 0,
-   "medium": 0,
-   "low": 0
+   "high": 6,
+   "medium": 30,
+   "low": 36
   },
-  "accepted": [],
-  "deferred": [],
-  "fixes": []
+  "accepted": [
+   "A copy of a test file counts as an add, so the push hold lets it through",
+   "A merge of a retest that is on a side branch but not yet on main needs the owner yes again",
+   "The first VERDICT line of a review file is its verdict, as the report format puts it first",
+   "Six earlier commit subjects name models or the product; the squash merge leaves one subject on main"
+  ],
+  "deferred": [
+   "The minimal-code job rebuilds its coverage map per slice; the cause is measured in the CI-time study first",
+   "The kit rules block holds template slots, so a kit sweep passes the slot check only on the owner path",
+   "Lead process misses from these fix lanes, set for 1.51.1"
+  ],
+  "fixes": [
+   {
+    "id": "F1",
+    "severity": "high",
+    "text": "Setting a hold to enforce now refuses: a model mismatch and a broken hand-back record are denied, with one decision per hand-back",
+    "commit": "95c66124",
+    "test": "tests/hold-modes.test.mjs::agent-model refuses a model-mismatch call when its hold reads enforce, and passes and logs it under log",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F2",
+    "severity": "high",
+    "text": "The push hold reads every pushed commit and the net change of each ref, so merges, reverts, renames and spellings cannot carry a test edit past it",
+    "commit": "2bf8f0d5",
+    "test": "tests/test-lock.test.mjs::pre-push holds a merge that takes a side branch new test file over the remote v1, in both hooks",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F3",
+    "severity": "high",
+    "text": "The flow check names hand-backs with no role key and reviews with no fixed line, and start runs plan-check",
+    "commit": "4db0b830",
+    "test": "tests/flow-lock.test.mjs::H2 agents: role lines with no agent key are named and exit 1; a keyed hand-back is not named",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F4",
+    "severity": "high",
+    "text": "The build guide names the row lock, the count gate and the tester file list, and splits units by the plan graph",
+    "commit": "05d66a0c",
+    "test": "tests/flow-lock.test.mjs::H4 SKILL.md: the overwatch steps name plan-check --lock and unit-check --plan --unit",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F5",
+    "severity": "high",
+    "text": "The count gate counts every red commit, counts added tests only and runs its command with no shell",
+    "commit": "23d3ca64",
+    "test": "tests/test-count.test.mjs::M5 count gate: a test file name with shell metacharacters reaches countCommand exactly, as data, and runs nothing",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F6",
+    "severity": "high",
+    "text": "The approver checks each record role and commit, and the canary refuses a lead answer written inside a hand-back",
+    "commit": "6c639ecb",
+    "test": "tests/kit-sweep-budget.test.mjs::a RECORD from another role or another commit is refused, and this round's record is tallied",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F7",
+    "severity": "medium",
+    "text": "The test edit fence reads plugin role names, and the test lock has a list tool for test writers",
+    "commit": "2b3edf58",
+    "test": "tests/test-lock.test.mjs::edit fence blocks a builder edit of a test file that IS on the unit list",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F8",
+    "severity": "medium",
+    "text": "CI runs the model table after the token step and runs the hold check; the table checks measured models and skill files",
+    "commit": "6f672a5f",
+    "test": "tests/model-table.test.mjs::a step or role model not in models.measured, or in models.retiring, is a fault naming it",
+    "reason": "a row in this fix round"
+   },
+   {
+    "id": "F9",
+    "severity": "low",
+    "text": "The flow tools run from an installed kit: the plan graph and spawn helpers ship beside them",
+    "commit": "ec25029c",
+    "test": "no test: no real input",
+    "reason": "a row in this fix round"
+   }
+  ]
  },
  "testCutCommits": [
   "b87849e3",
