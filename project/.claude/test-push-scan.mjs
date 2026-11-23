@@ -3,8 +3,8 @@
 // with the same reads the hook makes. Either read holds a push: each pushed commit (A), and the net change each pushed
 // ref makes (B). Exit 0: nothing held. Exit 10: a test change or a retest: subject, named on stdout. Exit 2: a read
 // failed, the repo is shallow, or a remote value is not fetched, which holds whatever the owner says.
-import { spawnSync } from 'node:child_process';
 import fs from 'node:fs';
+import safeSpawn from './safe-spawn.cjs';
 import os from 'node:os';
 import path from 'node:path';
 
@@ -21,7 +21,12 @@ const SHORT = 7;
 // Every git read ignores replace objects and grafts, so no object can hide a change from the hold. The graft file is
 // a path that must not exist: git reads that as no grafts.
 const GRAFTS = path.join(os.tmpdir(), `kit-no-grafts-${process.pid}-${Date.now()}`);
-const ENV = { ...process.env, GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: GRAFTS };
+const { tool, gitArgs, gitEnv, NO_FSMONITOR } = safeSpawn;
+// gitEnv drops the GIT_* names it does not keep, which includes both of these, so they are added after it.
+const ENV = { ...gitEnv(), GIT_NO_REPLACE_OBJECTS: '1', GIT_GRAFT_FILE: GRAFTS };
+// git in this folder (-C), started from node's own folder by safe-spawn's tool, which keeps the env option as given.
+// Not gitRead: its fetch-protocol switches would refuse the ls-remote of the push's own remote.
+const gitRun = (args, extra = {}) => tool('git', ['-C', process.cwd(), ...NO_FSMONITOR, ...gitArgs(args)], { encoding: 'utf8', maxBuffer: 1 << 30, env: ENV, ...extra });
 const HOLD = "Push blocked: this push holds a test change (named below). The owner's yes is needed for it: after the owner's pop-up yes, run the push with KIT_PUSH_APPROVED=1, or the owner pushes it from their own terminal. The owner's own push from their own terminal has its own way (rule:outward-acts).";
 const SHALLOW = 'Push blocked: this repository is shallow, so the history a test change would sit in may be cut off. Fetch the full history (git fetch --unshallow), then push again.';
 
@@ -30,11 +35,11 @@ class Shallow extends Error {}
 class Unfetched extends Error {}
 
 function git(args) {
-	const r = spawnSync('git', args, { env: ENV, encoding: 'utf8', maxBuffer: 1 << 30 });
+	const r = gitRun(args);
 	if (r.error || r.status !== 0) throw new Unreadable(`git ${args[0]} failed (${String(r.stderr || (r.error && r.error.message) || '').trim().split('\n')[0]})`);
 	return r.stdout;
 }
-const local = (sha) => spawnSync('git', ['cat-file', '-e', `${sha}^{commit}`], { env: ENV }).status === 0;
+const local = (sha) => gitRun(['cat-file', '-e', `${sha}^{commit}`]).status === 0;
 
 // The remote's default branch and its branch tips, asked of the remote. A default that names no branch is null.
 function remote(url) {
@@ -65,7 +70,7 @@ function tree(rev) {
 }
 
 function mergeBase(a, b) {
-	const r = spawnSync('git', ['merge-base', a, b], { env: ENV, encoding: 'utf8' });
+	const r = gitRun(['merge-base', a, b]);
 	if (r.status === 0) return r.stdout.trim();
 	if (r.status === 1) return null;
 	throw new Unreadable('the merge base cannot be found');
@@ -92,7 +97,7 @@ function entries(out) {
 let empty = null;
 function emptyTree() {
 	if (empty === null) {
-		const r = spawnSync('git', ['hash-object', '-t', 'tree', '--stdin'], { env: ENV, input: '', encoding: 'utf8' });
+		const r = gitRun(['hash-object', '-t', 'tree', '--stdin'], { input: '' });
 		if (r.status !== 0) throw new Unreadable('the empty tree cannot be named');
 		empty = r.stdout.trim();
 	}
