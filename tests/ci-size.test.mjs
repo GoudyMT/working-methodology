@@ -153,4 +153,13 @@ test('output is GitHub matrix JSON on GITHUB_OUTPUT lines', () => {
 	const printed = stdout.stdout.split('\n').filter(Boolean);
 	const printedWant = ['predicted=330', 'unit={"shard":[0,1,2]}', 'check={"slice":[0]}', 'mutation={"slice":[1]}'];
 	assert.deepEqual([...printed].sort(), [...printedWant].sort(), `stdout: output ${JSON.stringify(printed)}`);
+
+		// With GITHUB_OUTPUT set in the environment and no --github-output flag, the lines are appended to that file.
+		const envFile = path.join(m.dir, 'env-github-output.txt');
+		fs.writeFileSync(envFile, 'keep=1\n');
+		const viaEnv = { ...process.env, GITHUB_OUTPUT: envFile };
+		const fromEnv = spawnSync(process.execPath, [SCRIPT, '--map', m.file], { encoding: 'utf8', env: viaEnv });
+		assert.equal(fromEnv.status, 0, `env file: exit ${fromEnv.status}, stderr: ${fromEnv.stderr}`);
+		const appended = fs.readFileSync(envFile, 'utf8').split('\n').filter(Boolean);
+		assert.deepEqual([...appended].sort(), ['keep=1', ...printedWant].sort(), `env file: output ${JSON.stringify(appended)}`);
 });
