@@ -330,9 +330,12 @@ jobs:
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
           node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 120 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
+      # Windows starts a process about twice as slowly as Linux, so its fast lane has its own cap (the owner's pick,
+      # 2026-11-23): 60 s, where a hook test that starts git and node twenty times takes about 40 s.
       - name: Windows tests
         env:
           KIT_WINDOWS_SLICE: '1'
+          KIT_TEST_FAST_MS: '60000'
         run: node scripts/test-run.mjs --shards 2
 
       # The push guard's own proof: every command that must ask asks, every safe one passes.

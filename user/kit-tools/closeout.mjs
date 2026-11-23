@@ -165,7 +165,9 @@ function problemsIn(root) {
 	fresh.sort();
 	const added = changed.filter((p) => p[0] === 'A' || p[0].startsWith('R')).map((p) => p[p.length - 1]).filter((p) => NEW_KIND.test(p));
 
-	const rows = Array.isArray(rec.items) ? rec.items.filter((it) => it && typeof it === 'object') : [];
+	// A fix row is a sweep.fixes row, where the test check (A7) wants a test written after the sweep named, or an item
+	// that names its finding.
+	const rows = [...(Array.isArray(rec.items) ? rec.items : []), ...(Array.isArray(rec.sweep.fixes) ? rec.sweep.fixes : [])].filter((it) => it && typeof it === 'object');
 	const namesOf = (it) => [...(typeof it.test === 'string' ? [it.test] : []), ...(Array.isArray(it.tests) ? it.tests : [])];
 	const filesOf = (it) => (Array.isArray(it.files) ? it.files : []);
 	const freshSet = new Set(fresh);
