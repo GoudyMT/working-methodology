@@ -31,10 +31,24 @@ CI sizes its runs from measured times and fails the merge path past 3 minutes; s
 - `test-run.mjs --pick` refuses a coverage map whose commit is not an ancestor of HEAD and asks for the test files by name.
 - Sweep approval reads the branch worktree's own rules file, falls back to the main checkout's, and names the session id it read.
 - The review hook's dollar reserve is twice the dearest call so far plus the report, so a review is no longer stopped before its final call.
+- The test-check budgets on Linux and Windows are 120 s, so they fit inside the 180 s job budget.
+- `plan-check --brief` writes the Plan, Unit id, Role, Worktree and Lane lines the gates read, and names `unit-lock.mjs` by a path beside itself; the brief templates carry a Lane line.
 
 ### Security
 - An owner yes clears a sweep only on the commit it was given for; a yes or a decision with no readable head never clears, and is logged once.
 - A test cannot be saved or handed back without its why line: the edit fence and the hand-back gate refuse it, a repeated test name included.
+- CI sizes its runners with the base commit's copy of `ci-size.mjs`, checks each runner list is 0 to n-1, and passes matrix values to run lines only through env, checked as integers.
+- The closeout gate refuses on any git failure except no commit yet or no repository, and runs before any log write that could throw.
+- The why check and the closeout count see a test call off the margin, with a non-literal name, through an alias or a `node:test` import name, or in a named forEach, and read long imports in linear time.
+- The hand-back gate ships in enforce mode, tier high, and its refusal holds when its log cannot be written.
+- The warm hold reads the Role and Lane lines with the hook's own label rule and reads each open helper's type.
+- The plan key takes the first path token and drops trailing punctuation, so one plan has one round count.
+- The earliest role word in a Role line decides the role, as a whole word.
+- A hold-mode load or mode error refuses for the high-tier holds instead of falling back to log.
+- A record whose sweep block is removed after the closeout commit fails the closeout check.
+- The closeout check reads its diff unquoted and split on NUL, and refuses a path that is still quoted.
+- Under enforce, a hand-back that lists tests and names a commit that cannot be read is refused; a deleted test file is not counted as unreadable.
+- The changed-test count comes from the test parse of base against head, read through `ci-size.mjs --base`.
 
 ## 1.51.1 - 2026-11-23
 

@@ -387,12 +387,166 @@
         "tests/closeout-spawn.test.mjs::a ticketed tester whose brief carries Plan and Unit lines passes in closeout",
         "tests/closeout-spawn.test.mjs::a git that cannot run inside the closeout gate refuses the spawn"
       ]
+    },
+    {
+      "id": "S-H1",
+      "kind": "security",
+      "reach": "kit",
+      "text": "CI sizes its runners with the base commit's copy of `ci-size.mjs`, checks each runner list is 0 to n-1, and passes matrix values to run lines only through env, checked as integers.",
+      "evidence": ".github/workflows/ci.yml",
+      "tests": [
+        "tests/ci-plan-job.test.mjs::the lanes job runs the base commit's ci-size and no matrix value reaches a run line except through env"
+      ],
+      "finding": "H1"
+    },
+    {
+      "id": "S-H2",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The test-check budgets on Linux and Windows are 120 s, so they fit inside the 180 s job budget.",
+      "evidence": ".github/workflows/ci.yml",
+      "tests": [
+        "tests/ci-budget.test.mjs::the test-check budgets, Linux slice and Windows part, fit inside the 180 s job budget"
+      ],
+      "finding": "H2"
+    },
+    {
+      "id": "S-H3",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The closeout gate refuses on any git failure except no commit yet or no repository, and runs before any log write that could throw.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/closeout-spawn.test.mjs::H3 a git that exits 128, or a log that cannot be written, still refuses a ticketless tester in closeout"
+      ],
+      "finding": "H3"
+    },
+    {
+      "id": "S-H4",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The why check and the closeout count see a test call off the margin, with a non-literal name, through an alias or a `node:test` import name, or in a named forEach, and read long imports in linear time.",
+      "evidence": "user/kit-hooks/why-rule.cjs",
+      "tests": [
+        "tests/why-at-write.test.mjs::H4: a why-less test written indented, with a variable name, through an alias or in a forEach is refused naming its line"
+      ],
+      "finding": "H4"
+    },
+    {
+      "id": "S-H5",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The hand-back gate ships in enforce mode, tier high, and its refusal holds when its log cannot be written.",
+      "evidence": "user/kit-hooks/holds.json",
+      "tests": [
+        "tests/hold-modes.test.mjs::H5: with holds.json as shipped, a hand-back whose RECORD lists a why-less new test is refused, even when the log write fails"
+      ],
+      "finding": "H5"
+    },
+    {
+      "id": "S-H6",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "`plan-check --brief` writes the Plan, Unit id, Role, Worktree and Lane lines the gates read, and names `unit-lock.mjs` by a path beside itself; the brief templates carry a Lane line.",
+      "evidence": "user/kit-tools/plan-check.mjs",
+      "tests": [
+        "tests/plan-why.test.mjs::plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and a lock path beside plan-check, and the templates carry Lane"
+      ],
+      "finding": "H6"
+    },
+    {
+      "id": "S-M1",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The warm hold reads the Role and Lane lines with the hook's own label rule and reads each open helper's type.",
+      "evidence": "user/kit-tools/warm.mjs",
+      "tests": [
+        "tests/warm-agents.test.mjs::M1 a typed tester and a bold-marked Role brief are open warm agents"
+      ],
+      "finding": "M1"
+    },
+    {
+      "id": "S-M2",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The plan key takes the first path token and drops trailing punctuation, so one plan has one round count.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/round-cap.test.mjs::M2 a plan spelled with a comma, dash, dot or fragment is the same plan"
+      ],
+      "finding": "M2"
+    },
+    {
+      "id": "S-M3",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The earliest role word in a Role line decides the role, as a whole word.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/round-cap.test.mjs::M3 a Role line that names the checker as a word counts as a checker"
+      ],
+      "finding": "M3"
+    },
+    {
+      "id": "S-M4",
+      "kind": "security",
+      "reach": "kit",
+      "text": "A hold-mode load or mode error refuses for the high-tier holds instead of falling back to log.",
+      "evidence": "user/kit-hooks/agent-model.cjs",
+      "tests": [
+        "tests/round-cap.test.mjs::M4 a hold-mode.cjs that throws makes round-cap refuse"
+      ],
+      "finding": "M4"
+    },
+    {
+      "id": "S-M5",
+      "kind": "security",
+      "reach": "kit",
+      "text": "A record whose sweep block is removed after the closeout commit fails the closeout check.",
+      "evidence": "user/kit-tools/closeout.mjs",
+      "tests": [
+        "tests/closeout.test.mjs::M5: a record with its sweep removed after the closeout commit fails the check"
+      ],
+      "finding": "M5"
+    },
+    {
+      "id": "S-M6",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The closeout check reads its diff unquoted and split on NUL, and refuses a path that is still quoted.",
+      "evidence": "user/kit-tools/closeout.mjs",
+      "tests": [
+        "tests/closeout.test.mjs::M6: a new test file with a non-ASCII name after the closeout commit needs a ticket"
+      ],
+      "finding": "M6"
+    },
+    {
+      "id": "S-M7",
+      "kind": "security",
+      "reach": "kit",
+      "text": "Under enforce, a hand-back that lists tests and names a commit that cannot be read is refused; a deleted test file is not counted as unreadable.",
+      "evidence": "user/kit-hooks/handoff-gate.cjs",
+      "tests": [
+        "tests/handoff-canary.test.mjs::M7: under enforce, a tester hand-back naming a commit that does not resolve is refused"
+      ],
+      "finding": "M7"
+    },
+    {
+      "id": "S-M10",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The changed-test count comes from the test parse of base against head, read through `ci-size.mjs --base`.",
+      "evidence": "scripts/ci-size.mjs",
+      "tests": [
+        "tests/ci-size.test.mjs::the changed-test count comes from the test parse of base against head, loops counted"
+      ],
+      "finding": "M10"
     }
   ],
   "verification": [
     "Every unit opened with a test-only commit and a test review; each risky unit had up to two independent check rounds, the second closed by the lead.",
     "Pending: the score gate on the owner's PC runs after the sweep, since rule text changed (docs/migrations/1.51.2-reworded.json).",
-    "Pending: the one sweep fills the review below."
+    "The one sweep found 6 high and 15 medium findings, each fixed here test-first with two independent check rounds over the fixes; the 25 lows are on the next list."
   ],
   "decisions": [
     {
@@ -421,10 +575,10 @@
     }
   ],
   "upgrading": "Run install user, then install project: the hooks `agent-model.cjs`, call-cap.cjs, edit-fence.cjs, handoff-gate.cjs and the new why-rule.cjs with holds.json, the kit tools closeout.mjs, warm.mjs, plan-check.mjs, checklist.mjs and flow-check.mjs, the sweep's approve.mjs, the team build skill and its brief templates, the CI templates and the testing rule change.",
-  "limits": "A review spawn with no Plan: line is counted apart from planned ones, and a relative plan path is keyed from the folder the hook runs in. The holds.json tier is set per hold but read in each gate's own code. The commit-shape tool miscounts a double-quoted test name. Plain `--changed` without `--pick` still trusts a coverage map off HEAD.",
+  "limits": "A review spawn with no Plan: line is counted apart from planned ones, and a relative plan path is keyed from the folder the hook runs in. The holds.json tier is set per hold but read in each gate's own code. The commit-shape tool miscounts a double-quoted test name. Plain `--changed` without `--pick` still trusts a coverage map off HEAD. The why parse is line based, not a full tokenizer: a test call reached through an array or `.call`, or hidden by a deliberate slash after a word that may be a name, is not seen; it stops slips, not a determined workaround. The hand-back gate passes a hand-back when its own check crashes, which goes to the owner.",
   "tests": {
     "before": 1821,
-    "after": 1974,
+    "after": 1988,
     "flips": "declared tests at the base and on this branch; the PR run gives the final count"
   },
   "holds": {
@@ -432,11 +586,11 @@
       "spawn-list",
       "round-cap",
       "warm-agents",
-      "closeout-spawn"
+      "closeout-spawn",
+      "handoff-gate"
     ],
     "logOnly": [
-      "agent-model",
-      "handoff-gate"
+      "agent-model"
     ]
   },
   "sweep": {
@@ -523,7 +677,7 @@
         "id": "fix-H6",
         "finding": "H6",
         "severity": "high",
-        "text": "plan-check --brief writes Plan, Unit id, Role, Worktree and Lane lines and a lock path beside itself; the templates carry Lane and the skill names the Ticket line",
+        "text": "`plan-check --brief` writes Plan, Unit id, Role, Worktree and Lane lines and a lock path beside itself; the templates carry Lane and the skill names the Ticket line",
         "commit": "ff87f1c9",
         "test": "tests/plan-why.test.mjs::plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and a lock path beside plan-check, and the templates carry Lane"
       },
@@ -531,7 +685,7 @@
         "id": "fix-M1",
         "finding": "M1",
         "severity": "medium",
-        "text": "the warm hold reads Role and Lane with the hook label rule and reads each open agent type",
+        "text": "the warm hold reads Role and Lane with the hook label rule and reads each open helper type",
         "commit": "a79aad1d",
         "test": "tests/warm-agents.test.mjs::M1 a typed tester and a bold-marked Role brief are open warm agents"
       },
@@ -547,7 +701,7 @@
         "id": "fix-M3",
         "finding": "M3",
         "severity": "medium",
-        "text": "a Role line naming checker, tester or writer as a whole word counts as that role",
+        "text": "the earliest whole role word in a Role line decides the role",
         "commit": "7a5af5cb",
         "test": "tests/round-cap.test.mjs::M3 a Role line that names the checker as a word counts as a checker"
       },
