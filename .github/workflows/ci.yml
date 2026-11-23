@@ -436,6 +436,9 @@ jobs:
           check_re='^\{"slice":\[0(,[0-9]+)*\]\}$'
           mutation_re='^\{"slice":\[[0-9]+(,[0-9]+)*\]\}$'
           [[ "$unit" =~ $unit_re && "$check" =~ $check_re && "$mutation" =~ $mutation_re ]] || { echo "ci-size printed a plan of the wrong shape" >&2; exit 1; }
+          # The runner lists must be exactly 0 to n-1, so no slice runs twice and none is skipped.
+          printf '%s' "$unit" | jq -e '.shard == [range(0; .shard | length)]' > /dev/null || { echo "the unit runner list is not 0 to n-1" >&2; exit 1; }
+          printf '%s' "$check" | jq -e '.slice == [range(0; .slice | length)]' > /dev/null || { echo "the check runner list is not 0 to n-1" >&2; exit 1; }
           unit_n="$(printf '%s' "$unit" | jq '.shard | length')"
           check_n="$(printf '%s' "$check" | jq '.slice | length')"
           for n in "$unit_n" "$check_n"; do
