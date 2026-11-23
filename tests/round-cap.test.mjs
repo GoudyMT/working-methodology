@@ -318,7 +318,7 @@ test('M3 a Role line that names the checker as a word counts as a checker', () =
 		const [, , third] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased(role)]);
 		assert.ok(denied(third), `"Role: ${role}" is a checker and is the third round, got ${JSON.stringify(third)}`);
 	}
-	for (const role of ['the tester for U17', 'checkers-list', 'rechecker']) {
+	for (const role of ['the builder for U17', 'checkers-list', 'rechecker']) {
 		const [, , other] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased(role)]);
 		assert.equal(other, null, `"Role: ${role}" is no checker, got ${JSON.stringify(other)}`);
 	}
