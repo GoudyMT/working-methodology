@@ -24,7 +24,7 @@
       "id": "K384",
       "kind": "changed",
       "reach": "kit",
-      "text": "The Windows tests run over 2 runners; the Windows test check and the guard proofs run once, on the first.",
+      "text": "The Windows tests run over 2 runners, each test file starting at a spread shard; the Windows test check and the guard proofs run once, on the first.",
       "evidence": ".github/workflows/ci.yml"
     }
   ],
@@ -81,9 +81,52 @@
     },
     "accepted": [],
     "deferred": [
-      "medium: M9 and M10 (trend shape and Windows leg sum) and low: 6 findings, to the next list"
+      "medium: M9 and M10 go to the totals row (K392), the owner's pick (2026-11-23)",
+      "low: L4, a 47 s Windows guard test over the 30 s report line, stays reported; speeding it up is a list row"
     ],
     "fixes": [
+      {
+        "id": "fix-L1",
+        "finding": "L1",
+        "severity": "low",
+        "text": "the trend history takes only main runs older than this one, so a re-run never reads later runs",
+        "commit": "6e701bfc",
+        "test": "tests/ci-budget.test.mjs::a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)",
+        "security": true
+      },
+      {
+        "id": "fix-L2",
+        "finding": "L2",
+        "severity": "low",
+        "text": "the trend matches a job by its name without its matrix leg, so a split or a moved leg keeps its trend",
+        "commit": "165defb9",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-L3",
+        "finding": "L3",
+        "severity": "low",
+        "text": "in the Windows slice each test file starts its round robin at a shard its name picks",
+        "commit": "28c47ab0",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-L5",
+        "finding": "L5",
+        "severity": "low",
+        "text": "the always-true stderr check in the 180 s test is gone",
+        "commit": "38241d84",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-L6",
+        "finding": "L6",
+        "severity": "low",
+        "text": "a test holds that a main push reads the older main runs into its history",
+        "commit": "38241d84",
+        "test": "tests/ci-budget.test.mjs::a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)",
+        "security": true
+      },
       {
         "id": "fix-H1",
         "finding": "H1",

@@ -6,7 +6,7 @@ A job or test over its time limit is reported, not failed, and a job over on 3 m
 
 ### Changed
 - Job time and test time are reported, not failed: a job over 180 s on 3 main runs in a row is named as a trend for a list row, and the Windows 60 s cap is gone.
-- The Windows tests run over 2 runners; the Windows test check and the guard proofs run once, on the first.
+- The Windows tests run over 2 runners, each test file starting at a spread shard; the Windows test check and the guard proofs run once, on the first.
 
 ## 1.51.2 - 2026-11-23
 
