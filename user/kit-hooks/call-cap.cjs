@@ -232,9 +232,13 @@ function meter(input) {
 		const spend = [...calls.values()].map((u) => dollars(u, u.model));
 		const used = spend.reduce((t, x) => t + x, 0);
 		const dearest = spend.length ? Math.max(...spend) : 0;
-		const model = calls.size ? [...calls.values()].pop().model : '';
-		// The next call can cost as much as the dearest so far, and a second one of that cost is kept back too.
-		const reserve = 2 * dearest + reportDollars(model);
+		const lastCall = calls.size ? [...calls.values()].pop() : {};
+		const model = lastCall.model || '';
+		// The next call can cost as much as the dearest so far, and a second one of that cost is kept back too. The
+		// report is one more call: its output (reportDollars) and its input, the last call's whole context re-read at
+		// the cache-read price of the last call's model.
+		const context = ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce((t, k) => t + (Number(lastCall[k]) || 0), 0);
+		const reserve = 2 * dearest + reportDollars(model) + (context * price(model).cacheRead) / 1e6;
 		// An unknown model is priced at the dearest, which the reserve follows; the row says so, once per evaluation.
 		const unknown = [...calls.values()].find((u) => !price(u.model).known);
 		if (unknown) logOpen(input, `model ${String(unknown.model || 'none')} is not in the price table: priced at the dearest`);
