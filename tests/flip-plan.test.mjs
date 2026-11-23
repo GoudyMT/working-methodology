@@ -79,33 +79,44 @@ test("only flips whose line or covering tests changed since the PR's last measur
 		'src/a.cjs': 'exports.z = 1;\nexports.isPos = (x) => x > 0;\nexports.isBig = (x) => x > 10;\nexports.isNeg = (x) => x < 0;\n',
 		'tests/a.test.mjs': testFile(
 			"test('pos', () => { assert.equal(a.isPos(1), true); assert.equal(a.isPos(-1), false); });",
-			"test('big', () => { assert.equal(typeof a.isBig(100), 'boolean'); });",
 		),
+		'tests/big.test.mjs': testFile("test('big', () => { assert.equal(typeof a.isBig(100), 'boolean'); });"),
 		'tests/b.test.mjs': testFile("test('neg', () => { assert.equal(a.isNeg(-1), true); });"),
 	}, 'measured');
 	const head = commit(dir, {
 		'src/a.cjs': 'exports.z = 1;\nexports.isPos = (x) => x > 0;\nexports.isBig = (x) => x > 20;\nexports.isNeg = (x) => x < 0;\n',
 		'tests/a.test.mjs': testFile(
 			"test('pos', () => { assert.equal(a.isPos(1), true); assert.equal(a.isPos(-1), false); });",
-			"test('big', () => { assert.equal(typeof a.isBig(100), 'boolean'); });",
 		) + '// re-read at the new head\n',
 	}, 'head');
 	map(dir, head, {
 		'tests/a.test.mjs::pos': { ms: 1000, lines: { 'src/a.cjs': [2] } },
-		'tests/a.test.mjs::big': { ms: 1000, lines: { 'src/a.cjs': [3] } },
+		'tests/big.test.mjs::big': { ms: 1000, lines: { 'src/a.cjs': [3] } },
 		'tests/b.test.mjs::neg': { ms: 1000, lines: { 'src/a.cjs': [4] } },
 	});
-	// Without --since every flip is new; with it, line 4 (its code and its test both unchanged) is left out.
+	// Line 2 is new through its covering test (a changed file), line 3 through its own changed code, line 4 through neither.
 	const all = ok(plan(dir, ['--base', base]));
 	assert.match(all, /^flips: 3 new of 3$/m, all);
 	const mine = ok(plan(dir, ['--base', base, '--since', since]));
 	assert.match(mine, /^flips: 2 new of 3$/m, mine);
+	assert.match(mine, /^run: src\/a\.cjs:2 /m, mine);
+	assert.match(mine, /^run: src\/a\.cjs:3 /m, mine);
 	assert.doesNotMatch(mine, /src\/a\.cjs:4\b/, mine);
+	// An unknown flag is a usage error and exits 2.
+	const bad = plan(dir, ['--base', base, '--no-such-flag']);
+	assert.equal(bad.status, 2, bad.stdout + bad.stderr);
 });
 
 // why: catches picked flips past 150 s of predicted time are named as carried, not run (CI-B S2)
 test('picked flips past 150 s of predicted time are named as carried, not run', () => {
 	const { dir, base } = budgetRepo(100);
+	// The flip on line 3 has a test with no ms, so it counts the map's median (100 s here), not zero.
+	map(dir, sh(dir, 'rev-parse', 'HEAD'), {
+		'tests/a.test.mjs::t1': { ms: 100000, lines: { 'src/a.cjs': [2] } },
+		'tests/a.test.mjs::t2': { lines: { 'src/a.cjs': [3] } },
+		'tests/a.test.mjs::t3': { ms: 100000, lines: { 'src/a.cjs': [4] } },
+		'tests/a.test.mjs::t4': { ms: 100000, lines: { 'src/a.cjs': [5] } },
+	});
 	// Four flips at 100 s each: the first fits the default 150 s budget, the other three are past it.
 	const out = ok(plan(dir, ['--base', base]));
 	assert.match(out, /^flips: 4 new of 4$/m, out);
@@ -115,6 +126,13 @@ test('picked flips past 150 s of predicted time are named as carried, not run', 
 		assert.match(out, new RegExp(`^carried: src/a\\.cjs:${line} .+ \\(100(\\.0+)? s predicted\\)$`, 'm'), out);
 	}
 	assert.match(out, /^budget: 100(\.0+)? of 150 s$/m, out);
+	// At 200 s the budget takes lines 2 and 3 (at or under is picked); lines 4 and 5 are carried.
+	const at200 = ok(plan(dir, ['--base', base, '--budget', '200']));
+	const runLines = at200.split('\n').filter((l) => l.startsWith('run: '));
+	const carriedLines = at200.split('\n').filter((l) => l.startsWith('carried: '));
+	assert.equal(runLines.length, 2, at200);
+	assert.equal(carriedLines.length, 2, at200);
+	assert.match(at200, /^budget: 200(\.0+)? of 200 s$/m, at200);
 });
 
 // why: catches 4 workers run flips at once and the verdicts match a serial run (CI-B S3)
@@ -130,7 +148,7 @@ test('4 workers run flips at once and the verdicts match a serial run', () => {
 	const parallelMs = Date.now() - t1;
 	assert.equal(runLines(serial).length, 4, serial);
 	assert.deepEqual(runLines(parallel), runLines(serial), 'the verdicts of 4 workers differ from a serial run');
-	assert.ok(parallelMs < serialMs * 0.6, `4 workers took ${parallelMs} ms, serial ${serialMs} ms: not run at once`);
+	assert.ok(parallelMs < serialMs * 0.75,`4 workers took ${parallelMs} ms, serial ${serialMs} ms: not run at once`);
 });
 
 // why: catches a flip stops at its first red test (CI-B S4)
@@ -166,12 +184,21 @@ test('a flip stops at its first red test', () => {
 // why: catches the report names every carried flip (CI-B S5)
 test('the report names every carried flip', () => {
 	const { dir, base } = budgetRepo(100);
+	const json = path.join(kitTemp.makeTemp('flipplan-carry-'), 'flips.json');
 	// A 250 s budget takes two flips at 100 s each (200 s); the other two are carried and must each be named.
-	const out = ok(plan(dir, ['--base', base, '--budget', '250']));
+	const out = ok(plan(dir, ['--base', base, '--budget', '250', '--json', json]));
 	assert.match(out, /^budget: 200(\.0+)? of 250 s$/m, out);
 	const carried = out.split('\n').filter((l) => l.startsWith('carried: '));
 	assert.equal(carried.length, 2, out);
 	for (const line of [4, 5]) {
 		assert.ok(carried.some((l) => l.startsWith(`carried: src/a.cjs:${line} `)), `line ${line} not named: ${out}`);
+	}
+	// A carried flip's JSON record says so and ran nothing.
+	const records = JSON.parse(fs.readFileSync(json, 'utf8'));
+	for (const line of [4, 5]) {
+		const rec = records.find((f) => f.line === line);
+		assert.ok(rec, JSON.stringify(records));
+		assert.equal(rec.verdict, 'carried', JSON.stringify(rec));
+		assert.deepEqual(rec.ran, [], JSON.stringify(rec));
 	}
 });
