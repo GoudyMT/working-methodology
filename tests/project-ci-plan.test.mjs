@@ -42,15 +42,25 @@ test('a jest or vitest JSON report of 400 s gives 4 shards at 110 s each', () =>
 		assert.equal(r.status, 0, r.stderr);
 		assert.match(r.stdout, /^total=400$/m);
 		assert.match(r.stdout, /^shards=\{"shard":\[1,2,3,4\]\}$/m);
+		// The 110 s size is fixed: 331 s needs a 4th shard, 330 s fits in 3.
+		fs.writeFileSync(path.join(dir, 'over.json'), jsonReport([['tests/a.test.js', 331]]));
+		const over = runPlan(dir, ['--report', 'over.json']);
+		assert.equal(over.status, 0, over.stderr);
+		assert.match(over.stdout, /^shards=\{"shard":\[1,2,3,4\]\}$/m);
+		fs.writeFileSync(path.join(dir, 'exact.json'), jsonReport([['tests/a.test.js', 330]]));
+		const exact = runPlan(dir, ['--report', 'exact.json']);
+		assert.equal(exact.status, 0, exact.stderr);
+		assert.match(exact.stdout, /^shards=\{"shard":\[1,2,3\]\}$/m);
 	});
 });
 
 // why: catches a pytest durations file is read the same way (CI-D S2)
 test('a pytest durations file is read the same way', () => {
 	projectFolder((dir) => {
+		// Two lines for one file: its seconds are the sum, 250 + 150 = 400, and the total is 400 too.
 		fs.writeFileSync(
 			path.join(dir, 'durations.txt'),
-			'250.00s call     tests/test_a.py::test_one\n150.00s setup    tests/test_b.py::test_two\n',
+			'250.00s call     tests/test_a.py::test_one\n150.00s setup    tests/test_a.py::test_two\n',
 		);
 		const r = runPlan(dir, ['--report', 'durations.txt']);
 		assert.equal(r.status, 0, r.stderr);
@@ -68,6 +78,12 @@ test('no report gives 1 shard and says "not measured"', () => {
 			assert.match(r.stdout, /not measured/, label);
 			assert.match(r.stdout, /^shards=\{"shard":\[1\]\}$/m, label);
 		}
+		// Bad input is an error, not "not measured": an unknown flag and malformed JSON both exit 2.
+		const flag = runPlan(dir, ['--bogus']);
+		assert.equal(flag.status, 2, flag.stderr);
+		fs.writeFileSync(path.join(dir, 'broken.json'), '{"testResults": [');
+		const broken = runPlan(dir, ['--report', 'broken.json']);
+		assert.equal(broken.status, 2, broken.stderr);
 	});
 });
 
