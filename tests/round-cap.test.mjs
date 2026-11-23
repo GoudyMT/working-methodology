@@ -218,7 +218,7 @@ test('Plan and Unit lines with bold, list markers, a Units label or a second Uni
 		const results = checkCalls(dir, prompts.map((prompt) => ({ subagent_type: type, prompt })));
 		results.forEach((d, i) => {
 			assert.ok(denied(d), `${type} with ${JSON.stringify(prompts[i])} is refused, got ${JSON.stringify(d)}`);
-			assert.match(reason(d), /U17/);
+			assert.match(reason(d), /third check round on U17/);
 		});
 	}
 });
@@ -254,4 +254,49 @@ test('two counted rounds on U7 under plan A do not cap U7 under plan B', () => {
 	assert.equal(a2, null);
 	assert.ok(denied(a3), `the third round under plan A is refused, got ${JSON.stringify(a3)}`);
 	assert.equal(b1, null, `U7 under plan B has no rounds yet and passes, got ${JSON.stringify(b1)}`);
+});
+
+// why: catches tester and builder spawns with Plan and Unit lines spending a unit's check rounds (K366 S1, round 2 N1)
+test('tester and builder spawns with Plan and Unit lines spend no check round', () => {
+	const dir = repo();
+	const brief = 'Plan: PLAN.md\nUnit: U13\nWorktree: .\nGo.';
+	const workers = [
+		{ subagent_type: 'builder', prompt: brief },
+		{ subagent_type: 'tester', prompt: brief },
+		{ subagent_type: 'general-purpose', prompt: `Role: builder\n${brief}` },
+	];
+	checkCalls(dir, workers);
+	assert.equal(readRows(logFile(dir)).filter((r) => r.round === 'check').length, 0, 'no check row for a worker spawn');
+	const [c1, c2, c3] = checkCalls(dir, [checker('U13'), checker('U13'), checker('U13')]);
+	assert.equal(c1, null, `the first real check passes, got ${JSON.stringify(c1)}`);
+	assert.equal(c2, null, `the second real check passes, got ${JSON.stringify(c2)}`);
+	assert.ok(denied(c3), 'the third real check is refused');
+});
+
+// why: catches a marked-up Plan line with no Unit line passing uncounted, a full round-cap bypass (K366 S3, round 2 N2)
+test('a marked-up Plan line with no Unit line is refused like a plain one', () => {
+	const dir = repo();
+	const results = checkCalls(dir, ['**Plan:** P.md\nGo.', '- Plan: P.md\nGo.'].map((prompt) => ({ subagent_type: 'checker', prompt })));
+	for (const d of results) assert.match(reason(d), /names no unit/, `refused for no unit, got ${JSON.stringify(d)}`);
+});
+
+// why: catches a plan-less checker counted against every plan's rows, so a reused unit id is capped forever (K366 S3, round 2 N5)
+test('a checker with no Plan line counts only rows with no plan', () => {
+	const dir = repo();
+	const under = (plan) => ({ subagent_type: 'checker', prompt: `Plan: ${plan}\nUnit: U3\nCheck.` });
+	checkCalls(dir, [under('A.md'), under('B.md')]);
+	const [bare] = checkCalls(dir, [{ subagent_type: 'checker', prompt: 'Unit: U3\nCheck.' }]);
+	assert.equal(bare, null, `rounds under plans A and B do not count for a plan-less check, got ${JSON.stringify(bare)}`);
+});
+
+// why: catches the plan key compared raw, so a respelled plan path opens a fresh count (K366 S3, round 2 a)
+test('the same plan spelled another way is still the same plan', () => {
+	const spellings = ['./PLAN.md', 'PLAN.md (round 3)', '_PLAN.md_', path.resolve('PLAN.md')];
+	if (process.platform === 'win32') spellings.push('plan.md');
+	for (const spelling of spellings) {
+		const dir = repo();
+		const at = (plan) => ({ subagent_type: 'checker', prompt: `Plan: ${plan}\nUnit: U7\nCheck.` });
+		const [, , third] = checkCalls(dir, [at('PLAN.md'), at('PLAN.md'), at(spelling.startsWith(path.sep) || /^[A-Za-z]:/.test(spelling) ? path.join(dir, 'PLAN.md') : spelling)]);
+		assert.ok(denied(third), `"${spelling}" is the plan of the first two rounds, got ${JSON.stringify(third)}`);
+	}
 });

@@ -245,3 +245,27 @@ test('a git failure inside the closeout gate refuses a checker with "hook error:
 	assert.match(reason(spawn), /hook error: lead review/);
 	assert.ok(readRows(openFile(dir)).length >= 1, 'the cause is logged in kit-guard-open.log');
 });
+
+// why: catches a ticketed tester counted as a checker because its brief carries Plan: and Unit: lines (K369 S2, round 2 N1)
+test('a ticketed tester whose brief carries Plan and Unit lines passes in closeout', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const briefed = { subagent_type: 'tester', prompt: 'Plan: PLAN.md\nUnit: U24\nRole: tester\nTicket: F1\nWrite the tests for the finding.' };
+	const general = { subagent_type: 'general-purpose', prompt: 'Plan: PLAN.md\nUnit: U24\nRole: tester\nTicket: F1\nWrite the tests for the finding.' };
+	const [typed, roled] = checkCalls(dir, [briefed, general]);
+	assert.equal(typed, null, `a tester type with Plan and Unit lines is no checker, got ${JSON.stringify(typed)}`);
+	assert.equal(roled, null, `a general agent with Role: tester is no checker, got ${JSON.stringify(roled)}`);
+});
+
+// why: catches a git that never ran (not on PATH, or timed out) read as no closeout, so a ticketless tester passes (K369 S5, round 2 b)
+test('a git that cannot run inside the closeout gate refuses the spawn', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const bin = path.dirname(process.execPath);
+	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); process.stdout.write(JSON.stringify(m.check({ tool_name: 'Agent', tool_input: a.call, cwd: a.cwd })));";
+	const args = JSON.stringify({ hookDir: HOOK_DIR, call: tester(null), cwd: dir });
+	const env = isolatedEnv({ KIT_CLAUDE_HOME: CONFIG, CLAUDE_CONFIG_DIR: CONFIG, KIT_TEST_ARGS: args, PATH: bin, Path: bin });
+	const r = spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env, encoding: 'utf8' });
+	assert.equal(r.status, 0, `agent-model.cjs check ran: ${r.stderr}`);
+	const d = JSON.parse(r.stdout);
+	assert.ok(denied(d), `with no git on PATH the spawn is refused, got ${JSON.stringify(d)}`);
+	assert.match(reason(d), /hook error: lead review/);
+});

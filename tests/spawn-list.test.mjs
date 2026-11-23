@@ -12,8 +12,10 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 const HOOK_DIR = path.resolve('user/kit-hooks');
-// The hook names unit-lock.mjs by a path built from its own folder, so the command runs outside the kit repo.
-const COMMAND = path.join(HOOK_DIR, '..', 'kit-tools', 'unit-lock.mjs');
+// The hook names unit-lock.mjs by a path built from its own folder, so the command runs outside the kit repo; the path is
+// quoted with forward slashes, so it runs in bash, PowerShell and cmd, and a folder with a space keeps one argument.
+const COMMAND_PATH = path.join(HOOK_DIR, '..', 'kit-tools', 'unit-lock.mjs');
+const COMMAND = `node "${COMMAND_PATH.replace(/\\/g, '/')}"`;
 
 function isolatedEnv(extra = {}) {
 	const home = kitTemp.makeTemp('spawn-list-home-');
@@ -84,7 +86,7 @@ test('a tester spawn whose brief names a worktree with no kit-unit-files.txt is 
 	assert.ok(denied(writer), `the writer spawn is refused too, got ${JSON.stringify(writer)}`);
 	assert.ok(denied(unnamed), `a tester spawn with no Worktree line is checked against the hook's cwd, got ${JSON.stringify(unnamed)}`);
 	for (const d of [tester, writer]) assert.ok(reason(d).includes(`${COMMAND} --tester --files`), `the full command is named: ${reason(d)}`);
-	assert.ok(fs.existsSync(COMMAND), 'the path in the message exists on disk');
+	assert.ok(fs.existsSync(COMMAND_PATH), 'the path in the message exists on disk');
 	const listed = worktree(true);
 	const [named] = checkCalls(listed, [spawnCall('tester', wt)]);
 	assert.ok(denied(named), `a cwd with a list does not cover a Worktree line naming a bare worktree, got ${JSON.stringify(named)}`);
