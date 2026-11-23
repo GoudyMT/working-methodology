@@ -49,6 +49,7 @@ test('the pause ask prints the session id the resume needs, and names CLAUDE_COD
   fs.writeFileSync(f, JSON.stringify(askContract()));
   const withId = approveIn(wt, [f], { CLAUDE_CODE_SESSION_ID: TAP_SID });
   assert.match(withId.stdout, /ASK THE OWNER/);
+  assert.match(withId.stdout, /--resume/);
   assert.ok(withId.stdout.includes(TAP_SID), `the resume line names no session id:\n${withId.stdout}`);
   const without = approveIn(wt, [f], {});
   assert.match(without.stdout, /ASK THE OWNER/);
@@ -83,15 +84,15 @@ test('a contract path through a symlink or a .. spelling resolves to the same wo
   const dotted = path.join(a.wt, 'sweeps', '..', 'sweeps', '..', 'sweeps', 'contract.json');
   const ra = clear(a.wt, dotted);
   assert.equal(ra.status, 0, ra.stdout + ra.stderr);
-  assert.ok(firstBrief(path.join(a.wt, 'sweeps')).includes(), firstBrief(path.join(a.wt, 'sweeps')));
+  assert.ok(firstBrief(path.join(a.wt, 'sweeps')).includes(`${real(a.wt)}/standards/agent-teams.md with the read tool`), firstBrief(path.join(a.wt, 'sweeps')));
   assert.equal(recordedPhrase(a.dir), 'Wt Wt');
   // A junction (a directory symlink that needs no privilege on Windows) to the worktree's sweeps folder, run from the main checkout.
   const b = twoCheckouts();
-  const link = path.join(path.dirname(b.dir), );
+  const link = path.join(path.dirname(b.dir), `${path.basename(b.dir)}-link`);
   fs.symlinkSync(path.join(b.wt, 'sweeps'), link, 'junction');
   const rb = clear(b.dir, path.join(link, 'contract.json'));
   assert.equal(rb.status, 0, rb.stdout + rb.stderr);
-  assert.ok(firstBrief(path.join(b.wt, 'sweeps')).includes(), firstBrief(path.join(b.wt, 'sweeps')));
+  assert.ok(firstBrief(path.join(b.wt, 'sweeps')).includes(`${real(b.wt)}/standards/agent-teams.md with the read tool`), firstBrief(path.join(b.wt, 'sweeps')));
   assert.equal(recordedPhrase(b.dir), 'Wt Wt');
 });
 
