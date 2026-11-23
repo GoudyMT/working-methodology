@@ -1097,3 +1097,42 @@ test('pre-push holds a merge of main that resolves a feature test edit back to m
 	}
 });
 
+// why: catches a merge of a main that dropped a test the feature never touched held, and a test the feature added then dropped in a merge passed, since only the first is a net change from main
+test('pre-push passes a merge of main that drops a test the feature never touched, and holds a drop of a test the branch added, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// main holds tests/old.test.mjs, and the remote main holds it too.
+		put(dir, { 'tests/old.test.mjs': 'test("old", () => {});\n' });
+		commit(dir, 'test: add the old case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		// feat/y forks from main before the drop and never touches tests/old.test.mjs.
+		git(dir, ['checkout', '-q', '-b', 'feat/y']);
+		put(dir, { 'src/util.js': 'export const id = (x) => x + 2;\n' });
+		const featY = commit(dir, 'feat: tune util');
+		git(dir, ['push', '-q', 'origin', `${featY}:refs/heads/feat/y`]);
+		// A PR drops the old test on main, and the remote main takes the drop.
+		git(dir, ['checkout', '-q', 'main']);
+		git(dir, ['rm', '-q', 'tests/old.test.mjs']);
+		commit(dir, 'test: drop the old case');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		git(dir, ['checkout', '-q', 'feat/y']);
+		assert.equal(mergeRef(dir, 'main').status, 0, 'merging main is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const ok = pushRun(hook, dir, bare, `refs/heads/feat/y ${merge} refs/heads/feat/y ${featY}\n`);
+		assert.equal(ok.status, 0, `${hook} held a merge of main that drops a test the branch never touched: ${ok.stderr}`);
+		assert.doesNotMatch(ok.stderr, HOLD_RE);
+		// Control: a test feat/z adds itself, then a merge with main drops, is held.
+		git(dir, ['checkout', '-q', '-b', 'feat/z', red]);
+		put(dir, { 'tests/mine.test.mjs': 'test("mine", () => {});\n' });
+		const mine = commit(dir, 'test: add the mine case');
+		git(dir, ['push', '-q', 'origin', `${mine}:refs/heads/feat/z`]);
+		assert.equal(mergeRef(dir, 'main', ['--no-commit']).status, 0, 'merging main is clean');
+		git(dir, ['rm', '-q', 'tests/mine.test.mjs']);
+		const dropped = commit(dir, 'merge main and drop the mine case');
+		const held = pushRun(hook, dir, bare, `refs/heads/feat/z ${dropped} refs/heads/feat/z ${mine}\n`);
+		assert.notEqual(held.status, 0, `${hook} passed a merge that drops a test the branch added: ${held.stderr}`);
+		assert.match(held.stderr, HOLD_RE);
+	}
+});
+
