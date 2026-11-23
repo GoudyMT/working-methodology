@@ -40,8 +40,11 @@ test('predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6', () => {
 		assert.ok(r.lines.includes(`unit={"shard":${shards}}`), `${seconds} s: output ${JSON.stringify(r.lines)}`);
 	}
 	const over = map([['tests/a.test.mjs::one', 661000]]);
+	// Past six runners it never fails the lanes job (M9): it names the overage, caps at 6 and exits 0.
 	const past = run(over.dir, over.file);
-	assert.equal(past.status, 1, `661 s: exit ${past.status}, stderr: ${past.stderr}`);
+	assert.equal(past.status, 0, `661 s: exit ${past.status}, stderr: ${past.stderr}`);
+	assert.ok(past.lines.includes('unit={"shard":[0,1,2,3,4,5]}'), `661 s: output ${JSON.stringify(past.lines)}`);
+	assert.match(past.stderr, /\b661\b[^\n]*\bover\b/, `661 s: overage not named: ${past.stderr}`);
 });
 
 // why: catches 600 changed tests give 6 test-check slices, 0 give 1 (CI-A S2)
@@ -97,7 +100,7 @@ test('prediction over 6x110 s exits 1 naming the 5 slowest tests', () => {
 		['tests/d.test.mjs::t7', 70000],
 	]);
 	const r = run(m.dir, m.file);
-	assert.equal(r.status, 1, `over 660 s: exit ${r.status}, stderr: ${r.stderr}`);
+	assert.equal(r.status, 0, `over 660 s: exit ${r.status}, stderr: ${r.stderr}`);
 	const slowest = ['tests/a.test.mjs::t1', 'tests/a.test.mjs::t2', 'tests/b.test.mjs::t3', 'tests/b.test.mjs::t4', 'tests/c.test.mjs::t5'];
 	const at = slowest.map((name) => r.stderr.indexOf(name));
 	for (const [i, pos] of at.entries()) assert.ok(pos >= 0, `slowest ${slowest[i]} not named: ${r.stderr}`);
@@ -162,4 +165,40 @@ test('output is GitHub matrix JSON on GITHUB_OUTPUT lines', () => {
 		assert.equal(fromEnv.status, 0, `env file: exit ${fromEnv.status}, stderr: ${fromEnv.stderr}`);
 		const appended = fs.readFileSync(envFile, 'utf8').split('\n').filter(Boolean);
 		assert.deepEqual([...appended].sort(), ['keep=1', ...printedWant].sort(), `env file: output ${JSON.stringify(appended)}`);
+});
+
+// A temp git repo: the base commit holds `before` as tests/a.test.mjs (none when null); the head commit holds `after`.
+function repoOf(before, after) {
+	const dir = kitTemp.makeTemp('ci-size-repo-');
+	const git = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@t', ...a], { cwd: dir, encoding: 'utf8' });
+	git('init', '-q', '-b', 'main');
+	fs.mkdirSync(path.join(dir, 'tests'));
+	fs.writeFileSync(path.join(dir, 'README'), 'x');
+	if (before !== null) fs.writeFileSync(path.join(dir, 'tests/a.test.mjs'), before);
+	git('add', '.'); git('commit', '-qm', 'base');
+	const base = git('rev-parse', 'HEAD').stdout.trim();
+	fs.writeFileSync(path.join(dir, 'tests/a.test.mjs'), after);
+	git('add', '.'); git('commit', '-qm', 'head');
+	return { dir, base };
+}
+const plain = (n) => Array.from({ length: n }, (_, i) => `test('t${i}', () => {});`).join('\n') + '\n';
+
+// why: catches changed-test count read from test-check's own parse so loops count and unchanged tests do not (M10)
+test('the changed-test count comes from the test parse of base against head, loops counted', () => {
+	const m = map([['tests/a.test.mjs::one', 1000]]);
+	// Runs the script in the repo with --base (the flag that asks for the count) and returns the status, stderr and lines.
+	const sized = (repo, name) => {
+		const out = path.join(m.dir, name);
+		const r = spawnSync(process.execPath, [SCRIPT, '--map', m.file, '--base', repo.base, '--github-output', out], { cwd: repo.dir, encoding: 'utf8' });
+		return { status: r.status, stderr: r.stderr, lines: fs.existsSync(out) ? fs.readFileSync(out, 'utf8').split('\n').filter(Boolean) : [] };
+	};
+	// 100 new plain tests and a loop that makes more: 101 changed units is past one slice. A grep for test( at the margin
+	// finds 100 and misses the loop, so it would size one slice.
+	const looped = sized(repoOf(null, plain(100) + 'for (const x of [1, 2]) {\n\ttest(`loop ${x}`, () => {});\n}\n'), 'looped.txt');
+	assert.equal(looped.status, 0, `looped: exit ${looped.status}, stderr: ${looped.stderr}`);
+	assert.ok(looped.lines.includes('check={"slice":[0,1]}'), `looped: output ${JSON.stringify(looped.lines)}`);
+	// 150 tests already on the base and one new: one changed unit. A grep counts every test in the changed file (151).
+	const grown = sized(repoOf(plain(150), plain(150) + "test('fresh', () => {});\n"), 'grown.txt');
+	assert.equal(grown.status, 0, `grown: exit ${grown.status}, stderr: ${grown.stderr}`);
+	assert.ok(grown.lines.includes('check={"slice":[0]}'), `grown: output ${JSON.stringify(grown.lines)}`);
 });

@@ -254,3 +254,12 @@ test('an unreadable jobs API answer fails the check and is logged', () => {
 	assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
 	assert.equal(ok.log.length, 0);
 });
+
+// why: catches a test-check time budget longer than the 180 s job budget leaves a slice red (H2)
+test('the test-check budgets, Linux slice and Windows part, fit inside the 180 s job budget', () => {
+	const yml = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
+	const budgets = [...yml.matchAll(/test-check\.mjs[^\n]*--budget (\d+)/g)].map((m) => Number(m[1]));
+	assert.equal(budgets.length, 2, `the Linux slice and the Windows part each set a --budget, found ${JSON.stringify(budgets)}`);
+	// 180 s less setup (checkout, node, the base unpack) is about 120 s; a longer budget runs past the job's own limit.
+	for (const b of budgets) assert.ok(b <= 120, `a test-check --budget of ${b} s does not fit the 180 s job budget`);
+});

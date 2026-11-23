@@ -39,6 +39,16 @@ test('a fast-lane test over 30 s fails naming the test and its time', () => {
 	assert.ok(line, out);
 	const times = [...line.matchAll(/\b(\d+) ms\b/g)].map((m) => Number(m[1]));
 	assert.ok(times.some((t) => t >= 1500), `no time of 1500 ms or more on: ${line}`);
+	// The cap line is on stderr, where test-check quotes a failed run from (the sweep's M13), not only on stdout.
+	assert.ok(r.stderr.split('\n').some((l) => l.includes('the sleeping test') && /\b500\b/.test(l)), `no cap line on stderr: ${r.stderr}`);
+	// A traced run (--map) measures every test and is not held to the cap (M12): the same test passes there, so a main
+	// push still writes its map.
+	const git = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
+	fs.writeFileSync(path.join(dir, '.gitignore'), 'tests/.map*.json\n');
+	git('init', '-q', '-b', 'main'); git('add', '.');
+	git('-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-qm', 'fixture');
+	const traced = runner(dir, ['--map', '--shards', '1', file], 500);
+	assert.equal(traced.status, 0, 'a --map run must not apply the fast cap: ' + traced.stdout + traced.stderr);
 });
 
 // why: catches the same test under tests/slow passes (CI-C S2)

@@ -57,7 +57,7 @@ function tokenOf(block) {
 // why: catches lanes job runs ci-size.mjs and exposes the matrices as outputs (CI-A S1)
 test('lanes job runs ci-size.mjs and exposes the matrices as outputs', () => {
 	const lanes = jobs(CI).lanes || '';
-	assert.match(lanes, /\bnode scripts\/ci-size\.mjs\b/, 'the lanes job does not run scripts/ci-size.mjs');
+	assert.match(lanes, /\bnode [^\n]*\bci-size\.mjs\b/, 'the lanes job does not run ci-size.mjs');
 	for (const key of ['unit', 'check', 'mutation']) {
 		assert.match(lanes, new RegExp('^\\s+' + key + ': \\$\\{\\{ steps\\.[\\w-]+\\.outputs\\.' + key + ' \\}\\}$', 'm'), 'the lanes job does not expose the ' + key + ' matrix as an output');
 	}
@@ -76,6 +76,33 @@ test('unit-tests and test-check read their matrix from needs.lanes.outputs, with
 		assert.ok(pre !== null, job + ' has no ' + judge + ' step');
 		const tokens = steps(pre).map(tokenOf);
 		assert.ok(WANT.some((w) => w.length === tokens.length && w.every((t, i) => t === tokens[i])), job + ' steps before ' + judge + ': ' + JSON.stringify(tokens));
+	}
+	// The unit slice steps pack by the map's measured time when a map is present (M11): each passes --plan.
+	const unitSlices = steps(J['unit-tests'] || '').filter((s) => /test-run\.mjs [^\n]*--slice\b/.test(s) && !/--map\b/.test(s));
+	assert.equal(unitSlices.length, 2, 'the unit-tests job does not have its two slice steps');
+	for (const s of unitSlices) assert.match(s, /--plan\b/, 'a unit slice step does not pass --plan: ' + s.split('\n')[0]);
+});
+
+// why: catches the lanes job running the PR's own ci-size and matrix values pasted into run lines (H1)
+test('the lanes job runs the base commit\'s ci-size and no matrix value reaches a run line except through env', () => {
+	const J = jobs(CI);
+	const lanes = J.lanes || '';
+	assert.match(lanes, /git show "\$BASE_SHA:scripts\/ci-size\.mjs"/, 'the lanes job does not take ci-size.mjs from the base commit');
+	assert.match(lanes, /\$RUNNER_TEMP/, 'the base copy of ci-size.mjs is not kept in $RUNNER_TEMP');
+	assert.doesNotMatch(lanes, /\bnode scripts\/ci-size\.mjs\b/, 'the lanes job still runs the PR\'s own scripts/ci-size.mjs');
+	// The unit and check outputs are checked as {shard|slice:[0..n-1]}, n from the array's length, not a comma count.
+	assert.doesNotMatch(lanes, /tr -cd ','/, 'a count of commas still stands for the array length');
+	assert.match(lanes, /\blength\b/, 'the matrix size is not read from the array length');
+	assert.match(lanes, /-le 6|-gt 6|<= ?6|> ?6|\[1-6\]/, 'the lanes job does not hold the runner count to 1..6');
+	// No run line takes a matrix value or a lanes output by ${{ }}: each goes in through env and is checked as an integer.
+	for (const [name, job] of Object.entries(J)) {
+		for (const s of steps(job)) {
+			const run = (s.split(/^        run:/m)[1]) || '';
+			assert.doesNotMatch(run, /\$\{\{\s*(matrix\.|needs\.lanes\.outputs\.)/, name + ': a run line takes a matrix or lanes value by ${{ }}: ' + run.trim().split('\n')[0]);
+		}
+	}
+	for (const job of ['unit-tests', 'test-check']) {
+		assert.match(J[job] || '', /\[0-9\]\+/, job + ' does not check its matrix values as integers');
 	}
 });
 
