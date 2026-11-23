@@ -441,41 +441,43 @@
   },
   "sweep": {
     "tier": "Feature (security-sensitive)",
-    "commit": "pending",
+    "commit": "be137038c3364da3c625e0f023adc280e8cbf09a",
     "dimensions": [
       {
         "name": "Privacy",
-        "result": "Pending: the one sweep"
+        "result": "Clean: no personal data, local path or secret shape in the diff"
       },
       {
         "name": "Supply chain",
-        "result": "Pending: the one sweep"
+        "result": "No new dependency or action pin; the template checkout tag goes to the next list"
       },
       {
         "name": "Legal",
-        "result": "Pending: the one sweep"
+        "result": "Clean: no copied content"
       },
       {
         "name": "Code security",
-        "result": "Pending: the one sweep"
+        "result": "Four security roles: CI trusted the PR copy of the sizing script, two gates failed open, a test could dodge the why check, and the hand-back gate only logged; each fixed with a test"
       },
       {
         "name": "Gaps, scaling, test value",
-        "result": "Pending: the one sweep"
+        "result": "Budgets that clashed with the 3 minute step, runner sizing and slice packing fixed; test tidiness lows to the next list"
       },
       {
         "name": "Alignment",
-        "result": "Pending: the one sweep"
+        "result": "Briefs from plan-check now carry the lines the gates read; skill wording matched to the code"
       }
     ],
     "findings": {
       "critical": 0,
-      "high": 0,
-      "medium": 0,
-      "low": 0
+      "high": 6,
+      "medium": 15,
+      "low": 25
     },
     "accepted": [],
-    "deferred": [],
+    "deferred": [
+      "low: 25 findings, the owner's pick (2026-11-23), in docs/builds/1.51.2.next.jsonl"
+    ],
     "fixes": []
   }
 }
