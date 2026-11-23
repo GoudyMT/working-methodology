@@ -68,6 +68,16 @@ test('the dear call placed first, in the middle or last gives the same verdict, 
 	}
 });
 
+// why: catches the same calls read twice give the same verdict (K357 S1)
+test('the same calls read twice give the same verdict', () => {
+	const calls = [...CHEAP, DEAR];
+	const first = verdict('Dollar ceiling: $1.44', calls);
+	const second = verdict('Dollar ceiling: $1.44', calls);
+	assert.deepEqual(second, first);
+	assert.equal(first.permissionDecision, 'allow', first.permissionDecisionReason);
+	assert.deepEqual(verdict('Dollar ceiling: $0.60', calls), verdict('Dollar ceiling: $0.60', calls));
+});
+
 // why: catches the token ceiling path keeps its own reserve, unchanged (K357 S4)
 test('the token ceiling path keeps its own reserve, unchanged', () => {
 	// Token reserve: 3 x last + 6 x (last - prev) + 5,000 = 42,000 + 81,000 + 5,000 = 128,000; spend is 28,000.
