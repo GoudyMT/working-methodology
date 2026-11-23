@@ -392,7 +392,24 @@ const readsLarge = (r) => (Array.isArray(r.context) ? r.context : []).some((x) =
 const filled = (s, min) => typeof s === 'string' && s.replace(/[^A-Za-z0-9]/g, '').length >= min;
 
 const rel = (f) => toPosix(path.relative(process.cwd(), f) || f);
-const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash);
+// An owner yes clears a decision only on the decision's own commit: both heads must be commit ids, and equal. A head
+// that is missing or unreadable clears nothing.
+const COMMIT_ID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
+const headOk = (h) => typeof h === 'string' && COMMIT_ID.test(h);
+const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) => j > i && y.kind === 'owner-yes' && y.contract === log[i].contract && y.hash === log[i].hash && headOk(y.head) && headOk(log[i].head) && y.head === log[i].head);
+
+// A decision the owner's yes could not clear for an unreadable head gets one row in the kit's guard log, so the
+// refusal to clear it is visible. A decision with no owner yes has nothing to clear and gets no row.
+const GUARD_LOG = LOG && path.join(path.dirname(LOG), 'kit-guard-open.log');
+function logUnreadableHeads(log) {
+	if (!GUARD_LOG) return;
+	log.forEach((d, i) => {
+		if (d.kind !== 'decision' || isCleared(log, i)) return;
+		const yes = log.filter((y, j) => j > i && y.kind === 'owner-yes' && y.contract === d.contract && y.hash === d.hash);
+		if (!yes.length || (headOk(d.head) && yes.every((y) => headOk(y.head)))) return;
+		fs.appendFileSync(GUARD_LOG, JSON.stringify({ at: new Date().toISOString(), hook: 'approve.mjs', cause: 'no readable head', contract: d.contract, hash: d.hash }) + '\n');
+	});
+}
 
 // The branch this checkout is on, recorded with each decision: a rebase rewrites the heads, not the name.
 const currentBranch = () => git('symbolic-ref', '--short', '-q', 'HEAD').stdout.trim();
@@ -511,6 +528,7 @@ function check(c, facts, log = []) {
 	const first = null;
 	{
 		// One sweep per branch: a plain contract after a sweep that ran here is a second pass, the owner's (rule:finding-pipeline).
+		logUnreadableHeads(log);
 		const done = facts && secondPass(log, facts.base);
 		if (done) why.push(`a second sweep on this branch is the owner's under the one-sweep loop (rule:finding-pipeline): ${rel(done)} already ran`);
 		if (c.modifiers !== undefined && !(Array.isArray(c.modifiers) && c.modifiers.every((m) => typeof m === 'string'))) fix.push('modifiers must be a list of names, like ["security-sensitive"]');
