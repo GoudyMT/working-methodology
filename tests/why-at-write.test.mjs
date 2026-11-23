@@ -217,3 +217,97 @@ test('a test file the hook cannot parse is refused and logged', () => {
 		rows = all.length;
 	}
 });
+
+// why: catches an Edit with replace_all true that turns a later // MARK into a why-less top-level test( passing the fence (K368 S3)
+test('an Edit with replace_all that turns a later // MARK into a why-less test( is refused', () => {
+	const start = '  // MARK\n' + testWith(GOOD_WHY, 'the old one') + '// MARK\n';
+	const dir = unitRepo(start);
+	const input = { file_path: target(dir), old_string: '// MARK', new_string: "test('the late one', () => {});", replace_all: true };
+	const bad = fence(dir, 'Edit', input);
+	assert.equal(bad.code, 2, 'the replace_all edit leaves a why-less top-level test and is refused: ' + bad.err);
+	assert.ok(bad.err.includes(NO_WHY) && bad.err.includes('the late one'), 'stderr names the new test: ' + bad.err);
+	// control: without replace_all only the indented first MARK changes, so no new top-level test appears
+	const once = fence(dir, 'Edit', { ...input, replace_all: false });
+	assert.equal(once.code, 0, 'a single replace of the indented MARK adds no top-level test: ' + once.err);
+});
+
+// why: catches an Edit adding a second why-less test('old', ...) beside an existing test('old') passing the fence (K368 S1)
+test("an Edit adding a second why-less test with an existing test's name is refused", () => {
+	const start = testWith(GOOD_WHY, 'the old one');
+	const dir = unitRepo(start);
+	const bad = fence(dir, 'Edit', { file_path: target(dir), old_string: start, new_string: start + testWith('', 'the old one') });
+	assert.equal(bad.code, 2, 'a second test of an existing name with no why is refused: ' + bad.err);
+	assert.ok(bad.err.includes(NO_WHY), 'stderr quotes whyFault: ' + bad.err);
+	const ok = fence(dir, 'Edit', { file_path: target(dir), old_string: start, new_string: start + testWith(GOOD_WHY, 'the old one') });
+	assert.equal(ok.code, 0, 'a second test of that name with a good why saves: ' + ok.err);
+});
+
+// why: catches an Edit that removes the why line from an existing test that had one passing the fence (K368 S1)
+test('an Edit that removes the why line from a test that had one is refused, a legacy why-less test stays editable', () => {
+	const start = testWith(GOOD_WHY, 'the old one');
+	const dir = unitRepo(start);
+	const strip = fence(dir, 'Edit', { file_path: target(dir), old_string: GOOD_WHY + '\n', new_string: '' });
+	assert.equal(strip.code, 2, 'removing the why line is refused: ' + strip.err);
+	assert.ok(strip.err.includes(NO_WHY) && strip.err.includes('the old one'), 'stderr names the test: ' + strip.err);
+	const body = fence(dir, 'Edit', { file_path: target(dir), old_string: '() => {}', new_string: '() => { 1; }' });
+	assert.equal(body.code, 0, 'editing the body of a test that keeps its why saves: ' + body.err);
+	const legacy = testWith('', 'the legacy one');
+	const dir2 = unitRepo(legacy);
+	const edit = fence(dir2, 'Edit', { file_path: target(dir2), old_string: '() => {}', new_string: '() => { 1; }' });
+	assert.equal(edit.code, 0, 'a legacy why-less test stays editable: ' + edit.err);
+});
+
+// A kit copy with handoff-gate in enforce, and a repo whose last commit writes the given files over a first commit.
+function gateFixture(files) {
+	const kit = kitTemp.makeTemp('why-gate-kit-');
+	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/kit-tools/handoff.mjs'), path.join(kit, 'kit-tools', 'handoff.mjs'));
+	fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), JSON.stringify({ holds: [{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode: 'enforce' }] }) + '\n');
+	const gate = path.join(kit, 'kit-hooks', 'handoff-gate.cjs');
+	const dir = kitTemp.makeTemp('why-gate-repo-');
+	git(dir, ['init', '-q', '-b', 'main']);
+	put(dir, 'README.md', 'start\n');
+	commit(dir, 'chore: first');
+	for (const [rel, text] of Object.entries(files)) put(dir, rel, text);
+	const sha = commit(dir, 'test: add tests');
+	const finding = { id: 'R1', severity: 'low', status: 'open', where: '-', claim: 'c', proof: 'p', fix: '-' };
+	const send = (extra) => {
+		const message = ['Prose.', 'RECORD:', JSON.stringify({ role: 'tester', commit: sha, clarity: 'clear', ...extra }), JSON.stringify(finding)].join('\n');
+		const r = spawnSync(process.execPath, [gate], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd: dir }) });
+		assert.equal(r.status, 0, r.stderr);
+		const out = r.stdout.trim() ? JSON.parse(r.stdout) : null;
+		return out && out.hookSpecificOutput && out.hookSpecificOutput.permissionDecision === 'deny' ? out.hookSpecificOutput.permissionDecisionReason : null;
+	};
+	return { send };
+}
+
+// why: catches a commit adding a test in a non-ASCII file name that the record does not list passing the gate (K368 S2)
+test('a commit adding a test in a non-ASCII file name that the record does not list is denied', () => {
+	const { send } = gateFixture({ 'tests/café.test.mjs': testWith(GOOD_WHY, 'the new one') });
+	const empty = send({ tests: [] });
+	assert.ok(empty, 'an unlisted test in tests/café.test.mjs is denied under enforce');
+	assert.ok(empty.includes('café.test.mjs::the new one'), 'the refusal names the file::name: ' + empty);
+	const listed = send({ tests: [{ name: 'the new one', why: GOOD_WHY }] });
+	assert.equal(listed, null, 'listing it with a good why passes: ' + listed);
+});
+
+// why: catches a record why given as the bare text after // why: being refused unlike the full line (K368 S2)
+test('a record why given as the bare text after // why: is accepted the same as the full line', () => {
+	const { send } = gateFixture({ [TEST_REL]: testWith(GOOD_WHY, 'the new one') });
+	const full = send({ tests: [{ name: 'the new one', why: GOOD_WHY }] });
+	assert.equal(full, null, 'the full line passes: ' + full);
+	const bare = send({ tests: [{ name: 'the new one', why: GOOD_WHY.slice('// why: '.length) }] });
+	assert.equal(bare, null, 'the bare text passes the same: ' + bare);
+	const badBare = send({ tests: [{ name: 'the new one', why: 'S2: the record lists it' }] });
+	assert.ok(badBare, 'a bare text that fails whyFault is still refused');
+});
+
+// why: catches a record giving a good why for a test whose own why line at the commit is missing passing the gate (K368 S2)
+test('the gate refuses a record that gives a good why for a test with no why line at the commit', () => {
+	const { send } = gateFixture({ [TEST_REL]: testWith('', 'the bare one') + testWith(GOOD_WHY, 'the good one') });
+	const reason = send({ tests: [{ name: 'the bare one', why: GOOD_WHY }, { name: 'the good one', why: GOOD_WHY }] });
+	assert.ok(reason, 'a why-less test in the commit is refused whatever the record says');
+	assert.ok(reason.includes(TEST_REL + '::the bare one'), 'the refusal names the why-less test: ' + reason);
+	assert.ok(!reason.includes('the good one'), 'the test with its why is not named: ' + reason);
+});
