@@ -244,6 +244,7 @@ test('an unreadable jobs API answer fails the check and is logged', () => {
 	const mrow = JSON.parse(mrows[0]);
 	assert.equal(mrow.hook, 'ci-budget');
 	assert.ok(typeof mrow.cause === 'string' && mrow.cause.length > 0, 'the missing-file row names no cause');
+	kitTemp.removeTemp(dir);
 	// Valid JSON that measures nothing never passes: no jobs array, an empty one, a wrong type, or a short list.
 	for (const raw of ['{}', '{"message":"Not Found"}', '{"jobs":"x"}', '{"jobs":[]}', JSON.stringify({ total_count: 3, jobs: [job('a', 5)] })]) {
 		const r = run([], { raw });
@@ -257,7 +258,7 @@ test('an unreadable jobs API answer fails the check and is logged', () => {
 	assert.equal(ok.log.length, 0);
 });
 
-// why: catches a test-check time budget longer than the 180 s job budget leaves a slice red (H2)
+// why: doc claim: ci.yml gives each test-check run a budget of 60 to 120 s, inside the 180 s job budget (H2)
 test('the test-check budgets, Linux slice and Windows part, fit inside the 180 s job budget', () => {
 	const yml = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8').split('\n').filter((l) => !/^\s*#/.test(l)).join('\n');
 	const budgets = [...yml.matchAll(/test-check\.mjs[^\n]*--budget (\d+)/g)].map((m) => Number(m[1]));

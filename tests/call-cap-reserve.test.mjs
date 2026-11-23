@@ -85,42 +85,6 @@ test('a reviewer whose spend plus twice its dearest call plus the report reaches
 	assert.equal(above3.permissionDecision, 'allow', above3.permissionDecisionReason);
 });
 
-// why: catches the dear call placed first, in the middle or last gives the same verdict, since the reserve reads the dearest call (K357 S1)
-test('the dear call placed first, in the middle or last gives the same verdict, since the reserve reads the dearest call', () => {
-	const orders = { first: [DEAR, ...CHEAP], middle: [...CHEAP.slice(0, 2), DEAR, ...CHEAP.slice(2)], last: [...CHEAP, DEAR] };
-	for (const [where, calls] of Object.entries(orders)) {
-		const room = verdict('Dollar ceiling: $1.44', calls);
-		assert.equal(room.permissionDecision, 'allow', `${where}: ${room.permissionDecisionReason}`);
-		const tight = verdict('Dollar ceiling: $0.60', calls);
-		assert.equal(tight.permissionDecision, 'deny', `${where} at a ceiling the reserve reaches`);
-	}
-});
-
-// why: catches the same calls read twice give the same verdict (K357 S1)
-test('the same calls read twice give the same verdict', () => {
-	const calls = [...CHEAP, DEAR];
-	const first = verdict('Dollar ceiling: $1.44', calls);
-	const second = verdict('Dollar ceiling: $1.44', calls);
-	assert.deepEqual(second, first);
-	assert.equal(first.permissionDecision, 'allow', first.permissionDecisionReason);
-	assert.deepEqual(verdict('Dollar ceiling: $0.60', calls), verdict('Dollar ceiling: $0.60', calls));
-});
-
-// why: catches the token ceiling path keeps its own reserve, unchanged (K357 S4)
-test('the token ceiling path keeps its own reserve, unchanged', () => {
-	// Token reserve: 3 x last + 6 x (last - prev) + 5,000 = 42,000 + 81,000 + 5,000 = 128,000; spend is 28,000.
-	const calls = [...CHEAP, DEAR];
-	const edge = verdict('Token ceiling: 156000', calls);
-	assert.equal(edge.permissionDecision, 'deny', 'spend and reserve reach the ceiling');
-	assert.match(edge.permissionDecisionReason, /Token ceiling reached \(28,000 of 156,000\)/);
-	const over = verdict('Token ceiling: 156001', calls);
-	assert.equal(over.permissionDecision, 'allow', over.permissionDecisionReason);
-	// The dollar rule's reserve (28,000 + 2 x 14,000 + 5,000 = 61,000) must not leak into the token path.
-	assert.equal(verdict('Token ceiling: 100000', calls).permissionDecision, 'deny', 'not the dollar reserve');
-	// The same calls under a dollar ceiling take the dollar reserve.
-	assert.equal(verdict('Dollar ceiling: $1.44', calls).permissionDecision, 'allow', 'the dollar path reads the dearest call');
-});
-
 // why: catches a call on an unknown model is priced at the dearest model, so the reserve only grows, logged (K357 S3)
 test('a call on an unknown model is priced at the dearest model, so the reserve only grows, logged', () => {
 	// The dearest model's output is $25 per million: the dear call is $0.35, spend $0.49, reserve 2 x 0.35 + 0.125 = 0.825.

@@ -54,7 +54,7 @@ function tokenOf(block) {
 	return head;
 }
 
-// why: catches lanes job runs ci-size.mjs and exposes the matrices as outputs (CI-A S1)
+// why: doc claim: ci.yml has a lanes job that runs ci-size.mjs and exposes the matrices as outputs (CI-A S1)
 test('lanes job runs ci-size.mjs and exposes the matrices as outputs', () => {
 	const lanes = jobs(CI).lanes || '';
 	assert.match(lanes, /\bnode [^\n]*\bci-size\.mjs\b/, 'the lanes job does not run ci-size.mjs');
@@ -88,7 +88,7 @@ test('unit-tests and test-check read their matrix from needs.lanes.outputs, with
 		assert.match(run, /-f [^\n]*\.map\.json|\b\w*plan\w*=\(\s*\)/i, 'a unit slice step passes --plan with no map guard: ' + s.split('\n')[0]);	}
 });
 
-// why: catches the lanes job running the PR's own ci-size and matrix values pasted into run lines (H1)
+// why: doc claim: ci.yml runs the base commit's ci-size and passes matrix values to run lines only through env (H1)
 test('the lanes job runs the base commit\'s ci-size and no matrix value reaches a run line except through env', () => {
 	const J = jobs(CI);
 	const lanes = J.lanes || '';
@@ -125,7 +125,7 @@ test('the lanes job runs the base commit\'s ci-size and no matrix value reaches 
 	}
 });
 
-// why: catches main push builds the map in slices and a map-merge job uploads tests/.map.json (CI-A S3)
+// why: doc claim: ci.yml builds the map in slices on a main push, and a map-merge job uploads tests/.map.json (CI-A S3)
 test('main push builds the map in slices and a map-merge job uploads tests/.map.json', () => {
 	const J = jobs(CI);
 	const slicer = Object.keys(J).find((k) => /test-run\.mjs --map --slice/.test(J[k]));

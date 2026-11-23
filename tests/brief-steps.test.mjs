@@ -38,7 +38,7 @@ test('the tester brief locks first, and the builder brief names exact test files
 	}
 });
 
-// why: catches a plan template that shows no retest unit and no lead ruling proof line (K361 S2)
+// why: doc claim: the plan template shows a retest unit and a lead ruling proof line (K361 S2)
 test('the plan template shows a retest unit and a "lead ruling:" proof line', () => {
 	const p = PLAN();
 	assert.match(p, /^(\||#)[^\n]*retest/im, 'batch-plan shows a retest unit in a table row or heading');
@@ -46,7 +46,7 @@ test('the plan template shows a retest unit and a "lead ruling:" proof line', ()
 	assert.match(p, either('lead ruling:', 'proof', 120), 'the ruling carries a proof');
 });
 
-// why: catches a skill that leaves out the warm-agent reset limit and the check-round cap and who enforces them (K362 S3)
+// why: doc claim: the skill states the warm reset limit and the check-round cap and the hooks that hold them (K362 S3)
 test('the skill names the reset limit and the 2-check-round cap with their enforcers', () => {
 	const s = SKILL();
 	assert.match(s, /warm\.mjs/, 'names warm.mjs');
@@ -61,7 +61,7 @@ test('the skill names the reset limit and the 2-check-round cap with their enfor
 	assert.match(s, either(cap, 'agent-model|round-cap', 200), 'the round cap names its enforcer (agent-model or round-cap)');
 });
 
-// why: catches missing lane cap, plan-check --brief, base re-check, and tester-brief stop-and-ask, plain commands, scratch rules (K363 S4)
+// why: doc claim: the skill names the lane cap, plan-check briefs and a base re-check, and the tester brief its stop-and-ask, plain commands and scratch (K363 S4)
 test('the skill carries the lane cap, briefs from plan-check, and a base re-check; the tester brief carries stop-and-ask, plain commands and scratch', () => {
 	const s = SKILL();
 	assert.match(s, /at most 4 lanes|4 lanes (building )?at once|no more than 4 lanes/i, 'at most 4 lanes at once'); // pin: 4 (the lane cap is the owner's)
@@ -73,7 +73,7 @@ test('the skill carries the lane cap, briefs from plan-check, and a base re-chec
 	assert.match(t, either('scratch', 'outside', 80), 'tester brief puts scratch outside the repo');
 });
 
-// why: catches a review step with no closeout card steps and no plain test-count line (K366 S5)
+// why: doc claim: the skill review step carries the closeout card steps and the may-or-may-not table (K366 S5)
 test('the skill review step carries the closeout card and the may-or-may-not table', () => {
 	const s = SKILL();
 	assert.match(s, either('closeout\\.json', 'once|one commit|single commit', 120), 'the lead writes and commits the closeout file once');
@@ -102,7 +102,7 @@ test('the skill carries isolated worktrees, the lock after spawn, the wip commit
 	assert.match(s, /date -u/, 'a date -u read before any time is written');
 });
 
-// why: catches a tester, builder or checker brief missing the Plan:, Unit:, Role: and Worktree: lines the spawn hooks read (K360 S1)
+// why: doc claim: the tester, builder and checker brief templates carry the Plan, Unit, Role and Worktree lines the spawn hooks read (K360 S1)
 test('the tester, builder and checker brief templates each carry Plan:, Unit:, Role: and Worktree: lines', () => {
 	const briefs = { 'tester-brief.md': TESTER(), 'builder-brief.md': BUILDER(), 'checker-brief.md': CHECKER() };
 	for (const [name, text] of Object.entries(briefs)) {

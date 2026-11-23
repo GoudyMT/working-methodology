@@ -40,7 +40,7 @@ function needsOf(job) {
 // The download of the merged map: the step that gets the test-map artifact from the PR base's own map run.
 const isDownload = (s) => /--name test-map --dir tests/.test(s);
 
-// why: catches the job sets git identity and init.defaultBranch, and fetches tags (CI-B S1)
+// why: doc claim: ci.yml has the minimal-code job set its git identity and default branch, and fetch tags (CI-B S1)
 test('the job sets git identity and init.defaultBranch, and fetches tags', () => {
 	const job = jobs(CI)['minimal-code'] || '';
 	assert.match(job, /git config --global user\.name /, 'the job sets no git user.name');
@@ -49,7 +49,7 @@ test('the job sets git identity and init.defaultBranch, and fetches tags', () =>
 	assert.match(job, /^\s+fetch-tags: true$/m, 'the job does not fetch tags');
 });
 
-// why: catches the job needs unit-tests and downloads the merged map instead of building one (CI-B S2)
+// why: doc claim: ci.yml has the minimal-code job need unit-tests and download the merged map, not build one (CI-B S2)
 test('the job needs unit-tests and downloads the merged map instead of building one', () => {
 	const job = jobs(CI)['minimal-code'] || '';
 	assert.ok(needsOf(job).includes('unit-tests'), 'the job does not need unit-tests');
@@ -62,7 +62,7 @@ test('the job needs unit-tests and downloads the merged map instead of building 
 	assert.doesNotMatch(joined(job), /test-run\.mjs[^\n]*--map\b/, 'the job still builds its own coverage map');
 });
 
-// why: catches the job runs flip-plan with --budget 150 and timeout-minutes 4 (CI-B S3)
+// why: doc claim: ci.yml runs the minimal-code flip-plan with a 150 s budget and a 4 minute timeout (CI-B S3)
 test('the job runs flip-plan with --budget 150 and timeout-minutes 4', () => {
 	const job = jobs(CI)['minimal-code'] || '';
 	assert.match(job, /^    if: github\.event_name == 'pull_request'$/m, 'the job no longer runs only on pull requests');

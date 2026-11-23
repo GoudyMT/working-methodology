@@ -98,7 +98,7 @@ test('each template has a plan job, a sized fast matrix and a budget step in ci,
 	}
 });
 
-// why: catches lane-state with no budget set judges against 3 minutes (CI-D S2)
+// why: guards rule:test-lanes (a fast lane with no budget set is judged against the default 3 minutes) (CI-D S2)
 test('lane-state with no budget set judges against 3 minutes', () => {
 	const dir = kitTemp.makeTemp('lane-state-');
 	try {
@@ -113,7 +113,7 @@ test('lane-state with no budget set judges against 3 minutes', () => {
 	}
 });
 
-// why: catches both testing.md copies say "default 3 minutes" and rules/testing.md stays at or under 14,000 bytes (CI-D S3)
+// why: doc claim: both testing.md copies say "default 3 minutes" and rules/testing.md stays at or under 14,000 bytes (CI-D S3)
 test('both testing.md copies say "default 3 minutes" and rules/testing.md stays at or under 14,000 bytes', () => {
 	const copies = [path.join(REPO, 'rules', 'testing.md'), path.join(REPO, 'project', '.claude', 'rules', 'testing.md')];
 	for (const file of copies) {

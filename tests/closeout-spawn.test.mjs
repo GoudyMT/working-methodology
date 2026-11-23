@@ -160,7 +160,7 @@ test('a general agent briefed as checker is refused too', () => {
 	assert.ok(denied(phraseWriter), `"Role: second writer" with no ticket is refused, got ${JSON.stringify(phraseWriter)}`);
 });
 
-// why: catches holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier (K369 S6)
+// why: guards the owner's pick (2026-11-23) that the spawn holds ship in enforce mode: holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier (K369 S6)
 test('holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier', () => {
 	const holds = JSON.parse(fs.readFileSync(HOLDS, 'utf8')).holds;
 	const expected = { 'spawn-list': 'small', 'warm-agents': 'small', 'round-cap': 'high', 'closeout-spawn': 'high' };

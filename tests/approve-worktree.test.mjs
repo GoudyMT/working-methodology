@@ -112,7 +112,7 @@ test('two runs on the same contract give the same decision', () => {
   assert.deepEqual([x.decision, x.reasons, x.hash, x.base], [y.decision, y.reasons, y.hash, y.base]);
 });
 
-// why: catches a worktree git cannot read gives FIX THE CONTRACT, logged (K357 S6)
+// why: guards rule:sweep-auto-approval (a worktree git cannot read is never approved from: FIX THE CONTRACT, logged) (K357 S6)
 test('a worktree git cannot read gives FIX THE CONTRACT, logged', () => {
   const { dir, wt } = twoCheckouts();
   // Git still finds the repository from the contract's folder but no work tree: the worktree cannot be read.
