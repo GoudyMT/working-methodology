@@ -49,13 +49,15 @@ const FAST_CAP_MS = 30000;
 const reporters = (xml) => ['--test-reporter=tap', '--test-reporter=junit', '--test-reporter-destination=stdout', `--test-reporter-destination=${xml}`];
 const unxml = (s) => s.replace(/&(#39|apos|quot|lt|gt|amp);/g, (_, e) => ({ '#39': "'", apos: "'", quot: '"', lt: '<', gt: '>', amp: '&' })[e]);
 // The tests in a JUnit report over the cap, with their file and time in ms (rounded up).
-function overCap(xml, cap) {
+// files: the test files the run that wrote this xml ran. Node 22's junit leaves the file attribute out, so a run of one
+// file names that file, and a run of several leaves it unnamed.
+function overCap(xml, cap, files) {
 	if (!fs.existsSync(xml)) return [];
 	const over = [];
 	for (const m of fs.readFileSync(xml, 'utf8').matchAll(/<testcase ([^>]*?)\/?>/g)) {
 		const at = Object.fromEntries([...m[1].matchAll(/(\w+)="([^"]*)"/g)].map(([, k, v]) => [k, unxml(v)]));
 		const ms = Math.ceil(Number(at.time) * 1000);
-		if (ms > cap) over.push({ name: at.name, file: at.file, ms });
+		if (ms > cap) over.push({ name: at.name, file: at.file || (files.length === 1 ? files[0] : undefined), files, ms });
 	}
 	return over;
 }
@@ -454,21 +456,21 @@ export async function main(argv) {
 			for (let j = 0; j < shards; j++) {
 				const k = slice * shards + j;
 				const xml = path.join(work, `junit-${k}.xml`);
-				xmls.push(xml);
+				xmls.push({ xml, files: shardFiles });
 				jobs.push(runOne(['--test', ...reporters(xml), '--test-concurrency=1', ...shardFiles], { ...env, KIT_SHARD: `${k}/${total}` }, `${name}shard ${k + 1}/${total}`, path.join(work, `at-${j}.txt`)));
 			}
 		}
 		if (whole.length && slice === 0) {
 			const xml = path.join(work, 'junit-whole.xml');
-			xmls.push(xml);
+			xmls.push({ xml, files: whole });
 			jobs.push(runOne(['--test', ...reporters(xml), ...whole], env, 'the unsharded files', path.join(work, 'at-whole.txt')));
 		}
 		const results = await Promise.all(jobs);
 		for (const r of results) if (r.status !== 0) process.stdout.write(r.out);
 		// A traced run (--map) measures every test, so the cap does not hold it: a main push still writes its map.
-		const late = o.map ? [] : xmls.flatMap((x) => overCap(x, cap)).filter((t) => !inSlow(t.file));
+		const late = o.map ? [] : xmls.flatMap((x) => overCap(x.xml, cap, x.files)).filter((t) => !(t.file ? inSlow(t.file) : t.files.every(inSlow)));
 		for (const t of late) {
-			const line = `test-run: fast-lane test over the cap: ${t.name} in ${posix(path.relative(root, real(t.file)))}, ${t.ms} ms (cap ${cap} ms)\n`;
+			const line = `test-run: fast-lane test over the cap: ${t.name} in ${t.file ? posix(path.relative(root, real(t.file))) : "one of the run's files"}, ${t.ms} ms (cap ${cap} ms)\n`;
 			process.stdout.write(line);
 			process.stderr.write(line); // test-check quotes a failed run from stderr
 		}
