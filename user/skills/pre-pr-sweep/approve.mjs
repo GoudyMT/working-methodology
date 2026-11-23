@@ -762,6 +762,7 @@ function rulesBlock(facts, hash) {
 	const commonDir = path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git');
 	const top = toplevel();
 	if (!top) return null;
+	const mainTop = path.dirname(commonDir);
 	const mb = facts && facts.base ? baseGit('merge-base', facts.base, 'HEAD').stdout.trim() : '';
 	const tracked = (f) => baseGit('ls-files', '--error-unmatch', '--', `:(top)${f}`).status === 0 || Boolean(mb && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0);
 	// The build 23a commit security review: where the base holds any of the rule files, only base copies count, so an
@@ -775,7 +776,9 @@ function rulesBlock(facts, hash) {
 			const r = baseGit('show', `${mb}:${f}`);
 			return r.status === 0 ? { text: r.stdout, base: true } : null;
 		}
-		try { return { text: fs.readFileSync(path.join(top, f), 'utf8'), base: false }; } catch { return null; }
+		// K357 C1: a worktree with no copy of its own untracked file reads the main checkout's, as the build 11 sweep did.
+		for (const root of [top, mainTop]) { try { return { text: fs.readFileSync(path.join(root, f), 'utf8'), base: false, root }; } catch { /* next root */ } }
+		return null;
 	};
 	let file = null;
 	const index = readRule('standards/INDEX.md');
@@ -785,7 +788,7 @@ function rulesBlock(facts, hash) {
 	for (const f of [file, 'standards/agent-teams.md', 'rules/agent-teams.md'].filter((f) => f && inside(f))) {
 		const got = readRule(f);
 		if (!got) continue;
-		let where = toPosix(path.join(top, f));
+		let where = toPosix(path.join(got.root || top, f));
 		// The base copy sits in the git folder, which no tool writes, so it cannot be rewritten before a reviewer reads it.
 		if (got.base && hash) {
 			const dir = path.join(commonDir, `kit-sweep-${hash.slice(0, 8)}`);
@@ -1012,13 +1015,23 @@ const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
 // so, or the lead reads it as no answer and asks the owner the same wrong way again (build 11's resume).
 const unquotedNote = (act, since) => {
 	// New 2 (build 12): with no session to read, say which part is missing, not that the owner did not answer.
-	const gap = sessionGap({ repo: repoRoot() });
+	const gap = sessionGapAny();
 	if (gap) return ` No pop-up was read: ${gap}.`;
-	const u = unquotedYes(act, { since, repo: repoRoot() });
+	const u = unquotedYesAny(act, { since });
 	return u ? ` The owner's Yes at ${new Date(u.at).toISOString()} answered a question that names ${act} without backticks around it, so it counts for nothing: ask again with the act in backticks.` : '';
 };
-// K357 S1: a session's pop-ups are kept under the folder it ran in, so the lookup reads the contract's own checkout.
-const repoRoot = () => toplevel() || path.dirname(path.dirname(LOG));
+// K357 S1, C2: a session's pop-ups are kept under the folder it ran in: the contract's own checkout, or the main checkout's
+// key (pushGrant reads both too). Each lookup reads every key and takes the newest.
+const repoRoots = () => {
+	const top = toplevel();
+	if (!top) return [path.dirname(path.dirname(LOG))];
+	const cd = git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim();
+	return [...new Set([top, cd ? path.dirname(path.resolve(cd)) : top])];
+};
+const newest = (found) => found.filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
+const sessionYesAny = (act, opts = {}) => newest(repoRoots().map((repo) => sessionYes(act, { ...opts, repo })));
+const unquotedYesAny = (act, opts = {}) => newest(repoRoots().map((repo) => unquotedYes(act, { ...opts, repo })));
+const sessionGapAny = () => { const gaps = repoRoots().map((repo) => sessionGap({ repo })); return gaps.includes('') ? '' : gaps[0]; };
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
@@ -1044,7 +1057,7 @@ function ownerYes() {
 	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }
 	// The owner's tap on this ask's act, after the ask. Read before anything is written, so a refusal logs nothing.
 	const act = `sweep yes ${askCode(last.hash)}`;
-	const yes = sessionYes(act, { since: Date.parse(last.time), repo: repoRoot() });
+	const yes = sessionYesAny(act, { since: Date.parse(last.time) });
 	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask.${unquotedNote(act, Date.parse(last.time))} ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
 	if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered an ask; one answer is for one ask. Nothing logged.'); return 1; }
 	const proof = { proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() };
@@ -1488,7 +1501,7 @@ function main() {
 	if (has('--tap')) {
 		const act = String(opt('--tap') || '').trim();
 		if (!act) { console.log('Name the act: --tap "sweep resume <code>". Nothing logged.'); return 1; }
-		const yes = sessionYes(act, { repo: repoRoot() });
+		const yes = sessionYesAny(act);
 		const used = yes && tapUsed(state().log, yes.tap);
 		if (yes) { console.log(`This session holds the owner's Yes to \`${act}\` at ${new Date(yes.at).toISOString()}${used ? ', already used: one answer is for one ask' : ''}. Nothing logged.`); return used ? 1 : 0; }
 		console.log(`No Yes from the owner to \`${act}\` in this session.${unquotedNote(act, 0)} Nothing logged.`);
@@ -1499,7 +1512,7 @@ function main() {
 		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
 		// The owner's tap on this pause's act, after the pause.
 		const act = `sweep resume ${pauseCode(s)}`;
-		const yes = sessionYes(act, { since: Date.parse(s.pausedAt || 0), repo: repoRoot() });
+		const yes = sessionYesAny(act, { since: Date.parse(s.pausedAt || 0) });
 		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause.${unquotedNote(act, Date.parse(s.pausedAt || 0))} Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
 		if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered; one answer is for one pause. Nothing logged.'); return 1; }
 		write({ kind: 'resume', proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() });
