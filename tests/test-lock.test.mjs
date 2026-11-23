@@ -1196,3 +1196,42 @@ test('pre-push holds a push whose remote value is not a local commit, and says f
 	}
 });
 
+// why: catches a merge that changes a test path passed on a remote with no default branch, since a missing default must hold the change, not let it through
+test('pre-push holds a merge that changes a test path on a remote with no default branch, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, bare } = pushRepo();
+		firstPushDone(dir);
+		// The bare repo's HEAD names a branch the remote does not have, so ls-remote reports no default branch.
+		fs.writeFileSync(path.join(bare, 'HEAD'), 'ref: refs/heads/no-default\n');
+		git(dir, ['checkout', '-q', '-b', 'feat/x', 'main']);
+		put(dir, { 'src/util.js': 'export const id = (x) => x + 4;\n' });
+		const featX = commit(dir, 'feat: tune util');
+		git(dir, ['push', '-q', 'origin', `${featX}:refs/heads/feat/x`]);
+		// Main changes its test on the local side only; merging it into feat/x brings that change into the merge.
+		git(dir, ['checkout', '-q', 'main']);
+		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
+		commit(dir, 'test: tighten the main case');
+		git(dir, ['checkout', '-q', 'feat/x']);
+		assert.equal(mergeRef(dir, 'main').status, 0, 'merging main is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${featX}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge that changes a test path on a remote with no default branch: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches a new orphan ref that only adds tests held, since a ref with no merge base is a fresh add and must pass
+test('pre-push passes a new orphan ref that only adds tests, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, bare } = pushRepo();
+		firstPushDone(dir);
+		git(dir, ['checkout', '-q', '--orphan', 'feat/new-tests']);
+		git(dir, ['rm', '-r', '-q', '-f', '.']);
+		put(dir, { 'tests/fresh.test.mjs': 'test("fresh", () => {});\n' });
+		const fresh = commit(dir, 'test: add the fresh case');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/new-tests ${fresh} refs/heads/feat/new-tests ${ZERO}\n`);
+		assert.equal(r.status, 0, `${hook} held a new orphan ref that only adds tests: ${r.stderr}`);
+		assert.doesNotMatch(r.stderr, HOLD_RE);
+	}
+});
+
