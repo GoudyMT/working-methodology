@@ -478,6 +478,175 @@
     "deferred": [
       "low: 25 findings, the owner's pick (2026-11-23), in docs/builds/1.51.2.next.jsonl"
     ],
-    "fixes": []
+    "fixes": [
+      {
+        "id": "fix-H1",
+        "finding": "H1",
+        "severity": "high",
+        "text": "the lanes job runs the base copy of ci-size.mjs, checks its outputs by shape and length, and run lines take matrix values only through env as integers",
+        "commit": "59cb6aaa",
+        "test": "tests/ci-plan-job.test.mjs::the lanes job runs the base commit's ci-size and no matrix value reaches a run line except through env"
+      },
+      {
+        "id": "fix-H2",
+        "finding": "H2",
+        "severity": "high",
+        "text": "the test-check budgets on Linux and Windows are 120 s, inside the 180 s job budget",
+        "commit": "9365f0c7",
+        "test": "tests/ci-budget.test.mjs::the test-check budgets, Linux slice and Windows part, fit inside the 180 s job budget"
+      },
+      {
+        "id": "fix-H3",
+        "finding": "H3",
+        "severity": "high",
+        "text": "the closeout gate refuses on any git failure but no commit or no repository, and runs before any log write",
+        "commit": "a79aad1d",
+        "test": "tests/closeout-spawn.test.mjs::H3 a git that exits 128, or a log that cannot be written, still refuses a ticketless tester in closeout"
+      },
+      {
+        "id": "fix-H4",
+        "finding": "H4",
+        "severity": "high",
+        "text": "the why check and the closeout count see test calls off the margin, with a non-literal name, through an alias or in a named forEach",
+        "commit": "19cf189a",
+        "test": "tests/why-at-write.test.mjs::H4: a why-less test written indented, with a variable name, through an alias or in a forEach is refused naming its line"
+      },
+      {
+        "id": "fix-H5",
+        "finding": "H5",
+        "severity": "high",
+        "text": "the hand-back gate is in enforce mode, and its deny holds when the log write fails",
+        "commit": "bdbcc20b",
+        "test": "tests/hold-modes.test.mjs::H5: with holds.json as shipped, a hand-back whose RECORD lists a why-less new test is refused, even when the log write fails"
+      },
+      {
+        "id": "fix-H6",
+        "finding": "H6",
+        "severity": "high",
+        "text": "plan-check --brief writes Plan, Unit id, Role, Worktree and Lane lines and a lock path beside itself; the templates carry Lane and the skill names the Ticket line",
+        "commit": "ff87f1c9",
+        "test": "tests/plan-why.test.mjs::plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and a lock path beside plan-check, and the templates carry Lane"
+      },
+      {
+        "id": "fix-M1",
+        "finding": "M1",
+        "severity": "medium",
+        "text": "the warm hold reads Role and Lane with the hook label rule and reads each open agent type",
+        "commit": "a79aad1d",
+        "test": "tests/warm-agents.test.mjs::M1 a typed tester and a bold-marked Role brief are open warm agents"
+      },
+      {
+        "id": "fix-M2",
+        "finding": "M2",
+        "severity": "medium",
+        "text": "the plan key takes the first path token and drops trailing punctuation",
+        "commit": "a79aad1d",
+        "test": "tests/round-cap.test.mjs::M2 a plan spelled with a comma, dash, dot or fragment is the same plan"
+      },
+      {
+        "id": "fix-M3",
+        "finding": "M3",
+        "severity": "medium",
+        "text": "a Role line naming checker, tester or writer as a whole word counts as that role",
+        "commit": "7a5af5cb",
+        "test": "tests/round-cap.test.mjs::M3 a Role line that names the checker as a word counts as a checker"
+      },
+      {
+        "id": "fix-M4",
+        "finding": "M4",
+        "severity": "medium",
+        "text": "a hold-mode load or mode error refuses for the high-tier holds",
+        "commit": "a79aad1d",
+        "test": "tests/round-cap.test.mjs::M4 a hold-mode.cjs that throws makes round-cap refuse"
+      },
+      {
+        "id": "fix-M5",
+        "finding": "M5",
+        "severity": "medium",
+        "text": "a record with no sweep fails the check once a closeout file exists",
+        "commit": "bdbcc20b",
+        "test": "tests/closeout.test.mjs::M5: a record with its sweep removed after the closeout commit fails the check"
+      },
+      {
+        "id": "fix-M6",
+        "finding": "M6",
+        "severity": "medium",
+        "text": "closeout reads its diff unquoted and NUL-split, and refuses a path still quoted",
+        "commit": "bdbcc20b",
+        "test": "tests/closeout.test.mjs::M6: a new test file with a non-ASCII name after the closeout commit needs a ticket"
+      },
+      {
+        "id": "fix-M7",
+        "finding": "M7",
+        "severity": "medium",
+        "text": "under enforce a hand-back listing tests whose commit cannot be read is refused",
+        "commit": "b0fa5604",
+        "test": "tests/handoff-canary.test.mjs::M7: under enforce, a tester hand-back naming a commit that does not resolve is refused"
+      },
+      {
+        "id": "fix-M8",
+        "finding": "M8",
+        "severity": "medium",
+        "text": "the dollar reserve holds the report call input: the last call context at its cache-read price",
+        "commit": "46b332f8",
+        "test": "tests/call-cap-reserve.test.mjs::a reviewer whose spend plus twice its dearest call plus the report reaches the ceiling is still stopped"
+      },
+      {
+        "id": "fix-M9",
+        "finding": "M9",
+        "severity": "medium",
+        "text": "ci-size past six runners names the overage and exits 0 with six",
+        "commit": "9365f0c7",
+        "test": "tests/ci-size.test.mjs::predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6"
+      },
+      {
+        "id": "fix-M10",
+        "finding": "M10",
+        "severity": "medium",
+        "text": "the changed-test count comes from the test parse of base against head, read through its base flag",
+        "commit": "9365f0c7",
+        "test": "tests/ci-size.test.mjs::the changed-test count comes from the test parse of base against head, loops counted"
+      },
+      {
+        "id": "fix-M11",
+        "finding": "M11",
+        "severity": "medium",
+        "text": "the unit slice steps pass the time plan when the map is present",
+        "commit": "9365f0c7",
+        "test": "tests/ci-plan-job.test.mjs::unit-tests and test-check read their matrix from needs.lanes.outputs, with no new step before the judges"
+      },
+      {
+        "id": "fix-M12",
+        "finding": "M12",
+        "severity": "medium",
+        "text": "the fast cap does not apply to traced map runs",
+        "commit": "9365f0c7",
+        "test": "tests/fast-cap.test.mjs::a fast-lane test over 30 s fails naming the test and its time"
+      },
+      {
+        "id": "fix-M13",
+        "finding": "M13",
+        "severity": "medium",
+        "text": "an over-cap test prints its cap line to stderr too",
+        "commit": "9365f0c7",
+        "test": "tests/fast-cap.test.mjs::a fast-lane test over 30 s fails naming the test and its time"
+      },
+      {
+        "id": "fix-M14",
+        "finding": "M14",
+        "severity": "medium",
+        "text": "the skill states the warm limit as at or over 150000, names its hook, and labels the caps as lead practice",
+        "commit": "df15647f",
+        "test": "tests/brief-steps.test.mjs::the skill names the reset limit and the 2-check-round cap with their enforcers"
+      },
+      {
+        "id": "fix-M15",
+        "finding": "M15",
+        "severity": "medium",
+        "text": "the cap sentence is pinned as one phrase",
+        "commit": "ff87f1c9",
+        "test": "tests/brief-steps.test.mjs::the skill carries isolated worktrees, the lock after spawn, the wip commit, the 3 and 2 caps and date -u"
+      }
+    ]
   }
 }
