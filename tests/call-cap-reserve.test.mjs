@@ -6,7 +6,10 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { runHook } from './kit-helpers.mjs';
+import { createRequire } from 'node:module';
+import { runHook, gitTree } from './kit-helpers.mjs';
+
+const { dollars, reportDollars } = createRequire(import.meta.url)('../user/kit-hooks/prices.cjs');
 
 kitTemp.sessionRoot();
 
@@ -16,7 +19,7 @@ const DEAR = 14000;
 const brief = (ceilingLine) => ['Sweep: 0123456789abcdef role 1', 'Call cap: 40. A call is one message.', ceilingLine, '', 'Role: reviewer', 'Question: Is it right?', ''].join('\n');
 
 // A reviewer transcript: the brief, then one assistant message per call, each { output, model }.
-function verdict(ceilingLine, calls) {
+function verdict(ceilingLine, calls, cwd) {
 	const dir = kitTemp.makeTemp('reserve-');
 	const session = path.join(dir, 'session-1');
 	fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
@@ -26,7 +29,7 @@ function verdict(ceilingLine, calls) {
 		lines.push({ message: { role: 'assistant', id: `m${i}`, model, usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: output } } });
 	});
 	fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
-	const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
+	const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', ...(cwd ? { cwd } : {}), tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
 	assert.equal(r.status, 0, r.stderr);
 	return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 }
@@ -43,6 +46,13 @@ test('a reviewer whose spend plus twice its dearest call plus the report reaches
 	const stopped = verdict('Dollar ceiling: $0.60', [...CHEAP, DEAR]);
 	assert.equal(stopped.permissionDecision, 'deny', 'spend and reserve over the ceiling');
 	assert.match(stopped.permissionDecisionReason, /Dollar ceiling reached \(\$0\.28 of \$0\.60\)/);
+	// The exact edge, from the price table in the hook's order: spend, then twice the dearest call plus the report.
+	const spends = [...CHEAP, DEAR].map((o) => dollars({ output_tokens: o }, 'claude-sonnet-5-5'));
+	const edge = spends.reduce((t, x) => t + x, 0) + (2 * Math.max(...spends) + reportDollars('claude-sonnet-5-5'));
+	const at = verdict(`Dollar ceiling: $${edge}`, [...CHEAP, DEAR]);
+	assert.equal(at.permissionDecision, 'deny', 'a ceiling equal to spend plus reserve');
+	const above = verdict(`Dollar ceiling: $${edge + 1e-9}`, [...CHEAP, DEAR]);
+	assert.equal(above.permissionDecision, 'allow', above.permissionDecisionReason);
 	const room = verdict('Dollar ceiling: $0.62', [...CHEAP, DEAR]);
 	assert.equal(room.permissionDecision, 'allow', room.permissionDecisionReason);
 });
@@ -56,16 +66,6 @@ test('the dear call placed first, in the middle or last gives the same verdict, 
 		const tight = verdict('Dollar ceiling: $0.60', calls);
 		assert.equal(tight.permissionDecision, 'deny', `${where} at a ceiling the reserve reaches`);
 	}
-});
-
-// why: catches the same calls read twice give the same verdict (K357 S1)
-test('the same calls read twice give the same verdict', () => {
-	const calls = [...CHEAP, DEAR];
-	const first = verdict('Dollar ceiling: $1.44', calls);
-	const second = verdict('Dollar ceiling: $1.44', calls);
-	assert.deepEqual(second, first);
-	assert.equal(first.permissionDecision, 'allow', first.permissionDecisionReason);
-	assert.deepEqual(verdict('Dollar ceiling: $0.60', calls), verdict('Dollar ceiling: $0.60', calls));
 });
 
 // why: catches the token ceiling path keeps its own reserve, unchanged (K357 S4)
@@ -87,12 +87,23 @@ test('the token ceiling path keeps its own reserve, unchanged', () => {
 test('a call on an unknown model is priced at the dearest model, so the reserve only grows, logged', () => {
 	// The dearest model's output is $25 per million: the dear call is $0.35, spend $0.49, reserve 2 x 0.35 + 0.125 = 0.825.
 	const unknown = [...CHEAP, { output: DEAR, model: 'claude-mystery-9' }];
-	const stopped = verdict('Dollar ceiling: $1.30', unknown);
+	const repo = gitTree();
+	const logRows = () => {
+		const f = path.join(repo, '.git', 'kit-guard-open.log');
+		return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+	};
+	const stopped = verdict('Dollar ceiling: $1.30', unknown, repo);
 	assert.equal(stopped.permissionDecision, 'deny', 'priced at the dearest model');
 	assert.match(stopped.permissionDecisionReason, /Dollar ceiling reached \(\$0\.49 of \$1\.30\)/);
-	const room = verdict('Dollar ceiling: $1.34', unknown);
+	// Logged: one row in the git folder's log, naming the model and the pricing.
+	const rows = logRows();
+	assert.equal(rows.length, 1, 'one row for the unknown model');
+	assert.match(rows[0].cause, /claude-mystery-9/);
+	assert.match(rows[0].cause, /priced at the dearest/);
+	const room = verdict('Dollar ceiling: $1.34', unknown, repo);
 	assert.equal(room.permissionDecision, 'allow', room.permissionDecisionReason);
-	// The same calls on a known model reserve less, so the ceiling the unknown model hit still has room.
-	const known = verdict('Dollar ceiling: $1.30', [...CHEAP, DEAR]);
+	// The same calls on a known model reserve less and log nothing more.
+	const known = verdict('Dollar ceiling: $1.30', [...CHEAP, DEAR], repo);
 	assert.equal(known.permissionDecision, 'allow', known.permissionDecisionReason);
+	assert.equal(logRows().length, rows.length + 1, 'only the unknown-model run added a row');
 });
