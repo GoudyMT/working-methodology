@@ -85,5 +85,5 @@ jobs:
           [ "${{ needs.fast.result }}" = success ] && [ "${{ needs.lanes.result }}" = success ] || exit 1
           case "${{ needs.slow.result }}" in success|skipped) ;; *) exit 1;; esac
       - name: Fast lane budget (180 seconds)
-        # K401: report only, so a slow runner never fails a PR; a project reads the trend over its last runs (lane-state).
+        # K401: report only, so a slow runner never fails a PR. A project has no CI trend yet: it comes with K288.
         run: t=$(( $(date +%s) - ${{ needs.plan.outputs.started }} )); echo "fast lane took ${t} s of its 180 s budget (report only)"; if [ "$t" -gt 180 ]; then echo "::warning::fast lane ran over its 180 s budget"; fi
