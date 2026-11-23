@@ -150,7 +150,10 @@ function check(opts) {
 	// A trend: over the limit here and on each of the earlier main runs that make 3 in a row.
 	const over = verdicts.filter((v) => v.over).map((v) => v.name);
 	const earlier = history.slice(0, TREND_RUNS - 1);
-	const trend = earlier.length < TREND_RUNS - 1 ? [] : over.filter((name) => earlier.every((r) => r.jobs.some((j) => j.name === name && timeOf(j) > limit * 1000)));
+	// L2 (the 1.51.3 sweep): a job is matched by its base name, its matrix leg left off, so a job split into legs or a
+	// slow leg that moves index keeps its trend.
+	const base = (name) => name.replace(/ \(\d+\)$/, '');
+	const trend = earlier.length < TREND_RUNS - 1 ? [] : over.filter((name) => earlier.every((r) => r.jobs.some((j) => base(j.name) === base(name) && timeOf(j) > limit * 1000)));
 	for (const name of trend) {
 		out.push(`TREND ${name}: over the ${limit} s limit on ${TREND_RUNS} main runs in a row: open a list row`);
 		out.push(`::warning::${name} ran over the ${limit} s budget on ${TREND_RUNS} main runs in a row`);
