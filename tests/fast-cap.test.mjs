@@ -37,6 +37,8 @@ test('a fast-lane test over 30 s fails naming the test and its time', () => {
 	assert.notEqual(r.status, 0, out);
 	const line = out.split('\n').find((l) => l.includes('the sleeping test') && /\b\d+ ms\b/.test(l) && /\b500\b/.test(l));
 	assert.ok(line, out);
+	const times = [...line.matchAll(/\b(\d+) ms\b/g)].map((m) => Number(m[1]));
+	assert.ok(times.some((t) => t >= 1500), `no time of 1500 ms or more on: ${line}`);
 });
 
 // why: catches the same test under tests/slow passes (CI-C S2)
@@ -56,6 +58,8 @@ test('KIT_TEST_FAST_MS overrides the cap', () => {
 	assert.notEqual(low.status, 0, 'a 500 ms cap must fail a 1.5 s test: ' + low.stdout + low.stderr);
 	const high = runner(dir, ['--shards', '1', file], 5000);
 	assert.equal(high.status, 0, high.stdout + high.stderr);
+	assert.match(high.stdout + high.stderr, /fast-lane cap 5000 ms/);
 	const unset = runner(dir, ['--shards', '1', file]);
 	assert.equal(unset.status, 0, 'with no override the 1.5 s test must pass: ' + unset.stdout + unset.stderr);
+	assert.match(unset.stdout + unset.stderr, /fast-lane cap 30000 ms/);
 });
