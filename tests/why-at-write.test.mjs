@@ -1,0 +1,184 @@
+// A test cannot be saved or handed back without its why (K368, U21): the edit fence refuses a tester's test file whose
+// new test( lacks a why line passing test-check's whyFault (Write, Edit and MultiEdit alike, the same verdict each time),
+// refuses a file it cannot parse and logs it, and handoff-gate refuses a tester RECORD that does not list each new test
+// with its why. Every case runs in a temp git repo with the home and Claude folders pointed at temp dirs.
+import { test } from './harness.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+
+kitTemp.sessionRoot();
+const FENCE = path.resolve('user/kit-hooks/edit-fence.cjs');
+const GIT_ID = { GIT_AUTHOR_NAME: 'Tester', GIT_AUTHOR_EMAIL: 'tester@example.invalid', GIT_COMMITTER_NAME: 'Tester', GIT_COMMITTER_EMAIL: 'tester@example.invalid' };
+const NO_WHY = 'no why line: name the real use or failure it guards';
+const BAD_SHAPE = 'its why line starts with neither guards nor catches';
+const GOOD_WHY = '// why: catches a saved test that names no failure it guards';
+const TEST_REL = 'tests/sample.test.mjs';
+
+function isolatedEnv(extra = {}) {
+	const home = kitTemp.makeTemp('why-home-');
+	const config = path.join(home, '.claude');
+	return { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: config, KIT_CLAUDE_HOME: config, ...GIT_ID, ...extra };
+}
+function git(cwd, args) {
+	const r = spawnSync('git', ['-c', 'commit.gpgsign=false', ...args], { cwd, env: isolatedEnv(), encoding: 'utf8' });
+	assert.equal(r.status, 0, 'git ' + args.join(' ') + ' failed: ' + r.stderr);
+	return r.stdout.trim();
+}
+function put(dir, rel, text) {
+	const file = path.join(dir, rel);
+	fs.mkdirSync(path.dirname(file), { recursive: true });
+	fs.writeFileSync(file, text);
+}
+function commit(dir, message) {
+	git(dir, ['add', '-A']);
+	git(dir, ['commit', '-q', '--allow-empty', '-m', message]);
+	return git(dir, ['rev-parse', 'HEAD']);
+}
+// A temp repo whose unit list names the sample test file, as the lead writes it for a tester.
+function unitRepo(existing) {
+	const dir = kitTemp.makeTemp('why-repo-');
+	git(dir, ['init', '-q', '-b', 'main']);
+	if (existing !== undefined) put(dir, TEST_REL, existing);
+	commit(dir, 'chore: start');
+	const list = git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']);
+	fs.writeFileSync(list, TEST_REL + '\n');
+	return dir;
+}
+function fence(dir, toolName, toolInput) {
+	const input = JSON.stringify({ cwd: dir, agent_type: 'tester', tool_name: toolName, tool_input: toolInput });
+	const r = spawnSync(process.execPath, [FENCE], { cwd: dir, env: isolatedEnv(), input, encoding: 'utf8' });
+	return { code: r.status, err: String(r.stderr), out: String(r.stdout) };
+}
+const target = (dir) => path.join(dir, TEST_REL);
+const testWith = (why, name) => (why ? why + '\n' : '') + "test('" + name + "', () => {});\n";
+function guardLog(dir) {
+	const common = git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+	const file = path.join(common, 'kit-guard-open.log');
+	return fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean) : [];
+}
+
+// why: catches a Write to a test file whose new test( has no why line is refused, quoting whyFault's reason (K368 S1)
+test("a Write to a test file whose new test( has no why line is refused, quoting whyFault's reason", () => {
+	const dir = unitRepo();
+	const bad = fence(dir, 'Write', { file_path: target(dir), content: testWith('', 'adds two numbers') });
+	assert.equal(bad.code, 2, 'a why-less test is refused: ' + bad.err);
+	assert.ok(bad.err.includes(NO_WHY), 'stderr quotes whyFault: ' + bad.err);
+	assert.ok(bad.err.includes('adds two numbers') || bad.err.includes(TEST_REL), 'stderr names the test or file: ' + bad.err);
+	// control: the same content on a non-test source file is not this guard's to refuse
+	fs.appendFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'src/add.js\n');
+	const src = fence(dir, 'Write', { file_path: path.join(dir, 'src/add.js'), content: testWith('', 'adds two numbers') });
+	assert.equal(src.code, 0, 'a non-test file is let through: ' + src.err);
+});
+
+// why: catches a why that is a bare spec id ("S1: ...") is refused the same way (K368 S1)
+test('a why that is a bare spec id ("S1: ...") is refused the same way', () => {
+	const dir = unitRepo();
+	const bad = fence(dir, 'Write', { file_path: target(dir), content: testWith('// why: S1: the fence refuses it', 'adds two numbers') });
+	assert.equal(bad.code, 2, 'a spec id as the why is refused: ' + bad.err);
+	assert.ok(bad.err.includes(BAD_SHAPE), 'stderr quotes whyFault: ' + bad.err);
+});
+
+// why: catches a test with a passing why line saves (K368 S1)
+test('a test with a passing why line saves', () => {
+	const dir = unitRepo();
+	const ok = fence(dir, 'Write', { file_path: target(dir), content: testWith(GOOD_WHY, 'adds two numbers') });
+	assert.equal(ok.code, 0, 'a passing why saves: ' + ok.err);
+	const guards = fence(dir, 'Write', { file_path: target(dir), content: testWith('// why: guards rule:test-value (a test names its failure)', 'adds two numbers') });
+	assert.equal(guards.code, 0, 'a guards why saves: ' + guards.err);
+	// control: the same file with the why line removed is refused, so the pass above came from the why
+	const bad = fence(dir, 'Write', { file_path: target(dir), content: testWith('', 'adds two numbers') });
+	assert.equal(bad.code, 2, 'the why-less twin is refused: ' + bad.err);
+});
+
+// why: catches a tester RECORD that does not list each new test with its why is refused by handoff-gate (K368 S2)
+test('a tester RECORD that does not list each new test with its why is refused by handoff-gate', () => {
+	const kit = kitTemp.makeTemp('why-gate-kit-');
+	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
+	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
+	fs.copyFileSync(path.resolve('user/kit-tools/handoff.mjs'), path.join(kit, 'kit-tools', 'handoff.mjs'));
+	fs.writeFileSync(path.join(kit, 'kit-hooks', 'holds.json'), JSON.stringify({ holds: [{ id: 'handoff-gate', hook: 'handoff-gate.cjs', mode: 'enforce' }] }) + '\n');
+	const gate = path.join(kit, 'kit-hooks', 'handoff-gate.cjs');
+	const dir = kitTemp.makeTemp('why-gate-repo-');
+	git(dir, ['init', '-q', '-b', 'main']);
+	put(dir, TEST_REL, testWith(GOOD_WHY, 'the old one'));
+	commit(dir, 'test: first');
+	put(dir, TEST_REL, testWith(GOOD_WHY, 'the old one') + testWith(GOOD_WHY, 'the new one'));
+	const sha = commit(dir, 'test: add the new one');
+	const finding = { id: 'R1', severity: 'low', status: 'open', where: '-', claim: 'c', proof: 'p', fix: '-' };
+	const record = (extra) => ['Prose.', 'RECORD:', JSON.stringify({ role: 'tester', commit: sha, clarity: 'clear', ...extra }), JSON.stringify(finding)].join('\n');
+	const send = (message) => {
+		const r = spawnSync(process.execPath, [gate], { encoding: 'utf8', input: JSON.stringify({ hook_event_name: 'PreToolUse', tool_name: 'SubagentHandback', tool_input: { message }, cwd: dir }) });
+		assert.equal(r.status, 0, r.stderr);
+		return r.stdout.trim() ? JSON.parse(r.stdout) : null;
+	};
+	const reasonOf = (out) => (out && out.hookSpecificOutput && out.hookSpecificOutput.permissionDecision === 'deny' ? out.hookSpecificOutput.permissionDecisionReason : null);
+	const key = TEST_REL + '::the new one';
+	const missing = reasonOf(send(record({})));
+	assert.ok(missing, 'a record with no tests field is refused');
+	assert.ok(missing.includes(key), 'the refusal names the new test: ' + missing);
+	const badWhy = reasonOf(send(record({ tests: [{ name: 'the new one', why: '// why: S2: the record lists it' }] })));
+	assert.ok(badWhy, 'a tests entry whose why fails whyFault is refused');
+	assert.ok(badWhy.includes(key), 'the refusal names the test: ' + badWhy);
+	const good = send(record({ tests: [{ name: 'the new one', why: GOOD_WHY }] }));
+	assert.equal(good, null, 'a record listing the new test with a passing why passes: ' + JSON.stringify(good));
+});
+
+// why: catches an Edit that adds a test( to an existing file, or a MultiEdit, is checked the same as a Write (K368 S3)
+test('an Edit that adds a test( to an existing file, or a MultiEdit, is checked the same as a Write', () => {
+	const start = testWith(GOOD_WHY, 'the old one');
+	const dir = unitRepo(start);
+	const adds = (why) => testWith(why, 'the added one');
+	const edit = (why) => fence(dir, 'Edit', { file_path: target(dir), old_string: start, new_string: start + adds(why) });
+	const multi = (why) => fence(dir, 'MultiEdit', { file_path: target(dir), edits: [{ old_string: 'the old one', new_string: 'the first one' }, { old_string: start.replace('the old one', 'the first one'), new_string: start.replace('the old one', 'the first one') + adds(why) }] });
+	const write = (why) => fence(dir, 'Write', { file_path: target(dir), content: start + adds(why) });
+	for (const [label, run] of [['Write', write], ['Edit', edit], ['MultiEdit', multi]]) {
+		const bad = run('');
+		assert.equal(bad.code, 2, label + ' with a why-less test is refused: ' + bad.err);
+		assert.ok(bad.err.includes(NO_WHY), label + ' quotes whyFault: ' + bad.err);
+		const shape = run('// why: S3: not a real why');
+		assert.equal(shape.code, 2, label + ' with a bare spec id is refused: ' + shape.err);
+		assert.ok(shape.err.includes(BAD_SHAPE), label + ' quotes whyFault: ' + shape.err);
+		const ok = run(GOOD_WHY);
+		assert.equal(ok.code, 0, label + ' with a passing why saves: ' + ok.err);
+	}
+});
+
+// why: catches the same write twice gives the same verdict (K368 S4)
+test('the same write twice gives the same verdict', () => {
+	const dir = unitRepo();
+	const calls = [
+		['Write', { file_path: target(dir), content: testWith('', 'adds two numbers') }],
+		['Write', { file_path: target(dir), content: testWith(GOOD_WHY, 'adds two numbers') }],
+	];
+	const verdicts = calls.map(([tool, input]) => {
+		const a = fence(dir, tool, input);
+		const b = fence(dir, tool, input);
+		assert.deepEqual({ code: b.code, err: b.err }, { code: a.code, err: a.err }, 'the repeat differs from the first run');
+		return a.code;
+	});
+	assert.deepEqual(verdicts, [2, 0], 'the why-less write is refused and the passing one saves, each time');
+});
+
+// why: catches a test file the hook cannot parse is refused and logged (K368 S5)
+test('a test file the hook cannot parse is refused and logged', () => {
+	const dir = unitRepo(testWith(GOOD_WHY, 'the old one'));
+	const cases = [
+		['an Edit whose old_string is not in the file', 'Edit', { file_path: target(dir), old_string: 'text that is not in the file', new_string: 'x' }],
+		['a MultiEdit with a missing old_string', 'MultiEdit', { file_path: target(dir), edits: [{ old_string: 'text that is not in the file', new_string: 'x' }] }],
+		['a Write with no content', 'Write', { file_path: target(dir) }],
+		['a Write with numeric content', 'Write', { file_path: target(dir), content: 42 }],
+	];
+	let rows = guardLog(dir).length;
+	for (const [label, tool, input] of cases) {
+		const r = fence(dir, tool, input);
+		assert.equal(r.code, 2, label + ' is refused: ' + r.err);
+		assert.ok(r.err.includes('sample.test.mjs'), label + ' names the file: ' + r.err);
+		assert.ok(r.err.includes('unparsable'), label + ' says unparsable: ' + r.err);
+		const now = guardLog(dir).length;
+		assert.equal(now, rows + 1, label + ' adds one row to kit-guard-open.log');
+		rows = now;
+	}
+});
