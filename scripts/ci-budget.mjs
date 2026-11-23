@@ -1,11 +1,15 @@
-// scripts/ci-budget.mjs enforces the merge-path time budget in the required check (CI-C).
-//   node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...
+// scripts/ci-budget.mjs reports the merge-path time budget in the required check (CI-C).
+//   node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--history <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...
+// K401 (the owner's yes, 2026-11-23): a job over the limit is reported, never failed: runner speed alone made 7 of PR 71's
+// 29 reds. A job over it on 3 main runs in a row is a trend, named for a list row. A job that failed, timed out or never
+// finished still fails the check. --history is a JSON array of the earlier main runs' run-jobs answers, newest first.
+// Every run ends with one compact JSON line (ci-budget-json: {limit, jobs, over, trend}) for the totals.
 // --jobs is GitHub's run-jobs answer as one {jobs:[...]} object (gh api --paginate, pages merged). Every job in it is
 // measured except --self and --skip, so the list comes from the run and not from a fixed list. --skip leaves out a
 // job by name and its matrix legs, and names each one on a skipped line. A job's time is completed_at minus
 // started_at; queue wait is not counted. --timings is optional JSON {"<job name>": {"<file::name>": ms}}: a failing
-// job is named with its 5 slowest tests from it. Exit 0 pass, 1 a failing job (named on stderr), 2 an unreadable
-// --jobs or --timings or a bad usage. An unreadable input also appends one row {at, hook, cause} to
+// job over the limit is named with its 5 slowest tests from it. Exit 0 pass, 1 a failed job (named on stderr), 2 an
+// unreadable --jobs, --timings or --history or a bad usage. An unreadable input also appends one row {at, hook, cause} to
 // <git common dir>/kit-guard-open.log.
 import fs from 'node:fs';
 import path from 'node:path';
@@ -13,8 +17,10 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_LIMIT = 180;
 const SLOWEST_NAMED = 5;
-const FLAGS = ['--jobs', '--timings', '--limit', '--self', '--skip'];
-const USAGE = 'usage: node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...';
+// This run and the 2 main runs before it: one slow run is noise, three in a row are a trend.
+const TREND_RUNS = 3;
+const FLAGS = ['--jobs', '--timings', '--history', '--limit', '--self', '--skip'];
+const USAGE = 'usage: node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--history <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...';
 
 class Usage extends Error {}
 class Unreadable extends Error {}
@@ -62,6 +68,20 @@ function loadJobs(file) {
 	return jobs;
 }
 
+// The earlier main runs, newest first; each is a run-jobs answer, read for job times only.
+function loadHistory(file) {
+	const runs = readJson(file, '--history');
+	if (!Array.isArray(runs) || runs.some((r) => !Array.isArray(r?.jobs))) throw new Unreadable(`--history ${file} is not an array of run-jobs answers`);
+	return runs;
+}
+
+// A completed, successful job's time in ms, or undefined.
+function timeOf(job) {
+	if (job?.status !== 'completed' || job.conclusion !== 'success') return undefined;
+	const ms = Date.parse(job.completed_at) - Date.parse(job.started_at);
+	return Number.isFinite(ms) && ms >= 0 ? ms : undefined;
+}
+
 function loadTimings(file) {
 	const timings = readJson(file, '--timings');
 	if (typeof timings !== 'object' || timings === null || Array.isArray(timings)) throw new Unreadable(`--timings ${file} is not an object of job names`);
@@ -106,6 +126,7 @@ function check(opts) {
 	const limit = Number(opts.limit ?? DEFAULT_LIMIT);
 	const jobs = loadJobs(opts.jobs);
 	const timings = opts.timings === undefined ? null : loadTimings(opts.timings);
+	const history = opts.history === undefined ? [] : loadHistory(opts.history);
 	const verdicts = jobs.map((job) => judge(job, opts, limit * 1000)).filter(Boolean).sort(byName);
 	const out = [`ci budget: ${verdicts.length} jobs measured, limit ${limit} s per job`];
 	const err = [];
@@ -117,13 +138,22 @@ function check(opts) {
 			failed = true;
 			err.push(`FAIL ${v.name}: ${v.reason}`);
 		} else if (v.over) {
-			failed = true;
-			err.push(`FAIL ${v.name}: ${v.ms / 1000} s, over the ${limit} s limit`, ...slowest(timings, v.name));
+			out.push(`OVER ${v.name}: ${v.ms / 1000} s, over the ${limit} s limit (report only)`, ...slowest(timings, v.name));
 		} else {
 			out.push(`${v.name}: ${v.ms / 1000} s`);
 		}
 	}
 	out.push("queue wait is not counted: a job's time is completed_at minus started_at");
+	// A trend: over the limit here and on each of the earlier main runs that make 3 in a row.
+	const over = verdicts.filter((v) => v.over).map((v) => v.name);
+	const earlier = history.slice(0, TREND_RUNS - 1);
+	const trend = earlier.length < TREND_RUNS - 1 ? [] : over.filter((name) => earlier.every((r) => r.jobs.some((j) => j.name === name && timeOf(j) > limit * 1000)));
+	for (const name of trend) {
+		out.push(`TREND ${name}: over the ${limit} s limit on ${TREND_RUNS} main runs in a row: open a list row`);
+		out.push(`::warning::${name} ran over the ${limit} s budget on ${TREND_RUNS} main runs in a row`);
+	}
+	const jobsMs = Object.fromEntries(verdicts.filter((v) => v.ms !== undefined).map((v) => [v.name, v.ms / 1000]));
+	out.push(`ci-budget-json: ${JSON.stringify({ limit, jobs: jobsMs, over, trend })}`);
 	return { code: failed ? 1 : 0, out: `${out.join('\n')}\n`, err: err.length ? `${err.join('\n')}\n` : '' };
 }
 
