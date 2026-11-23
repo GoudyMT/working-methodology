@@ -429,7 +429,7 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   // The lanes job sizes the unit runners (a matrix of slices), and each runs its slice of the suite on Linux.
   assert.match(unit, /^    needs: \[lanes\]$/m);
   assert.match(unit, /^      matrix: \$\{\{ fromJSON\(needs\.lanes\.outputs\.unit\) \}\}$/m);
-  assert.match(unit, /^\s+run: node scripts\/test-run\.mjs --shards \d+ --slice \$\{\{ matrix\.shard \}\}\/\$\{\{ needs\.lanes\.outputs\.unit_n \}\}$/m);
+  assert.match(unit, /^\s+node scripts\/test-run\.mjs --shards \d+ --slice "\$[A-Z_]+\/\$[A-Z_]+"( "\$\{[a-z_]+\[@\]\}")?$/m);
   const win = job('windows-tests');
   assert.match(win, /^    runs-on: windows-latest$/m);
   assert.match(win, /KIT_WINDOWS_SLICE: '1'[\s\S]*run: node scripts\/test-run\.mjs --shards \d+/);
