@@ -102,6 +102,11 @@ test('the lanes job runs the base commit\'s ci-size and no matrix value reaches 
 	assert.match(lanes, /-ge 1\b|-lt 1\b|>= ?1\b|< ?1\b|\[1-6\]/, 'the lanes job does not hold the runner count above 0');
 	assert.match(lanes, /\{\\?"shard\\?":\s*\\?\[/, 'the lanes job does not check the {"shard":[ shape of the unit output');
 	assert.match(lanes, /\{\\?"slice\\?":\s*\\?\[/, 'the lanes job does not check the {"slice":[ shape of the check output');
+	// A regex over digits lets {"shard":[0,0,0,0,0,0]} through: the list must be exactly 0..n-1, so six runners cannot all be
+	// shard 0. The step compares each array to [range(0; length)] with jq.
+	for (const key of ['shard', 'slice']) {
+		assert.match(lanes, new RegExp('\\.' + key + '\\b[^\\n]*\\[\\s*range\\(\\s*0\\s*;[^)\\n]*length[^)\\n]*\\)\\s*\\]|\\[\\s*range\\(\\s*0\\s*;[^)\\n]*length[^)\\n]*\\)\\s*\\][^\\n]*\\.' + key + '\\b'), 'the lanes job does not compare the ' + key + ' list to [range(0; length)], so a list like [0,0,0] passes');
+	}
 	// No run line takes a matrix value or a lanes output by ${{ }}: each goes in through env and is checked as an integer.
 	for (const [name, job] of Object.entries(J)) {
 		for (const s of steps(job)) {
