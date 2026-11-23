@@ -793,8 +793,7 @@
     "tests/test-count.test.mjs::C5 spec C5: handoff accepts the test-reviewer statuses swap and redundant, and refuses a made-up one",
     "tests/test-count.test.mjs::C6 spec C6: an add finding with no breaks named is refused, and one that names its break passes",
     "tests/test-count.test.mjs::C8 spec C8: tester.md states one test per plan line, controls fold into their partner test, and tests are a floor",
-    "tests/test-count.test.mjs::C9 spec C9: test-reviewer.md names swap and redundant and says an add names its break",
-    "tests/test-count.test.mjs::C7 spec C7: a swap with no replacement or with empty or missing keeps is refused"
+    "tests/test-count.test.mjs::C9 spec C9: test-reviewer.md names swap and redundant and says an add names its break"
    ]
   },
   {
