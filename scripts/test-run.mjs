@@ -206,11 +206,13 @@ function changes(root, sha) {
  * Returns:
  *     { only: ["<file>::<name>" or "<file>::*"], why } - why is set when every test must run instead
  */
-function select(root, files) {
+function select(root, files, strict = false) {
 	const mapPath = path.join(root, MAP_FILE);
 	if (!fs.existsSync(mapPath)) return { why: `no coverage map at ${posix(MAP_FILE)} (make one with --map)` };
 	const map = JSON.parse(fs.readFileSync(mapPath, 'utf8'));
 	if (git(root, 'cat-file', '-e', `${map.sha}^{commit}`).status !== 0) return { why: `the map's commit ${String(map.sha).slice(0, 12)} is not in this repo (make a new one with --map)` };
+	// A map off HEAD names the tests of another line of history; a strict caller (--pick) is refused, not given a pick.
+	if (strict && git(root, 'merge-base', '--is-ancestor', map.sha, 'HEAD').status !== 0) return { stale: map.sha };
 	const testFiles = new Map(files.map((f) => [posix(path.relative(root, real(f))), f]));
 	const only = new Set();
 	const entries = Object.entries(map.tests);
@@ -385,7 +387,11 @@ export async function main(argv) {
 		let shards = o.shards;
 		if (o.only) env.KIT_ONLY = o.only;
 		if (o.changed) {
-			const pick = select(root, harnessed);
+			const pick = select(root, harnessed, o.pick);
+			if (pick.stale) {
+				process.stderr.write(`test-run: --pick: the map at ${posix(MAP_FILE)} is of ${pick.stale}, not an ancestor of HEAD; name the test files to run, or make a new map with --map\n`);
+				return 1;
+			}
 			if (!pick.why) {
 				// --always: files that run whatever the change reaches (CI's security set), added here so each test runs once.
 				for (const f of o.always) pick.only.push(`${posix(path.relative(root, real(f)))}::*`);
