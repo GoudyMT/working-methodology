@@ -71,6 +71,15 @@ test('a merge-path job at 181 s fails naming the job and its 5 slowest tests', (
 		assert.ok(!r.stderr.includes(fast), `a test outside the 5 slowest is named: ${fast}`);
 	}
 	assert.ok(!r.stderr.includes('lint'), 'a job inside the budget is named as a failure');
+	// A failing job absent from a present timings file, and one with under 5 timed tests, are named without a crash.
+	const absent = run([job('unit-tests (2)', 181)], { timings: { 'other-job': { 'a::t': 1 } } });
+	assert.equal(absent.status, 1, `${absent.stdout}${absent.stderr}`);
+	assert.match(absent.stderr, /unit-tests \(2\)/);
+	assert.match(absent.stderr, /no per-test timings for this job/);
+	const few = run([job('unit-tests (2)', 181)], { timings: { 'unit-tests (2)': { 'a::t1': 4, 'a::t2': 9 } } });
+	assert.equal(few.status, 1, `${few.stdout}${few.stderr}`);
+	assert.match(few.stderr, /unit-tests \(2\)/);
+	assert.ok(few.stderr.includes('a::t1') && few.stderr.includes('a::t2'), `a job with 2 timed tests omits them: ${few.stderr}`);
 	// Control: a failing job with no timings says so instead of inventing tests.
 	const bare = run([job('unit-tests (2)', 181)]);
 	assert.equal(bare.status, 1);
@@ -101,6 +110,7 @@ test('queue wait is not counted, and the report says so', () => {
 // why: catches a cancelled or skipped job is named, never passed silently (CI-C S3)
 test('a cancelled or skipped job is named, never passed silently', () => {
 	const skipped = { ...job('slow-lane', 0), conclusion: 'skipped', started_at: null };
+	const cancelled0 = () => ({ ...job('nulled-cancel', 0), conclusion: 'cancelled' });
 	const cancelled = run([job('unit-tests (1)', 30), job('unit-tests (2)', 40, { conclusion: 'cancelled' })]);
 	assert.equal(cancelled.status, 1, `${cancelled.stdout}${cancelled.stderr}`);
 	assert.match(cancelled.stderr, /unit-tests \(2\)/);
@@ -109,6 +119,19 @@ test('a cancelled or skipped job is named, never passed silently', () => {
 	const s = run([job('unit-tests (1)', 30), skipped]);
 	assert.equal(s.status, 0, `${s.stdout}${s.stderr}`);
 	assert.match(`${s.stdout}${s.stderr}`, /^.*slow-lane.*skipped.*$|^.*skipped.*slow-lane.*$/im);
+	// Cancelled and skipped jobs with no start or end time are named, with no crash.
+	const nulls = { ...cancelled0(), started_at: null, completed_at: null };
+	const n = run([job('unit-tests (1)', 30), nulls, { ...skipped, completed_at: null }]);
+	assert.equal(n.status, 1, `${n.stdout}${n.stderr}`);
+	assert.match(n.stderr, /nulled-cancel/);
+	assert.match(`${n.stdout}${n.stderr}`, /slow-lane/);
+	assert.ok(!/TypeError|at .*\.mjs:\d+/.test(n.stderr), `the script crashed: ${n.stderr}`);
+	// A job that concluded failure or timed_out fails, named, whatever its time.
+	for (const conclusion of ['failure', 'timed_out']) {
+		const f = run([job('unit-tests (1)', 30), job('quick-fail', 10, { conclusion })]);
+		assert.equal(f.status, 1, `${conclusion}: ${f.stdout}${f.stderr}`);
+		assert.match(f.stderr, /quick-fail/);
+	}
 	// A job that never completed fails and is named.
 	const open = { ...job('release', 10), status: 'in_progress', conclusion: null, completed_at: null };
 	const o = run([job('unit-tests (1)', 30), open]);
@@ -128,6 +151,22 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 	const notSelf = run([job('budget-check', 500), job('unit-tests (1)', 30)], { args: ['--self', 'other'] });
 	assert.equal(notSelf.status, 1, `${notSelf.stdout}${notSelf.stderr}`);
 	assert.match(notSelf.stderr, /budget-check/);
+	// --self is an exact name: a prefix of a job's name leaves that job measured, and it fails.
+	const prefix = run([job('budget-check', 500), job('unit-tests (1)', 30)], { args: ['--self', 'budget'] });
+	assert.equal(prefix.status, 1, `${prefix.stdout}${prefix.stderr}`);
+	assert.match(prefix.stderr, /budget-check/);
+	// The workflow runs it: the kit-tests job fetches the run's jobs into one file and runs the check, never tolerated.
+	const yml = fs.readFileSync(path.resolve('.github/workflows/ci.yml'), 'utf8');
+	const part = yml.split(/^  kit-tests:$/m)[1] || '';
+	const kit = part.split(/^  [A-Za-z0-9_-]+:$/m)[0];
+	assert.ok(kit.includes('steps:'), 'no kit-tests job in ci.yml');
+	assert.match(kit, /gh api [^\n]*--paginate/);
+	const line = kit.split('\n').find((l) => l.includes('scripts/ci-budget.mjs'));
+	assert.ok(line, 'kit-tests never runs scripts/ci-budget.mjs');
+	assert.match(line, /--jobs \S+/);
+	assert.match(line, /--self kit-tests(\s|$)/);
+	assert.doesNotMatch(line, /\|\|/);
+	assert.doesNotMatch(kit, /continue-on-error/);
 });
 
 // why: catches two runs on the same jobs JSON give the same verdict (CI-C S5)
@@ -164,6 +203,19 @@ test('an unreadable jobs API answer fails the check and is logged', () => {
 	const dir = repo();
 	const missing = spawnSync(process.execPath, [SCRIPT, '--jobs', path.join(dir, 'nope.json')], { cwd: dir, encoding: 'utf8' });
 	assert.equal(missing.status, 2, `${missing.stdout}${missing.stderr}`);
+	const mlog = path.join(dir, '.git', 'kit-guard-open.log');
+	const mrows = fs.existsSync(mlog) ? fs.readFileSync(mlog, 'utf8').trim().split('\n').filter(Boolean) : [];
+	assert.equal(mrows.length, 1, `expected one row for the missing file, got ${mrows.length}`);
+	const mrow = JSON.parse(mrows[0]);
+	assert.equal(mrow.hook, 'ci-budget');
+	assert.ok(typeof mrow.cause === 'string' && mrow.cause.length > 0, 'the missing-file row names no cause');
+	// Valid JSON that measures nothing never passes: no jobs array, an empty one, a wrong type, or a short list.
+	for (const raw of ['{}', '{"message":"Not Found"}', '{"jobs":"x"}', '{"jobs":[]}', JSON.stringify({ total_count: 3, jobs: [job('a', 5)] })]) {
+		const r = run([], { raw });
+		assert.equal(r.status, 2, `${raw}: ${r.stdout}${r.stderr}`);
+		assert.equal(r.log.length, 1, `${raw}: expected one log row, got ${r.log.length}`);
+		assert.ok(JSON.parse(r.log[0]).cause.length > 0, `${raw}: the row names no cause`);
+	}
 	// A readable run passes and logs nothing.
 	const ok = run([job('unit-tests (1)', 30)]);
 	assert.equal(ok.status, 0, `${ok.stdout}${ok.stderr}`);
