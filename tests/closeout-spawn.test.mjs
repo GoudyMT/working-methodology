@@ -1,0 +1,161 @@
+// K369 (patch 1.51.1, U24): the hook refuses checkers and ticketless testers in closeout. "In closeout" means
+// docs/builds/<VERSION>.closeout.json exists in the HEAD commit of the repo the hook's cwd is in. agent-model.cjs then
+// refuses a checker spawn (subagent_type checker, or Plan: and Unit: lines) with a line holding
+// `node user/kit-tools/closeout.mjs defer "<text>"`, and refuses a tester or writer spawn (subagent_type, or a Role: line)
+// whose brief has no "Ticket: <id>" line naming an id in the file's tickets. An unparsable closeout file blocks with
+// "hook error: lead review" and one row in <git common dir>/kit-guard-open.log. holds.json sets spawn-list, warm-agents,
+// round-cap and closeout-spawn to enforce with a tier. Each test runs the real hook in a child process against a temp repo.
+import { test } from './harness.mjs';
+import assert from 'node:assert/strict';
+import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+
+kitTemp.sessionRoot();
+const HOOK_DIR = path.resolve('user/kit-hooks');
+const HOLDS = path.join(HOOK_DIR, 'holds.json');
+const VERSION = '1.51.1';
+const CLOSEOUT = `docs/builds/${VERSION}.closeout.json`;
+
+function isolatedEnv(extra = {}) {
+	const home = kitTemp.makeTemp('closeout-spawn-home-');
+	const config = path.join(home, '.claude');
+	return { ...process.env, HOME: home, USERPROFILE: home, CLAUDE_CONFIG_DIR: config, KIT_CLAUDE_HOME: config, GIT_AUTHOR_NAME: 'T', GIT_AUTHOR_EMAIL: 't@example.com', GIT_COMMITTER_NAME: 'T', GIT_COMMITTER_EMAIL: 't@example.com', ...extra };
+}
+
+function git(cwd, args) {
+	const r = spawnSync('git', args, { cwd, env: isolatedEnv(), encoding: 'utf8' });
+	assert.equal(r.status, 0, `git ${args.join(' ')} failed: ${r.stderr}`);
+	return r.stdout.trim();
+}
+
+// A repo with VERSION committed and a kit-unit-files.txt, so a tester spawn is never held for its list. closeout is the
+// text of the closeout file, committed in HEAD ('commit'), left in the working tree only ('tree'), or absent (null).
+function repo(closeout, where = 'commit') {
+	const dir = kitTemp.makeTemp('closeout-spawn-repo-');
+	git(dir, ['init', '-q', '-b', 'main']);
+	fs.writeFileSync(path.join(dir, 'VERSION'), `${VERSION}\n`);
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	if (closeout !== null && where === 'commit') fs.writeFileSync(path.join(dir, CLOSEOUT), closeout);
+	git(dir, ['add', '-A']);
+	git(dir, ['commit', '-q', '-m', 'start']);
+	if (closeout !== null && where === 'tree') fs.writeFileSync(path.join(dir, CLOSEOUT), closeout);
+	fs.writeFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/closeout-spawn.test.mjs\n');
+	return dir;
+}
+const closeoutJson = (tickets) => `${JSON.stringify({ version: VERSION, head: 'abc', findings: [], tickets })}\n`;
+const openFile = (dir) => path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-guard-open.log');
+const readRows = (file) => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : []);
+
+const CONFIG = (() => {
+	const config = kitTemp.makeTemp('closeout-spawn-config-');
+	fs.mkdirSync(path.join(config, 'agents'), { recursive: true });
+	for (const [name, model] of Object.entries({ checker: 'opus', tester: 'sonnet', writer: 'sonnet', builder: 'haiku', 'general-purpose': 'sonnet' })) fs.writeFileSync(path.join(config, 'agents', `${name}.md`), `---\nname: ${name}\nmodel: ${model}\n---\nrole\n`);
+	return config;
+})();
+
+// Runs the real agent-model.cjs once per call, in order, from cwd; one decision per call, null when it lets the call through.
+function checkCalls(cwd, calls) {
+	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); process.stdout.write(JSON.stringify(a.calls.map((c) => m.check({ tool_name: 'Agent', tool_input: c, cwd: a.cwd }))));";
+	const args = JSON.stringify({ hookDir: HOOK_DIR, calls, cwd });
+	const r = spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env: isolatedEnv({ KIT_CLAUDE_HOME: CONFIG, CLAUDE_CONFIG_DIR: CONFIG, KIT_TEST_ARGS: args }), encoding: 'utf8' });
+	assert.equal(r.status, 0, `agent-model.cjs check ran: ${r.stderr}`);
+	return JSON.parse(r.stdout);
+}
+
+const checker = (unit = 'U24') => ({ subagent_type: 'checker', prompt: `Plan: PLAN.md\nUnit: ${unit}\nCheck the unit.` });
+const briefedChecker = (unit = 'U24') => ({ subagent_type: 'general-purpose', prompt: `Plan: PLAN.md\nUnit: ${unit}\nCheck the unit.` });
+const tester = (ticket, type = 'tester', role) => ({ subagent_type: type, prompt: `${role ? `Role: ${role}\n` : ''}${ticket ? `Ticket: ${ticket}\n` : ''}Write the tests for the finding.` });
+const denied = (d) => d && d.hookSpecificOutput && d.hookSpecificOutput.permissionDecision === 'deny';
+const reason = (d) => (d && d.hookSpecificOutput && d.hookSpecificOutput.permissionDecisionReason) || '';
+const DEFER = /closeout\.mjs defer "/;
+
+// why: catches a checker spawn while a closeout file is committed is refused, printing the defer command (K369 S1)
+test('a checker spawn while a closeout file is committed is refused, printing the defer command', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const [spawn] = checkCalls(dir, [checker()]);
+	assert.ok(denied(spawn), `a checker spawn in closeout is refused, got ${JSON.stringify(spawn)}`);
+	assert.match(reason(spawn), DEFER);
+	const tree = repo(closeoutJson(['F1']), 'tree');
+	const [uncommitted] = checkCalls(tree, [checker()]);
+	assert.equal(uncommitted, null, 'a closeout file only in the working tree does not count');
+});
+
+// why: catches a tester whose brief names an unused ticket passes, and one without is refused (K369 S2)
+test('a tester whose brief names an unused ticket passes, and one without is refused', () => {
+	const dir = repo(closeoutJson(['F1', 'F2']));
+	const [listed, writer, none, unknown] = checkCalls(dir, [tester('F2'), tester('F1', 'writer'), tester(null), tester('F9')]);
+	assert.equal(listed, null, `a tester naming a ticket in the file passes, got ${JSON.stringify(listed)}`);
+	assert.equal(writer, null, `a writer naming a ticket passes, got ${JSON.stringify(writer)}`);
+	assert.ok(denied(none), `a tester with no Ticket: line is refused, got ${JSON.stringify(none)}`);
+	assert.ok(denied(unknown), `a tester naming an id outside the tickets is refused, got ${JSON.stringify(unknown)}`);
+	const [builder] = checkCalls(dir, [{ subagent_type: 'builder', prompt: 'Build the unit.' }]);
+	assert.equal(builder, null, 'other roles are not held');
+});
+
+// why: catches no closeout file changes nothing (K369 S3)
+test('no closeout file changes nothing', () => {
+	const dir = repo(null);
+	const [spawn, bare, builder] = checkCalls(dir, [checker(), tester(null), { subagent_type: 'builder', prompt: 'Build the unit.' }]);
+	assert.equal(spawn, null, `a checker spawn is not held without a closeout file, got ${JSON.stringify(spawn)}`);
+	assert.equal(bare, null, `a ticketless tester is not held without a closeout file, got ${JSON.stringify(bare)}`);
+	assert.equal(builder, null);
+	assert.equal(readRows(openFile(dir)).length, 0, 'no log row when there is nothing to read');
+	const closed = repo(closeoutJson(['F1']));
+	const [held] = checkCalls(closed, [checker()]);
+	assert.ok(denied(held), 'the same spawn in a repo with the file is held');
+});
+
+// why: catches a general agent briefed as checker is refused too (K369 S4)
+test('a general agent briefed as checker is refused too', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const [checkerBrief, noTicket, withTicket, other] = checkCalls(dir, [briefedChecker(), tester(null, 'general-purpose', 'tester'), tester('F1', 'general-purpose', 'tester'), tester(null, 'general-purpose', 'builder')]);
+	assert.ok(denied(checkerBrief), `a general agent with Plan: and Unit: lines is refused, got ${JSON.stringify(checkerBrief)}`);
+	assert.match(reason(checkerBrief), DEFER);
+	assert.ok(denied(noTicket), `a general agent briefed Role: tester with no ticket is refused, got ${JSON.stringify(noTicket)}`);
+	assert.equal(withTicket, null, 'a briefed tester with a listed ticket passes');
+	assert.equal(other, null, 'a briefed builder is not held');
+});
+
+// why: catches holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier (K369 S6)
+test('holds.json sets the K360, K364, K366 and K369 refusals to enforce with a tier field (K366 and K369 high, K360 and K364 small), and a test fails if any of them reads log or has no tier', () => {
+	const holds = JSON.parse(fs.readFileSync(HOLDS, 'utf8')).holds;
+	const expected = { 'spawn-list': 'small', 'warm-agents': 'small', 'round-cap': 'high', 'closeout-spawn': 'high' };
+	for (const [id, tier] of Object.entries(expected)) {
+		const hold = holds.find((h) => h.id === id);
+		assert.ok(hold, `holds.json has a hold with id ${id}`);
+		assert.equal(hold.mode, 'enforce', `${id} runs in enforce mode`);
+		assert.equal(hold.tier, tier, `${id} carries tier ${tier}`);
+	}
+});
+
+// why: catches the same spawn twice gives the same verdict (K369 S4)
+test('the same spawn twice gives the same verdict', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const [a, b, c, d] = checkCalls(dir, [checker(), checker(), tester(null), tester(null)]);
+	assert.ok(denied(a), `the checker spawn is refused, got ${JSON.stringify(a)}`);
+	assert.deepEqual(b, a);
+	assert.ok(denied(c), `the ticketless tester is refused, got ${JSON.stringify(c)}`);
+	assert.deepEqual(d, c);
+	const [e] = checkCalls(dir, [checker()]);
+	assert.deepEqual(e, a, 'a later run in a new process gives the same verdict');
+});
+
+// why: catches an unreadable closeout file or a hook error blocks the call with "hook error: lead review" and is logged (K369 S5)
+test('an unreadable closeout file or a hook error blocks the call with "hook error: lead review" and is logged', () => {
+	const dir = repo('{ this is not json');
+	const [spawn, tickets] = checkCalls(dir, [checker(), tester('F1')]);
+	assert.ok(denied(spawn), `an unparsable closeout file blocks a checker spawn, got ${JSON.stringify(spawn)}`);
+	assert.match(reason(spawn), /hook error: lead review/);
+	assert.ok(denied(tickets), `it blocks a tester spawn too, got ${JSON.stringify(tickets)}`);
+	assert.match(reason(tickets), /hook error: lead review/);
+	const rows = readRows(openFile(dir));
+	assert.ok(rows.length >= 1, 'a row in kit-guard-open.log');
+	assert.equal(rows[0].hook, 'agent-model');
+	assert.ok(rows[0].cause && rows[0].at, 'the row carries its cause and time');
+	const clean = repo(closeoutJson(['F1']));
+	const [fine] = checkCalls(clean, [tester('F1')]);
+	assert.equal(fine, null, 'a readable file is not an error');
+	assert.equal(readRows(openFile(clean)).length, 0);
+});
