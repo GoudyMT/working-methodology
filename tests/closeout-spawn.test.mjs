@@ -94,6 +94,11 @@ test('a checker spawn while a closeout file is committed is refused, printing th
 	assert.equal(logged, null, `under log the checker spawn is not refused, got ${JSON.stringify(logged)}`);
 	const rows = fs.readFileSync(path.join(git(logDir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-agent-model.log'), 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
 	assert.ok(rows.some((r) => JSON.stringify(r).includes('closeout') && r.denied !== true), `the would-be refusal is logged, got ${JSON.stringify(rows)}`);
+	// M4: a hold-mode.cjs that throws fails closed for this high-tier hold, for a checker and a ticketless tester.
+	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), "'use strict';\nexports.mode = () => { throw new Error('holds unreadable'); };\n");
+	const [brokenChecker, brokenTester] = checkCalls(repo(closeoutJson(['F1'])), [checker(), tester(null)], hookDir);
+	assert.ok(denied(brokenChecker), `a throwing hold-mode refuses the checker in closeout, got ${JSON.stringify(brokenChecker)}`);
+	assert.ok(denied(brokenTester), `a throwing hold-mode refuses the ticketless tester, got ${JSON.stringify(brokenTester)}`);
 });
 
 // why: catches a tester whose brief names an unused ticket passes, and one without is refused (K369 S2)
@@ -281,15 +286,4 @@ test('H3 a git that exits 128, or a log that cannot be written, still refuses a 
 	fs.mkdirSync(path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-agent-model.log'));
 	const [logged] = checkCalls(dir, [tester(null)]);
 	assert.ok(denied(logged), `a log write error cannot let a ticketless tester through in closeout, got ${JSON.stringify(logged)}`);
-});
-
-// why: catches M4 a hold-mode.cjs that throws leaving the closeout-spawn hold open for a checker
-test('M4 a hold-mode.cjs that throws makes closeout-spawn refuse', () => {
-	const hookDir = kitTemp.makeTemp('closeout-spawn-hooks-');
-	fs.cpSync(HOOK_DIR, hookDir, { recursive: true });
-	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), "'use strict';\nexports.mode = () => { throw new Error('holds unreadable'); };\n");
-	const dir = repo(closeoutJson(['F1']));
-	const [spawn, bare] = checkCalls(dir, [checker(), tester(null)], hookDir);
-	assert.ok(denied(spawn), `a throwing hold-mode refuses the checker in closeout, got ${JSON.stringify(spawn)}`);
-	assert.ok(denied(bare), `and the ticketless tester, got ${JSON.stringify(bare)}`);
 });
