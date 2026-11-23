@@ -74,6 +74,10 @@ test('a checker spawn for a unit with 2 checker records already is refused namin
 	assert.ok(denied(third), `the third check round is refused, got ${JSON.stringify(third)}`);
 	assert.match(reason(third), /U17/);
 	assert.match(reason(third), /next patch list/);
+	const batch = repo();
+	seed(batch, [['U18', 'U17'], ['U17']]);
+	const [viaBatch] = checkCalls(batch, [checker('U17')]);
+	assert.ok(denied(viaBatch), `a round spent in a batch row counts for each unit in it, got ${JSON.stringify(viaBatch)}`);
 	const other = repo();
 	seed(other, [['U17'], { units: ['U17'], denied: true }]);
 	const [second] = checkCalls(other, [checker('U17')]);
@@ -92,6 +96,12 @@ test('a first and second check pass', () => {
 	assert.deepEqual(rows[0].units, ['U17']);
 	const [third] = checkCalls(dir, [checker('U17')]);
 	assert.ok(denied(third), `the third spawn on the same unit is refused, got ${JSON.stringify(third)}`);
+	const batch = repo();
+	const [allowed] = checkCalls(batch, [checker('U17, U18')]);
+	assert.equal(allowed, null);
+	const batchRows = readRows(logFile(batch)).filter((r) => r.round === 'check');
+	assert.equal(batchRows.length, 1);
+	assert.deepEqual(batchRows[0].units, ['U17', 'U18'], 'a batch spawn appends one row naming each unit');
 });
 
 // why: catches a checker for another unit passes (K366 S2)
@@ -120,6 +130,9 @@ test('a general-purpose agent briefed as a checker (Plan: and Unit: lines) is co
 	const [counted, noUnit] = checkCalls(dir, [briefed('U17'), briefed(null)]);
 	assert.ok(denied(counted), `a briefed general agent on a capped unit is refused, got ${JSON.stringify(counted)}`);
 	assert.equal(noUnit, null, 'a general agent with a Plan: line and no Unit: line is no checker');
+	const planOnly = repo();
+	checkCalls(planOnly, [briefed(null)]);
+	assert.equal(readRows(logFile(planOnly)).filter((r) => r.round === 'check').length, 0, 'a Plan:-only general agent appends no check row');
 	const fresh = repo();
 	checkCalls(fresh, [briefed('U17'), briefed('U17')]);
 	const [third] = checkCalls(fresh, [checker('U17')]);
@@ -150,6 +163,14 @@ test('an unreadable records folder or a hook error blocks the spawn with "hook e
 	assert.equal(rows.length, 1, 'one row in kit-guard-open.log');
 	assert.equal(rows[0].hook, 'agent-model');
 	assert.ok(rows[0].cause && rows[0].at, 'the row carries its cause and time');
+	const junk = repo();
+	fs.writeFileSync(logFile(junk), 'not json at all\n');
+	const [junked] = checkCalls(junk, [checker('U17')]);
+	assert.ok(denied(junked), `a non-JSON line in the log is unreadable and blocks, got ${JSON.stringify(junked)}`);
+	assert.match(reason(junked), /hook error: lead review/);
+	assert.equal(readRows(openFile(junk)).length, 1, 'one row in kit-guard-open.log');
+	const holds = JSON.parse(fs.readFileSync(path.join(HOOK_DIR, 'holds.json'), 'utf8')).holds;
+	assert.deepEqual(holds.filter((h) => h.id === 'round-cap').map((h) => h.mode), ['enforce'], 'holds.json lists round-cap in enforce mode');
 	const clean = repo();
 	const [fine] = checkCalls(clean, [checker('U17')]);
 	assert.equal(fine, null, 'a missing log is not an error');
