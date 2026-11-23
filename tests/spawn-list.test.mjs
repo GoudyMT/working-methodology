@@ -12,7 +12,8 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 const HOOK_DIR = path.resolve('user/kit-hooks');
-const COMMAND = 'node user/kit-tools/unit-lock.mjs --tester --files';
+// The hook names unit-lock.mjs by a path built from its own folder, so the command runs outside the kit repo.
+const COMMAND = path.join(HOOK_DIR, '..', 'kit-tools', 'unit-lock.mjs');
 
 function isolatedEnv(extra = {}) {
 	const home = kitTemp.makeTemp('spawn-list-home-');
@@ -82,7 +83,8 @@ test('a tester spawn whose brief names a worktree with no kit-unit-files.txt is 
 	assert.ok(reason(tester).includes(COMMAND), `the refusal names the command: ${reason(tester)}`);
 	assert.ok(denied(writer), `the writer spawn is refused too, got ${JSON.stringify(writer)}`);
 	assert.ok(denied(unnamed), `a tester spawn with no Worktree line is checked against the hook's cwd, got ${JSON.stringify(unnamed)}`);
-	for (const d of [tester, writer]) assert.ok(reason(d).includes(COMMAND), `the full command is named: ${reason(d)}`);
+	for (const d of [tester, writer]) assert.ok(reason(d).includes(`${COMMAND} --tester --files`), `the full command is named: ${reason(d)}`);
+	assert.ok(fs.existsSync(COMMAND), 'the path in the message exists on disk');
 	const listed = worktree(true);
 	const [named] = checkCalls(listed, [spawnCall('tester', wt)]);
 	assert.ok(denied(named), `a cwd with a list does not cover a Worktree line naming a bare worktree, got ${JSON.stringify(named)}`);
@@ -161,4 +163,42 @@ test('a worktree whose git folder cannot be read lets the spawn through and is l
 	const mine = rows.filter((r) => r.type === 'tester' && /worktree/i.test(String(r.why)));
 	assert.equal(mine.length, 2, `each pass-through is logged with worktree in its why: ${log}`);
 	for (const r of mine) assert.match(String(r.mode), /^(log|enforce)$/, 'the row records the mode it read');
+});
+
+// why: catches a briefed tester whose Role line has bold markup or a unit tag slipping past the list gate (K360 S3 F3)
+test('a Role line of "tester (U13)" or "**tester**" is read as tester', () => {
+	const bare = worktree(false);
+	const prompt = (role) => ({ subagent_type: 'general-purpose', prompt: `Role: ${role}\nWorktree: ${bare}\nGo.` });
+	const roles = ['tester (U13)', '**tester**', '**Tester** (U13)'];
+	const [builder, ...results] = checkCalls(bare, [prompt('builder (U13)'), ...roles.map(prompt)]);
+	assert.equal(builder, null, 'a builder Role line is not refused');
+	results.forEach((d, i) => assert.ok(denied(d), `Role: ${roles[i]} with no list is refused, got ${JSON.stringify(d)}`));
+});
+
+// why: catches a Worktree line in bold, indented or a list item being missed so the hook cwd list covers a bare worktree (K360 S1 F4 F6)
+test('a Worktree line in bold, indented or as a list item names the worktree', () => {
+	const bare = worktree(false);
+	const listed = worktree(true);
+	const lines = [`**Worktree:** ${bare}`, `  Worktree: ${bare}`, `- Worktree: ${bare}`, `* worktree: ${bare}`];
+	const calls = lines.map((line) => ({ subagent_type: 'tester', prompt: `${line}\nWrite the tests.` }));
+	checkCalls(listed, calls).forEach((d, i) => assert.ok(denied(d), `${JSON.stringify(lines[i])} names the bare worktree and is refused, got ${JSON.stringify(d)}`));
+});
+
+// why: catches a Worktree path on a network share being handed to git so the spawn waits on the network (K360 S5 F5)
+test('a Worktree path on a share passes with one kit-guard-open.log row and no network wait', () => {
+	const home = worktree(true);
+	const shares = ['\\\\kit-no-such-host-zz\\share\\wt', '//kit-no-such-host-zz/share/wt'];
+	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); const t = process.hrtime.bigint(); const d = m.check({ tool_name: 'Agent', tool_input: a.call, cwd: a.cwd }); process.stdout.write(JSON.stringify({ d, ms: Number(process.hrtime.bigint() - t) / 1e6 }));";
+	for (const share of shares) {
+		const args = JSON.stringify({ hookDir: HOOK_DIR, call: spawnCall('tester', share), cwd: home });
+		const r = spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env: isolatedEnv({ KIT_CLAUDE_HOME: CONFIG, CLAUDE_CONFIG_DIR: CONFIG, KIT_TEST_ARGS: args }), encoding: 'utf8' });
+		assert.equal(r.status, 0, `hook ran: ${r.stderr}`);
+		const { d, ms } = JSON.parse(r.stdout);
+		assert.equal(d, null, `${share} passes`);
+		assert.ok(ms < 500, `${share} returns quickly (git never touches a share), took ${ms} ms`);
+	}
+	const file = path.join(git(home, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-guard-open.log');
+	const rows = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+	assert.equal(rows.length, 2, 'one kit-guard-open.log row per share spawn');
+	for (const row of rows) assert.ok(JSON.stringify(row).includes('kit-no-such-host-zz'), `the row names the share: ${JSON.stringify(row)}`);
 });

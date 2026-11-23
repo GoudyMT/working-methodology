@@ -201,3 +201,47 @@ test('an unreadable closeout file or a hook error blocks the call with "hook err
 	assert.equal(fine, null, 'a readable file is not an error');
 	assert.equal(readRows(openFile(clean)).length, 0);
 });
+
+// why: catches a test-writer spawn with no Ticket line slipping through the closeout gate (K369 S2 F4)
+test('a test-writer spawn with no Ticket line is refused', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const [bare, named] = checkCalls(dir, [tester(null, 'test-writer'), tester('F1', 'test-writer')]);
+	assert.ok(denied(bare), `a test-writer with no Ticket: line is refused, got ${JSON.stringify(bare)}`);
+	assert.equal(named, null, 'a test-writer naming a listed ticket passes');
+});
+
+// why: catches Ticket: F10 being accepted when the closeout tickets hold only F1 (K369 S2 F4)
+test('Ticket: F10 against the tickets ["F1"] is refused', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const [longer, exact] = checkCalls(dir, [tester('F10'), tester('F1')]);
+	assert.ok(denied(longer), `Ticket: F10 is not the ticket F1, got ${JSON.stringify(longer)}`);
+	assert.equal(exact, null, 'Ticket: F1 passes');
+});
+
+// why: catches an uncommitted VERSION edit in the working tree changing which closeout file the gate reads (K369 S1 F2)
+test('an uncommitted VERSION edit in the working tree does not change the verdict', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const [before] = checkCalls(dir, [checker()]);
+	assert.ok(denied(before), 'the checker is refused with the closeout file committed');
+	fs.writeFileSync(path.join(dir, 'VERSION'), '9.9.9\n');
+	const [after, ticketless] = checkCalls(dir, [checker(), tester(null)]);
+	assert.deepEqual(after, before, 'VERSION is read from HEAD, so the verdict is the same');
+	assert.ok(denied(ticketless), 'a ticketless tester is still refused');
+	const fresh = repo(closeoutJson(['F1']), 'commit', 'docs/builds/9.9.9.closeout.json');
+	fs.writeFileSync(path.join(fresh, 'VERSION'), '9.9.9\n');
+	const [other] = checkCalls(fresh, [checker()]);
+	assert.equal(other, null, 'a working-tree VERSION naming the committed closeout file does not make the gate read it');
+});
+
+// why: catches a git failure inside the closeout gate letting a checker through instead of "hook error: lead review" (K369 S5 F3)
+test('a git failure inside the closeout gate refuses a checker with "hook error: lead review"', () => {
+	const dir = repo(closeoutJson(['F1']));
+	const blob = git(dir, ['rev-parse', 'HEAD:VERSION']);
+	const loose = path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'objects', blob.slice(0, 2), blob.slice(2));
+	fs.chmodSync(loose, 0o666);
+	fs.rmSync(loose);
+	const [spawn] = checkCalls(dir, [checker()]);
+	assert.ok(denied(spawn), `a git show that fails on HEAD:VERSION refuses the checker, got ${JSON.stringify(spawn)}`);
+	assert.match(reason(spawn), /hook error: lead review/);
+	assert.ok(readRows(openFile(dir)).length >= 1, 'the cause is logged in kit-guard-open.log');
+});

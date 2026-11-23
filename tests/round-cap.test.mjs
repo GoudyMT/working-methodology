@@ -120,7 +120,7 @@ test('a checker for another unit passes', () => {
 test('the same unit spelled with other case or markup is still counted', () => {
 	const dir = repo();
 	seed(dir, [['U17'], ['U17']]);
-	const spellings = ['u17', '**U17**', '`U17`', '_u17_'];
+	const spellings = ['u17', '**U17**', '`U17`', '_u17_', 'U017'];
 	const results = checkCalls(dir, spellings.map(checker));
 	spellings.forEach((s, i) => assert.ok(denied(results[i]), `${s} counts as U17 and is refused, got ${JSON.stringify(results[i])}`));
 	const trailing = ['U17.', 'U17 (fix round)', 'u17, (U18)'];
@@ -189,4 +189,69 @@ test('an unreadable records folder or a hook error blocks the spawn with "hook e
 	const [fine] = checkCalls(clean, [checker('U17')]);
 	assert.equal(fine, null, 'a missing log is not an error');
 	assert.equal(readRows(openFile(clean)).length, 0);
+});
+
+// why: catches any hook error on a checker spawn passing instead of denying "hook error: lead review" with one kit-guard-open.log row (K366 S5 F1)
+test('any hook error on a checker spawn denies "hook error: lead review" with one kit-guard-open.log row', () => {
+	const dir = repo();
+	seed(dir, [['U17'], ['U17']]);
+	fs.mkdirSync(agentLog(dir));
+	const [decision] = checkCalls(dir, [{ ...checker('U17'), model: 'sonnet' }]);
+	assert.ok(denied(decision), `a model-log error on a checker spawn is denied, got ${JSON.stringify(decision)}`);
+	assert.match(reason(decision), /hook error: lead review/);
+	const rows = readRows(openFile(dir));
+	assert.equal(rows.length, 1, 'one row in kit-guard-open.log');
+	assert.equal(rows[0].hook, 'agent-model');
+	const broken = kitTemp.makeTemp('round-cap-broken-');
+	fs.writeFileSync(path.join(broken, '.git'), `gitdir: ${path.join(broken, 'no-such-git-folder')}\n`);
+	const [unread] = checkCalls(broken, [checker('U17')]);
+	assert.ok(denied(unread), `a failed common-dir read on a checker spawn is denied, got ${JSON.stringify(unread)}`);
+	assert.match(reason(unread), /hook error: lead review/);
+});
+
+// why: catches Plan, Unit and Units lines in markup, list markers or repeated going unread so a capped unit gets a third round (K366 S3 F4)
+test('Plan and Unit lines with bold, list markers, a Units label or a second Unit line still count', () => {
+	const dir = repo();
+	seed(dir, [['U17'], ['U17']]);
+	const prompts = ['**Plan:** P.md\n**Unit:** U17\nGo.', '- Plan: P.md\n- Unit: U17\nGo.', 'Plan: P.md\nUnits: U17\nGo.', 'Plan: P.md\nUnit: R1\nUnit: U17\nGo.'];
+	for (const type of ['general-purpose', 'checker']) {
+		const results = checkCalls(dir, prompts.map((prompt) => ({ subagent_type: type, prompt })));
+		results.forEach((d, i) => {
+			assert.ok(denied(d), `${type} with ${JSON.stringify(prompts[i])} is refused, got ${JSON.stringify(d)}`);
+			assert.match(reason(d), /U17/);
+		});
+	}
+});
+
+// why: catches a checker refused by the closeout gate spending a round so a later honest check is wrongly refused (K366 S1 F1 denied row)
+test('a checker refused by another gate writes its row with denied:true and spends no round', () => {
+	const dir = repo();
+	const T = ['-c', 'user.name=T', '-c', 'user.email=t@example.invalid'];
+	fs.writeFileSync(path.join(dir, 'VERSION'), '1.51.1\n');
+	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
+	fs.writeFileSync(path.join(dir, 'docs', 'builds', '1.51.1.closeout.json'), `${JSON.stringify({ version: '1.51.1', head: 'abc', findings: [], tickets: [] })}\n`);
+	git(dir, ['add', '-A']);
+	git(dir, [...T, 'commit', '-q', '-m', 'closeout']);
+	seed(dir, [['U17']]);
+	const [refused] = checkCalls(dir, [checker('U17')]);
+	assert.ok(denied(refused), `a checker in closeout is refused, got ${JSON.stringify(refused)}`);
+	const rows = readRows(logFile(dir));
+	assert.equal(rows.length, 2);
+	assert.equal(rows[1].denied, true, `the refused spawn's row carries denied:true: ${JSON.stringify(rows[1])}`);
+	git(dir, ['rm', '-q', 'docs/builds/1.51.1.closeout.json']);
+	git(dir, [...T, 'commit', '-q', '-m', 'leave closeout']);
+	const [second, third] = checkCalls(dir, [checker('U17'), checker('U17')]);
+	assert.equal(second, null, `the refused spawn spent no round, so the second counted round passes, got ${JSON.stringify(second)}`);
+	assert.ok(denied(third), `the third counted round is refused, got ${JSON.stringify(third)}`);
+});
+
+// why: catches a unit id capped under one plan also capping the same id under another plan (K366 S3 plan scope)
+test('two counted rounds on U7 under plan A do not cap U7 under plan B', () => {
+	const dir = repo();
+	const under = (plan) => ({ subagent_type: 'checker', prompt: `Plan: ${plan}\nUnit: U7\nCheck the unit.` });
+	const [a1, a2, a3, b1] = checkCalls(dir, [under('A.md'), under('A.md'), under('A.md'), under('B.md')]);
+	assert.equal(a1, null);
+	assert.equal(a2, null);
+	assert.ok(denied(a3), `the third round under plan A is refused, got ${JSON.stringify(a3)}`);
+	assert.equal(b1, null, `U7 under plan B has no rounds yet and passes, got ${JSON.stringify(b1)}`);
 });

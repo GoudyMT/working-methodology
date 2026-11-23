@@ -82,9 +82,9 @@ function guardRun(cwd, s, tool_name, tool_input) {
 }
 
 // Runs the real agent-model.cjs once per input in order; one decision per input, null when it lets the call through.
-function checkInputs(cwd, s, inputs) {
+function checkInputs(cwd, s, inputs, hookDir = HOOK_DIR) {
 	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); process.stdout.write(JSON.stringify(a.inputs.map((i) => m.check({ ...i, cwd: a.cwd, transcript_path: a.transcript }))));";
-	const args = JSON.stringify({ hookDir: HOOK_DIR, inputs, cwd, transcript: s.transcript });
+	const args = JSON.stringify({ hookDir, inputs, cwd, transcript: s.transcript });
 	const r = spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env: isolatedEnv({ KIT_TEST_ARGS: args }), encoding: 'utf8' });
 	assert.equal(r.status, 0, `agent-model.cjs check ran: ${r.stderr}`);
 	return JSON.parse(r.stdout);
@@ -153,6 +153,27 @@ test('a SendMessage to an agent over the limit is held and says reset', () => {
 	assert.equal(guardRun(dir, s, 'SendMessage', { to: 'a1', message: 'next unit' }).permissionDecision, undefined, 'a message under the limit passes through guard.cjs');
 	const holds = JSON.parse(fs.readFileSync(path.join(HOOK_DIR, 'holds.json'), 'utf8')).holds;
 	assert.deepEqual(holds.filter((h) => h.id === 'warm-agents').map((h) => h.mode), ['enforce'], 'holds.json lists warm-agents in enforce mode');
+});
+
+// why: catches the warm-agents hold at log still refusing the held spawn, or logging nothing about it (K364 S1 hold mode)
+test('with warm-agents set to log the held spawn passes and its log row is written', () => {
+	const root = kitTemp.makeTemp('warm-logmode-');
+	fs.cpSync(HOOK_DIR, path.join(root, 'kit-hooks'), { recursive: true });
+	fs.cpSync(path.resolve('user/kit-tools'), path.join(root, 'kit-tools'), { recursive: true });
+	const holdsFile = path.join(root, 'kit-hooks', 'holds.json');
+	const holds = JSON.parse(fs.readFileSync(holdsFile, 'utf8'));
+	holds.holds = holds.holds.map((h) => (h.id === 'warm-agents' ? { ...h, mode: 'log' } : h));
+	fs.writeFileSync(holdsFile, JSON.stringify(holds));
+	const s = session();
+	agent(s, 'a1', { role: 'tester', lane: 'A', tokens: 50000 });
+	const dir = repo();
+	const [held] = checkInputs(dir, s, [spawn('tester', 'A')], path.join(root, 'kit-hooks'));
+	assert.equal(held, null, `under log the held spawn passes, got ${JSON.stringify(held)}`);
+	const file = path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-agent-model.log');
+	const rows = readRows(file);
+	assert.ok(rows.some((r) => /warm|SendMessage/i.test(JSON.stringify(r)) && r.mode === 'log'), `the would-be hold is logged with its mode, got ${JSON.stringify(rows)}`);
+	const [enforced] = checkInputs(dir, s, [spawn('tester', 'A')]);
+	assert.ok(denied(enforced), 'the shipped hold still refuses the same spawn');
 });
 
 // why: catches every reset writes one JSON line with agent, role, tokens and reason (K364 S3)
