@@ -447,7 +447,11 @@
     },
     {
       "round": 7,
-      "cause": "The sped-up trial test was named as adding no catch; proven instead by a planted bug."
+      "cause": "The sped-up trial test was named as adding no catch; proven instead by a planted bug. The workflow lint also failed here and was misread as a rollup only."
+    },
+    {
+      "round": 8,
+      "cause": "The workflow lint: a sweep fix wrote A && B || C in the sizing step; earlier rounds stopped before the lint ran."
     }
   ],
   "holds": {
