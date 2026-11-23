@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.51.3 - 2026-11-23
+
+A job or test over its time limit is reported, not failed, and a job over on 3 main runs in a row is named as a trend; the Windows tests run over 2 runners.
+
+### Changed
+- Job time and test time are reported, not failed: a job over 180 s on 3 main runs in a row is named as a trend for a list row, and the Windows 60 s cap is gone.
+- The Windows tests run over 2 runners; the Windows test check and the guard proofs run once, on the first.
+
 ## 1.51.2 - 2026-11-23
 
 CI sizes its runs from measured times within a 3 minute merge path; sweep approval reads the right worktree and commit; and the team build holds its own steps in code, from the test list to a ticket for each test added after the sweep.

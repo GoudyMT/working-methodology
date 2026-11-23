@@ -44,6 +44,128 @@
   ],
   "upgrading": "Run install project to take the report-only budget step in the CI templates; the kit's own CI changes need nothing.",
   "limits": "The trend reads only the 2 main runs before this one, so a job renamed by the Windows split starts its trend afresh. Projects get no trend line in CI yet; their lane report keeps its own 3-run check.",
+  "sweep": {
+    "tier": "Feature (security-sensitive)",
+    "commit": "b72b1a4c049ad7e472b457c775f76d3fb25d9855",
+    "dimensions": [
+      {
+        "name": "Privacy",
+        "result": "Not touched: no personal data, path or secret in the diff"
+      },
+      {
+        "name": "Supply chain",
+        "result": "Not touched: no dependency or action pin added"
+      },
+      {
+        "name": "Legal",
+        "result": "Not touched: no copied content"
+      },
+      {
+        "name": "Code security",
+        "result": "Three security roles: no real failure now passes; the trend, the warnings, the Windows split and the history fetch fixed"
+      },
+      {
+        "name": "Gaps, scaling, test value",
+        "result": "The time tests hold the new behaviour; trend design and leg sums to the next list"
+      },
+      {
+        "name": "Alignment",
+        "result": "YES"
+      }
+    ],
+    "findings": {
+      "critical": 0,
+      "high": 1,
+      "medium": 10,
+      "low": 6
+    },
+    "accepted": [],
+    "deferred": [
+      "medium: M9 and M10 (trend shape and Windows leg sum) and low: 6 findings, to the next list"
+    ],
+    "fixes": [
+      {
+        "id": "fix-H1",
+        "finding": "H1",
+        "severity": "high",
+        "text": "the traced run and the run with no cap override each assert no over-cap line, not only exit 0",
+        "commit": "32317f44",
+        "test": "tests/fast-cap.test.mjs::a fast-lane test over 30 s is reported with its name and time, and the run passes"
+      },
+      {
+        "id": "fix-M1",
+        "finding": "M1",
+        "severity": "medium",
+        "text": "an earlier main run counts its job time whatever the job concluded, so a cancelled run past the limit keeps the trend",
+        "commit": "82353b69",
+        "test": "tests/ci-budget.test.mjs::a job over the limit on 3 main runs in a row is named as a trend, and 2 in a row is not",
+        "security": true
+      },
+      {
+        "id": "fix-M2",
+        "finding": "M2",
+        "severity": "medium",
+        "text": "the trend test holds both 2-run orders, a 3-run history, a job missing from history and a job under now",
+        "commit": "32317f44",
+        "test": "tests/ci-budget.test.mjs::a job over the limit on 3 main runs in a row is named as a trend, and 2 in a row is not",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M3",
+        "finding": "M3",
+        "severity": "medium",
+        "text": "the trend test matches each warning with its job, parses the JSON line of a calm run, and names a failed job on stderr",
+        "commit": "32317f44",
+        "test": "tests/ci-budget.test.mjs::a job over the limit on 3 main runs in a row is named as a trend, and 2 in a row is not",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M4",
+        "finding": "M4",
+        "severity": "medium",
+        "text": "every job over the limit prints a warning annotation on any run, a PR's included",
+        "commit": "82353b69",
+        "test": "tests/ci-budget.test.mjs::a job over the limit on 3 main runs in a row is named as a trend, and 2 in a row is not",
+        "security": true
+      },
+      {
+        "id": "fix-M5",
+        "finding": "M5",
+        "severity": "medium",
+        "text": "the JSON line carries the run id, attempt, commit and event, and failed jobs with their times",
+        "commit": "82353b69",
+        "test": "tests/ci-budget.test.mjs::a job over the limit on 3 main runs in a row is named as a trend, and 2 in a row is not",
+        "reason": "assertions inside an existing test, no new test"
+      },
+      {
+        "id": "fix-M6",
+        "finding": "M6",
+        "severity": "medium",
+        "text": "the Windows step takes its slice and count from the matrix itself (strategy.job-index and job-total)",
+        "commit": "396a4baa",
+        "test": "tests/ci-budget.test.mjs::a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)",
+        "security": true
+      },
+      {
+        "id": "fix-M7",
+        "finding": "M7",
+        "severity": "medium",
+        "text": "the template comment says a project has no CI trend until K288",
+        "commit": "69b0da43",
+        "test": "no test: no real input",
+        "reason": "a comment, no behaviour"
+      },
+      {
+        "id": "fix-M8",
+        "finding": "M8",
+        "severity": "medium",
+        "text": "a failed fetch of the earlier main runs prints a warning and skips the trend instead of failing the check",
+        "commit": "396a4baa",
+        "test": "tests/ci-budget.test.mjs::a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)",
+        "security": true
+      }
+    ]
+  },
   "tests": {
     "before": 1985,
     "after": 1986,
