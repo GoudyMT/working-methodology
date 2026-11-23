@@ -1,11 +1,11 @@
 // T15 D1 and D2 (the owner, 2026-11-10): the install check proves in CI what the release verify proves on the
 // owner's PC, so it must go red on a broken install and on a guard that lets a push through.
-import { test } from './harness.mjs';
+import { test } from '../harness.mjs';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
-import kitTemp from '../project/.claude/kit-temp.cjs';
+import kitTemp from '../../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 
