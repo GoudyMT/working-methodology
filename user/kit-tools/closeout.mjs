@@ -18,7 +18,8 @@ const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
 const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
 const RENAMED = /^\s*\/\/ renamed from: (.+?)\s*$/;
 // The paths a new script, hook or CI file lives under.
-const NEW_KIND = /^(scripts\/|user\/kit-tools\/|user\/kit-hooks\/|project\/\.githooks\/|project\/\.claude\/|user\/skills\/|\.github\/)/;
+// Under project/.claude/ and user/skills/ only scripts count; the docs there need no ticket.
+const NEW_KIND = /^(scripts\/|user\/kit-tools\/|user\/kit-hooks\/|project\/\.githooks\/|\.github\/|(project\/\.claude\/|user\/skills\/).+\.(mjs|cjs|js|sh|ps1)$)/;
 
 // A problem the check cannot read at all: the check fails on it, and logs it.
 class Unreadable extends Error {}
