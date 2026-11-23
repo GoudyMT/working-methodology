@@ -1220,8 +1220,9 @@ test('the real phrase has one home in the kit: the last line of the rules every 
   assert.ok(m, 'the block ends with the phrase line');
   const phrase = m[1].trim().toLowerCase();
   const homes = KIT_TEXT_FILES().filter((f) => read(f).toLowerCase().includes(phrase)).map((f) => path.relative('.', f).split(path.sep).join('/'));
-  // The built copy of the module is the same block written out by kit.mjs build.
-  assert.deepEqual(homes.sort(), ['project/standards/agent-teams.md', 'rules/agent-teams.md']);
+  // The built copy of the module is the same block written out by kit.mjs build; the kit repo's own filled block
+  // (standards/agent-team-adapter.md, named by standards/INDEX.md) carries the line too, as the approver reads it there.
+  assert.deepEqual(homes.sort(), ['project/standards/agent-teams.md', 'rules/agent-teams.md', 'standards/agent-team-adapter.md']);
 });
 
 // why: guards rule:pr-body

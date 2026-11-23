@@ -1,0 +1,58 @@
+{
+  "version": "1.51.1",
+  "date": "2026-11-23",
+  "level": "patch",
+  "area": "Kit tooling",
+  "title": "fix: the kit repo carries its own filled rules block",
+  "headline": "The kit repo carries its own filled rules block, named in a standards index, so a sweep run in the kit no longer reads the shipped template with its empty slots.",
+  "alignment": "v1.51.1 is a patch before 1.51.2: K359 alone, landed first because the sweep approver reads the rules block as main has it, so 1.51.2's own sweep needs this on main.",
+  "items": [
+    {
+      "id": "K359",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The kit repo carries its own filled rules block in `standards/agent-team-adapter.md`, named by `standards/INDEX.md`; the shipped `rules/agent-teams.md` keeps its slots for installs to fill.",
+      "evidence": "standards/INDEX.md, standards/agent-team-adapter.md",
+      "where": "A sweep run in the kit repo",
+      "before": "Refused: the rules block held template slots",
+      "after": "Reads the kit's own filled block"
+    }
+  ],
+  "verification": [
+    "The two tests that pin the filled block and the shipped slots passed on the branch and ship with 1.51.2.",
+    "Pending: CI on the PR."
+  ],
+  "decisions": [
+    {
+      "decision": "Land the filled block first, as its own release",
+      "why": "The approver reads the rules block as main has it, so a branch cannot fill its own reviewers' rules; the owner's pick (2026-11-23)."
+    },
+    {
+      "decision": "The block takes the owner's four values",
+      "why": "No named security standard; rules/security.md is the baseline; errors go to stderr with no secrets; the secret scan is secret-shapes.mjs."
+    }
+  ],
+  "upgrading": "Nothing to run: the filled block lives in the kit repo only, and install does not copy it.",
+  "limits": "Its two tests ship with 1.51.2, whose test check reads a docs-only test as a doc claim. The block is reviewed in 1.51.2's sweep, the first that can read it.",
+  "tests": {
+    "before": 1821,
+    "after": 1821,
+    "flips": "declared tests at main and on this branch; the PR run gives the final count"
+  },
+  "sweep": {
+    "tier": "Fix",
+    "commit": "5d8fc3a",
+    "dimensions": [
+      { "name": "Privacy", "result": "Clean: the block names file kinds and the kit's own paths, no personal data" },
+      { "name": "Supply chain", "result": "Not touched: no dependency added" },
+      { "name": "Legal", "result": "Not touched: no content copied" },
+      { "name": "Code security", "result": "Not touched: docs only; the lead read the block against rules/security.md" },
+      { "name": "Gaps, scaling, test value", "result": "Its two tests move to 1.51.2, where the docs-only kind is read" },
+      { "name": "Alignment", "result": "YES" }
+    ],
+    "findings": { "critical": 0, "high": 0, "medium": 0, "low": 0 },
+    "accepted": [],
+    "deferred": [],
+    "fixes": []
+  }
+}
