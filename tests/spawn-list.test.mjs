@@ -12,7 +12,7 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 
 kitTemp.sessionRoot();
 const HOOK_DIR = path.resolve('user/kit-hooks');
-const COMMAND = 'unit-lock.mjs --tester --files';
+const COMMAND = 'node user/kit-tools/unit-lock.mjs --tester --files';
 
 function isolatedEnv(extra = {}) {
 	const home = kitTemp.makeTemp('spawn-list-home-');
@@ -32,6 +32,16 @@ function worktree(list) {
 	git(dir, ['init', '-q', '-b', 'main']);
 	if (list) fs.writeFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/spawn-list.test.mjs\n');
 	return dir;
+}
+
+// A main repo with one commit and a linked worktree of it; the linked worktree's own git folder is where its list belongs.
+function linkedWorktree() {
+	const main = kitTemp.makeTemp('spawn-list-main-');
+	git(main, ['init', '-q', '-b', 'main']);
+	git(main, ['-c', 'user.name=T', '-c', 'user.email=t@example.invalid', 'commit', '-q', '--allow-empty', '-m', 'x']);
+	const linked = path.join(kitTemp.makeTemp('spawn-list-link-'), 'wt');
+	git(main, ['worktree', 'add', '-q', '-b', 'lane', linked]);
+	return { main, linked };
 }
 
 // A folder whose .git points nowhere, so git cannot read it.
@@ -72,15 +82,28 @@ test('a tester spawn whose brief names a worktree with no kit-unit-files.txt is 
 	assert.ok(reason(tester).includes(COMMAND), `the refusal names the command: ${reason(tester)}`);
 	assert.ok(denied(writer), `the writer spawn is refused too, got ${JSON.stringify(writer)}`);
 	assert.ok(denied(unnamed), `a tester spawn with no Worktree line is checked against the hook's cwd, got ${JSON.stringify(unnamed)}`);
+	for (const d of [tester, writer]) assert.ok(reason(d).includes(COMMAND), `the full command is named: ${reason(d)}`);
+	const listed = worktree(true);
+	const [named] = checkCalls(listed, [spawnCall('tester', wt)]);
+	assert.ok(denied(named), `a cwd with a list does not cover a Worktree line naming a bare worktree, got ${JSON.stringify(named)}`);
 });
 
 // why: catches a tester spawn with the list passes (K360 S1)
 test('a tester spawn with the list passes', () => {
 	const wt = worktree(false);
 	const isolated = { ...spawnCall('tester', wt), isolation: 'worktree' };
-	const [before, fresh] = checkCalls(wt, [spawnCall('tester', wt), isolated]);
+	const others = ['none', '', true].map((isolation) => ({ ...spawnCall('tester', wt), isolation }));
+	const [before, fresh, ...refused] = checkCalls(wt, [spawnCall('tester', wt), isolated, ...others]);
 	assert.ok(denied(before), `the same worktree refuses before the list is written, got ${JSON.stringify(before)}`);
 	assert.equal(fresh, null, 'a spawn with isolation worktree passes: its worktree does not exist until the spawn');
+	refused.forEach((d, i) => assert.ok(denied(d), `isolation ${JSON.stringify(['none', '', true][i])} is no isolation and is refused, got ${JSON.stringify(d)}`));
+	const { main, linked } = linkedWorktree();
+	fs.writeFileSync(path.join(git(main, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-unit-files.txt'), 'tests/spawn-list.test.mjs\n');
+	const [commonOnly] = checkCalls(linked, [spawnCall('tester', linked)]);
+	assert.ok(denied(commonOnly), `a list only in the main repo's common folder is refused, got ${JSON.stringify(commonOnly)}`);
+	fs.writeFileSync(git(linked, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/spawn-list.test.mjs\n');
+	const [own] = checkCalls(linked, [spawnCall('tester', linked)]);
+	assert.equal(own, null, "a list in the linked worktree's own git folder passes");
 	fs.writeFileSync(git(wt, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/spawn-list.test.mjs\n');
 	const [tester, writer] = checkCalls(wt, [spawnCall('tester', wt), spawnCall('writer', wt)]);
 	assert.equal(tester, null);
@@ -90,9 +113,12 @@ test('a tester spawn with the list passes', () => {
 // why: catches a builder spawn is not affected (K360 S2)
 test('a builder spawn is not affected', () => {
 	const wt = worktree(false);
-	const [builder, tester] = checkCalls(wt, [spawnCall('builder', wt), spawnCall('tester', wt)]);
+	const types = ['reviewer', 'checker', 'Explore', 'general-purpose'];
+	const [builder, tester, mismatch, ...rest] = checkCalls(wt, [spawnCall('builder', wt), spawnCall('tester', wt), { ...spawnCall('builder', wt), model: 'opus' }, ...types.map((t) => spawnCall(t, wt))]);
 	assert.ok(denied(tester), `the tester spawn into the same worktree is refused, got ${JSON.stringify(tester)}`);
 	assert.equal(builder, null);
+	assert.equal(mismatch, null, 'a model-family mismatch still returns null: the agent-model hold stays log');
+	rest.forEach((d, i) => assert.equal(d, null, `a ${types[i]} spawn is not affected`));
 });
 
 // why: catches a general-purpose agent briefed as tester (Role: tester line) is checked too (K360 S3)
@@ -104,6 +130,10 @@ test('a general-purpose agent briefed as tester (Role: tester line) is checked t
 	assert.ok(reason(noList).includes(COMMAND), `the refusal names the command: ${reason(noList)}`);
 	assert.equal(withList, null);
 	assert.equal(other, null);
+	const spellings = [spawnCall('kit:tester', bare), spawnCall('kit:writer', bare), spawnCall('general-purpose', bare, 'writer'), { subagent_type: 'general-purpose', prompt: `role: Tester\nWorktree: ${bare}\nGo.` }];
+	checkCalls(bare, spellings).forEach((d, i) => assert.ok(denied(d), `spelling ${i} is refused in a bare worktree, got ${JSON.stringify(d)}`));
+	const [plain] = checkCalls(bare, [spawnCall('general-purpose', bare)]);
+	assert.equal(plain, null, 'a general-purpose spawn with no Role line is not checked');
 });
 
 // why: catches the same spawn twice gives the same verdict (K360 S4)
@@ -121,10 +151,14 @@ test('the same spawn twice gives the same verdict', () => {
 test('a worktree whose git folder cannot be read lets the spawn through and is logged', () => {
 	const broken = brokenWorktree();
 	const home = worktree(true);
-	const [decision] = checkCalls(home, [spawnCall('tester', broken)]);
+	const missing = path.join(kitTemp.makeTemp('spawn-list-gone-'), 'no-such-worktree');
+	const [decision, absent] = checkCalls(home, [spawnCall('tester', broken), spawnCall('tester', missing)]);
 	assert.equal(decision, null, 'an unreadable worktree does not refuse');
+	assert.equal(absent, null, 'a nonexistent worktree path does not refuse');
 	const common = git(home, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
 	const log = fs.existsSync(path.join(common, 'kit-agent-model.log')) ? fs.readFileSync(path.join(common, 'kit-agent-model.log'), 'utf8') : '';
 	const rows = log.split('\n').filter(Boolean).map((l) => JSON.parse(l));
-	assert.ok(rows.some((r) => JSON.stringify(r).includes('worktree') && r.type === 'tester'), `the pass-through is logged: ${log}`);
+	const mine = rows.filter((r) => r.type === 'tester' && /worktree/i.test(String(r.why)));
+	assert.equal(mine.length, 2, `each pass-through is logged with worktree in its why: ${log}`);
+	for (const r of mine) assert.match(String(r.mode), /^(log|enforce)$/, 'the row records the mode it read');
 });
