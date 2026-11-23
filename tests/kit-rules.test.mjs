@@ -537,15 +537,62 @@ test('no rule pointer in the kit names a heading by its words', () => {
   assert.deepEqual(byWords, []);
 });
 
-// why: guards rule:sweep-auto-approval
-test('each agent role file matches the role table: tools, denied tools and rules at start', () => {
-  const rows = roleTable();
-  assert.deepEqual(rows.map((r) => r.role).sort(), ['builder', 'checker', 'orchestrator', 'reviewer', 'scanner']);
-  for (const r of rows) {
-    const fm = front(path.resolve('user/agents', `${r.role}.md`));
-    assert.equal(fm.tools, r.tools, `${r.role} tools`);
-    assert.equal(fm.disallowedTools || 'none', r.denied, `${r.role} denied tools`);
-    assert.equal(fm.skills || 'none', r.rules === 'none' ? 'none' : `${r.role}-rules`, `${r.role} preloaded rules`);
+// why: guards rule:agent-role-table (a role file whose tools, denied tools or preloaded rules differ from its config row widens access unseen)
+test('each agent role file matches the role table in kit.config.json: tools, denied tools and rules at start', () => {
+  const config = JSON.parse(read(path.resolve('kit.config.json')));
+  assert.ok(config.roles, 'kit.config.json has a roles table');
+  const files = fs.readdirSync(path.resolve('user/agents')).filter((f) => f.endsWith('.md')).map((f) => f.slice(0, -3)).sort();
+  assert.deepEqual(files.filter((r) => !config.roles[r]), [], 'role files with no roles entry');
+  for (const r of files) {
+    const row = config.roles[r];
+    assert.ok(row && row.tools, `roles.${r}.tools is set in kit.config.json`);
+    const fm = front(path.resolve('user/agents', `${r}.md`));
+    assert.equal(fm.tools, row.tools.join(', '), `${r} tools`);
+    assert.equal(fm.disallowedTools || 'none', (row.denied || []).join(', ') || 'none', `${r} denied tools`);
+    assert.equal(fm.skills || 'none', (row.rules || []).length ? `${r}-rules` : 'none', `${r} preloaded rules`);
+  }
+});
+
+// why: guards rule:agent-role-table (a markdown row kept beside the config would be a second home that drifts)
+test('the Agent Role Table section of the agent-teams rules holds no table rows and names kit.config.json as its home', () => {
+  const text = read(path.resolve('rules/agent-teams.md'));
+  const start = text.indexOf('{#agent-role-table}');
+  assert.ok(start >= 0, 'the section heading is in the rules file');
+  const next = text.slice(start + 1).search(/^#{1,6} /m);
+  const sec = next < 0 ? text.slice(start) : text.slice(start, start + 1 + next);
+  assert.deepEqual(sec.split('\n').filter((l) => /^\| (builder|checker|scanner|reviewer|orchestrator|tester|test-reviewer|researcher|drafter|writer) \|/.test(l)), []);
+  assert.match(sec, /kit\.config\.json/);
+});
+
+// why: guards rule:agent-role-table (a role body that names no model or file list leaves its own limits unstated)
+test('test-reviewer.md tells the role to end with RECORD, a role line and seven-key finding lines, with no clear default', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
+  const body = read(path.resolve('user/agents/test-reviewer.md')).split(/^---$/m)[2] ?? '';
+  assert.match(body, /RECORD:/);
+  assert.match(body, /"role"\s*:/, 'a JSON role line');
+  const finding = body.split('\n').find((l) => l.includes('"id"')) ?? '';
+  for (const k of ['id', 'severity', 'status', 'where', 'claim', 'proof', 'fix']) assert.match(finding, new RegExp(`"${k}"\\s*:`), `finding line has no ${k}`);
+  assert.doesNotMatch(body, /No lines means clear/);
+});
+
+// why: guards rule:agent-role-table (a tester or writer that is not told its file list would edit outside its unit)
+test('writer.md and tester.md bodies say the lead writes their file list, kit-unit-files.txt', () => {
+  for (const f of ['writer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
+  for (const f of ['writer.md', 'tester.md']) {
+    const body = read(path.resolve('user/agents', f)).split(/^---$/m)[2] ?? '';
+    assert.match(body, /\blead\b[^\n]{0,80}kit-unit-files\.txt/, `${f} names no lead-written file list`);
+  }
+});
+
+// why: guards rule:agent-role-table (the step tables and the role bodies that name a builder model must agree, so no file pins Sonnet by hand)
+test('no agent-team file pairs builders with Sonnet, and each names the step table in kit.config.json', () => {
+  for (const f of ['user/agents/orchestrator.md', 'user/skills/agent-team-build/SKILL.md', 'user/skills/agent-team-build/orchestrated.md']) {
+    const text = read(path.resolve(f));
+    assert.doesNotMatch(text, /builders? \(Sonnet\)/, `${f} pairs builders with Sonnet in brackets`);
+    assert.doesNotMatch(text, /Sonnet builders/, `${f} calls the builders Sonnet builders`);
+    assert.doesNotMatch(text, /\|\s*Builder\s*\|[^\n]*\|\s*Sonnet\s*\|/i, `${f} has a table cell pairing Builder with Sonnet`);
+    assert.doesNotMatch(text, /Sonnet, the `builder` role/, `${f} pairs Sonnet with the builder role`);
+    assert.match(text, /kit\.config\.json/, `${f} names no step table in kit.config.json`);
   }
 });
 
@@ -719,10 +766,12 @@ test('the project settings keep each shell command starting in the project folde
 // 2026-11-15). It installs into kit projects only, so a project without the kit keeps the built-in; it carries no
 // hook, so the trust a project agent file's hooks need does not touch it. The five roles stay user level for theirs.
 // why: guards the owner's pick "Roles user, Explore per project" (MC2, MC5)
-test('the kit ships a read-only Explore on Sonnet into each kit project, and none into the Claude folder', () => {
+test('the kit ships a read-only Explore on the table\'s lookup model into each kit project, and none into the Claude folder', () => {
+  const steps = JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps || {};
+  const lookupModel = (steps.lookup || {}).model;
   const fm = front(path.resolve('project/.claude/agents/Explore.md'));
   assert.equal(fm.name, 'Explore');
-  assert.equal(fm.model, 'claude-sonnet-5-5');
+  assert.equal(fm.model, lookupModel);
   for (const t of ['Edit', 'Write', 'NotebookEdit', 'Agent']) assert.ok(!fm.tools.split(/,\s*/).includes(t), `Explore takes no ${t}`);
   assert.doesNotMatch(read(path.resolve('project/.claude/agents/Explore.md')), /hooks:/, 'a project agent file\'s hooks are skipped in -p, so it carries none');
   const home = makeTemp('explore-home-');
@@ -730,7 +779,7 @@ test('the kit ships a read-only Explore on Sonnet into each kit project, and non
   install({ kit: path.resolve('.'), home, target: 'user' });
   install({ kit: path.resolve('.'), home, target: 'project', projectDir: proj });
   assert.equal(fs.existsSync(path.join(home, 'agents', 'Explore.md')), false);
-  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, 'claude-sonnet-5-5');
+  assert.equal(front(path.join(proj, '.claude', 'agents', 'Explore.md')).model, lookupModel);
 });
 
 // why: guards rule:sweep-auto-approval
@@ -755,6 +804,18 @@ test('the builder edit fence allows edits in its worktree and blocks edits outsi
   const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, tool_name: 'Write', tool_input: { file_path: path.join(os.tmpdir(), 'elsewhere.js') } });
   assert.equal(out.status, 2);
   assert.match(out.stderr, /outside this builder's worktree/);
+});
+
+// why: guards rule:agent-role-table (a tester or writer edit with no lead-written file list is refused, not let through)
+test('the edit fence refuses a tester or writer edit when the unit has no file list', () => {
+  const dir = gitTree();
+  for (const agent_type of ['tester', 'writer']) {
+    const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+    assert.equal(out.status, 2, `${agent_type} edit with no list: ${out.stderr}`);
+  }
+  // A builder with no file list keeps its worktree edits, as it does today.
+  const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(builder.status, 0, builder.stderr);
 });
 
 // why: guards rule:agent-team-adapter
@@ -1044,6 +1105,15 @@ test('the leak guard refuses a brief or message that carries the phrase, in any 
   assert.ok(!r.stdout.toLowerCase().includes(FAKE_PHRASE.toLowerCase()), 'the refusal must not repeat the phrase');
   // A leak is a tasker's failure, so the run record counts it next to the misses.
   assert.deepEqual(canaryLog(dir).map((e) => [e.tool, e.result]), [['Agent', 'leak-refused'], ['Task', 'leak-refused'], ['SendMessage', 'leak-refused'], ['Agent', 'leak-refused']]);
+});
+
+// why: guards rule:agent-canary (a report from a test or research role that opens with the phrase is its own report, not a leak)
+test('a SendMessage from tester, test-reviewer, researcher, drafter or writer that opens with the phrase is not refused', () => {
+  const dir = canaryRepo();
+  for (const agent_type of ['tester', 'test-reviewer', 'researcher', 'drafter', 'writer']) {
+    const r = canary({ cwd: dir, hook_event_name: 'PreToolUse', tool_name: 'SendMessage', agent_id: `${agent_type}-1`, agent_type, tool_input: { to: 'lead', message: `${FAKE_PHRASE}\nUNIT u1 DONE` } });
+    assert.equal(r.stdout ? JSON.parse(r.stdout).hookSpecificOutput.permissionDecision : 'allow', 'allow', `${agent_type} report refused`);
+  }
 });
 
 // why: guards rule:agent-canary
@@ -1488,4 +1558,118 @@ test('the priority index names the size-budget rule by ID and by the file that h
   assert.ok(file && read(path.resolve('rules/code.md')).includes('{#size-budgets}'), 'the rule lives in the code module');
   assert.ok(line.includes(file), `the index line names ${file}: ${line}`);
   assert.ok(agents.includes(line), 'the built AGENTS.md carries the same line');
+});
+
+// Fills a template's example from the template's own text: an empty value gets a sample, a <placeholder> gets a hash.
+const EXAMPLE_VALUES = { id: 'K1', severity: 'low', status: 'wrong-test', where: 'tests/a.test.mjs:1', claim: 'c', proof: 'p', fix: '-' };
+const fillExample = (json) => json
+  .replace(/"(\w+)":""/g, (m, k) => `"${k}":"${EXAMPLE_VALUES[k] ?? 'x'}"`)
+  .replace(/"(\w+)":"<[^"]*>"/g, (m, k) => `"${k}":"${k === 'commit' ? 'abc1234' : (EXAMPLE_VALUES[k] ?? 'x')}"`)
+  .replace(/<[^>"]*>/g, 'abc1234');
+const handoffCheck = (text) => spawnSync(process.execPath, [path.resolve('user/kit-tools/handoff.mjs'), 'check', '-'], { input: text, encoding: 'utf8' });
+const HANDOFF_PROSE = 'Report.';
+// The test-reviewer record block, as its template words it: the lines after RECORD: up to the first blank line.
+const reviewerBlock = () => {
+  const lines = read(path.resolve('user/agents/test-reviewer.md')).split(/\r?\n/);
+  const at = lines.findIndex((l) => l.trim() === 'RECORD:');
+  assert.ok(at >= 0, 'the template has a RECORD: line');
+  const block = [];
+  for (const l of lines.slice(at + 1)) {
+    if (l.trim() === '') break;
+    block.push(l);
+  }
+  return block;
+};
+// The JSON examples the tester template gives in backticks: its role line, then its finding line.
+const testerExamples = () => [...read(path.resolve('user/agents/tester.md')).matchAll(/`(\{[^`]*\})`/g)].map((m) => m[1]);
+
+// why: catches a test-reviewer finding example the handoff check refuses, so a reviewer's findings never reach the ledger
+test('the test-reviewer finding example, filled in as its template says, passes the handoff check', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
+  const block = reviewerBlock().map(fillExample);
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', ...block].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a test-reviewer clear form the handoff check refuses, so a clean review reads as a failed hand-back
+test('the test-reviewer clear form, as its template words it, passes the handoff check', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/test-reviewer.md')), 'user/agents/test-reviewer.md is missing');
+  const clear = read(path.resolve('user/agents/test-reviewer.md')).match(/\{"note":[^}]*\}/);
+  assert.ok(clear, 'the template names a clear form');
+  const block = reviewerBlock();
+  const role = fillExample(block.find((l) => l.includes('"role"')));
+  const intent = block.filter((l) => !l.trim().startsWith('{'));
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, clear[0], ...intent].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a tester finding example the handoff check refuses, so a tester's red report is unreadable
+test('the tester finding example, filled in as its template says, passes the handoff check', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/tester.md')), 'user/agents/tester.md is missing');
+  const [role, finding] = testerExamples().map(fillExample);
+  assert.ok(role && finding, 'the template gives a role line and a finding line');
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, finding].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: catches a tester template with no clear form, so a unit with no problems has no record the check accepts
+test('the tester template names a clear form that the handoff check accepts', () => {
+  assert.ok(fs.existsSync(path.resolve('user/agents/tester.md')), 'user/agents/tester.md is missing');
+  const clear = read(path.resolve('user/agents/tester.md')).match(/\{"note":[^}]*\}/);
+  assert.ok(clear, 'the template names a clear form');
+  const [role] = testerExamples().map(fillExample);
+  const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', role, clear[0]].join('\n'));
+  assert.equal(r.status, 0, r.stderr);
+});
+
+// why: guards rule:agent-role-table (a tester or writer edit outside any git repo has no file list, so it is refused)
+test('the edit fence refuses a tester or writer edit when the session folder is not in a git repo', () => {
+  const dir = makeTemp('fence-nogit-');
+  for (const agent_type of ['tester', 'writer']) {
+    const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type, tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+    assert.equal(out.status, 2, `${agent_type} edit outside git: ${out.stderr}`);
+  }
+  // A builder outside any git repo keeps the pass-through it has today.
+  const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: path.join(dir, 'a.js') } });
+  assert.equal(builder.status, 0, builder.stderr);
+});
+
+// why: guards rule:agent-role-table (a finding example copied with its blanks still is refused by the handoff check)
+test('a test-reviewer or tester finding line copied with its blanks is refused by the handoff check', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
+  const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
+  const [role, tester] = testerExamples();
+  for (const [name, finding] of [['test-reviewer', reviewer], ['tester', tester]]) {
+    const r = handoffCheck([HANDOFF_PROSE, 'RECORD:', fillExample(name === 'tester' ? role : reviewerBlock().find((l) => l.includes('"role"'))), finding].join('\n'));
+    assert.equal(r.status, 1, `${name} blank finding line passed`);
+    assert.match(r.stderr, /unfilled placeholder/, name);
+  }
+});
+
+// why: guards rule:finding-pipeline (a finding example shows empty strings where a placeholder belongs)
+test('the test-reviewer and tester finding examples show placeholders, not empty strings', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
+  const reviewer = reviewerBlock().find((l) => l.includes('"id"'));
+  const [, tester] = testerExamples();
+  assert.doesNotMatch(reviewer, /":""/, 'test-reviewer finding example holds an empty string');
+  assert.doesNotMatch(tester, /":""/, 'tester finding example holds an empty string');
+});
+
+// why: guards rule:finding-pipeline (a template leaves "-" for none unnamed)
+test('the test-reviewer and tester templates name "-" as the value for none', () => {
+  for (const f of ['test-reviewer.md', 'tester.md']) assert.ok(fs.existsSync(path.resolve('user/agents', f)), `user/agents/${f} is missing`);
+  for (const f of ['test-reviewer.md', 'tester.md']) {
+    assert.match(read(path.resolve('user/agents', f)), /`-`[^\n]*\bnone\b|\bnone\b[^\n]*`-`/, `${f} does not name - as none`);
+  }
+});
+
+
+// why: catches an edit fence that lets a tester edit through when it throws after reading the agent type
+test('the edit fence refuses a tester edit when the hook throws after reading its agent type', () => {
+  const dir = gitTree();
+  const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'tester', tool_name: 'Edit', tool_input: { file_path: 5 } });
+  assert.equal(out.status, 2, out.stderr);
+  // A builder whose edit hook throws keeps the fail-open pass-through it has today.
+  const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: 5 } });
+  assert.equal(builder.status, 0, builder.stderr);
 });

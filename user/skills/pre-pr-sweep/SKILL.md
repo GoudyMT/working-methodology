@@ -58,7 +58,7 @@ as done. This skill adds the steps, the examples and the audit; it never restate
    behaviour, guard and permission fixes above all, ships with a test that fails on the code before it and meets
    rule:test-value; a prose-only fix is proven by the recall eval or an invariant, and a removal or a wiring change
    adds no test (a removed behaviour's tests go with it); then push, and CI runs the
-   full suite with auto-fix on red. Log the sweep's outcome (step 6) once its reviewers hand back. A second pass is
+   full suite with auto-fix on red. Group the open findings with `node {{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`: its lanes share no file, so each lane's fix can run in its own worktree, and a fix merges once its tests pass and CI is green, with no re-review. Log the sweep's outcome (step 6) once its reviewers hand back. A second pass is
    the owner's call: `approve.mjs` asks for any contract after a sweep that ran on this branch (a rebase or a new file
    name does not hide it), and refuses a re-sweep contract (`"resweepOf"`) flat. What the sweep found is fixed in this build; only a low or medium the owner says yes to (never a high or critical) goes to the handoff. The report's Covers line stays the
    commit the sweep read, and each fix is listed by its commit. In a project with a build record, each fix is

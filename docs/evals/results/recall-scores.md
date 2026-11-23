@@ -1200,3 +1200,41 @@ gate: b23-1.50.0 median 14 baseline 14 brief v2 keys v12
 behaviour: b23-1.50.0 median 14 baseline 14 suite v2 control 8
 behaviour worse: none
 scored: 93b14fc34e310f2a35e3375b4fb6945155c398cf
+
+## Recall v12 - 1.51.0, handoff record, test method and one model table per step (2026-11-23)
+
+Candidate: the branch frozen at e4d00f88 in a clone, its user layer installed into its own throwaway Claude folder. Baseline: the released 1.50.2, from a clone of its tag, on its own throwaway Claude folder, run the same day (candidate 02:20Z to 02:40Z, release 02:40Z to 03:00Z). Control: no kit, on the release's throwaway folder. Every arm used one probe login, copied only between the throwaway folders and run one arm after another.
+
+Scored under the fixed gate (K198): two fresh blind scorers read all eleven runs together, a run's score is their average with no rounding up, the floor is 14, and a question that sums lower than the release is asked again alone before it can count as worse.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 14, 14, 14, 14, 14 | 14, 14, 14, 14, 14 | 0 |
+
+- **Scored: five-run median 14 of 14, same-day baseline 14, control 0.** The two scorers gave the same mark on every answer. No question sums lower than the release, so none was asked again.
+- **One release run stopped and was run again:** its probe login had been signed out by the candidate arm's refresh; no answer from it was scored. The runner now copies the login from the folder that ran last at each switch.
+- **Behaviour (suite v2, floor 14):** the branch 14, 13, 13, 14, 14; the released 1.50.2 runs 14, 14, 14, 14, 14 the same day; control 6. Scenario 5 (layout) summed lower on the first look (3 of 5 against 5): both misses made no edit and offered layout options, but ended on other questions, so the check's question pattern did not match. Asked again alone, 5 new runs a side: 5 of 5 against 5. No scenario worse.
+- **Not measured:** the user layer. Each arm carried its own global instructions into its probe, beside the owner's own ~/.claude/CLAUDE.md, which loads in every folder under the home folder.
+
+scorers: 2
+worse: none
+control: 0
+gate: b24-1.51.0 median 14 baseline 14 brief v2 keys v12
+behaviour: b24-1.51.0 median 14 baseline 14 suite v2 control 6
+behaviour asked again: 5-layout (3 of 5 against 5, then 5 of 5 against 5)
+behaviour worse: none
+scored: e4d00f881251730e47d25d5ba32f8289d3c09014

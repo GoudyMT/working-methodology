@@ -18,6 +18,7 @@ import launch from '../user/kit-tools/kit-launch.cjs';
 import { mergeOnGreen, renderMergeOnGreen, homeSpelling } from './merge-on-green.mjs';
 import { retiredHits, retiredList, hitLine } from '../project/.claude/retired-check.mjs';
 import { waiting as reportWaiting, unheard as reportUnheard, intakeHere as reportIntakeHere } from '../project/.claude/kit-report.mjs';
+import { slotsIn } from '../user/skills/pre-pr-sweep/slots.mjs';
 
 // git runs a program the config names on some commands (core.fsmonitor on git status and git ls-files, proven on Git for
 // Windows, 2026-11-11), and a project's git config is the agent's to write. Install runs inside a held fix line, so
@@ -664,7 +665,7 @@ function guardFaults(home, projectDir) {
  * Returns:
  *     'added', 'present', or a reason it was left alone
  */
-function wireGate(home, dryRun) {
+function wireGate(home, dryRun, lead) {
   const file = path.join(home, 'settings.json');
   let settings = {};
   if (fs.existsSync(file)) {
@@ -691,12 +692,66 @@ function wireGate(home, dryRun) {
     if (list.length === 1 && JSON.stringify(list[0]) === JSON.stringify(entry)) continue;
     settings.hooks[event] = [...list.filter((e) => !(e.hooks || []).some(named)), entry];
   }
+  // E36 (build 24): the lead runs on the model and effort its table step names. Only those two keys are set, so a kit
+  // with no lead step writes neither and every other key the owner set stays.
+  if (lead && lead.model) settings.model = lead.model;
+  if (lead && lead.effort) settings.effortLevel = lead.effort;
   if (JSON.stringify(settings) === before) return 'present';
   if (!dryRun) {
     fs.mkdirSync(home, { recursive: true });
     fs.writeFileSync(file, JSON.stringify(settings, null, 2) + '\n');
   }
   return 'added';
+}
+
+// K341 (build 24): a project's .kit/models.json may change a step's model, but not to a model below the step's floor and
+// not on a never-drop step. Install project refuses such an override before it writes anything, naming the step (or
+// models.json for a file it cannot read), and writes .claude/model-floors.json, the floors the installed
+// .claude/model-override.mjs reads. The rule matches that file's: same family-and-generation rank as model-table.mjs.
+function modelOverrideGate(ctx, kitInfo) {
+  if (ctx.target !== 'project') return;
+  const floors = {};
+  for (const [name, s] of Object.entries(kitInfo.config.steps || {})) {
+    if (s.floor === undefined && s.neverDrop !== true) continue;
+    floors[name] = { model: s.model, ...(s.floor !== undefined ? { floor: s.floor } : {}), ...(s.neverDrop === true ? { neverDrop: true } : {}) };
+  }
+  const rank = (model) => { const m = String(model ?? '').toLowerCase(); return m.includes('opus') ? 3 : m.includes('sonnet') ? 2 : m.includes('haiku') ? 1 : 0; };
+  const generation = (model) => { const m = /-(\d+(?:-\d+)*)$/.exec(String(model ?? '').toLowerCase()); return m ? m[1].split('-').map(Number) : []; };
+  const meets = (model, floor) => {
+    if (rank(floor) === 0) return false;
+    if (rank(model) !== rank(floor)) return rank(model) > rank(floor);
+    const a = generation(model), b = generation(floor);
+    for (let i = 0; i < Math.max(a.length, b.length); i++) {
+      const x = a[i] ?? 0, y = b[i] ?? 0;
+      if (x !== y) return x > y;
+    }
+    return true;
+  };
+  const file = path.join(ctx.projectDir, '.kit', 'models.json');
+  if (fs.existsSync(file)) {
+    const shape = 'Its shape is {"steps":{"<step>":{"model":"<id>"}}}. Nothing was written: fix .kit/models.json, then run install project again.';
+    let data;
+    try {
+      const raw = fs.readFileSync(file, 'utf8');
+      data = JSON.parse(raw.charCodeAt(0) === 0xfeff ? raw.slice(1) : raw);
+    } catch (e) {
+      throw new Error(`Install refused: models.json cannot be read or does not parse (${e.message}). ${shape}`);
+    }
+    const isObj = (v) => v !== null && typeof v === 'object' && !Array.isArray(v);
+    if (!isObj(data) || !isObj(data.steps)) throw new Error(`Install refused: models.json needs a steps object. ${shape}`);
+    const faults = [];
+    for (const [name, row] of Object.entries(data.steps)) {
+      if (!isObj(row) || typeof row.model !== 'string' || !row.model.trim()) throw new Error(`Install refused: models.json step ${name} needs a model string. ${shape}`);
+      if (!Object.hasOwn(floors, name)) continue;
+      const f = floors[name];
+      if (f.neverDrop && row.model !== f.model) faults.push(`step ${name} is never-drop (${f.model}): an override to ${row.model} is refused`);
+      if (f.floor !== undefined && !meets(row.model, f.floor)) faults.push(`step ${name}: model ${row.model} is below its floor ${f.floor}`);
+    }
+    if (faults.length) throw new Error(`Install refused: ${faults.join('; ')}. Nothing was written: fix .kit/models.json, then run install project again.`);
+  }
+  if (ctx.dryRun) return;
+  fs.mkdirSync(path.join(ctx.projectDir, '.claude'), { recursive: true });
+  fs.writeFileSync(path.join(ctx.projectDir, '.claude', 'model-floors.json'), JSON.stringify({ steps: floors }, null, 1) + '\n');
 }
 
 /**
@@ -722,6 +777,7 @@ export function install(ctx) {
   const checked = releaseRun ? releaseBytes(ctx.kit, ctx.release.tree, [...entries, ...kitInputs(ctx.kit)]) : null;
   const kitInfo = loadKit(ctx.kit, checked, ctx.home);
   guardProfile(ctx, kitInfo);
+  modelOverrideGate(ctx, kitInfo);
   const stamp = readStamp(stampPath);
   const files = { ...stamp.files };
   // Which guard files are a host's own (the review of 670b3a2): read from the record outside the project, never from
@@ -961,7 +1017,7 @@ export function install(ctx) {
     }
     fs.writeFileSync(stampPath, JSON.stringify(out, null, 2) + '\n');
     if (ctx.target === 'user') {
-      const gate = wireGate(ctx.home, ctx.dryRun);
+      const gate = wireGate(ctx.home, ctx.dryRun, kitInfo.config.steps?.lead);
       if (gate !== 'added' && gate !== 'present') skipped.push({ file: 'settings.json', reason: gate });
       // Every recorded project gets this release's shims now, not at its next install project (the 1.26.0 sweep, C9).
       let names = [];
@@ -1004,7 +1060,7 @@ export function install(ctx) {
       // not run, so the hooks stay on the project's own .githooks until install user has run.
       const launcher = fs.existsSync(path.join(ctx.home, 'kit-tools', 'kit-launch.cjs'));
       const shims = guards ? writeGuardRecord(ctx, kitInfo, files, keys, prevRecord, isHost, skipped) : null;
-      const hooksPath = keepKitLocal(ctx.projectDir, Object.keys(files).filter((k) => !k.startsWith('memory/')), [...hostOwned], launcher ? shims : null);
+      const hooksPath = keepKitLocal(ctx.projectDir, [...Object.keys(files).filter((k) => !k.startsWith('memory/')), '.claude/model-floors.json'], [...hostOwned], launcher ? shims : null);
       if (shims && hooksPath === shims) {
         const recFile = path.join(guardDir(ctx.home, ctx.projectDir), 'record.json');
         fs.writeFileSync(recFile, JSON.stringify({ ...JSON.parse(fs.readFileSync(recFile, 'utf8')), hooksPath: shims }, null, 2) + '\n');
@@ -1552,13 +1608,13 @@ function stableChannelLine(home) {
 
 // E36: a role on a model the kit has not measured its roles on, or one kit.config.json "models" marks retiring. The
 // role file in use wins over the table (an owner can move one by hand); a kit with no measured list says nothing.
-function roleModelLine(kit, dir) {
+function roleModelRows(kit, dir) {
   let config = {};
-  try { config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')); } catch { return ''; }
+  try { config = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')); } catch { return []; }
   const models = config.models || {};
-  if (!Array.isArray(models.measured)) return '';
+  if (!Array.isArray(models.measured)) return [];
   const retiring = new Set(models.retiring || []);
-  const named = [];
+  const rows = [];
   for (const role of Object.keys(config.roles || {}).sort()) {
     let model = config.roles[role].model;
     try {
@@ -1569,10 +1625,47 @@ function roleModelLine(kit, dir) {
     } catch { /* not installed: the table's model */ }
     // A family name (opus) is measured when the kit measured a model of that family.
     const measured = models.measured.includes(model) || (/^(opus|sonnet|haiku)$/i.test(model) && models.measured.some((x) => x.toLowerCase().includes(model.toLowerCase())));
-    const file = `${toPosix(dir)}/agents/${role}.md`;
-    if (retiring.has(model)) named.push(`${role} runs on ${model}, which is marked retiring (${file})`);
-    else if (!measured) named.push(`${role} runs on ${model}, which the kit has not measured its roles on (${file})`);
+    if (retiring.has(model)) rows.push({ role, model, retiring: true });
+    else if (!measured) rows.push({ role, model, retiring: false });
   }
+  return rows;
+}
+
+// E36: one list row for each role on a retiring or unmeasured model, added through the kit's own state.mjs (the
+// project's copy is only checked to exist, never run). The id names the role and the model; state.mjs refuses a row
+// whose id it already holds, so a later session start adds none, and a model change gives the role a new row. Nothing
+// here throws out of session start, and no row is written through a linked .kit folder.
+function addModelRows(kit, projectDir, rows) {
+  const state = path.join(kit, 'project', '.claude', 'state.mjs');
+  if (!rows.length || !fs.existsSync(state) || !fs.existsSync(path.join(projectDir, '.claude', 'state.mjs'))) return;
+  for (const r of rows) {
+    try {
+      const slug = r.role.replace(/[^A-Za-z0-9]+/g, '-').slice(0, 20);
+      const id = `model-${slug}-${crypto.createHash('sha256').update(`${r.role}|${r.model}`).digest('hex').slice(0, 8)}`;
+      const reason = r.retiring ? 'is marked retiring' : 'the kit has not measured its roles on';
+      const short = `${r.role} on ${r.model}: ${r.retiring ? 'retiring' : 'not measured'}`.slice(0, 60);
+      const dir = path.join(projectDir, '.kit');
+      fs.mkdirSync(dir, { recursive: true });
+      if (fs.lstatSync(dir).isSymbolicLink()) return;
+      const from = path.join('.kit', `model-row-${crypto.randomBytes(6).toString('hex')}.json`);
+      fs.writeFileSync(path.join(projectDir, from), JSON.stringify({ id, title: `${r.role} runs on ${r.model}, which ${reason}`, short, tag: 'owner' }), { flag: 'wx' });
+      try {
+        spawnSync(process.execPath, [state, 'item', 'add', '--from', from], { cwd: projectDir, encoding: 'utf8', timeout: 60000, windowsHide: true });
+      } finally {
+        fs.rmSync(path.join(projectDir, from), { force: true });
+      }
+    } catch {
+      /* a row that cannot be written leaves the session start text as it is */
+    }
+  }
+}
+
+// E36: the role line session start names, for the roles rows above (the role file in use wins over the table).
+function roleModelLine(kit, dir) {
+  const named = roleModelRows(kit, dir).map((r) => {
+    const file = `${toPosix(dir)}/agents/${r.role}.md`;
+    return r.retiring ? `${r.role} runs on ${r.model}, which is marked retiring (${file})` : `${r.role} runs on ${r.model}, which the kit has not measured its roles on (${file})`;
+  });
   // The build 23b sweep: the repair is on the owner's side (the role file wins over the kit's table, and changing the
   // table leaves the release checkout).
   return named.length ? `Kit roles: ${named.join('; ')}. Set the model line in that role file to a measured model, or measure the model first; the next release's table may move it.` : '';
@@ -1632,6 +1725,7 @@ export function sessionStartReport({ kit, home, projectDir, source, session, env
   if (channel) lines.push(channel);
   const roles = roleModelLine(kit, env.CLAUDE_PLUGIN_ROOT || home);
   if (roles) lines.push(roles);
+  if (!readOnly) addModelRows(kit, projectDir, roleModelRows(kit, env.CLAUDE_PLUGIN_ROOT || home));
   // The orientation rule sits in a module, not the core, so after a compact it may not be in context yet.
   lines.push(...doubleRunLines(projectDir));
   // K153 (build 20): a stale note is named before a thread acts on it, not only at the closeout that fails on it.
@@ -2308,6 +2402,9 @@ export function build({ kit }) {
   out.set('user/kit-tools/kit-temp.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'kit-temp.cjs'), 'utf8'));
   // approve.mjs reads the owner's pop-up answers the way the guards do (T2): the same exact-copy rule.
   out.set('user/kit-tools/owner-yes.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'owner-yes.cjs'), 'utf8'));
+  // plan-check and count-gate read the plan graph and its spawn helper; an installed kit holds user/ only, so each gets an exact copy here.
+  out.set('user/kit-tools/plan-graph.mjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'plan-graph.mjs'), 'utf8'));
+  out.set('user/kit-tools/safe-spawn.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'safe-spawn.cjs'), 'utf8'));
   for (const [rel, text] of roleFiles(kit)) out.set(rel, text);
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
@@ -2326,11 +2423,11 @@ export function build({ kit }) {
     }
     throw new Error(`role table names an unknown rule: ${id}`);
   };
-  const teams = mods.find((m) => m.meta.id === 'agent-teams');
-  const table = teams ? teams.body.slice(teams.body.indexOf('{#agent-role-table}')) : '';
-  for (const [, role, ids] of table.matchAll(/^\| (\w+) \| [^|]+ \| [^|]+ \| [^|]+ \| ([^|]+) \|$/gm)) {
-    if (ids.trim() === 'none' || role === 'Role') continue;
-    const list = ids.split(',').map((s) => s.trim());
+  // The roles and their rules come from kit.config.json roles (rule:agent-role-table); a role with no rules gets no skill.
+  const roles = JSON.parse(fs.readFileSync(path.join(kit, 'kit.config.json'), 'utf8')).roles || {};
+  for (const [role, r] of Object.entries(roles)) {
+    const list = Array.isArray(r.rules) ? r.rules : [];
+    if (!list.length) continue;
     out.set(`user/skills/${role}-rules/SKILL.md`, ['---', `name: ${role}-rules`,
       `description: The general rules a ${role} agent works under, preloaded at its start by its role file. Not for direct use.`,
       'user-invocable: false', '---', '',
@@ -2719,6 +2816,19 @@ function toBin(p, root) {
   fs.renameSync(p, path.join(bin, `${path.basename(p)}-${Date.now()}`));
 }
 
+// K315 (build 24): one line per template slot a project file still holds after install, naming the file (relative to the
+// project) and the slot. The list is slotsIn's, in user/skills/pre-pr-sweep/slots.mjs, which the sweep brief writer reads too.
+function unfilledSlotLines(ctx) {
+  const lines = [];
+  for (const e of plan(ctx).entries) {
+    if (e.key.startsWith('memory/')) continue;
+    let text;
+    try { text = fs.readFileSync(e.dest, 'utf8'); } catch { continue; }
+    for (const slot of slotsIn(text)) lines.push(`    unfilled slot in ${e.key}: ${slot}`);
+  }
+  return lines;
+}
+
 function main(argv) {
   const kit = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
   // The Claude config folder: CLAUDE_CONFIG_DIR when a second one is in use, else ~/.claude.
@@ -2775,6 +2885,7 @@ function main(argv) {
     if (target === 'project' && !withTemplates.includes('web') && !showsUi(projectDir) && !APP_TEMPLATES.some((t) => fs.existsSync(path.join(projectDir, t)))) console.log('    app templates left out: no UI found; add --with-templates web to install them');
     if (r.backupDir && !dryRun) console.log(`    old copies kept in ${r.backupDir}`);
     for (const s of r.skipped) console.log(`    skipped ${s.file}: ${s.reason}`);
+    if (target === 'project') for (const l of unfilledSlotLines({ kit, home, target, projectDir, withTemplates })) console.log(l);
     if (target === 'project' && !dryRun) for (const l of doubleRunLines(projectDir)) console.log(`    ${l}`);
     // T14: install is finished only when every part is present and wired. The kit's own copy runs, never the project's.
     const use = useCheck(kit, projectDir, home);

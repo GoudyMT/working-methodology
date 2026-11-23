@@ -98,7 +98,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 		const g = safeSpawn.gitRead(path.dirname(path.resolve(file)), ['rev-parse', '--git-common-dir'], { encoding: 'utf8' });
 		if (g.status === 0) {
 			const dir = path.resolve(path.dirname(path.resolve(file)), g.stdout.trim());
-			try { fs.appendFileSync(path.join(dir, 'kit-plan-graph.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), plan: path.basename(file), units: list.length, faults: found.length })}\n`); } catch { /* a trace only */ }
+			try { fs.appendFileSync(path.join(dir, 'kit-plan-graph.jsonl'), `${JSON.stringify({ at: new Date().toISOString(), plan: path.basename(file), planPath: path.resolve(file).replace(/\\/g, '/'), units: list.length, faults: found.length })}\n`); } catch { /* a trace only */ }
 		}
 		process.exitCode = found.length ? 1 : 0;
 	}

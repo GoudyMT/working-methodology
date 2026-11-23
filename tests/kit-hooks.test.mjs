@@ -1280,7 +1280,10 @@ function armedRepo() {
   run('commit', '-qm', 'two');
   const other = spawnSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).stdout.trim();
   fs.mkdirSync(path.join(dir, '.claude'));
-  for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'safe-spawn.cjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+  for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'safe-spawn.cjs', 'test-push-scan.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, '.claude', f));
+  // The kit source's own hook reads the scan from project/.claude.
+  fs.mkdirSync(path.join(dir, 'project', '.claude'), { recursive: true });
+  for (const f of ['safe-spawn.cjs', 'test-push-scan.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, 'project', '.claude', f));
   fs.writeFileSync(path.join(dir, '.git', 'kit-first-push-done'), '');
   return { dir, head, other, bare };
 }

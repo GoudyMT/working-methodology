@@ -116,6 +116,19 @@ jobs:
           git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || printf '%s\n' 'process.stdout.write("scope=full\nwhy=the base has no pr-scope\n")' > "$RUNNER_TEMP/pr-scope.mjs"
           node "$RUNNER_TEMP/pr-scope.mjs" "$BASE_SHA" | tee -a "$GITHUB_OUTPUT"
 
+      # E36 (build 24): each step's model, effort and floor must agree with its role file and script, so a drifted role
+      # file fails the PR. This runs the PR's own copy of the table, so a PR can edit the table it is checked against. It
+      # sits below the step that holds GH_TOKEN, so no PR code runs with that token in its environment.
+      - name: Model table check
+        shell: bash
+        run: node user/kit-tools/model-table.mjs check .
+
+      # E36/U9 (build 24): a release may not drop an enforced hold; this reads the holds against the latest release tag.
+      # Report only, as the minimal-code job is: a failing hold prints its line, and this job still passes.
+      - name: Hold check, report only
+        shell: bash
+        run: node user/kit-tools/hold-check.mjs . || echo "hold-check exit $? is report only, so this job still passes"
+
       - name: Every test
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
         run: node scripts/test-run.mjs --shards 4
@@ -362,6 +375,35 @@ jobs:
         run: |
           mapfile -t slow < <(find tests/slow -type f -name '*.test.mjs')
           node scripts/test-run.mjs "${slow[@]}"
+
+  # K311 (owner call 5): the minimal-code job. On a PR it flips the production lines the PR added and names every flip no
+  # test catches. Report only: it never fails the run, and it builds its own coverage map at the PR head first.
+  minimal-code:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      matrix:
+        slice: [1, 2, 3, 4]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Coverage map at the PR head
+        run: node scripts/test-run.mjs --map || echo "the map run had failing tests; the report below uses what it recorded"
+
+      - name: Survivors in this slice (report only)
+        run: node scripts/mutation-check.mjs --base ${{ github.event.pull_request.base.sha }} --report --slice ${{ matrix.slice }}/4
 
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.

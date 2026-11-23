@@ -14,10 +14,9 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 - **Base commit:** `<full hash>` - confirm HEAD equals it; if not, reset YOUR worktree to it and say so.
 - **Setup commands:** <shell prefix; dependency install>
 - **Ports and environment for this unit:** <e.g. a browser-test port of its own>
-- **Unit file list:** before your first edit, write every path from "Files you may change" and "Files you may
-  create", one per line relative to your worktree, to the file that `git rev-parse --path-format=absolute
-  --git-path kit-unit-files.txt` names (use the shell: it sits in git's folder, outside your worktree). Your edit
-  fence (rule:agent-role-table) then blocks any other file. Never change the list; a file missing from it is a stop.
+- **Unit file list:** the lead writes `kit-unit-files.txt` with `unit-lock.mjs` once the red commit lands, from the
+  "Files you may change" and "Files you may create" lines above. Your edit fence (rule:agent-role-table) then blocks
+  any other file. Never change the list; a file missing from it is a stop.
 
 ## The unit
 
@@ -25,7 +24,9 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 - **Files you may change:** <exact list>
 - **Files you may create:** <exact list> | none
 - **Read first:** <files, tests and docs, each with why>
-- **Tests to write first, and the failure each must show:** <...>
+- **Red tests (the tester's red commit <sha>; never edit them), and the failure each must show:** <...>
+- If a test looks wrong, stop and report it; never work around a test.
+- **Tests are a floor:** one test per plan line. The builder must never add or drop a test; a test that looks wrong is a stop.
 - **Done when:** <observable conditions>; within this unit's size-budget share: <each budget and the bytes this
   unit may add> | no size budget touched
 
@@ -44,4 +45,13 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 
 ## Report
 
-Use the report format in your role instructions, as your final message.
+Use the report format in your role instructions, as your final message. End it with a `RECORD:` line, then a role and
+commit line, then one JSON line per open problem you found (a real open problem only; its keys are "id", "severity",
+"status", "where", "claim", "proof" and "fix"), then one notChecked line, as in this example:
+
+```
+RECORD:
+{"role":"builder","commit":"<your head>"}
+{"id":"<F1>","severity":"<high>","status":"<confirmed or plausible>","where":"<file:line>","claim":"<one line>","proof":"<the evidence>","fix":"<the fix>"}
+{"notChecked":"<what you did not get to, or nothing>"}
+```

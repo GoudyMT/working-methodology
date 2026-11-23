@@ -13,11 +13,12 @@
 const fs = require('fs');
 const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
+const { recordCounts } = require('./record-counts.cjs');
 
-// git from node's own folder, never the project (build 23).
+// git from node's own folder, never the project.
 const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
-// around the phrase (bold, a quote, a heading) and hyphens inside it then compare the same; the space padding
+// around the phrase and hyphens inside it then compare the same; the space padding
 // keeps a word boundary on both sides.
 const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 
@@ -29,14 +30,14 @@ function findPhrase(cwd) {
 	if (common.status !== 0) return null;
 	const commonDir = common.stdout.trim();
 	const root = path.dirname(commonDir);
-	// K218: during a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
+	// During a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
 	// branch cannot swap the phrase its own reviewers are checked against. That copy is read while HEAD is the commit
 	// it was written for.
 	try {
 		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
 		const head = git(cwd, 'rev-parse', 'HEAD');
-		// The build 23a commit security review: the phrase approve.mjs recorded is used, not the copy read again, so a
-		// copy rewritten after the approval cannot swap it.
+		// The phrase approve.mjs recorded is used, not a copy read again, so a copy rewritten after the approval cannot
+		// swap it.
 		if (rec && typeof rec.phrase === 'string' && words(rec.phrase).trim() && head.status === 0 && rec.head === head.stdout.trim()) return { phrase: rec.phrase, commonDir };
 		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
 			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
@@ -56,7 +57,7 @@ function findPhrase(cwd) {
 }
 
 function log(commonDir, entry) {
-	try { fs.appendFileSync(path.join(commonDir, 'kit-canary.log'), JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'); } catch { /* a log that cannot be written never blocks the work */ }
+	try { fs.appendFileSync(path.join(commonDir, 'kit-canary.log'), JSON.stringify({ time: new Date().toISOString(), ...entry }) + '\n'); } catch { /* a log that cannot be written never blocks */ }
 }
 
 const CLOSE_OUT = [
@@ -100,20 +101,23 @@ function finalReport(input) {
 // What a reviewer's report lacks against the shape its brief gives: a "ROLE:" line, one line per finding in five
 // fields (severity | CONFIRMED or PLAUSIBLE | claim | file:line | evidence) or "No findings", and a "Not checked:" line.
 const SEVERITY_ROW = /^\s*(critical|high|medium|low)\s*\|/i;
+// A report with a RECORD: block meets the same shape in JSON (record-counts.cjs): see recordCounts there.
 function reportFaults(report) {
 	const lines = String(report).split(/\r?\n/);
 	const faults = [];
-	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) faults.push('a "ROLE: <your role>" line');
+	const record = recordCounts(report);
+	if (!record && !lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) faults.push('a "ROLE: <your role>" line');
 	const rows = lines.filter((l) => SEVERITY_ROW.test(l));
-	if (!rows.length && !lines.some((l) => /^\s*No findings\b/i.test(l))) faults.push('one line per finding, or "No findings"');
+	if (!record && !rows.length && !lines.some((l) => /^\s*No findings\b/i.test(l))) faults.push('one line per finding, or "No findings"');
 	const loose = rows.filter((l) => { const f = l.split('|').map((x) => x.trim()); return f.length < 5 || f.slice(0, 5).some((x) => !x) || !/^(CONFIRMED|PLAUSIBLE)$/i.test(f[1]); });
 	if (loose.length) faults.push(`each finding in five fields, "<severity> | <CONFIRMED or PLAUSIBLE> | <claim> | <file:line> | <evidence>" (${loose.length} line(s) are not)`);
-	if (!lines.some((l) => /^\s*Not checked:/i.test(l))) faults.push('a "Not checked:" line (what you did not get to, or "nothing")');
+	const noted = lines.some((l) => /^\s*Not checked:/i.test(l)) || (record !== null && record.notChecked > 0);
+	if (!noted) faults.push('a "Not checked:" line (what you did not get to, or "nothing")');
 	return faults;
 }
 
 // Kit roles that report up and task no one; an orchestrator and the main session are taskers.
-const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer'];
+const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer', 'tester', 'test-reviewer', 'researcher', 'drafter', 'writer'];
 
 // One event's answer: { out } for a tool call to refuse, { code: 2 } for a stop to hold. The dispatcher (guard.cjs)
 // calls it for tool calls; Claude Code runs this file itself for the stop events.
@@ -125,16 +129,16 @@ function run(input) {
 
 	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
 	const key = (who.agent || `${who.session}-${who.role}`).replace(/[^\w.-]/g, '_');
-	// The canary's own block leaves a mark, so the report after it is told apart from a first report (and a stop that
-	// another hook, like the checker's clean-tree stop, blocked; stop_hook_active alone cannot tell them apart).
+	// The canary's own block leaves a mark, so the report after it is told apart from a first one (a stop another hook
+	// blocked looks the same; stop_hook_active alone cannot tell them apart).
 	const mark = path.join(found.commonDir, 'kit-canary-blocked', key);
-	// A hand-back already checked at its call leaves a seen mark, so the stops after it (one more if another hook,
-	// like the checker's clean-tree stop, blocks the first) add nothing to the log. The next hand-back is checked anew.
+	// A hand-back checked at its call leaves a seen mark, so the stops after it (one more if another hook blocks the
+	// first) add nothing to the log.
 	const seen = path.join(found.commonDir, 'kit-canary-seen', key);
 	const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); };
 
-	// The desktop app's hand-back: the report is the call's own message. Checked here, at the call, because the stop
-	// event fires before the hand-back reaches the agent's transcript (captured live).
+	// The desktop app's hand-back. Checked here, at the call, because the stop
+	// event fires before the hand-back reaches the agent's transcript.
 	if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') {
 		const report = String((input.tool_input || {}).message || '');
 		if (fs.existsSync(mark)) {
@@ -144,8 +148,8 @@ function run(input) {
 			return {};
 		}
 		const opens = words(report).startsWith(phrase);
-		// T6 (build 11): a reviewer's report is what the findings ledger is read from, so its shape is checked here too,
-		// once: a second try goes through, logged, so a role never loops on its report.
+		// A reviewer's report is what the findings ledger is read from, so its shape is checked here too, once: a second
+		// try goes through, logged, so a role never loops on its report.
 		if (opens && input.agent_type === 'reviewer') {
 			const shaped = path.join(found.commonDir, 'kit-canary-shape', key);
 			if (fs.existsSync(shaped)) {
@@ -201,8 +205,15 @@ const check = (input) => { try { return run(input).out || null; } catch { return
 
 if (require.main === module) {
 	try {
-		const r = run(JSON.parse(fs.readFileSync(0, 'utf8') || '{}'));
-		if (r.out) process.stdout.write(JSON.stringify(r.out));
+		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+		// The hand-back gate follows its hold's mode; one deny carries both reasons.
+		let gate = null;
+		if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') { try { gate = require('./handoff-gate.cjs').run(input); } catch { /* a log never blocks */ } }
+		// Canary's own decision fails open; the gate's deny still prints.
+		let r = {};
+		try { r = run(input); } catch { /* fails open */ }
+		const denies = [gate, r.out].filter(Boolean);
+		if (denies.length) process.stdout.write(JSON.stringify({ hookSpecificOutput: { ...denies[0].hookSpecificOutput, permissionDecisionReason: denies.map((o) => o.hookSpecificOutput.permissionDecisionReason).join(' ') } }));
 		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
 		process.exitCode = r.code || 0;
 	} catch { process.exitCode = 0; }

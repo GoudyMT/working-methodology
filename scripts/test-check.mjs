@@ -11,13 +11,15 @@
 //                       the commit before its fix. Off Windows, a test marked { windows: true } and a planted bug
 //                       tagged "os": "win32" are left to the Windows job, whose part (--windows) measures only those.
 //   A2 earns its place  the test carries "// why: guards <rule or the owner's decision>", or catches a flip in the
-//                       lines the change made (the mutation check, with a map of only these tests).
+//                       lines the change made (the mutation check, with a map of only these tests). U21: a why line
+//                       "doc claim:", "pin:" or "guard proof:" is named as its kind and needs no flip.
 //   A3 right lane       a test that needs another machine, a real service, a browser or a live model sits in tests/slow.
 //   A4 owed             a change of prose, wiring or removals only, that adds a test, is named.
 //   A5 fix ledger       with --record <build record>: each test the record's sweep.fixes names gets its A1 verdict; a
 //                       fix whose test does not fail first, or is not added or changed here, is named (K105).
 //   A6 names its use    the test carries one why line: guards rule:<id>, guards the owner's <decision>, or catches
-//                       <the real failure> in six words or more (tests/test-format.test.mjs holds every test to it).
+//                       <the real failure> in six words or more, or one of the exempt kinds (doc claim:, pin:, guard
+//                       proof:) with six words or more after the colon (tests/test-format.test.mjs holds every test to it).
 //   A new test in a file the base lacks fails first when that file cannot load there; a loop that makes tests is one
 //   unit, run by its file.
 // CI runs it with --strict (K24): exit 1 on any finding but a test the time budget left unmeasured, which is named
@@ -71,6 +73,8 @@ export function whyFault(body, known = null) {
 		return rules.length || /\bthe owner/.test(why) ? null : 'its why line says guards but names no rule (rule:<id>) and not the owner';
 	}
 	if (/^catches\b/.test(why)) return why.trim().split(/\s+/).length >= 6 ? null : 'its why line is too short to name the failure it catches (6 words or more)';
+	// U21: the exempt shapes A2 passes without a flip (rule:test-value) name their claim, pin or proof in six words or more.
+	if (/^(doc claim|pin|guard proof):/.test(why)) return why.slice(why.indexOf(':') + 1).trim().split(/\s+/).length >= 6 ? null : 'its why line is too short to name the claim, pin or proof it makes (6 words or more after the colon)';
 	return 'its why line starts with neither guards nor catches';
 }
 
@@ -463,7 +467,7 @@ export function check(root, base, { strict = false, slice = null, budget = null,
 			if (unknown.length) note(t.key, 'A2', `names rule:${unknown.join(', rule:')}, which is not in the rule index`);
 			const added = rules.filter((r) => known.has(r) && !before.has(r));
 			if (added.length) note(t.key, 'A2', `names rule:${added.join(', rule:')}, a rule this change itself adds to the rule index`);
-			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head);
+			return (rules.length > 0 && unknown.length === 0) || /\/\/ why: guards\b[^\n]*\bthe owner/.test(head) || /^\/\/ why: (doc claim|pin|guard proof):/m.test(head);
 		};
 		// K131 (build 17): A2 asks only whether each untagged test catches some flip, so the map is made of those tests
 		// alone and each stops running once it has caught one (--until-caught): the same verdict per test, without the

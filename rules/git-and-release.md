@@ -27,7 +27,7 @@ Every commit passes the hook (-> rule:test-and-review-cadence). **Never `--no-ve
 ### Commit Message Format {#commit-message-format}
 
 One line: `git commit -m "fix: hold the page still behind the open reader"`.
-- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`; a scope is optional and rare.
+- **Types:** `feat`, `fix`, `refactor`, `test`, `docs`, `chore`, `security`, `perf`, `retest`; a scope is rare.
 - **Subject:** <= 72 characters, one change; lowercase, no period: a plain result for a `git log` reader (`fix: the Haiku price line and its 100K warning`); no internal code, jargon, task tag or aside (the name check refuses a code). **No body, footer or AI / tool trailer** (detail goes in the PR body, the Session Log and comments). Reaching for `-F`, a heredoc or a second `-m` means the message is already wrong.
 - **Checked by script** (`.claude/name-check.mjs`, in the commit-msg hook and CI): fix a refusal in the message, a wrong refusal in the check. Why: a convention nobody checks misleads every new agent. <!-- PROJECT ADAPTER A15 -->
 

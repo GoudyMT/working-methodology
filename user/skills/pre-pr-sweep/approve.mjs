@@ -44,6 +44,11 @@ import path from 'node:path';
 import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+// The record check a hand-back's RECORD: block must pass (the kit's tools folder sits beside the skills folder).
+let checkRecord = null, findingAbove = null, namedBy = null;
+try { ({ check: checkRecord, findingAbove, namedBy } = await import('../../kit-tools/handoff.mjs')); } catch { /* no checker: a RECORD report is not tallied */ }
+// K315: the template slots a rules block must not still hold (one list, shared with install).
+import { slotsIn } from './slots.mjs';
 // K182: the one price table, beside the call-cap hook that meters with it (kit-hooks sits two folders up, in the kit
 // source and in the Claude folder alike).
 const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../kit-hooks/prices.cjs');
@@ -635,6 +640,8 @@ function decide() {
 	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 	const block = rulesBlock(facts);
 	if (block && block.phrase && words(block.phrase).trim()) (c.roles || []).forEach((r, i) => { if (words(JSON.stringify(r)).includes(words(block.phrase))) fix.push(`role ${i + 1}'s text carries the confirmation phrase: take it out, the reviewer finds it by reading`); });
+	// K315: a rules block that still holds a template slot writes no brief; the slot is named, and the sweep stops as a fix.
+	if (block && block.slots && block.slots.length) fix.push(`the rules block in ${block.file} still holds ${block.slots.join(' and ')}: fill it in, then run approve.mjs again`);
 	const head = git('rev-parse', 'HEAD').stdout.trim() || null;
 	// A stop is cured by adding what it named, not by asking for less: a lighter contract at the HEAD of a stop is the
 	// owner's, whatever its file is called, however often it is rerun and whatever outcome came between. A new commit
@@ -674,7 +681,7 @@ function decide() {
 	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, runBudgets, runRoles);
 	// K182: the reviewer count and the dollars, said before the owner's yes and in the start notice.
 	const spendLine = ceilingUnit === 'dollars' ? `${runRoles.length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, head };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, roles: runRoles.map((r) => r.role || r.kind), head };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -782,7 +789,7 @@ function rulesBlock(facts, hash) {
 		const start = lines.findIndex((l) => /\*\*Rules every brief carries\*\*/.test(l));
 		// The line the canary reads the phrase from, as it reads it.
 		const end = start < 0 ? -1 : lines.findIndex((l, i) => i > start && /^\s*Confirmation phrase: .* with: \S/.test(l));
-		if (end > start) return { file: where, offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim() };
+		if (end > start) return { file: where, offset: start + 1, limit: end - start + 1, phrase: lines[end].replace(/^\s*Confirmation phrase: .* with: /, '').trim(), slots: slotsIn(lines.slice(start, end + 1).join('\n')) };
 		return { file: where };
 	}
 	return null;
@@ -833,11 +840,15 @@ function writeBriefs(c, hash, ceilings, facts, unit = 'tokens') {
 			'Read more by line range as you need; never a whole file over 40 KB.',
 			`Scratch: ${scratch} is yours alone for any probe that writes; write nowhere else, never in the repository or another role's folder.`,
 			'',
-			`Finding format: ${r.finding || 'file:line, the claim, the input that breaks it or the rule it breaks, the proof'}. At most ${Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP} findings, ranked by severity.`,
+			`Finding format: ${r.finding || 'a RECORD: line, then one JSON line per finding with the keys id, severity (critical, high, medium or low), status (confirmed or plausible), where (file:line), claim, proof (the input that breaks it, or the rule it breaks and the evidence) and fix'}. At most ${Number.isInteger(r.findingCap) ? r.findingCap : FINDING_CAP} findings, ranked by severity.`,
 			'Report: hand it back with SubagentHandback. After the opening your rules require, the report is:',
 			`ROLE: ${r.role || r.kind}`,
-			'<severity> | <CONFIRMED or PLAUSIBLE> | <one-line claim> | <file:line> | <evidence>   (one line per finding; "No findings" if none)',
 			'Not checked: <what you did not get to, or "nothing">',
+			'Then a RECORD: line, its role line, one JSON line per finding and a notChecked line, as in this example (replace every <...>):',
+			'RECORD:',
+			`{"role":${JSON.stringify(r.role || r.kind)},"commit":"${head}"}`,
+			'{"id":"<F1>","severity":"<high>","status":"<confirmed or plausible>","where":"<file:line>","claim":"<one line>","proof":"<the evidence>","fix":"<the fix>"}',
+			'{"notChecked":"<what you did not get to, or nothing>"}',
 			'Change no file in the repository.',
 			'',
 		].join('\n');
@@ -852,7 +863,7 @@ function writeBriefs(c, hash, ceilings, facts, unit = 'tokens') {
 // canary checks it): [{ severity, verdict, claim, where, evidence }], or null when no report in that shape is there.
 // The build 11 sweep: only the hand-back that was delivered counts (a refused one never reached the lead), a run the
 // canary voided counts none, and rows stop where the out-of-role notes begin.
-function reportRows(parsed) {
+function reportRows(parsed, want = {}) {
 	const refused = new Set();
 	let voided = false;
 	for (const e of parsed) {
@@ -872,6 +883,23 @@ function reportRows(parsed) {
 	}
 	if (message === null) return null;
 	const lines = message.split(/\r?\n/);
+	// A RECORD: block is read by the record check: a record that fails it, or a finding that is neither confirmed nor
+	// plausible, is unreadable, the same as a report in no shape.
+	if (lines.some((l) => l.trim() === 'RECORD:')) {
+		if (!checkRecord) return null;
+		// A finding in another shape above the record is a second report: refused, not tallied beside the record.
+		const last = lines.findLastIndex((l) => l.trim() === 'RECORD:');
+		if (findingAbove(lines.slice(0, last).join('\n'))) return null;
+		const rec = checkRecord(message);
+		// Another role's or commit's record is not this round's.
+		if (!rec.ok || (want.role !== undefined && !namedBy(rec.roleLine, want))) return null;
+		const rows = [];
+		for (const f of rec.findings) {
+			if (!/^(confirmed|plausible)$/i.test(f.status)) return null;
+			rows.push({ severity: f.severity, verdict: f.status.toUpperCase(), claim: f.claim, where: f.where, evidence: f.proof });
+		}
+		return rows;
+	}
 	if (!lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) return null;
 	const rows = [];
 	for (const l of lines) {
@@ -1092,7 +1120,7 @@ function startIds(clearings) {
 	return ids;
 }
 
-function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) {
+function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null, want = {}) {
 	const root = transcriptRoot();
 	const found = new Map(ids.map((id) => [id, []]));
 	for (const project of folders(root)) for (const session of folders(project)) {
@@ -1174,7 +1202,7 @@ function spend(ids, since, hash, team, crashed = new Set(), guardStarts = null) 
 		// Claude Code writes some closing messages under a <synthetic> model; the real model is the last other one.
 		const stamp = Date.parse(([...parsed].reverse().find((e) => e && e.timestamp) || {}).timestamp) || 0;
 		toolIds.set(id, String(meta.toolUseId || ''));
-		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp), ledger: reportRows(parsed) };
+		return { index, agent: id, model: [...seen.values()].map((m) => m.model).filter((m) => m && !/synthetic/i.test(m)).pop() || null, tokens, calls: seen.size, ...shape, finished, lastWrite: Math.max(fs.statSync(files[0]).mtimeMs, stamp), ledger: reportRows(parsed, { role: (want.roles || [])[index - 1], commit: want.head }) };
 	});
 	// A crash and its retry name one role by design.
 	const own = roles.filter((x) => x && !crashed.has(x.agent));
@@ -1219,6 +1247,13 @@ function retry() {
 	return 0;
 }
 
+// The role each reviewer's brief named: the decision's copy, else the contract's.
+function briefNames(decision) {
+	let roles = [];
+	try { roles = JSON.parse(fs.readFileSync(contractFile, 'utf8')).roles || []; } catch { /* none */ }
+	if (Array.isArray(decision.roleOf)) roles = decision.roleOf.map((i) => roles[i]);
+	return decision.roles || roles.map((r) => r && (r.role || r.kind));
+}
 function outcome() {
 	if (has('--tokens')) { console.log('--tokens is not taken: the script reads each role\'s spend from its own transcript. Pass --agents <id,...>, one agent id per role. Nothing logged.'); return 1; }
 	const s = state();
@@ -1296,7 +1331,7 @@ function outcome() {
 	if (!ids.length || ids.some((id) => !AGENT_ID.test(id)) || new Set(ids.map((x) => x.toLowerCase())).size !== ids.length) { console.log('--agents needs the reviewers\' agent ids, comma-separated, each once (letters, digits, - and _). Nothing logged.'); return 1; }
 	if (ids.length !== Number(decision.agents)) { console.log(`--agents names ${ids.length} agent(s); the contract had ${decision.agents} role(s): one id per role (each brief's Sweep line names its role). Nothing logged. A sweep cut short: --outcome --cut-short.`); return 1; }
 	const refused =[...ids.filter((id) => used.has(id.toLowerCase())).map((id) => `${id} (already logged for an earlier outcome)`), ...ids.filter(isLost).map((id) => `${id} (logged as crashed: name its retry's id)`)];
-	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost), clearAts.length ? startIds(clearAts) : null);
+	const read = refused.length ? { bad: refused } : spend([...ids, ...lost], since, decision.hash, Number(decision.agents), new Set(lost), clearAts.length ? startIds(clearAts) : null, { roles: briefNames(decision), head: decision.head });
 	if (read.bad) {
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];
 		console.log('ASK THE OWNER - the spend cannot be read, so it is not guessed (rule:sweep-auto-approval):');

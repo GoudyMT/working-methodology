@@ -1,0 +1,85 @@
+# lanes
+
+## Units
+
+| Id | Files | Runs |
+|---|---|---|
+| U9 | `user/kit-hooks/holds.json`, `project/.claude/guard.cjs`, `user/kit-hooks/agent-model.cjs`, `tests/holds.test.mjs` | parallel |
+| U4 | `user/kit-hooks/edit-fence.cjs`, `.githooks/pre-push`, `user/skills/agent-team-build/SKILL.md`, `tests/test-lock.test.mjs` | after U9 |
+| U2b | `user/skills/pre-pr-sweep/approve.mjs`, `user/kit-hooks/handoff-gate.cjs`, `user/agents/builder.md`, `user/agents/checker.md`, `user/agents/reviewer.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/skills/agent-team-build/templates/checker-brief.md`, `user/kit-hooks/holds.json` | after U9 |
+| U6 | `user/kit-tools/handoff.mjs`, `user/agents/test-reviewer.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `tests/review-gate.test.mjs` | after U2b |
+| U10 | `user/kit-tools/lanes.mjs`, `user/skills/pre-pr-sweep/SKILL.md`, `user/skills/agent-team-build/SKILL.md`, `tests/lanes.test.mjs` | after U15, U4 |
+| U5 | `user/kit-tools/tester-model.mjs`, `user/kit-tools/builder-model.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `kit.config.json`, `tests/model-scripts.test.mjs` | parallel |
+| U11 | `.github/workflows/ci.yml`, `scripts/mutation-check.mjs`, `tests/mutation-job.test.mjs` | after U5 |
+| U13 | `AGENTS.md`, `rules/security.md`, `tests/what-holds.test.mjs` | after U11 |
+| U8 | `scripts/kit.mjs`, `project/.github/workflows/ci.yml`, `tests/model-override.test.mjs` | parallel |
+| U12 | `scripts/kit.mjs`, `user/skills/pre-pr-sweep/approve.mjs`, `tests/slots.test.mjs` | after U8, U2b |
+| U15 | `user/skills/agent-team-build/SKILL.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/kit-tools/handoff.mjs`, `user/kit-hooks/agent-model.cjs`, `user/kit-tools/flow-check.mjs`, `rules/agent-teams.md`, `tests/flow-lock.test.mjs` | after U6, U9, U4 |
+| U16 | `user/kit-tools/handoff.mjs`, `user/skills/agent-team-build/templates/builder-brief.md`, `user/agents/tester.md`, `user/agents/test-reviewer.md`, `tests/ask-dont-guess.test.mjs` | after U15, U10 |
+| U17 | `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/SKILL.md`, `tests/plan-check.test.mjs` | after U16, U5 |
+| U18 | `user/skills/agent-team-build/SKILL.md`, `user/kit-tools/flow-check.mjs`, `user/kit-tools/handoff.mjs`, `rules/agent-teams.md`, `tests/overwatch.test.mjs` | after U17 |
+| U19 | `user/kit-tools/test-budget.mjs`, `user/kit-tools/plan-check.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/skills/agent-team-build/templates/project-adapter.md`, `tests/test-budget.test.mjs` | after U18 |
+| U21 | `scripts/test-check.mjs`, `scripts/mutation-check.mjs`, `user/kit-tools/test-value.mjs`, `user/skills/agent-team-build/SKILL.md`, `tests/value-gate.test.mjs` | after U18, U11, U13 |
+| U20 | `user/kit-tools/unit-check.mjs`, `user/kit-tools/count-gate.mjs`, `user/kit-tools/plan-check.mjs`, `user/kit-tools/handoff.mjs`, `user/agents/test-reviewer.md`, `user/agents/tester.md`, `user/skills/agent-team-build/templates/builder-brief.md`, `tests/test-count.test.mjs` | after U19 |
+| U22 | `user/kit-tools/plan-check.mjs`, `user/kit-tools/guard-rows.mjs`, `user/skills/agent-team-build/templates/batch-plan.md`, `user/agents/tester.md`, `tests/guard-rows.test.mjs` | after U19, U20 |
+
+U18 spec note (2026-11-22 12:39Z): the overwatch lead is the build lead (and the orchestrator), not an extra role. Its
+run: plan and split into lanes; the owner's stated intent plus the plan is approval unless the plan raises a new call;
+start the teams and watch them; answer lane questions and keep the JSONL checklist; spin teams down as lanes finish;
+merge the lanes; run the one sweep; fix in lanes; then CI, the gate and the owner's yes. Each step is checked by a
+script, hook or guard.
+
+Smart test strategy (owner-approved 2026-11-22, relayed 16:02Z): U19 = T-B1 plan sets the budget (logic, about 12
+tests); U20 = T-B2 count gate at red and review (logic, about 12); U21 = T-B3 value check after green (glue, about 6;
+report-only in 1.51.0); U22 = T-B4 guard rows (guard, about 8; one Opus check, at most 2 rounds). Category table:
+guard ceiling 25, logic 15, glue 6, data 2, docs 3; the highest category of a unit's files wins; a control is an
+assertion, not a test; over a ceiling splits at planning. Then the build's own new tests are cut to this standard
+(owner pop-up yes on the cut list) and the survivors named in the record before the next push.
+
+## After the lanes
+
+1. U14: VERSION 1.51.0, the build record with per-unit commit lists, the changelog.
+2. The one sweep on this PC, under an approved contract. The same sweep runs in the cloud as the paired sweep: the
+   bench thread gets the pushed covered head sha, the contract and each role brief verbatim before the PC findings
+   exist; the PC report follows. Both results are reported side by side (owner, 2026-11-22).
+3. Fixes in lanes from lanes.mjs; a high, critical, security or owner-rule fix gets a failing test first.
+4. CI, the score gate (rule text changed), then the owner's yes for merge, tag and release.
+
+## Sweep inputs (found during the build, fixed in the sweep lanes)
+
+- approve.mjs: the pipe-row refusal beside a RECORD block is case-sensitive (`High | CONFIRMED` passes); the row
+  parser is case-insensitive. Add /i (automated security review).
+- plan-check.mjs: an installed copy cannot import project/.claude/plan-graph.mjs (builder doubt).
+- agent-model.cjs duplicates GUARD_PATHS; a test now holds the two lists equal (closed in U15 round 1).
+- A lead note (second review, lead answer) is text an agent writes: a log-stage limit; a lead-only answer file
+  comes before these checks enforce (build 25 list row).
+- Builders keep a shell, so a test file can change outside the edit fence; commit checks and CI catch it, and
+  nothing restores a deleted lock list (build 25 list row).
+- Some builder briefs gave no canary phrase; the role files' rules carry it unevenly (check the brief templates).
+- flow-check checklist: C19-C22 pass only through the usage exit 2, and C11's folder entries pass with folder
+  matching broken (builder doubt).
+- Retest push yes (automated security review): the kit hook does not spend the yes in kit-push.log, so it can be
+  replayed within its window; a yes to a plain branch push also covers retest commits. Spend it under the push lock
+  and make a retest push's yes quote the head sha or a retest marker; the project hook's approved path should take
+  the 10-minute age for retests.
+- mutation-check.mjs is 20911 bytes (16181 at base) and test-check.mjs 40216 (40039 at base), both over the 14000 module size; the size test does not cover scripts/. Decide split or exemption (U21 builder flag).
+- --value covering set is greedy ("near the smallest"); test-value groups from scripts/test-value.mjs are not reused, because kit tools install without scripts/.
+- U21 fix: no test asserts the --value usage exit 2 or the six-word floor on exempt why lines (builder doubt); test-format covers the shapes on real tests only.
+- count-gate.mjs (automated security review, medium, security): countCommand is run as a shell string with the temp path built from the test file basename, so a file name with $() or quotes runs code. Fix: write the temp copy under a fixed safe name (file + sanitised extension), with a failing test first.
+- test-budget.mjs:97 (U22 Opus check note): Risk is matched as exactly "high", so a Risk cell of **high** on a non-guard file skips the guard category. Normalise markup (strip * and backticks) before the compare.
+- Main CI on 14d65c33 (1.50.1): "a long command is read in time" failed once on the push-to-main coverage run (9.6 s, owner-proof.cjs 7.6 s; hot lines 225, 39, 201), passed on rerun with no change. Load-sensitive timing test: owner-proof.cjs on a 98 KB command is near the hook timeout under coverage. Fix the cost in owner-proof (or the test budget the coverage run uses), with a failing test first if the guard is changed.
+- CodeQL on PR 67 (security, fix with a failing test first where it is code): 4 high js/incomplete-sanitization (tests/test-lock.test.mjs:134 and :137 backslash not escaped; tests/overwatch.test.mjs:49 and tests/flow-lock.test.mjs:352 replace only the first *), 1 medium js/bad-code-sanitization (tests/hold-modes.test.mjs:143). All in test helpers; use a full regex escape or replaceAll.
+
+## Sweep fix lanes (sweep c4afd66c, 71 rows, 22 distinct, lanes.mjs gave 16 lanes)
+
+Five packets, each one tester and one builder in its own worktree, file-disjoint. High, security and owner-rule
+fixes get a failing test first; the rest are fixed and covered by the targeted tests. Owner pick: enforce must truly
+refuse (holds still ship log).
+
+| Packet | Lanes | Findings | Red tests first | Check |
+|---|---|---|---|---|
+| P1 holds and push hold | L1, L3 | H1 enforce does nothing; M1 pre-push reads subjects only, case, ordinary yes | yes | Opus |
+| P2 flow tools | L2, L5, L6, L14, L16 | H2 agents skips role lines; H3 fixed-line writer and split review files; H4 lock and count gate not in SKILL; H5 lanes.mjs named for units; M3 clarity exact role; M5 count gate first commit, whole file, shell string; M6 start unwired, VERDICT first line, basename; M4 checklist; M7 filesOf mixed cell; L1 regex; L3 where split | yes for H2-H5, M5 | Opus |
+| P3 approver records | L4, L15 | M2 role/commit unchecked, pretty-printed guard, canary fail-open; L2 slots | yes (security) | none |
+| P4 test value | L7, L8, L9 | M8 fence tests; M9 flow-lock tests; M10 B1, guard rows, V3, greps, C1, conditional | retest commits, owner push yes | none |
+| P5 CI, table, text, record | L10-L13 | M11 model-table step order, minimal-code budget, hold-check wiring; M12 measured, steps, skills; M13 retest rule, hooks overclaim, role text; M14 record claims | no | none |

@@ -28,4 +28,13 @@ says how every message you send opens (rule:agent-canary). If you cannot read it
 
 ## Return
 
-Your verdict, in the format in your role instructions.
+Your verdict, in the format in your role instructions. End it with a `RECORD:` block of the same shape as the builder's:
+a role and commit line (the head you read), then one JSON line per finding with the keys "id", "severity", "status",
+"where", "claim", "proof" and "fix", then one notChecked line, as in this example:
+
+```
+RECORD:
+{"role":"checker","commit":"<the builder's head you read>"}
+{"id":"<F1>","severity":"<high>","status":"<confirmed or plausible>","where":"<file:line>","claim":"<one line>","proof":"<the evidence>","fix":"<the fix>"}
+{"notChecked":"<what you did not get to, or nothing>"}
+```

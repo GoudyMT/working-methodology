@@ -39,6 +39,11 @@ export function copyKitCli(kit) {
   // The merge-on-green steps install prints (K61), which read row A27 as the merge gate does.
   for (const f of ['merge-on-green.mjs', 'safe-git.mjs']) fs.copyFileSync(path.resolve('scripts', f), path.join(kit, 'scripts', f));
   for (const f of ['merge-gate.mjs', 'kit-temp.cjs']) fs.copyFileSync(path.resolve('user/kit-tools', f), path.join(kit, 'user/kit-tools', f));
+  // The slot list module (K315, build 24): copied only where it exists, so the other fixtures still install before it is built.
+  if (fs.existsSync(path.resolve('user/skills/pre-pr-sweep/slots.mjs'))) {
+    fs.mkdirSync(path.join(kit, 'user/skills/pre-pr-sweep'), { recursive: true });
+    fs.copyFileSync(path.resolve('user/skills/pre-pr-sweep/slots.mjs'), path.join(kit, 'user/skills/pre-pr-sweep/slots.mjs'));
+  }
 }
 
 export function makeKit() {
@@ -230,12 +235,12 @@ export function retireKit() {
 }
 
 // Plan rule-modules, Phase 2: one role table (rule:agent-role-table) says what each agent may use and which rules
-// it starts with; the role files must match it, so access is never widened by an edit to one file alone.
+// it starts with; the role files must match it, so access is never widened by an edit to one file alone. The table
+// lives in kit.config.json roles; each entry is shaped as the old markdown row was ('none' for an empty list).
 export const roleTable = () => {
-  const text = read(path.resolve('rules/agent-teams.md'));
-  const sec = text.slice(text.indexOf('{#agent-role-table}'));
-  return [...sec.matchAll(/^\| (builder|checker|scanner|orchestrator|reviewer) \| [^|]+ \| ([^|]+) \| ([^|]+) \| ([^|]+) \|$/gm)]
-    .map(([, role, tools, denied, rules]) => ({ role, tools: tools.trim(), denied: denied.trim(), rules: rules.trim() }));
+  const roles = JSON.parse(read(path.resolve('kit.config.json'))).roles;
+  const list = (xs) => (xs.length ? xs.join(', ') : 'none');
+  return Object.entries(roles).map(([role, r]) => ({ role, tools: r.tools.join(', '), denied: list(r.denied), rules: list(r.rules) }));
 };
 export const front = (f) => Object.fromEntries([...read(f).match(/^---\n([\s\S]*?)\n---/)[1].matchAll(/^(\w+):\s*(.*)$/gm)].map(([, k, v]) => [k, v.trim()]));
 

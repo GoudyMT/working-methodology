@@ -30,6 +30,8 @@ jobs:
             [ -f "$f" ] || continue
             node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8").replace(/^\uFEFF/,""));process.exit(s&&s.disableAllHooks===true?1:0)' "$f" || { echo "disableAllHooks is true in $f, or it is not JSON"; exit 1; }
           done
+      # K341: an override in .kit/models.json may not lower a step below its floor or change a never-drop step.
+      - run: node .claude/model-override.mjs check
       # A PR may narrow this run to what the change reaches (vitest related, jest --findRelatedTests) once the
       # narrowed run has missed nothing beside the whole suite; main always runs it whole.
       # One lane until the tests take about 2 to 3 minutes; then shards (a matrix with jest --shard or vitest --shard).

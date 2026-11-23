@@ -5,7 +5,8 @@
 //   a run with no file (the whole suite), test-run.mjs --changed without --pick (it widens to every test the change
 //   reaches), a test file the branch did not change, and the kit's CI-only checks.
 // Allowed with no question: CI itself, no git repository, a detached HEAD exactly on a tag (a throwaway clone of a
-// release, where a proof reproduces a bug with an unchanged test). It is a cost guard, not a security gate: anything unexpected lets the
+// release, where a proof reproduces a bug with an unchanged test), and a repo with no remote-tracking ref, on its own
+// base branch (nothing to compare with; logged). A folder argument is every test file under it, all of them changed. It is a cost guard, not a security gate: anything unexpected lets the
 // call through, and says why in <git common dir>/kit-guard-open.log (one line, the cause, never the command).
 const fs = require('fs');
 const path = require('path');
@@ -16,8 +17,12 @@ const { spawnSync } = require('child_process');
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 const posix = (p) => String(p).split(path.sep).join('/');
 const TEST_FILE = /(^|\/)(tests?|__tests__|spec)\/|\.(test|spec)\.[cm]?[jt]sx?$|(^|\/)test_[^/]*\.py$|_test\.(py|go)$/i;
+// What a folder run counts: a file under a test folder named as a test (*.test.*, *.spec.*, or a .js/.mjs/.cjs/.ts file),
+// a test named anywhere, and node's default names (*-test, *_test, test-*, test), which a hint never offers. A JSON
+// fixture under tests/ is no test, so the folder alternative never reads every file there.
+const FOLDER_TEST = new RegExp(`(^|/)(tests?|__tests__|spec)/.*(\\.(test|spec)\\.[^/]*|\\.[cm]?[jt]sx?)$|\\.(test|spec)\\.[cm]?[jt]sx?$|(^|/)test_[^/]*\\.py$|_test\\.(py|go)$|([-_]test|(^|/)test|(^|/)test-[^/]*)\\.[cm]?[jt]s$`, 'i');
 // Options whose value is the next word, so it is never read as a file.
-const VALUED = /^(--test-name-pattern|--test-skip-pattern|--test-reporter|--test-reporter-destination|--test-concurrency|--test-timeout|--import|--require|-r|--shards|--slice|--always|-k|-m|-p|--config|-c|--project|--testNamePattern|-t|--reporter|--rootdir|-n|--tb|--maxfail|--cov|--cov-report|--maxWorkers|-w|-run|-count|-timeout|--durations|--deselect|--ignore|--grep|-g|--timeout|--env|--environment|--testTimeout)$/;
+const VALUED = /^(--test-name-pattern|--test-skip-pattern|--test-reporter|--test-reporter-destination|--test-concurrency|--test-timeout|--import|--require|-r|--shards|--slice|--always|-k|-m|-p|--config|-c|--project|--testNamePattern|-t|--reporter|--rootdir|-n|--tb|--maxfail|--cov|--cov-report|--maxWorkers|-w|-run|-count|-timeout|--durations|--deselect|--ignore|--grep|-g|--timeout|--env|--environment|--testTimeout|--test-coverage-include|--test-coverage-exclude|--watch-path)$/;
 // Options of a package manager or npx whose value is the next word (a folder, a package).
 const PM_VALUED = /^(--prefix|-C|--dir|--cwd|--filter|-F|--workspace|-w|--package|-p)$/;
 
@@ -113,6 +118,11 @@ function changeSet(cwd) {
 	if (git(cwd, 'symbolic-ref', '-q', 'HEAD').status !== 0 && git(cwd, 'describe', '--exact-match', '--tags', 'HEAD').status === 0) return null;
 	let base = git(cwd, 'symbolic-ref', '-q', '--short', 'refs/remotes/origin/HEAD').stdout.trim();
 	if (!base) base = ['origin/main', 'origin/master', 'main', 'master'].find((b) => git(cwd, 'rev-parse', '-q', '--verify', b).status === 0) || '';
+	// A local base that is the branch itself (no remote, on main) leaves nothing to compare with: let the call through.
+	if (base && !base.includes('/') && git(cwd, 'symbolic-ref', '-q', '--short', 'HEAD').stdout.trim() === base && !git(cwd, 'for-each-ref', 'refs/remotes').stdout.trim()) {
+		logOpen(cwd, `no base to compare with: ${base} is the branch HEAD is on`);
+		return null;
+	}
 	const mb = base ? git(cwd, 'merge-base', 'HEAD', base).stdout.trim() : '';
 	const diff = mb ? git(cwd, 'diff', '--name-only', mb) : git(cwd, 'diff', '--name-only', 'HEAD');
 	// Repo-relative, as the diff is, whatever folder the run starts in.
@@ -158,15 +168,28 @@ function check(input) {
 			if (r.never) what = r.what;
 			else if (!r.files.length) what = `${r.what} with no test file runs the whole suite`;
 			else {
-				const named = r.files.map((f) => (f.startsWith('dir:') ? `${rel(r.from, f.slice(4))}/` : rel(r.from, f)));
-				const all = [...named, ...named.filter((f) => !f.endsWith('/')).flatMap(reaches)];
-				const out = all.filter((f) => (f.endsWith('/') ? ![...changed].some((c) => c.startsWith(f) && TEST_FILE.test(c)) : !changed.has(f)));
+				// A word that is a folder on disk stands for every test file under it, tracked or not.
+				const isDir = (f) => { try { return fs.statSync(path.resolve(r.from, f)).isDirectory(); } catch { return false; } };
+				const folderOut = (f) => {
+					// A folder outside the repo cannot be listed, and one holding the repo runs its sibling folders too: refuse every one.
+					const at = rel(r.from, f);
+					if (/^\.\.(\/|$)/.test(at) || path.isAbsolute(at)) return [`${posix(path.resolve(r.from, f)).replace(/\/$/, '')}/ (outside the repo)`];
+					const ls = git(root, 'ls-files', '--cached', '--others', '--exclude-standard', '--', at || '.');
+					if (ls.status !== 0) throw new Error('git ls-files failed');
+					const tests = ls.stdout.split('\n').map((x) => x.trim()).filter((x) => x && FOLDER_TEST.test(x));
+					const unchanged = tests.filter((x) => !changed.has(x));
+					return tests.length ? unchanged : [`${rel(r.from, f)}/`];
+				};
+				const plain = r.files.map((f) => (f.startsWith('dir:') ? f.slice(4) : f));
+				const named = plain.filter((f) => !isDir(f)).map((f) => rel(r.from, f));
+				const all = [...named, ...named.flatMap(reaches)];
+				const out = [...all.filter((f) => !changed.has(f)), ...plain.filter(isDir).flatMap(folderOut)];
 				if (out.length) what = `${r.what} reaches ${out.slice(0, 3).join(', ')}, which this branch did not change`;
 			}
 			if (what) {
 				const mine = [...changed].filter((f) => TEST_FILE.test(f)).slice(0, 3);
-				const hint = mine.length ? ` Run only the tests you changed (${mine.join(', ')}); CI runs the rest after you push.` : ' CI runs the suite after you push.';
-				return { kitWhat: `a local test run past the changed tests: ${what}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Owner's yes needed: a local test run past the changed tests (${what}).${hint}` } };
+				const hint = mine.length ? ` Run only the tests you changed (${mine.join(', ')}); CI runs the rest after you push` : ' CI runs the suite after you push';
+				return { kitWhat: `a local test run past the changed tests: ${what}.${hint}`, hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Owner's yes needed: a local test run past the changed tests (${what}).${hint}.` } };
 			}
 		}
 		return null;

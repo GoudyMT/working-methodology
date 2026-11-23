@@ -15,15 +15,28 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
 
 ## Units
 
-| Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Runs | Built by |
-|---|---|---|---|---|---|---|
-| U1 | | | | | parallel / alone / after Ux | builder / lead |
+| Id | Title | Files (exact; mark new files) | Tests to write first, and the failure each must show | Done when | Risk | Category | Tester | Runs | Built by |
+|---|---|---|---|---|---|---|---|---|---|
+| U1 | | | | | low / medium / high | guard / logic / glue / data / docs | | parallel / alone / after Ux | builder / lead |
 
+- **Category and Tests** set the unit's test budget. Print the computed category with the kit's test-budget.mjs
+  (`--files` with the unit's paths, `--risk` with its Risk, `--map` with the project's kit.config.json); the Category
+  cell may raise it, never lower it. Each Tests line reads `<what it checks> -> <spec line or rule id>`, the lines split
+  by `<br>`. plan-check refuses a unit whose test lines pass its category's ceiling: split the unit.
+- **Risk and Tester** set the tester's model. The first of six criteria that fires sets Sonnet; none keeps Haiku: R1 Risk is "high"; R2 a file is on the guard, hook or gate list (GUARD_PATHS in tester-model.mjs); R3 two or more other units run after this one; R4 the test review has a vague or uncovered line; R5 Tests to write first names no input and expected output (a "->" line); R6 Tester is "sonnet" or higher, written by the owner at approval. A blank Tester keeps Haiku. Print the model and the criterion that fired
+  with the kit's tester-model.mjs (its path is on the "Kit tools this session" start-up line), giving this plan and the unit.
 - **Runs:** "parallel" only when the unit shares no file, port, server or fixture with another parallel unit.
   `node .claude/plan-graph.mjs <this plan>` names every pair that may run at once and shares a file (files in
   backticks); ports, servers and fixtures are still checked by hand.
 - **Built by:** "lead" for a small or tightly coupled unit; a split costs more than it saves there.
 - **Done when** names the unit's size-budget share (below), or "no size budget touched".
+- **Guard units** (Category guard, or Risk high, or a GUARD_PATHS file) carry three fixed lines in the Tests cell, each at the
+  start of its line (the lines split by `<br>`) and each ending `-> <spec id>`. `bypass:` is a variant of the call (another
+  shell, a wrapper or a path spelling) that the guard must still refuse; `repeat:` is the guard run twice with the same
+  verdict; `fail-closed:` or `fail-open:` is a broken guard that blocks or lets the call through, and that line says
+  "logged". A `wiring:` line (the guard is registered where it must run) may sit beside them, never in place of one.
+  Example Tests cell: `| bypass: runs the guard through a wrapper and another shell -> <S1><br>repeat: runs the guard twice
+  with the same verdict -> <S1><br>fail-closed: a broken guard blocks the call and is logged -> <S1> |`
 
 ## Collision list (from a repo-wide search, never from memory)
 

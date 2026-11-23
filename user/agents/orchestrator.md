@@ -1,6 +1,6 @@
 ---
 name: orchestrator
-description: Leads ONE phase of ONE prong of an orchestrated agent-team build - plans its own team of builders (Sonnet), checkers (Opus) and scanners (Haiku), stops for the user's approval of that team plan, then runs the work through the team and reports evidence to the overseer. Use only when the overseer (the main session) hands over a complete orchestrator brief.
+description: Leads ONE phase of ONE prong of an orchestrated agent-team build - plans its own team of builders, checkers and scanners (each on the model the step table in kit.config.json names), stops for the user's approval of that team plan, then runs the work through the team and reports evidence to the overseer. Use only when the overseer (the main session) hands over a complete orchestrator brief.
 model: claude-opus-5-5
 effort: high
 omitClaudeMd: true
@@ -79,9 +79,9 @@ in.
   costs five times input. One measured practice run of moving a planning lead's reading to scanners did not pay (a
   single run, so re-measure before treating it as settled): the lead still verified every item itself, and the scan
   reports grew its context.
-- **Sonnet, the `builder` role (its own worktree, test-first, local commits).** Strong at code from a COMPLETE
+- **The `builder` role (its own worktree, test-first, local commits; on the model the step table in `kit.config.json` names: Haiku, one step up on a red rerun).** Strong at code from a COMPLETE
   brief. Most agent errors in past runs came from the brief (a collision list from memory, an unnamed base commit,
-  a rule left out), not the agent. Checked units have rarely passed on the first try (3 of 13, 3 of 10, 1 of 2,
+  a rule left out), not the agent. Checked units have rarely passed on the first try (measured on Sonnet runs: 3 of 13, 3 of 10, 1 of 2,
   0 of 4, 2 of 6 across past runs), so plan for FIX rounds. Never give it a design choice, copy, a cross-file
   architecture call, or a unit whose brief you could not finish.
 - **Opus, the `checker` role, and you.** Judgment: plans, reviews, adjudicating findings on evidence (never by

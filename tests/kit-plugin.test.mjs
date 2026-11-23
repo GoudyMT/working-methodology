@@ -165,7 +165,7 @@ const gitRepo = () => {
   return dir;
 };
 
-// why: catches a plugin build that differs between two runs on the same release, so no pinned build can be checked
+// why: guards rule:kit-standards (a plugin build differs between two runs on one release)
 test('build plugin writes the plugin layout, the same bytes on every run (K174)', () => {
   const root = plugin();
   const again = path.join(makeTemp('plugin-out-'), 'kit-plugin');
@@ -181,7 +181,6 @@ test('build plugin writes the plugin layout, the same bytes on every run (K174)'
   // Plugin agents' own hooks are ignored, so they move into roles.json, and the role file keeps the table's lines.
   const builder = fs.readFileSync(path.join(root, 'agents/builder.md'), 'utf8');
   assert.doesNotMatch(builder, /^hooks:/m);
-  assert.match(builder, /^model: claude-sonnet-5-5\neffort: high$/m);
   assert.doesNotMatch(fs.readFileSync(path.join(root, 'skills/agent-team-build/SKILL.md'), 'utf8'), /\{\{CLAUDE_HOME\}\}/);
   const roles = JSON.parse(fs.readFileSync(path.join(root, 'roles.json'), 'utf8'));
   assert.deepEqual(roles.builder, { PreToolUse: [['SubagentHandback', 'canary.cjs'], ['Edit|Write|NotebookEdit', 'edit-fence.cjs']], Stop: ['canary.cjs'] });
@@ -195,6 +194,15 @@ test('build plugin writes the plugin layout, the same bytes on every run (K174)'
   const stamp = JSON.parse(fs.readFileSync(path.join(root, 'kit-install.json'), 'utf8'));
   assert.equal(stamp.files['kit-hooks/call-cap.cjs'], man['kit-hooks/call-cap.cjs']);
   assert.equal(stamp.kitDir, undefined, 'no machine path: the start-up hook finds the kit at the plugin root (K175)');
+});
+
+// why: guards rule:agent-role-table (the plugin builder role file keeps the model and effort the builder step names)
+test('the plugin builder role file keeps the model and effort of the builder step', () => {
+  const builder = fs.readFileSync(path.join(plugin(), 'agents/builder.md'), 'utf8');
+  const steps = JSON.parse(fs.readFileSync(path.resolve('kit.config.json'), 'utf8')).steps || {};
+  const want = steps.builder || {};
+  assert.match(builder, new RegExp(`^model: ${want.model}$`, 'm'));
+  assert.match(builder, new RegExp(`^effort: ${want.effort}$`, 'm'));
 });
 
 // K216 (weekly 1120 item 1): a hook that cannot start applies a settings change, and a PreToolUse one lets the call

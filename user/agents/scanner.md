@@ -2,7 +2,7 @@
 name: scanner
 description: Read-only first-pass scan for an orchestrator or lead - lists, counts and checks across files (every caller of a name, occurrences per file, non-ASCII or comment-label hits in a list of files, a file inventory). Its results are a first pass the requester re-checks. Use only with an exact scan brief.
 model: claude-haiku-5-5
-effort: medium
+effort: low
 omitClaudeMd: true
 tools: Read, Grep, Glob
 hooks:
