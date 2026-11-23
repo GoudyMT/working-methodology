@@ -478,8 +478,8 @@ test('a claim with angle brackets inside its text is not an unfilled placeholder
 	assert.equal(r.ok, true, JSON.stringify(r.errors));
 });
 
-// K301 (build 25): the log-only gate on SubagentHandback. It writes one line when a RECORD: block fails the check, and
-// never refuses or throws, so a hand-back always reaches the lead.
+// K301 (build 25), enforced since the owner's yes of 2026-11-23: the gate on SubagentHandback writes one line when a
+// RECORD: block fails the check and, with its hold on enforce, refuses that hand-back with a deny naming the fault.
 const GATE = path.resolve('user/kit-hooks/handoff-gate.cjs');
 const gateRepo = () => {
 	const repo = kitTemp.makeTemp('handoff-gate-');
@@ -492,13 +492,17 @@ const gateLog = (repo) => {
 	return fs.existsSync(f) ? fs.readFileSync(f, 'utf8').trim().split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
 };
 
-// why: catches a broken RECORD block passing the gate with no line in kit-guard-open.log to show why
-test('a hand-back whose RECORD block fails the check is logged with its errors, and never refused', () => {
+// why: catches a broken RECORD block reaching the lead with no deny and no line in kit-guard-open.log to show why
+// renamed from: a hand-back whose RECORD block fails the check is logged with its errors, and never refused
+test('a hand-back whose RECORD block fails the check is refused and logged with its errors', () => {
 	const repo = gateRepo();
 	const broken = record(JSON.stringify({ role: 'builder', commit: 'abc1234' }), finding('F1', { proof: '' }));
 	const r = runGate(repo, broken);
 	assert.equal(r.status, 0, r.stderr);
-	assert.equal(r.stdout.trim(), '', 'the gate printed a decision; it must only log');
+	let out = null;
+	assert.doesNotThrow(() => { out = JSON.parse(r.stdout); }, `the gate prints a deny: ${r.stdout}`);
+	assert.equal(out.hookSpecificOutput.permissionDecision, 'deny');
+	assert.ok(out.hookSpecificOutput.permissionDecisionReason.includes('empty `proof`'), out.hookSpecificOutput.permissionDecisionReason);
 	const rows = gateLog(repo);
 	assert.equal(rows.length, 1);
 	assert.equal(rows[0].hook, 'handoff-gate');
