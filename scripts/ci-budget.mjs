@@ -1,6 +1,6 @@
 // scripts/ci-budget.mjs enforces the merge-path time budget in the required check (CI-C).
-//   node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>]
-// --jobs is GitHub's run-jobs answer as one {jobs:[...]} object (gh api --paginate, pages merged). Every job in it is
+//   node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...
+// --skip leaves out a job by name and its matrix legs, and names each one on a skipped line. --jobs is GitHub's run-jobs answer as one {jobs:[...]} object (gh api --paginate, pages merged). Every job in it is
 // measured except --self, so the list comes from the run and not from a fixed list. A job's time is completed_at minus
 // started_at; queue wait is not counted. --timings is optional JSON {"<job name>": {"<file::name>": ms}}: a failing job
 // is named with its 5 slowest tests from it. Exit 0 pass, 1 a failing job (named on stderr), 2 an unreadable --jobs or
@@ -11,20 +11,21 @@ import { spawnSync } from 'node:child_process';
 
 const DEFAULT_LIMIT = 180;
 const SLOWEST_NAMED = 5;
-const FLAGS = ['--jobs', '--timings', '--limit', '--self'];
-const USAGE = 'usage: node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>]';
+const FLAGS = ['--jobs', '--timings', '--limit', '--self', '--skip'];
+const USAGE = 'usage: node scripts/ci-budget.mjs --jobs <file> [--timings <file>] [--limit <s>] [--self <job name>] [--skip <job name>]...';
 
 class Usage extends Error {}
 class Unreadable extends Error {}
 
 // Every flag takes exactly one value; a flag with no value, or one that is another flag, is refused.
 function parseArgs(args) {
-	const opts = {};
+	const opts = { skip: [] };
 	for (let i = 0; i < args.length; i += 2) {
 		const flag = args[i];
 		const value = args[i + 1];
 		if (!FLAGS.includes(flag) || value === undefined || value === '' || value.startsWith('--')) throw new Usage(USAGE);
-		opts[flag.slice(2)] = value;
+		if (flag === '--skip') opts.skip.push(value);
+		else opts[flag.slice(2)] = value;
 	}
 	if (opts.jobs === undefined) throw new Usage(USAGE);
 	if (opts.limit !== undefined && !/^\d+$/.test(opts.limit)) throw new Usage(`--limit takes a whole number of seconds, got ${opts.limit}`);
@@ -72,8 +73,10 @@ function loadTimings(file) {
 }
 
 // A job's verdict: null for --self, a skip line, a failure reason, or its measured time.
-function judge(job, self, limitMs) {
-	if (job.name === self) return null;
+function judge(job, opts, limitMs) {
+	if (job.name === opts.self) return null;
+	// --skip names a job and its matrix legs ("<name> (n)"); they are named as skipped in whatever state they are in.
+	if (opts.skip.some((s) => job.name === s || job.name.startsWith(`${s} (`))) return { name: job.name, skipped: true };
 	if (job.conclusion === 'skipped') return { name: job.name, skipped: true };
 	if (job.status !== 'completed') return { name: job.name, reason: `not completed (${job.status})` };
 	if (job.conclusion !== 'success') return { name: job.name, reason: job.conclusion ?? 'no conclusion' };
@@ -101,7 +104,7 @@ function check(opts) {
 	const limit = Number(opts.limit ?? DEFAULT_LIMIT);
 	const jobs = loadJobs(opts.jobs);
 	const timings = opts.timings === undefined ? null : loadTimings(opts.timings);
-	const verdicts = jobs.map((job) => judge(job, opts.self, limit * 1000)).filter(Boolean).sort(byName);
+	const verdicts = jobs.map((job) => judge(job, opts, limit * 1000)).filter(Boolean).sort(byName);
 	const out = [`ci budget: ${verdicts.length} jobs measured, limit ${limit} s per job`];
 	const err = [];
 	let failed = false;
