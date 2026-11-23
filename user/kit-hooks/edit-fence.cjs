@@ -58,6 +58,10 @@ function whyRefusal(tool, input, rel, abs, root) {
 	const oldTests = tests(old);
 	const nextTests = tests(next);
 	const faults = [];
+	// U21 C3: a name that newly repeats is refused outright, whatever its why, since the check reads only the last test of a name.
+	for (const name of nextTests.twice) {
+		if (!oldTests.twice.has(name)) faults.push(`test "${name}": two tests in this file share the name: the check reads only the last, so give each its own`);
+	}
 	for (const [name, body] of nextTests) {
 		// Judged: a new name, a name that newly repeats, and a test whose old why passed and whose new one does not. A legacy
 		// test that never had a passing why stays editable.
@@ -67,7 +71,7 @@ function whyRefusal(tool, input, rel, abs, root) {
 		const fault = whyFault(body);
 		if (fault) faults.push(`test "${name}": ${fault}`);
 	}
-	return faults.length ? `Blocked: ${rel} has a test without a usable why line. ${faults.join('; ')}. Put a why line above each new or changed test( and report it if you cannot.` : null;
+	return faults.length ? `Blocked: ${rel} cannot be saved as written. ${faults.join('; ')}. Give each test its own name and a usable why line above it, or report it if you cannot.` : null;
 }
 
 function main() {
