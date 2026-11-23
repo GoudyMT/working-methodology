@@ -334,10 +334,10 @@ function gateFixture(files) {
 
 // why: catches a commit adding a test in a non-ASCII file name that the record does not list passing the gate (K368 S2)
 test('a commit adding a test in a non-ASCII file name that the record does not list is denied', () => {
-	const { send } = gateFixture({ 'tests/café.test.mjs': testWith(GOOD_WHY, 'the new one') });
+	const { send } = gateFixture({ 'tests/caf\u00e9.test.mjs': testWith(GOOD_WHY, 'the new one') });
 	const empty = send({ tests: [] });
-	assert.ok(empty, 'an unlisted test in tests/café.test.mjs is denied under enforce');
-	assert.ok(empty.includes('café.test.mjs::the new one'), 'the refusal names the file::name: ' + empty);
+	assert.ok(empty, 'an unlisted test in tests/caf\u00e9.test.mjs is denied under enforce');
+	assert.ok(empty.includes('caf\u00e9.test.mjs::the new one'), 'the refusal names the file::name: ' + empty);
 	const listed = send({ tests: [{ name: 'the new one', why: GOOD_WHY }] });
 	assert.equal(listed, null, 'listing it with a good why passes: ' + listed);
 });

@@ -61,7 +61,7 @@ function shapeOf(templateFile) {
 	}
 }
 
-// why: catches each template has a plan job, a sized fast matrix and a budget step in ci, and ci-shape shows 0 gaps (CI-D S1)
+// why: doc claim: each project CI template has a plan job, a sized fast matrix and a budget step, and ci-shape shows 0 gaps (CI-D S1)
 test('each template has a plan job, a sized fast matrix and a budget step in ci, and ci-shape shows 0 gaps', () => {
 	for (const { name, file } of TEMPLATES) {
 		const lines = codeLines(file);

@@ -34,7 +34,7 @@ function verdict(ceilingLine, calls, cwd) {
 	return r.stdout ? JSON.parse(r.stdout).hookSpecificOutput : { permissionDecision: 'allow' };
 }
 
-// why: catches ceiling $1.44, four cheap calls then one $0.14 call: the next tool is allowed, not refused with "Dollar ceiling reached ($0.28 of $1.44)" (K357 S1)
+// why: guards rule:swarm-contract (a reviewer keeps the budget its contract set: ceiling $1.44, four cheap calls then one $0.14 call, the next tool is allowed) (K357 S1)
 test('ceiling $1.44, four cheap calls then one $0.14 call: the next tool is allowed, not refused with "Dollar ceiling reached ($0.28 of $1.44)"', () => {
 	const v = verdict('Dollar ceiling: $1.44', [...CHEAP, DEAR]);
 	assert.equal(v.permissionDecision, 'allow', v.permissionDecisionReason);

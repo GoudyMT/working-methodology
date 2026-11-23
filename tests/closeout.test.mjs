@@ -365,7 +365,7 @@ test('M5: a record with its sweep removed after the closeout commit fails the ch
 
 // why: catches M6 a new test file with a non-ASCII name read as a quoted path and so left uncounted after closeout
 test('M6: a new test file with a non-ASCII name after the closeout commit needs a ticket', () => {
-	const name = 'tests/café.test.mjs';
+	const name = 'tests/caf\u00e9.test.mjs';
 	const fresh = check(mk({ after: (root) => { write(root, name, testFile(['in an accented file'])); commit(root, 'accented file'); } }));
 	assert.equal(fresh.status, 1, `the accented file's test needs a ticket: ${fresh.stderr}`);
 	assert.ok(fresh.stderr.includes(`${name}::in an accented file`), fresh.stderr);

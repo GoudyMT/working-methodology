@@ -325,7 +325,7 @@ test('M3 a Role line that names the checker as a word counts as a checker', () =
 	}
 });
 
-// why: catches M4 a hold-mode.cjs that throws leaving the round-cap hold open for a checker
+// why: guards the owner's pick (2026-11-23) that the high-tier holds fail closed: a hold-mode.cjs that throws leaves no round-cap hold open for a checker (M4)
 test('M4 a hold-mode.cjs that throws makes round-cap refuse', () => {
 	const hookDir = kitTemp.makeTemp('round-cap-hooks-');
 	fs.cpSync(HOOK_DIR, hookDir, { recursive: true });

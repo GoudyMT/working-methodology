@@ -63,7 +63,7 @@ test('lanes job runs ci-size.mjs and exposes the matrices as outputs', () => {
 	}
 });
 
-// why: catches unit-tests and test-check read their matrix from needs.lanes.outputs, with no new step before the judges (CI-A S2)
+// why: doc claim: ci.yml has unit-tests and test-check read their matrix from needs.lanes.outputs, with no new step before the judges (CI-A S2)
 test('unit-tests and test-check read their matrix from needs.lanes.outputs, with no new step before the judges', () => {
 	const J = jobs(CI);
 	const WANT = [['checkout', 'setup-node', 'git identity'], ['checkout', 'setup-node', 'git identity', 'base unpack']];
@@ -144,7 +144,7 @@ test('main push builds the map in slices and a map-merge job uploads tests/.map.
 	assert.equal(uploads[0], upload, 'the one test-map upload is not the map-merge job\'s');
 });
 
-// why: catches a fixed-name job "test-check (all)" needs the sized test-check matrix and fails unless every slice passed, so the required check reports for any slice count (CI-A S4)
+// why: doc claim: ci.yml has a fixed-name job "test-check (all)" that needs the sized test-check matrix and fails unless every slice passed (CI-A S4)
 test('a fixed-name job "test-check (all)" needs the sized test-check matrix and fails unless every slice passed, so the required check reports for any slice count', () => {
 	const all = jobs(CI)['test-check-all'] || '';
 	assert.match(all, /^    name: ["']?test-check \(all\)["']?$/m, 'the job test-check-all is not named test-check (all)');

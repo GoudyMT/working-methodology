@@ -21,7 +21,7 @@ const PLAN = () => read('templates', 'batch-plan.md');
 const SKILL = () => read('SKILL.md');
 const either = (a, b, gap) => new RegExp(`(?:${a})[\\s\\S]{0,${gap}}(?:${b})|(?:${b})[\\s\\S]{0,${gap}}(?:${a})`, 'i');
 
-// why: catches a tester brief that locks its files after the unit, or a builder brief that names no test files or recommends --pick (K360 S1)
+// why: doc claim: the tester brief template locks its files first, and the builder brief template names exact test files and never --pick (K360 S1)
 test('the tester brief locks first, and the builder brief names exact test files and never --pick', () => {
 	const t = TESTER();
 	assert.ok(fs.existsSync(path.join(DIR, 'templates', 'tester-brief.md')), 'templates/tester-brief.md exists');
@@ -84,7 +84,7 @@ test('the skill review step carries the closeout card and the may-or-may-not tab
 	assert.match(s, either('only goes down|never grows|never goes up|can only fall|only falls', 'one test per ticket', 120), 'the test count only goes down, except one test per ticket');
 });
 
-// why: catches a skill missing isolated worktrees, lane-sha reset, lock after spawn, wip commit, reviewer caps, scale log and date -u (K364 S6)
+// why: doc claim: the skill names isolated worktrees, the lane-sha reset, the lock after spawn, the wip commit, the caps, the scale log and date -u (K364 S6)
 test('the skill carries isolated worktrees, the lock after spawn, the wip commit, the 3 and 2 caps and date -u', () => {
 	const s = SKILL();
 	assert.match(s, either('isolat\\w*[\\s\\S]{0,80}worktree', 'testers?|builders?', 120), 'testers and builders run isolated in worktrees');
