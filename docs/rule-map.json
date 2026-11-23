@@ -15,6 +15,7 @@
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
    "tests": [
+    "tests/call-cap-reserve.test.mjs",
     "tests/kit-install.test.mjs"
    ],
    "workflows": []
@@ -682,6 +683,7 @@
     "user/skills/pre-pr-sweep/approve.mjs"
    ],
    "tests": [
+    "tests/approve-worktree.test.mjs",
     "tests/guard-dispatch.test.mjs",
     "tests/kit-helpers.mjs",
     "tests/kit-hooks.test.mjs",
@@ -797,7 +799,8 @@
     "scripts/test-value.mjs"
    ],
    "tests": [
-    "tests/lane-state.test.mjs"
+    "tests/lane-state.test.mjs",
+    "tests/project-ci-shape.test.mjs"
    ],
    "workflows": []
   },
