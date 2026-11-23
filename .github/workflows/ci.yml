@@ -427,7 +427,7 @@ jobs:
             base=()
             if [ "$EVENT" = "pull_request" ]; then base=(--base "$BASE_SHA"); fi
             rm -f "$OUT"
-            [ -f "$S/scripts/ci-size.mjs" ] && node "$S/scripts/ci-size.mjs" --map tests/.map.json "${base[@]}" --github-output "$OUT" || { echo "the base's ci-size could not size this run: four of each"; fixed; }
+            if [ -f "$S/scripts/ci-size.mjs" ] && node "$S/scripts/ci-size.mjs" --map tests/.map.json "${base[@]}" --github-output "$OUT"; then :; else echo "the base's ci-size could not size this run: four of each"; fixed; fi
           else
             fixed
           fi
