@@ -45,7 +45,8 @@ function run(jobs, { timings, args = [], raw } = {}) {
 	const r = spawnSync(process.execPath, [...argv, ...args], { cwd: dir, encoding: 'utf8' });
 	const logFile = path.join(dir, '.git', 'kit-guard-open.log');
 	const log = fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8').trim().split('\n').filter(Boolean) : [];
-	return { ...r, dir, log };
+	kitTemp.removeTemp(dir); // the run's temp growth check counts a folder left behind
+	return { ...r, log };
 }
 
 // why: catches a merge-path job at 181 s fails naming the job and its 5 slowest tests (CI-C S1)

@@ -144,10 +144,10 @@ test('a ticketed test passes, and a second test on the same ticket fails', () =>
 	const overlisted = check(mk({ closeout: closeoutOf([finding('F1', 'high'), finding('F3', 'low')], ['F1', 'F3']) }));
 	assert.equal(overlisted.status, 1);
 	assert.match(overlisted.stderr, /F3/);
-	// ticket checks read the record's items rows: a sweep.fixes row naming the test is no ticket for it
-	const wrongArray = check(mk({ after: addTests('new one'), mutate: (rec) => { rec.sweep.fixes[0].test = 'tests/a.test.mjs::new one'; } }));
-	assert.equal(wrongArray.status, 1);
-	assert.ok(wrongArray.stderr.includes('tests/a.test.mjs::new one'), wrongArray.stderr);
+	// a sweep.fixes row naming the test is its ticket too: the test check (A7) wants a test written after the sweep named
+	// there, not in an item
+	const fixRow = check(mk({ after: addTests('new one'), mutate: (rec) => { rec.sweep.fixes[0].test = 'tests/a.test.mjs::new one'; } }));
+	assert.equal(fixRow.status, 0, fixRow.stderr);
 	// a fix row naming a finding the closeout file does not list is a fault naming that finding
 	const ghost = check(mk({ after: addTests('ghost'), rows: [row('F9', ['tests/a.test.mjs::ghost'])] }));
 	assert.equal(ghost.status, 1);
