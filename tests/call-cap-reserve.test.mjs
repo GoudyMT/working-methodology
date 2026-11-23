@@ -25,8 +25,8 @@ function verdict(ceilingLine, calls, cwd) {
 	fs.mkdirSync(path.join(session, 'subagents'), { recursive: true });
 	const lines = [{ message: { role: 'user', content: brief(ceilingLine) } }];
 	calls.forEach((c, i) => {
-		const { output, model } = typeof c === 'number' ? { output: c, model: 'claude-sonnet-5-5' } : c;
-		lines.push({ message: { role: 'assistant', id: `m${i}`, model, usage: { input_tokens: 0, cache_read_input_tokens: 0, cache_creation_input_tokens: 0, output_tokens: output } } });
+		const { output, model, reread = 0 } = typeof c === 'number' ? { output: c, model: 'claude-sonnet-5-5' } : c;
+		lines.push({ message: { role: 'assistant', id: `m${i}`, model, usage: { input_tokens: 0, cache_read_input_tokens: reread,cache_creation_input_tokens: 0, output_tokens: output } } });
 	});
 	fs.writeFileSync(path.join(session, 'subagents', 'agent-r1.jsonl'), lines.map((l) => JSON.stringify(l)).join('\n') + '\n');
 	const r = runHook('user/kit-hooks/call-cap.cjs', { hook_event_name: 'PreToolUse', transcript_path: `${session}.jsonl`, agent_id: 'r1', agent_type: 'reviewer', ...(cwd ? { cwd } : {}), tool_name: 'Read', tool_input: { file_path: 'x', limit: 5 } });
@@ -55,6 +55,19 @@ test('a reviewer whose spend plus twice its dearest call plus the report reaches
 	assert.equal(above.permissionDecision, 'allow', above.permissionDecisionReason);
 	const room = verdict('Dollar ceiling: $0.62', [...CHEAP, DEAR]);
 	assert.equal(room.permissionDecision, 'allow', room.permissionDecisionReason);
+	// M8: the reserve also holds the report call's input: the last call's context (here 2,000,000 cache-read tokens)
+	// re-read at its model's cache-read price. The edge moves up by that amount, pinned both sides.
+	const REREAD = 2000000;
+	const calls = [...CHEAP, { output: DEAR, model: 'claude-sonnet-5-5', reread: REREAD }];
+	const spend2 = [...CHEAP.map((o) => dollars({ output_tokens: o }, 'claude-sonnet-5-5')), dollars({ output_tokens: DEAR, cache_read_input_tokens: REREAD }, 'claude-sonnet-5-5')];
+	const reread = dollars({ cache_read_input_tokens: REREAD }, 'claude-sonnet-5-5');
+	const edge2 = spend2.reduce((t, x) => t + x, 0) + (2 * Math.max(...spend2) + reportDollars('claude-sonnet-5-5') + reread);
+	const atReread = verdict(`Dollar ceiling: $${edge2}`, calls);
+	assert.equal(atReread.permissionDecision, 'deny', 'a ceiling equal to spend plus reserve with the report call input');
+	const justBelow = verdict(`Dollar ceiling: $${edge2 - 1e-9}`, calls);
+	assert.equal(justBelow.permissionDecision, 'deny', 'just below the new edge');
+	const aboveReread = verdict(`Dollar ceiling: $${edge2 + 1e-9}`, calls);
+	assert.equal(aboveReread.permissionDecision, 'allow', aboveReread.permissionDecisionReason);
 });
 
 // why: catches the dear call placed first, in the middle or last gives the same verdict, since the reserve reads the dearest call (K357 S1)
