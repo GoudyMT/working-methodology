@@ -102,7 +102,7 @@ test('a fresh tester spawn is held while a tester of that lane is open and under
 	const dir = repo();
 	const [held, otherLane, noLane, builder] = checkInputs(dir, s, [spawn('tester', 'A'), spawn('tester', 'B'), spawn('tester', null), spawn('builder', 'A')]);
 	assert.ok(denied(held), `the fresh tester is held, got ${JSON.stringify(held)}`);
-	assert.match(reason(held), /a tester of lane A is open \(agent a1, 50000 tokens, under 150000\): continue it with SendMessage/);
+	assert.match(reason(held), /a tester of lane A is open \(agent a1, 50000 tokens, under 150000\): continue it with SendMessage/); // pin: 1 (the lead acts on this hold)
 	assert.equal(otherLane, null, 'another lane is not held');
 	assert.equal(noLane, null, 'a spawn with no Lane line is not held');
 	assert.equal(builder, null, 'a builder is not held by an open tester');
@@ -138,7 +138,7 @@ test('a SendMessage to an agent over the limit is held and says reset', () => {
 	const dir = repo();
 	const [over, under] = checkInputs(dir, s, [message('a2'), message('a1')]);
 	assert.ok(denied(over), `the message to the agent over the limit is held, got ${JSON.stringify(over)}`);
-	assert.match(reason(over), /agent a2 is at 200000 tokens, over 150000: reset it \(spawn a fresh one and log the reset with warm\.mjs reset\)/);
+	assert.match(reason(over), /agent a2 is at 200000 tokens, over 150000: reset it \(spawn a fresh one and log the reset with warm\.mjs reset\)/); // pin: 1 (the lead acts on this hold)
 	assert.equal(under, null, 'a message to an agent under the limit goes through');
 	const edge = session();
 	agent(edge, 'e2', { role: 'tester', lane: 'E', tokens: LIMIT });

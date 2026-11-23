@@ -85,7 +85,7 @@ test('a why that is a bare spec id ("S1: ...") is refused the same way', () => {
 	assert.ok(bad.err.includes(BAD_SHAPE), 'stderr quotes whyFault: ' + bad.err);
 	const short = fence(dir, 'Write', { file_path: target(dir), content: testWith('// why: catches a short one', 'adds two numbers') });
 	assert.equal(short.code, 2, 'a catches why under six words is refused: ' + short.err);
-	assert.ok(short.err.includes('too short to name the failure it catches'), 'stderr quotes the too-short reason: ' + short.err);
+	assert.ok(short.err.includes('too short to name the failure it catches'), 'stderr quotes the too-short reason: ' + short.err); // pin: 1 (the writer acts on this refusal)
 });
 
 // why: catches H4 why-less tests written indented, with a variable name, through an alias or in a forEach saving unrefused

@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import kitTemp from '../project/.claude/kit-temp.cjs';
 
 const SCRIPT = path.resolve('scripts/ci-budget.mjs');
 const T0 = Date.parse('2026-01-01T00:00:00Z');
@@ -25,7 +26,7 @@ const job = (name, ran, { wait = 5, conclusion = 'success', queued = 0 } = {}) =
 });
 
 function repo() {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-budget-'));
+	const dir = kitTemp.makeTemp('ci-budget-');
 	spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
 	return dir;
 }

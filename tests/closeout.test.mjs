@@ -372,7 +372,7 @@ test('M6: a new test file with a non-ASCII name after the closeout commit needs 
 	// control: the same test in an ASCII-named file is counted the same way
 	const plain = check(mk({ after: (root) => { write(root, 'tests/cafe.test.mjs', testFile(['in an accented file'])); commit(root, 'plain file'); } }));
 	assert.equal(plain.status, 1);
-	assert.ok(plain.stderr.includes('tests/cafe.test.mjs::in an accented file'), plain.stderr);
+	assert.ok(plain.stderr.includes('tests/cafe.test.mjs::in an accented file'), plain.stderr); // pin: 1 (CI reads the file::name key)
 });
 
 // why: catches defer appends one JSON line to the next-patch file and prints "written, carry on" (K369 S8)
@@ -447,7 +447,7 @@ test('an unreadable closeout file or a shallow clone fails, logged', () => {
 	const noBase = mk();
 	const lost = check(noBase, { PR_BASE: 'origin/nope' });
 	assert.equal(lost.status, 1);
-	assert.match(lost.stderr, /PR_BASE origin\/nope is no commit here/);
+	assert.match(lost.stderr, /PR_BASE origin\/nope is no commit here/); // pin: 1 (the lead acts on this stop)
 	assert.equal(logLines(noBase).length, 1);
 	// build-record runs closeout on check only: its changelog command writes no closeout log row
 	const unclosed = mk({ closeout: null });

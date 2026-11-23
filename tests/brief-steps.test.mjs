@@ -55,7 +55,7 @@ test('the skill names the reset limit and the 2-check-round cap with their enfor
 	assert.match(s, /agent-model hook[^.]{0,80}\bholds?\b|\bholds?\b[^.]{0,80}agent-model hook/i, 'the agent-model hook is named as the holder of the spawn');
 	assert.doesNotMatch(s, /`?warm\.mjs`?\s+holds/i, 'warm.mjs is not the holder: the agent-model hook is');
 	assert.match(s, /agent-model hook\s+holds[^.]*\b(?:under|below)\b[^.]*150000/i, 'the agent-model hook holds a fresh spawn while an open agent is under 150000');
-	assert.match(s, /agent-model hook\s+holds[^.]*SendMessage[^.]*\b(?:at or over|over)\s+150000|\b(?:at or over|over)\s+150000[^.]*agent-model hook\s+holds[^.]*SendMessage/i, 'the agent-model hook holds the SendMessage at or over 150000, so the lead spawns fresh');
+	assert.match(s, /agent-model hook\s+holds[^.]*SendMessage[^.]*\b(?:at or over|over)\s+150000|\b(?:at or over|over)\s+150000[^.]*agent-model hook\s+holds[^.]*SendMessage/i, 'the agent-model hook holds the SendMessage at or over 150000, so the lead spawns fresh'); // pin: 3 (the skill must say what the hook does)
 	const cap = '(?:at most|no more than)\\s+(?:2|two)\\s+check\\s+rounds?';
 	assert.match(s, new RegExp(cap, 'i'), 'states "at most 2 check rounds"');
 	assert.match(s, either(cap, 'agent-model|round-cap', 200), 'the round cap names its enforcer (agent-model or round-cap)');
@@ -64,7 +64,7 @@ test('the skill names the reset limit and the 2-check-round cap with their enfor
 // why: catches missing lane cap, plan-check --brief, base re-check, and tester-brief stop-and-ask, plain commands, scratch rules (K363 S4)
 test('the skill carries the lane cap, briefs from plan-check, and a base re-check; the tester brief carries stop-and-ask, plain commands and scratch', () => {
 	const s = SKILL();
-	assert.match(s, /at most 4 lanes|4 lanes (building )?at once|no more than 4 lanes/i, 'at most 4 lanes at once');
+	assert.match(s, /at most 4 lanes|4 lanes (building )?at once|no more than 4 lanes/i, 'at most 4 lanes at once'); // pin: 4 (the lane cap is the owner's)
 	assert.match(s, either('plan-check(?:\\.mjs)?', '--brief', 80), 'briefs come from plan-check --brief');
 	assert.match(s, either('re-?run[\\s\\S]{0,120}claims[\\s\\S]{0,80}collision', 'base[\\s\\S]{0,30}(?:moves|moved|changes)', 200), 'a re-run of the Claims and Collision greps whenever the base moves');
 	const t = TESTER();
@@ -89,7 +89,7 @@ test('the skill carries isolated worktrees, the lock after spawn, the wip commit
 	const s = SKILL();
 	assert.match(s, either('isolat\\w*[\\s\\S]{0,80}worktree', 'testers?|builders?', 120), 'testers and builders run isolated in worktrees');
 	assert.match(s, /lane sha/i, 'reset to the lane sha first');
-	assert.match(s, /right after (the )?spawn|immediately after (the )?spawn/i, 'the lock is written right after spawn');
+	assert.match(s, /right after (the )?spawn|immediately after (the )?spawn/i, 'the lock is written right after spawn'); // pin: 4 (the lock after spawn is the owner's)
 	assert.match(s, /subshell|lock[\s\S]{0,60}agent'?s worktree/i, 'the lock is written into the agent worktree from a subshell');
 	assert.match(s, /wip commit|commit[^\n]{0,20}\bwip\b/i, 'a wip commit before an agent stops to ask');
 	assert.match(s, /3 test reviewers and 2 checkers/, 'the cap sentence reads "3 test reviewers and 2 checkers"');

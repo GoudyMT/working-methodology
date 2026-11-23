@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import kitTemp from '../project/.claude/kit-temp.cjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TEMPLATES = ['ci-node.yml', 'ci-python.yml'].map((f) => ({ name: f, file: path.join(REPO, 'project', '_Templates', f) }));
@@ -50,7 +51,7 @@ function budgetStep(lines) {
 
 // Runs the report from a temp project that holds the template as its one workflow.
 function shapeOf(templateFile) {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-shape-'));
+	const dir = kitTemp.makeTemp('ci-shape-');
 	try {
 		fs.mkdirSync(path.join(dir, '.github', 'workflows'), { recursive: true });
 		fs.copyFileSync(templateFile, path.join(dir, '.github', 'workflows', 'ci.yml'));
@@ -99,7 +100,7 @@ test('each template has a plan job, a sized fast matrix and a budget step in ci,
 
 // why: catches lane-state with no budget set judges against 3 minutes (CI-D S2)
 test('lane-state with no budget set judges against 3 minutes', () => {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'lane-state-'));
+	const dir = kitTemp.makeTemp('lane-state-');
 	try {
 		const runs = path.join(dir, 'runs.json');
 		fs.writeFileSync(runs, JSON.stringify([{ minutes: 4 }, { minutes: 4 }, { minutes: 4 }]));

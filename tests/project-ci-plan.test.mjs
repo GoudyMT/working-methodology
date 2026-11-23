@@ -7,6 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import kitTemp from '../project/.claude/kit-temp.cjs';
 
 const REPO = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SCRIPT = path.join(REPO, 'project', '.claude', 'ci-plan.mjs');
@@ -26,7 +27,7 @@ function jsonReport(files) {
 
 // A temp project folder for one test, removed after it.
 function projectFolder(fn) {
-	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-plan-'));
+	const dir = kitTemp.makeTemp('ci-plan-');
 	try {
 		return fn(dir);
 	} finally {

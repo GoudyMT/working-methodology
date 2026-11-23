@@ -106,7 +106,7 @@ test('plan-check --brief U1 --role tester writes the tester brief from the row: 
 		assert.ok(res.stdout.includes(`// why: catches ${name} (K368 S1)`), `the brief holds its why line: ${name}\n${res.stdout}`);
 	}
 	// The lock line ends at its last test file: no src path after it, and no other file.
-	assert.match(res.stdout, /node \S*unit-lock\.mjs --tester --files tests\/a\.test\.mjs,tests\/b\.test\.mjs$/m, `the brief holds the tester lock command:\n${res.stdout}`);
+	assert.match(res.stdout, /node \S*unit-lock\.mjs --tester --files tests\/a\.test\.mjs,tests\/b\.test\.mjs$/m, `the brief holds the tester lock command:\n${res.stdout}`); // pin: 1 (the lead runs this command)
 	// An unknown unit and an unknown role each exit 1 and name what is unknown.
 	const noUnit = run(plan, '--brief', 'U9', '--role', 'tester');
 	assert.equal(noUnit.status, 1, out(noUnit));
@@ -124,9 +124,9 @@ test('plan-check --brief U1 --role builder writes the builder brief: source file
 	assert.equal(res.status, 0, out(res));
 	assert.ok(res.stdout.includes('src/a.mjs') && res.stdout.includes('src/b.mjs'), `the brief holds the source files: ${res.stdout}`);
 	// Both test files run in one command, space-joined, and the command ends there.
-	assert.match(res.stdout, /node --test tests\/a\.test\.mjs tests\/c\.test\.mjs(?=\s|`|$)/m, `the brief holds the exact test run:\n${res.stdout}`);
+	assert.match(res.stdout, /node --test tests\/a\.test\.mjs tests\/c\.test\.mjs(?=\s|`|$)/m, `the brief holds the exact test run:\n${res.stdout}`); // pin: 1 (the builder runs this command)
 	// The lock line names the source files only, comma-joined, ends there, and leaves <red sha> as written.
-	assert.match(res.stdout, /node \S*unit-lock\.mjs <red sha> --files src\/a\.mjs,src\/b\.mjs$/m, `the brief holds the builder lock command:\n${res.stdout}`);
+	assert.match(res.stdout, /node \S*unit-lock\.mjs <red sha> --files src\/a\.mjs,src\/b\.mjs$/m, `the brief holds the builder lock command:\n${res.stdout}`); // pin: 1 (the lead runs this command)
 	assert.ok(!res.stdout.includes('--pick'), `the builder brief never names --pick:\n${res.stdout}`);
 });
 
