@@ -518,6 +518,8 @@ test('agent-model denies a full or capitalised model name of another family, pas
 test('agent-model reads a corrupt holds.json or an unknown mode as enforce, and logs the mode it read', () => {
 	const config = roleConfig({ 'opus-role': 'opus' });
 	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
+	assert.ok(fs.existsSync(AGENT_MODEL), 'agent-model.cjs is missing');
+	assert.ok(fs.existsSync(HOLD_MODE), 'hold-mode.cjs is missing');
 	const damaged = ['{oops', holdsText([{ id: 'agent-model', hook: 'agent-model.cjs', mode: 'warn' }])];
 	for (const text of damaged) {
 		const hookDir = kitTemp.makeTemp('agent-model-failclosed-');

@@ -9,7 +9,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import kitTemp from '../project/.claude/kit-temp.cjs';
-import { rank, skillFaults, tableFaults } from '../user/kit-tools/model-table.mjs';
+import * as modelTable from '../user/kit-tools/model-table.mjs';
+const { rank, tableFaults } = modelTable;
+// Read at call time, so a kit without the export fails its test on an assertion, not the whole file on import.
+const skillFaults = (...a) => { assert.equal(typeof modelTable.skillFaults, 'function', 'model-table.mjs exports skillFaults'); return modelTable.skillFaults(...a); };
 
 kitTemp.sessionRoot();
 
