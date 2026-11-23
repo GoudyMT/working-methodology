@@ -88,8 +88,9 @@ test('655 flips give 4 minimal-code slices, 3 give 1', () => {
 	assert.ok(absent.lines.includes('mutation={"slice":[1]}'), `no flags: output ${JSON.stringify(absent.lines)}`);
 });
 
-// why: catches prediction over 6x110 s exits 1 naming the 5 slowest tests (CI-A S4)
-test('prediction over 6x110 s exits 1 naming the 5 slowest tests', () => {
+// renamed from: prediction over 6x110 s exits 1 naming the 5 slowest tests
+// why: catches prediction over 6x110 s still exiting 1 instead of 6 runners and the 5 slowest named (M9)
+test('prediction over 6x110 s exits 0 with 6 runners and names the 5 slowest tests', () => {
 	const m = map([
 		['tests/a.test.mjs::t1', 300000],
 		['tests/a.test.mjs::t2', 200000],
@@ -101,6 +102,7 @@ test('prediction over 6x110 s exits 1 naming the 5 slowest tests', () => {
 	]);
 	const r = run(m.dir, m.file);
 	assert.equal(r.status, 0, `over 660 s: exit ${r.status}, stderr: ${r.stderr}`);
+	assert.ok(r.lines.includes('unit={"shard":[0,1,2,3,4,5]}'), `over 660 s: output ${JSON.stringify(r.lines)}`);
 	const slowest = ['tests/a.test.mjs::t1', 'tests/a.test.mjs::t2', 'tests/b.test.mjs::t3', 'tests/b.test.mjs::t4', 'tests/c.test.mjs::t5'];
 	const at = slowest.map((name) => r.stderr.indexOf(name));
 	for (const [i, pos] of at.entries()) assert.ok(pos >= 0, `slowest ${slowest[i]} not named: ${r.stderr}`);

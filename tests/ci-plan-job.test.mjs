@@ -80,7 +80,12 @@ test('unit-tests and test-check read their matrix from needs.lanes.outputs, with
 	// The unit slice steps pack by the map's measured time when a map is present (M11): each passes --plan.
 	const unitSlices = steps(J['unit-tests'] || '').filter((s) => /test-run\.mjs [^\n]*--slice\b/.test(s) && !/--map\b/.test(s));
 	assert.equal(unitSlices.length, 2, 'the unit-tests job does not have its two slice steps');
-	for (const s of unitSlices) assert.match(s, /--plan\b/, 'a unit slice step does not pass --plan: ' + s.split('\n')[0]);
+	for (const s of unitSlices) {
+		assert.match(s, /--plan\b/, 'a unit slice step does not pass --plan: ' + s.split('\n')[0]);
+		// --plan needs the map (the runner exits 2 without it), so it sits behind a guard: a -f test on the map file, or an
+		// array that stays empty without it; never an unconditional argument on the run line.
+		const run = s.split(/^        run:/m)[1] || '';
+		assert.match(run, /-f [^\n]*\.map\.json|\b\w*plan\w*=\(\s*\)/i, 'a unit slice step passes --plan with no map guard: ' + s.split('\n')[0]);	}
 });
 
 // why: catches the lanes job running the PR's own ci-size and matrix values pasted into run lines (H1)
@@ -94,6 +99,9 @@ test('the lanes job runs the base commit\'s ci-size and no matrix value reaches 
 	assert.doesNotMatch(lanes, /tr -cd ','/, 'a count of commas still stands for the array length');
 	assert.match(lanes, /\blength\b/, 'the matrix size is not read from the array length');
 	assert.match(lanes, /-le 6|-gt 6|<= ?6|> ?6|\[1-6\]/, 'the lanes job does not hold the runner count to 1..6');
+	assert.match(lanes, /-ge 1\b|-lt 1\b|>= ?1\b|< ?1\b|\[1-6\]/, 'the lanes job does not hold the runner count above 0');
+	assert.match(lanes, /\{\\?"shard\\?":\s*\\?\[/, 'the lanes job does not check the {"shard":[ shape of the unit output');
+	assert.match(lanes, /\{\\?"slice\\?":\s*\\?\[/, 'the lanes job does not check the {"slice":[ shape of the check output');
 	// No run line takes a matrix value or a lanes output by ${{ }}: each goes in through env and is checked as an integer.
 	for (const [name, job] of Object.entries(J)) {
 		for (const s of steps(job)) {
@@ -102,7 +110,13 @@ test('the lanes job runs the base commit\'s ci-size and no matrix value reaches 
 		}
 	}
 	for (const job of ['unit-tests', 'test-check']) {
-		assert.match(J[job] || '', /\[0-9\]\+/, job + ' does not check its matrix values as integers');
+		// An env entry set from a matrix or lanes value, and an integer check on that same variable.
+		const text = J[job] || '';
+		const vars = [...text.matchAll(/^\s+([A-Za-z_][A-Za-z0-9_]*): \$\{\{\s*(?:matrix\.|needs\.lanes\.outputs\.)[^}]*\}\}\s*$/gm)].map((m) => m[1]);
+		assert.ok(vars.length > 0, job + ' passes no matrix or lanes value through an env entry');
+		for (const v of vars) {
+			assert.match(text, new RegExp('^.*\\b' + v + '\\b.*\\^\\[0-9\\]\\+\\$|^.*\\^\\[0-9\\]\\+\\$.*\\b' + v + '\\b', 'm'), job + ' does not check ' + v + ' against ^[0-9]+$');
+		}
 	}
 });
 

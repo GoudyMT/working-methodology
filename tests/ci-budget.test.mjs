@@ -261,5 +261,5 @@ test('the test-check budgets, Linux slice and Windows part, fit inside the 180 s
 	const budgets = [...yml.matchAll(/test-check\.mjs[^\n]*--budget (\d+)/g)].map((m) => Number(m[1]));
 	assert.equal(budgets.length, 2, `the Linux slice and the Windows part each set a --budget, found ${JSON.stringify(budgets)}`);
 	// 180 s less setup (checkout, node, the base unpack) is about 120 s; a longer budget runs past the job's own limit.
-	for (const b of budgets) assert.ok(b <= 120, `a test-check --budget of ${b} s does not fit the 180 s job budget`);
+	for (const b of budgets) assert.ok(b >= 60 && b <= 120, `a test-check --budget of ${b} s is not between 60 and 120 s, so it does not fit the 180 s job budget`);
 });
