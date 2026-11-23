@@ -115,7 +115,7 @@ function testStarts(text) {
 		for (const m of l.matchAll(/\b(?:const|let|var)\s+([\w$]+)\s*=\s*test\s*(?:;|$)/g)) names.add(m[1]);
 		for (const m of l.matchAll(/\btest\s+as\s+([\w$]+)/g)) names.add(m[1]);
 	}
-	const call = new RegExp(`(?<![\\w$.])(?<!function\\s+)(?:${[...names].map((n) => n.replace(/\$/g, '\\$')).join('|')})\\(`);
+	const call = new RegExp(`(?<![\\w$.])(?<!function\\s+)(?:${[...names].map((n) => n.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')).join('|')})\\(`);
 	const nameAt = (i, from) => {
 		const rest = lines[i].slice(from);
 		const lit = /^[\w$]+\(\s*(['"`])((?:\\.|(?!\1).)*)\1/.exec(rest);
