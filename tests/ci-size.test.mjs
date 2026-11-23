@@ -32,12 +32,16 @@ function run(dir, mapFile, args = []) {
 
 // why: catches predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6 (CI-A S1)
 test('predicted 330 s gives 3 unit runners, 100 s gives 1, cap 6', () => {
-	for (const [seconds, shards] of [[330, '[0,1,2]'], [100, '[0]'], [650, '[0,1,2,3,4,5]']]) {
+	// 331 s is the first figure past 3 runners (ceil(331 / 110) = 4); 660 s is the last that fits 6; 661 s is over.
+	for (const [seconds, shards] of [[330, '[0,1,2]'], [100, '[0]'], [331, '[0,1,2,3]'], [650, '[0,1,2,3,4,5]'], [660, '[0,1,2,3,4,5]']]) {
 		const m = map([['tests/a.test.mjs::one', seconds * 1000]]);
 		const r = run(m.dir, m.file);
 		assert.equal(r.status, 0, `${seconds} s: exit ${r.status}, stderr: ${r.stderr}`);
 		assert.ok(r.lines.includes(`unit={"shard":${shards}}`), `${seconds} s: output ${JSON.stringify(r.lines)}`);
 	}
+	const over = map([['tests/a.test.mjs::one', 661000]]);
+	const past = run(over.dir, over.file);
+	assert.equal(past.status, 1, `661 s: exit ${past.status}, stderr: ${past.stderr}`);
 });
 
 // why: catches 600 changed tests give 6 test-check slices, 0 give 1 (CI-A S2)
@@ -49,6 +53,13 @@ test('600 changed tests give 6 test-check slices, 0 give 1', () => {
 	const zero = run(m.dir, m.file, ['--changed-tests', '0']);
 	assert.equal(zero.status, 0, `0 changed: exit ${zero.status}, stderr: ${zero.stderr}`);
 	assert.ok(zero.lines.includes('check={"slice":[0]}'), `0 changed: output ${JSON.stringify(zero.lines)}`);
+	// 101 is the first count past one slice (ceil(1.01) = 2); 700 would be 7 slices and must be capped at 6.
+	const edge = run(m.dir, m.file, ['--changed-tests', '101']);
+	assert.equal(edge.status, 0, `101 changed: exit ${edge.status}, stderr: ${edge.stderr}`);
+	assert.ok(edge.lines.includes('check={"slice":[0,1]}'), `101 changed: output ${JSON.stringify(edge.lines)}`);
+	const capped = run(m.dir, m.file, ['--changed-tests', '700']);
+	assert.equal(capped.status, 0, `700 changed: exit ${capped.status}, stderr: ${capped.stderr}`);
+	assert.ok(capped.lines.includes('check={"slice":[0,1,2,3,4,5]}'), `700 changed: output ${JSON.stringify(capped.lines)}`);
 });
 
 // why: catches 655 flips give 4 minimal-code slices, 3 give 1 (CI-A S3)
@@ -60,6 +71,18 @@ test('655 flips give 4 minimal-code slices, 3 give 1', () => {
 	const few = run(m.dir, m.file, ['--flips', '3']);
 	assert.equal(few.status, 0, `3 flips: exit ${few.status}, stderr: ${few.stderr}`);
 	assert.ok(few.lines.includes('mutation={"slice":[1]}'), `3 flips: output ${JSON.stringify(few.lines)}`);
+	// 201 is the first count past one slice (ceil(201 / 200) = 2); 1000 would be 5 slices and must be capped at 4.
+	const edge = run(m.dir, m.file, ['--flips', '201']);
+	assert.equal(edge.status, 0, `201 flips: exit ${edge.status}, stderr: ${edge.stderr}`);
+	assert.ok(edge.lines.includes('mutation={"slice":[1,2]}'), `201 flips: output ${JSON.stringify(edge.lines)}`);
+	const capped = run(m.dir, m.file, ['--flips', '1000']);
+	assert.equal(capped.status, 0, `1000 flips: exit ${capped.status}, stderr: ${capped.stderr}`);
+	assert.ok(capped.lines.includes('mutation={"slice":[1,2,3,4]}'), `1000 flips: output ${JSON.stringify(capped.lines)}`);
+	// With neither flag given, the counts are zero: one test-check slice and one minimal-code slice.
+	const absent = run(m.dir, m.file);
+	assert.equal(absent.status, 0, `no flags: exit ${absent.status}, stderr: ${absent.stderr}`);
+	assert.ok(absent.lines.includes('check={"slice":[0]}'), `no flags: output ${JSON.stringify(absent.lines)}`);
+	assert.ok(absent.lines.includes('mutation={"slice":[1]}'), `no flags: output ${JSON.stringify(absent.lines)}`);
 });
 
 // why: catches prediction over 6x110 s exits 1 naming the 5 slowest tests (CI-A S4)
@@ -97,6 +120,14 @@ test('a test missing from the map counts the map median', () => {
 	const r = run(m.dir, m.file, ['--tests', 'tests/missing.test.mjs']);
 	assert.equal(r.status, 0, `missing test: exit ${r.status}, stderr: ${r.stderr}`);
 	assert.ok(r.lines.includes('predicted=55'), `missing test: output ${JSON.stringify(r.lines)}`);
+	// A present file counts the sum of its own keys: a is 20 + 30 = 50 s.
+	const present = run(m.dir, m.file, ['--tests', 'tests/a.test.mjs']);
+	assert.equal(present.status, 0, `present file: exit ${present.status}, stderr: ${present.stderr}`);
+	assert.ok(present.lines.includes('predicted=50'), `present file: output ${JSON.stringify(present.lines)}`);
+	// A present file (b, 60 s) plus a missing one (the median, 55 s) is 115 s.
+	const mixed = run(m.dir, m.file, ['--tests', 'tests/b.test.mjs,tests/missing.test.mjs']);
+	assert.equal(mixed.status, 0, `mixed: exit ${mixed.status}, stderr: ${mixed.stderr}`);
+	assert.ok(mixed.lines.includes('predicted=115'), `mixed: output ${JSON.stringify(mixed.lines)}`);
 });
 
 // why: catches output is GitHub matrix JSON on GITHUB_OUTPUT lines (CI-A S6)
@@ -109,4 +140,17 @@ test('output is GitHub matrix JSON on GITHUB_OUTPUT lines', () => {
 	const lines = fs.readFileSync(out, 'utf8').split('\n').filter(Boolean);
 	const expected = ['keep=1', 'predicted=330', 'unit={"shard":[0,1,2]}', 'check={"slice":[0,1,2]}', 'mutation={"slice":[1,2,3]}'];
 	assert.deepEqual([...lines].sort(), [...expected].sort(), `matrices: output ${JSON.stringify(lines)}`);
+
+	// A missing map is a bad input: exit 2, not a sized plan.
+	const absentMap = spawnSync(process.execPath, [SCRIPT, '--map', path.join(m.dir, 'no-such-map.json'), '--github-output', out], { encoding: 'utf8' });
+	assert.equal(absentMap.status, 2, `missing map: exit ${absentMap.status}, stderr: ${absentMap.stderr}`);
+
+	// With no --github-output and no GITHUB_OUTPUT in the environment, the same lines go to stdout.
+	const env = { ...process.env };
+	delete env.GITHUB_OUTPUT;
+	const stdout = spawnSync(process.execPath, [SCRIPT, '--map', m.file], { encoding: 'utf8', env });
+	assert.equal(stdout.status, 0, `stdout: exit ${stdout.status}, stderr: ${stdout.stderr}`);
+	const printed = stdout.stdout.split('\n').filter(Boolean);
+	const printedWant = ['predicted=330', 'unit={"shard":[0,1,2]}', 'check={"slice":[0]}', 'mutation={"slice":[1]}'];
+	assert.deepEqual([...printed].sort(), [...printedWant].sort(), `stdout: output ${JSON.stringify(printed)}`);
 });
