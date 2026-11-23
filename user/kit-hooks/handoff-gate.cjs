@@ -44,19 +44,23 @@ function roleLineOf(message) {
 // K368 S2: each test a role line's commit adds (a test file's test( that its first parent lacks) must be listed in the
 // role line's tests with a why line whyFault passes, and must carry a passing why line at the commit itself. A why given
 // as bare text is read with its "// why: " label. Returns the file::name keys that fail, or [] when the commit cannot be
-// read: then no test is judged, and nothing else checks that commit.
+// read: then no test is judged, and unreadable is true (M7: under enforce a RECORD that lists tests is refused for it).
 function untestedKeys(cwd, role) {
-	const sha = typeof role.commit === 'string' ? role.commit : '';
-	if (!sha || git(cwd, 'rev-parse', '--verify', '-q', `${sha}^{commit}`).status !== 0) return [];
+	const sha = typeof role.commit === 'string' ? role.commit.trim() : '';
+	const none = { missing: [], unreadable: false };
+	if (!sha) return none;
+	if (git(cwd, 'rev-parse', '--verify', '-q', `${sha}^{commit}`).status !== 0) return { ...none, unreadable: true };
 	const parent = git(cwd, 'rev-parse', '--verify', '-q', `${sha}^`);
 	const base = parent.status === 0 ? parent.stdout.trim() : null;
 	// quotePath off: a non-ASCII file name would come back quoted, and no show could read it (as kit.mjs reads it).
 	const files = base ? git(cwd, '-c', 'core.quotePath=false', 'diff', '--name-only', base, sha) : git(cwd, '-c', 'core.quotePath=false', 'ls-tree', '-r', '--name-only', sha);
+	if (files.status !== 0) return { ...none, unreadable: true };
 	const listed = Array.isArray(role.tests) ? role.tests : [];
 	const missing = [];
+	let unreadable = false;
 	for (const file of String(files.stdout || '').split(/\r?\n/).filter((f) => f && isTestFile(f))) {
 		const now = git(cwd, 'show', `${sha}:${file}`);
-		if (now.status !== 0) continue;
+		if (now.status !== 0) { unreadable = true; continue; }
 		const was = base ? git(cwd, 'show', `${base}:${file}`) : null;
 		const nowTests = tests(now.stdout);
 		const had = new Set(was && was.status === 0 ? tests(was.stdout).keys() : []);
@@ -68,7 +72,12 @@ function untestedKeys(cwd, role) {
 			if (!entry || whyFault(listedWhy) || whyFault(nowTests.get(name))) missing.push(`${file}::${name}`);
 		}
 	}
-	return missing;
+	return { missing, unreadable };
+}
+
+// Log one row, best effort: the decision is made before it, so a log that cannot be written never lifts a deny.
+function logRow(log, row) {
+	try { fs.appendFileSync(log, `${JSON.stringify(row)}\n`); } catch { /* the decision stands without its row */ }
 }
 
 // The decision for a hand-back: the PreToolUse deny object under enforce, else null. The caller decides what to print.
@@ -85,22 +94,27 @@ function run(input) {
 	const hold = holdMode();
 	const log = path.join(common.stdout.trim(), 'kit-guard-open.log');
 	const row = { at: new Date().toISOString(), hook: 'handoff-gate', mode: hold.mode, ...(hold.missing ? { holdModeMissing: true } : {}) };
-	if (r.status !== 0 && r.status !== 1) {
-		fs.appendFileSync(log, `${JSON.stringify({ ...row, checkerExit: r.status === null ? String(r.signal) : r.status })}\n`);
+	// A checker that crashes (a syntax error on load exits 1 with node's own trailer) found no fault in the record: it is
+	// read as a checker that did not run, which passes, under enforce too.
+	const crashed = r.status === 1 && /^Node\.js v\d/m.test(String(r.stderr || ''));
+	if ((r.status !== 0 && r.status !== 1) || crashed) {
+		logRow(log, { ...row, checkerExit: r.status === null ? String(r.signal) : r.status });
 		return null;
 	}
 	const lines = String(r.stderr || '').split(/\r?\n/).filter(Boolean);
 	const errors = r.status === 1 ? lines : [];
-	const missing = untestedKeys(cwd, roleLineOf(message) || {});
+	const role = roleLineOf(message) || {};
+	const { missing, unreadable } = untestedKeys(cwd, role);
 	if (missing.length) errors.push(`the role line's tests lack a why for each new test (list each as {name, why}): ${missing.join(', ')}`);
+	// M7: a RECORD that lists tests names a commit the gate must read; under enforce one it cannot read is refused.
+	if (unreadable && hold.mode === 'enforce' && Array.isArray(role.tests) && role.tests.length) errors.push(`the role line's tests cannot be checked: commit ${role.commit} cannot be read (resolve it, or a show of its test files failed)`);
 	if (recordIsCRLF(message)) errors.push('CRLF line endings in the RECORD: block: end each line with LF');
 	if (errors.length) {
-		fs.appendFileSync(log, `${JSON.stringify({ ...row, errors })}\n`);
-		if (hold.mode === 'enforce') {
-			return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Your hand-back's RECORD: block is broken, so the lead cannot count it. Send it again with the record fixed: ${errors.join('; ')}.` } };
-		}
+		const deny = hold.mode === 'enforce' ? { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: `Your hand-back's RECORD: block is broken, so the lead cannot count it. Send it again with the record fixed: ${errors.join('; ')}.` } } : null;
+		logRow(log, { ...row, errors });
+		return deny;
 	} else if (lines.length) {
-		fs.appendFileSync(log, `${JSON.stringify({ ...row, warnings: lines })}\n`);
+		logRow(log, { ...row, warnings: lines });
 	}
 	return null;
 }

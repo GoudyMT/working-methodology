@@ -8,14 +8,13 @@
 // a clean check exits 0. A failing check appends one line {at, hook, cause} to <git common dir>/kit-guard-open.log.
 import fs from 'node:fs';
 import path from 'node:path';
+import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import safeSpawn from './safe-spawn.cjs';
 
 const TEST_FILE = /^tests\/.+\.test\.mjs$/;
-const TEST_LINE = /^test\((['"`])((?:\\.|(?!\1).)*)\1/;
-const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
-// test-check's LOOP rule: a top-level line that starts a loop which makes tests.
-const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
+// The one parse of a test file's tests, shared with the why rule at save (indented, aliased, named-array and loop tests).
+const { testStarts } = createRequire(import.meta.url)('../kit-hooks/why-rule.cjs');
 const RENAMED = /^\s*\/\/ renamed from: (.+?)\s*$/;
 // The paths a new script, hook or CI file lives under.
 // Under project/.claude/ and user/skills/ only scripts count; the docs there need no ticket.
@@ -82,15 +81,7 @@ function testsIn(text) {
 		while (head > 0 && /^\s*\/\//.test(lines[head - 1])) head--;
 		return lines.slice(head, i).map((c) => RENAMED.exec(c)).filter(Boolean).map((m) => m[1]);
 	};
-	lines.forEach((l, i) => {
-		const m = TEST_LINE.exec(l);
-		if (m) { out.set(m[2].replace(/\\(.)/g, '$1'), tagsAbove(i)); return; }
-		if (!LOOP.test(l)) return;
-		for (let j = i; j < lines.length && (j === i || !/^[^\s}\])]/.test(lines[j])); j++) {
-			const n = NAMED.exec(lines[j]);
-			if (n) { out.set(n[2].replace(/\\(.)/g, '$1'), tagsAbove(i)); break; }
-		}
-	});
+	for (const s of testStarts(lines.join('\n'))) out.set(s.name, tagsAbove(s.i));
 	return out;
 }
 
@@ -112,9 +103,10 @@ function problemsIn(root) {
 	const version = versionOf(root);
 	const rec = readJson(path.join(root, 'docs', 'builds', `${version}.json`), `docs/builds/${version}.json`);
 	if (!rec || typeof rec !== 'object') throw new Unreadable(`docs/builds/${version}.json is not a JSON object`);
-	// Nothing is owed by a record with no sweep.
-	if (!rec.sweep) return [];
 	const rel = `docs/builds/${version}.closeout.json`;
+	// A closeout file with no sweep in the record is a record whose sweep block was taken out after it; nothing is owed
+	// only when neither exists.
+	if (!rec.sweep) return fs.existsSync(path.join(root, rel)) ? [`${rel} exists but docs/builds/${version}.json has no sweep block: restore the record's sweep`] : [];
 	if (!fs.existsSync(path.join(root, rel))) return [`${rel} is missing: a record with a sweep needs its closeout file, committed once`];
 	const co = readJson(path.join(root, rel), rel);
 	if (!co || typeof co !== 'object' || !Array.isArray(co.findings) || !Array.isArray(co.tickets)) {
@@ -143,7 +135,18 @@ function problemsIn(root) {
 	}
 
 	// The range after the closeout commit: each test it adds, and each new script, hook or CI file.
-	const changed = git(root, ['diff', '--name-status', '-M', closeCommit, end]).split('\n').filter(Boolean).map((l) => l.split('\t'));
+	// -z with quotePath off: a non-ASCII name comes back whole, never as a quoted "\303..." path no show could read.
+	const fields = git(root, ['-c', 'core.quotePath=false', 'diff', '--name-status', '-z', '-M', closeCommit, end]).split('\0');
+	if (fields[fields.length - 1] === '') fields.pop();
+	const changed = [];
+	for (let k = 0; k < fields.length;) {
+		const n = fields[k][0] === 'R' || fields[k][0] === 'C' ? 3 : 2;
+		changed.push(fields.slice(k, k + n));
+		k += n;
+	}
+	for (const p of changed.flat()) {
+		if (p.startsWith('"')) throw new Unreadable(`git gave the quoted path ${p}: the closeout check cannot read it`);
+	}
 	const fresh = [];
 	for (const parts of changed) {
 		const status = parts[0];

@@ -4,7 +4,8 @@
 
 // The top-level test( of a line, with its name as the first quoted string.
 const NAMED = /\btest\((['"`])((?:\\.|(?!\1).)*)\1/;
-const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
+// A loop at the margin that makes tests: a for, or a forEach over a literal array, a named array or Object.entries/keys/values.
+const LOOP = /^(for\s*\(|\[[^\n]*\]\.forEach\(|[\w$.]+\.forEach\(|Object\.(entries|keys|values)\([^\n]*\)\.forEach\()/;
 
 // A test's tags: the comment lines above it, never a line inside its body (the build 14 PR: a sample tag in a string
 // was read as the test's own).
@@ -47,19 +48,93 @@ function whyFault(body, known = null) {
 	return 'its why line starts with neither guards nor catches';
 }
 
+// Each line with its strings, comments and regex literals blanked to spaces (same length), so a test( inside a string
+// or a comment is never read as a call. A template literal (its ${ } holes too, nested ones included) and a block comment
+// may run over many lines; all inside an outer template is blanked but read through, so its quotes balance.
+function codeLines(lines) {
+	const stack = []; // 'tpl' for a template's text; a number (brace depth) for a ${ } hole
+	let block = false;
+	return lines.map((line) => {
+		let out = '';
+		let prev = '';
+		let k = 0;
+		const put = (s) => { out += stack.length ? ' '.repeat(s.length) : s; };
+		while (k < line.length) {
+			const c = line[k];
+			const d = line[k + 1];
+			const top = stack[stack.length - 1];
+			if (block) { if (c === '*' && d === '/') { block = false; out += '  '; k += 2; } else { out += ' '; k++; } continue; }
+			if (top === 'tpl') {
+				if (c === '\\') { out += '  '; k += 2; } else if (c === '`') { stack.pop(); put('`'); k++; prev = c; } else if (c === '$' && d === '{') { stack.push(0); out += '  '; k += 2; } else { out += ' '; k++; }
+				continue;
+			}
+			if (c === '/' && d === '/') { out += ' '.repeat(line.length - k); break; }
+			if (c === '/' && d === '*') { block = true; out += '  '; k += 2; continue; }
+			if (c === '`') { put('`'); stack.push('tpl'); k++; continue; }
+			if (c === '{' && typeof top === 'number') stack[stack.length - 1] = top + 1;
+			if (c === '}' && typeof top === 'number') {
+				if (top === 0) { stack.pop(); out += ' '; k++; continue; }
+				stack[stack.length - 1] = top - 1;
+			}
+			if (c === '"' || c === "'") {
+				put(c); k++;
+				while (k < line.length && line[k] !== c) { if (line[k] === '\\') { out += ' '; k++; } out += ' '; k++; }
+				if (k < line.length) { put(c); k++; }
+				prev = c;
+				continue;
+			}
+			if (c === '/' && (prev === '' || /[(,=:[!&|?{};]/.test(prev))) {
+				let j = k + 1;
+				let cls = false;
+				while (j < line.length && (cls || line[j] !== '/')) { if (line[j] === '\\') j++; else if (line[j] === '[') cls = true; else if (line[j] === ']') cls = false; j++; }
+				if (j < line.length) { put('/' + ' '.repeat(j - k - 1) + '/'); k = j + 1; prev = '/'; continue; }
+			}
+			put(c);
+			if (!/\s/.test(c)) prev = c;
+			k++;
+		}
+		return out.slice(0, line.length).padEnd(line.length, ' ');
+	});
+}
+
+// The tests of a file's text, line by line: [{ i, name, loop }]. A test is a call of test( (or of a name bound to it, as
+// const t = test) on any line, indented or not, outside a string or comment. Its name is its first string, or for a
+// non-literal name the text of the first argument. A top-level loop that makes tests is one start at the loop's own
+// line, named by its first test( inside, up to the next line at the margin that is not a closing bracket.
+function testStarts(text) {
+	const lines = String(text).split('\n');
+	const code = codeLines(lines);
+	const names = new Set(['test']);
+	for (const l of code) {
+		for (const m of l.matchAll(/\b(?:const|let|var)\s+([\w$]+)\s*=\s*test\s*(?:;|$)/g)) names.add(m[1]);
+		for (const m of l.matchAll(/\btest\s+as\s+([\w$]+)/g)) names.add(m[1]);
+	}
+	const call = new RegExp(`(?<![\\w$.])(?<!function\\s+)(?:${[...names].map((n) => n.replace(/\$/g, '\\$')).join('|')})\\(`);
+	const nameAt = (i, from) => {
+		const rest = lines[i].slice(from);
+		const lit = /^[\w$]+\(\s*(['"`])((?:\\.|(?!\1).)*)\1/.exec(rest);
+		if (lit) return lit[2].replace(/\\(.)/g, '$1');
+		const arg = /^[\w$]+\(\s*([^,)]+?)\s*[,)]/.exec(rest);
+		return arg ? arg[1] : '?';
+	};
+	const starts = [];
+	for (let i = 0; i < lines.length; i++) {
+		if (LOOP.test(code[i])) {
+			let end = i + 1;
+			while (end < lines.length && !/^[^\s}\])]/.test(code[end])) end++;
+			let found = null;
+			for (let j = i; j < end; j++) { const m = call.exec(code[j]); if (m) { found = nameAt(j, m.index); break; } }
+			if (found !== null) { starts.push({ i, name: found, loop: true }); i = end - 1; continue; }
+		}
+		const m = call.exec(code[i]);
+		if (m) starts.push({ i, name: nameAt(i, m.index), loop: false });
+	}
+	return starts;
+}
+
 function tests(text) {
 	const lines = String(text).split('\n');
-	const starts = [];
-	lines.forEach((l, i) => {
-		const m = /^test\((['"`])((?:\\.|(?!\1).)*)\1/.exec(l);
-		if (m) { starts.push([i, m[2].replace(/\\(.)/g, '$1'), false]); return; }
-		if (!LOOP.test(l)) return;
-		// The loop's own lines: up to the next line at the margin that is not a closing bracket.
-		for (let j = i; j < lines.length && (j === i || !/^[^\s}\])]/.test(lines[j])); j++) {
-			const n = NAMED.exec(lines[j]);
-			if (n) { starts.push([i, n[2], true]); break; }
-		}
-	});
+	const starts = testStarts(text).map((s) => [s.i, s.name, s.loop]);
 	const comment = (l) => /^\s*\/\//.test(l);
 	const out = new Map();
 	out.loops = new Set(starts.filter((s) => s[2]).map((s) => s[1]));
@@ -79,4 +154,4 @@ function tests(text) {
 	return out;
 }
 
-module.exports = { NAMED, LOOP, headOf, isTestFile, whyFault, tests };
+module.exports = { NAMED, LOOP, headOf, isTestFile, whyFault, tests, testStarts };
