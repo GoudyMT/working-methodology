@@ -26,6 +26,7 @@ function adapterFile() {
 	assert.ok(fs.existsSync(index), 'standards/INDEX.md exists, so the kit repo names its own block');
 	const row = fs.readFileSync(index, 'utf8').match(/^\|\s*agent-team-adapter\s*\|[^|\n]*\|\s*`([^`]+)`/m);
 	assert.ok(row, 'the index has an agent-team-adapter row');
+	assert.ok(fs.existsSync(path.resolve(ROOT, row[1])), `the index row names ${row[1]}, which exists`);
 	return row[1];
 }
 
@@ -39,5 +40,5 @@ test("the kit repo's rules block, as approve.mjs resolves it, holds no slot from
 test('the shipped rules/agent-teams.md block still holds its template slot, so installs keep the reminder', () => {
 	assert.ok(slotsIn(blockOf(SHIPPED)).includes('<PROJECT NAME>'), 'the shipped block keeps <PROJECT NAME>');
 	// The kit's own block is a different file, so filling it never empties the template.
-	assert.notEqual(adapterFile(), SHIPPED, 'the kit repo names a block of its own, not the shipped template');
+	assert.notEqual(path.resolve(ROOT, adapterFile()), path.resolve(ROOT, SHIPPED),'the kit repo names a block of its own, not the shipped template');
 });
