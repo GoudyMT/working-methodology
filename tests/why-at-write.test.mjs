@@ -311,3 +311,14 @@ test('the gate refuses a record that gives a good why for a test with no why lin
 	assert.ok(reason.includes(TEST_REL + '::the bare one'), 'the refusal names the why-less test: ' + reason);
 	assert.ok(!reason.includes('the good one'), 'the test with its why is not named: ' + reason);
 });
+
+// why: catches an Edit adding a second why-less test of a legacy why-less test's name passing the fence (K368 S1)
+test('a repeated why-less name beside a legacy why-less test is refused', () => {
+	const legacy = testWith('', 'the old one');
+	const dir = unitRepo(legacy);
+	const bad = fence(dir, 'Edit', { file_path: target(dir), old_string: legacy, new_string: legacy + testWith('', 'the old one') });
+	assert.equal(bad.code, 2, 'a second why-less test of the legacy name is refused: ' + bad.err);
+	assert.ok(bad.err.includes(NO_WHY) && bad.err.includes('the old one'), 'stderr names the test: ' + bad.err);
+	const ok = fence(dir, 'Edit', { file_path: target(dir), old_string: legacy, new_string: legacy + testWith(GOOD_WHY, 'the old one') });
+	assert.equal(ok.code, 0, 'a second test of that name with a good why saves: ' + ok.err);
+});
