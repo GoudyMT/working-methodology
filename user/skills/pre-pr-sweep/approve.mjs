@@ -241,6 +241,8 @@ const git = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile
 // protocol off), with lazy fetch off too: a planted git.exe or a hook program in the repo config never runs.
 const baseGit = (...a) => safeSpawn.gitRead(contractFile ? path.dirname(contractFile) : process.cwd(), a, { encoding: 'utf8', env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } });
 const sha = (s) => crypto.createHash('sha256').update(s).digest('hex').slice(0, 16);
+// K357 S1: the checkout the contract sits in (a linked worktree's own, or the main checkout's); '' when git cannot read one.
+const toplevel = () => { const t = git('rev-parse', '--show-toplevel'); return t.status === 0 ? t.stdout.trim() : ''; };
 
 // The log: one per repo, in its git folder.
 const common = git('rev-parse', '--path-format=absolute', '--git-common-dir');
@@ -357,6 +359,9 @@ function diffFacts() {
 	const dirty = git('status', '--porcelain', '--untracked-files=all', '--', ':(top)').stdout.split('\n').filter(Boolean).filter((l) => !sweepPaper(l.slice(3)));
 	return {
 		base,
+		// The merge base the branch's diff is read from, as a commit: the log records it, so the same branch in another
+		// checkout reads the same base.
+		mergeBase: git('merge-base', base, 'HEAD').stdout.trim() || null,
 		baseName: short(base),
 		offBase,
 		staleBase,
@@ -635,6 +640,9 @@ function decide() {
 	const s = state();
 	const facts = diffFacts();
 	const { why, fix, need, extras, cap, first, refused, budgets = [], total = 0 } = check(c, facts, s.log);
+	// K357 S6: a folder git finds but gives no work tree for (a worktree's own folder) cannot show its rule files or its
+	// session, so it is a fix, logged, never an approval read from another checkout.
+	if (!toplevel()) fix.unshift(`the contract's folder (${rel(path.dirname(contractFile))}) is a worktree git cannot read: git gives no work tree there, so its untracked rule files and session cannot be read; run approve.mjs on the contract from the branch's own checkout`);
 	// The build 11 sweep: a contract's text goes into its briefs, so one that carries the confirmation phrase would
 	// hand a reviewer what it must find by reading. Read as the canary reads it: letters and digits, any case.
 	const words = (t) => ` ${String(t || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
@@ -681,7 +689,7 @@ function decide() {
 	const { ceilings, from: ceilingFrom, unit: ceilingUnit = 'tokens', expected } = ceilingsFor(s.log, runBudgets, runRoles);
 	// K182: the reviewer count and the dollars, said before the owner's yes and in the start notice.
 	const spendLine = ceilingUnit === 'dollars' ? `${runRoles.length} reviewers; about $${expected.toFixed(2)} at the median past pace, at most $${ceilings.reduce((t, x) => t + x, 0).toFixed(2)} (their dollar ceilings)` : null;
-	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.base, lines: facts && facts.lines, roles: runRoles.map((r) => r.role || r.kind), head };
+	const entry = { kind: 'decision', contract: contractFile, branch: currentBranch(), hash: sha(raw), tier: c.tier, agents: runRoles.length, budget: runTotal, modifiers: Array.isArray(c.modifiers) ? c.modifiers : [], calls: runRoles.map((r) => r.calls), budgets: runBudgets, ceilings, ceilingFrom, ceilingUnit, ...(split.roleOf ? { roleOf: split.roleOf } : {}), sliceHash: sliceHash(split.roles), patches: facts ? branchPatches(facts.base) : [], models: runRoles.map(roleModel), decision: fix.length ? 'fix' : why.length ? 'owner' : 'approved', reasons: [...fix, ...why], base: facts && facts.mergeBase, lines: facts && facts.lines, roles: runRoles.map((r) => r.role || r.kind), head };
 	write(entry);
 	if (fix.length) {
 		console.log('FIX THE CONTRACT - Claude\'s to fix and rerun; nothing here goes to the owner (rule:sweep-auto-approval):');
@@ -748,11 +756,12 @@ const LINE_BREAKS = new RegExp('[\r\n\u2028\u2029]+', 'g');
 // K218: a file git tracks is read as the merge base has it (the K128 pattern), so a branch cannot edit the rules its
 // own reviewers work under; with a sweep hash the base copy is written to the sweep's scratch folder and the brief
 // points there. A file git does not track (a project's untracked notes) is not part of the change under review, so it is
-// read from the main checkout, as in a worktree (the build 11 sweep). A file the branch adds has no base copy and gives
-// no block. A file the index names outside the repo is not read.
+// read from the contract's own checkout (the build 11 sweep; K357: its linked worktree, not the main checkout). A file
+// the branch adds has no base copy and gives no block. A file the index names outside the repo is not read.
 function rulesBlock(facts, hash) {
 	const commonDir = path.resolve(git('rev-parse', '--path-format=absolute', '--git-common-dir').stdout.trim() || '.git');
-	const top = path.dirname(commonDir);
+	const top = toplevel();
+	if (!top) return null;
 	const mb = facts && facts.base ? baseGit('merge-base', facts.base, 'HEAD').stdout.trim() : '';
 	const tracked = (f) => baseGit('ls-files', '--error-unmatch', '--', `:(top)${f}`).status === 0 || Boolean(mb && baseGit('cat-file', '-e', `${mb}:${f}`).status === 0);
 	// The build 23a commit security review: where the base holds any of the rule files, only base copies count, so an
@@ -1008,7 +1017,8 @@ const unquotedNote = (act, since) => {
 	const u = unquotedYes(act, { since, repo: repoRoot() });
 	return u ? ` The owner's Yes at ${new Date(u.at).toISOString()} answered a question that names ${act} without backticks around it, so it counts for nothing: ask again with the act in backticks.` : '';
 };
-const repoRoot = () => path.dirname(path.dirname(LOG));
+// K357 S1: a session's pop-ups are kept under the folder it ran in, so the lookup reads the contract's own checkout.
+const repoRoot = () => toplevel() || path.dirname(path.dirname(LOG));
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
@@ -1049,10 +1059,14 @@ function ownerYes() {
 
 // A pause is the owner's to clear, so every ask while paused says how, and what to review first.
 function resumeHelp(s) {
+	// K357 S2: the resume reads the owner's Yes from the session that asked, so the line names that session's id. Unset,
+	// it names the variable and leaves the id to the one who runs it.
+	const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
+	const resume = /^[0-9a-f-]{36}$/i.test(sid) ? `CLAUDE_CODE_SESSION_ID=${sid} node ${toPosix(SELF)} --resume` : `node ${toPosix(SELF)} --resume, with CLAUDE_CODE_SESSION_ID set to the id of the session that asked`;
 	return [
 		`Auto-approval is paused since ${String(s.pausedAt || '').slice(0, 10) || 'an unknown date'}: ${s.paused}.`,
 		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes in the pop-up:`,
-		`    ${popUpHow(`sweep resume ${pauseCode(s)}`)}; after their Yes, node ${toPosix(SELF)} --resume.`,
+		`    ${popUpHow(`sweep resume ${pauseCode(s)}`)}; after their Yes, run ${resume}.`,
 		'    Until then every sweep goes to the owner. Carry this into the closeout handoff.',
 	];
 }
