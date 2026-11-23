@@ -1,11 +1,16 @@
 // scripts/ci-size.mjs sizes the CI jobs from the measured test times in the map: the unit runners, the test-check slices
 // and the minimal-code slices, written as the GITHUB_OUTPUT lines the plan job reads.
 //   node scripts/ci-size.mjs --map <map.json> [--tests <a.test.mjs,b.test.mjs>] [--changed-tests <n>] [--flips <n>]
-//                            [--github-output <path>]
+//                            [--base <sha>] [--github-output <path>]
 // The map is test-run.mjs's: { tests: { "<file>::<name>": { ms } } }. A --tests file the map does not hold counts the
-// median of the map's per-file totals, so a new test file is not sized as free. Exit 0 with a plan, 1 when the predicted
-// time is over the runner cap (the slowest tests are named, so the owner can split them), 2 on bad input.
+// median of the map's per-file totals, so a new test file is not sized as free. With --base <sha> the changed-test count is
+// the tests whose body differs between that commit and HEAD (new or changed, a loop one unit), read with test-check.mjs's
+// own parser over each changed tests/*.test.mjs, run from the repo. Exit 0 with a plan (past six runners it caps at six
+// and names the overage and the slowest tests on stderr), 2 on bad input.
 import fs from 'node:fs';
+import path from 'node:path';
+import { spawnSync } from 'node:child_process';
+import { pathToFileURL, fileURLToPath } from 'node:url';
 
 const RUNNER_SECONDS = 110;
 const MAX_RUNNERS = 6;
@@ -14,8 +19,8 @@ const MAX_CHECK_SLICES = 6;
 const FLIPS_PER_SLICE = 200;
 const MAX_MUTATION_SLICES = 4;
 const SLOWEST_NAMED = 5;
-const FLAGS = ['--map', '--tests', '--changed-tests', '--flips', '--github-output'];
-const USAGE = 'usage: node scripts/ci-size.mjs --map <map.json> [--tests <files>] [--changed-tests <n>] [--flips <n>] [--github-output <path>]';
+const FLAGS = ['--map', '--tests', '--changed-tests', '--flips', '--base', '--github-output'];
+const USAGE = 'usage: node scripts/ci-size.mjs --map <map.json> [--tests <files>] [--changed-tests <n>] [--flips <n>] [--base <sha>] [--github-output <path>]';
 
 // Every flag takes exactly one value; a flag with no value, or one that is another flag, is refused rather than read.
 function parseArgs(args) {
@@ -36,6 +41,23 @@ function count(opts, name) {
 	if (raw === undefined) return 0;
 	if (!/^\d+$/.test(raw)) throw new Error(`--${name} takes a whole number, got ${raw}`);
 	return Number(raw);
+}
+
+// The tests whose body differs between the base commit and HEAD, over each changed tests/*.test.mjs, by test-check's parser.
+async function changedSince(base) {
+	if (!/^[0-9a-f]{7,64}$/i.test(base)) throw new Error(`--base takes a commit sha, got ${base}`);
+	const git = (...a) => spawnSync('git', a, { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024 });
+	const diff = git('diff', '--name-only', base, 'HEAD', '--', 'tests/*.test.mjs');
+	if (diff.status !== 0) throw new Error(`cannot diff against ${base}`);
+	const { tests } = await import(pathToFileURL(path.join(path.dirname(fileURLToPath(import.meta.url)), 'test-check.mjs')).href);
+	let n = 0;
+	for (const f of diff.stdout.split('\n').filter(Boolean)) {
+		if (!fs.existsSync(f)) continue;
+		const was = git('show', `${base}:${f}`);
+		const before = tests(was.status === 0 ? was.stdout : '');
+		for (const [name, body] of tests(fs.readFileSync(f, 'utf8'))) if (before.get(name) !== body) n++;
+	}
+	return n;
 }
 
 function readMap(file) {
@@ -85,20 +107,19 @@ function emit(lines, target) {
 	try { fs.appendFileSync(target, text); } catch { throw new Error(`cannot write ${target}`); }
 }
 
-function main(args) {
+async function main(args) {
 	const opts = parseArgs(args);
 	const entries = readMap(opts.map);
 	const tests = opts.tests === undefined ? null : listFiles(opts.tests);
-	const changed = count(opts, 'changed-tests');
+	const changed = opts.base === undefined ? count(opts, 'changed-tests') : await changedSince(opts.base);
 	const flips = count(opts, 'flips');
 	const { ms, named } = predict(entries, tests);
 	if (ms > MAX_RUNNERS * RUNNER_SECONDS * 1000) {
+		// Past the cap the plan is still six runners: the overage and the slowest tests are named, and the job passes (M9).
 		// Named from the tests this job runs; a job whose every file is the median has no keys, so the whole map is named.
 		const slowest = (named.length ? named : entries).slice().sort((a, b) => b.ms - a.ms).slice(0, SLOWEST_NAMED);
 		const names = slowest.map((e) => `${e.key} (${e.ms / 1000} s)`).join(', ');
 		process.stderr.write(`ci-size: predicted ${ms / 1000} s is over ${MAX_RUNNERS} runners at ${RUNNER_SECONDS} s; slowest: ${names}\n`);
-		process.exitCode = 1;
-		return;
 	}
 	const unit = clamp(Math.ceil(ms / (RUNNER_SECONDS * 1000)), MAX_RUNNERS);
 	const check = clamp(Math.ceil(changed / CHANGED_PER_SLICE), MAX_CHECK_SLICES);
@@ -113,7 +134,7 @@ function main(args) {
 }
 
 try {
-	main(process.argv.slice(2));
+	await main(process.argv.slice(2));
 } catch (err) {
 	process.stderr.write(`ci-size: ${err.message}\n`);
 	process.exitCode = 2;

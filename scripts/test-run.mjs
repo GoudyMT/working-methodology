@@ -17,7 +17,7 @@
 // 1. refuses to start above 80% of the temp disk's inodes used (exit 2), and warns above 50%;
 // 2. sweeps the roots of finished or killed runs, before and after;
 // 3. fails when the temp folder holds more entries after than before, and names them;
-// 4. fails a fast-lane test over the cap (30 s, or KIT_TEST_FAST_MS in ms); tests under tests/slow are exempt.
+// 4. fails a fast-lane test over the cap (30 s, or KIT_TEST_FAST_MS in ms); tests under tests/slow are exempt, and a --map run is.
 // A file that imports tests/harness.mjs is split over the shards; any other file runs whole, once.
 // The full suite still runs in CI at every push: a changed run is for the owner's machine.
 import fs from 'node:fs';
@@ -465,8 +465,13 @@ export async function main(argv) {
 		}
 		const results = await Promise.all(jobs);
 		for (const r of results) if (r.status !== 0) process.stdout.write(r.out);
-		const late = xmls.flatMap((x) => overCap(x, cap)).filter((t) => !inSlow(t.file));
-		for (const t of late) process.stdout.write(`test-run: fast-lane test over the cap: ${t.name} in ${posix(path.relative(root, real(t.file)))}, ${t.ms} ms (cap ${cap} ms)\n`);
+		// A traced run (--map) measures every test, so the cap does not hold it: a main push still writes its map.
+		const late = o.map ? [] : xmls.flatMap((x) => overCap(x, cap)).filter((t) => !inSlow(t.file));
+		for (const t of late) {
+			const line = `test-run: fast-lane test over the cap: ${t.name} in ${posix(path.relative(root, real(t.file)))}, ${t.ms} ms (cap ${cap} ms)\n`;
+			process.stdout.write(line);
+			process.stderr.write(line); // test-check quotes a failed run from stderr
+		}
 		const sum = (k) => results.reduce((n, r) => n + r[k], 0);
 		const label = `${name}${shardFiles.length ? `${shards} shards` : 'no shards'}`;
 		const skipped = sum('skipped') ? `, skipped ${sum('skipped')}` : '';

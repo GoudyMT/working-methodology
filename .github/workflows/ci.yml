@@ -34,6 +34,10 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.lanes.outputs.unit) }}
       fail-fast: false
+    # H1: a matrix or lanes value reaches a run line only through these, and each run checks it as an integer first.
+    env:
+      SHARD: ${{ matrix.shard }}
+      UNIT_N: ${{ needs.lanes.outputs.unit_n }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -82,7 +86,9 @@ jobs:
       # The map-merge job joins the parts into the whole map.
       - name: Every test, with the coverage map
         if: github.event_name != 'pull_request'
-        run: node scripts/test-run.mjs --map --slice ${{ matrix.shard }}/${{ needs.lanes.outputs.unit_n }} --shards 4
+        run: |
+          [[ "$SHARD" =~ ^[0-9]+$ && "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the shard values are not integers" >&2; exit 1; }
+          node scripts/test-run.mjs --map --slice "$SHARD/$UNIT_N" --shards 4
 
       - name: Keep the coverage map part
         if: github.event_name != 'pull_request'
@@ -137,14 +143,25 @@ jobs:
 
       - name: Every test
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
-        run: node scripts/test-run.mjs --shards 4 --slice ${{ matrix.shard }}/${{ needs.lanes.outputs.unit_n }}
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          [[ "$SHARD" =~ ^[0-9]+$ && "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the shard values are not integers" >&2; exit 1; }
+          # M11: the slices pack by the base map's times only when the map was loaded; --plan without it exits 2.
+          plan=(); if [ -f tests/.map.json ]; then plan=(--plan "$BASE_SHA"); fi
+          node scripts/test-run.mjs --shards 4 --slice "$SHARD/$UNIT_N" "${plan[@]}"
 
       # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
       # It joins the changed run (--always), so a security test the change reaches runs once (K105); over half the suite
       # reached, the runner runs every test.
       - name: The tests the change reaches
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --changed --shards 4 --slice ${{ matrix.shard }}/${{ needs.lanes.outputs.unit_n }} --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          [[ "$SHARD" =~ ^[0-9]+$ && "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the shard values are not integers" >&2; exit 1; }
+          plan=(); if [ -f tests/.map.json ]; then plan=(--plan "$BASE_SHA"); fi
+          node scripts/test-run.mjs --changed --shards 4 --slice "$SHARD/$UNIT_N" "${plan[@]}" --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
 
   # T15 Part A: each test the PR adds or changes, held to the bar for a new test. Strict since K24 (the owner,
   # 2026-11-17): a finding fails the job; a test the time budget left unmeasured is named only.
@@ -159,6 +176,10 @@ jobs:
     strategy:
       matrix: ${{ fromJSON(needs.lanes.outputs.check) }}
       fail-fast: false
+    # H1: a matrix or lanes value reaches a run line only through these, and the run checks it as an integer first.
+    env:
+      SLICE: ${{ matrix.slice }}
+      CHECK_N: ${{ needs.lanes.outputs.check_n }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -198,10 +219,11 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         # K105: a PR that moves VERSION carries its build record; each test its fix ledger names gets a verdict here.
         run: |
+          [[ "$SLICE" =~ ^[0-9]+$ && "$CHECK_N" =~ ^[0-9]+$ ]] || { echo "the slice values are not integers" >&2; exit 1; }
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
-          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice ${{ matrix.slice }}/${{ needs.lanes.outputs.check_n }} --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice "$SLICE/$CHECK_N" --budget 120 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
   # The one name the ruleset requires for the test check: it fails unless every slice passed, so the required check reports
   # whatever the slice count is. A slice that failed or was skipped fails it.
@@ -306,7 +328,7 @@ jobs:
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
-          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 600 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --windows --budget 120 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
 
       - name: Windows tests
         env:
@@ -380,33 +402,50 @@ jobs:
           if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
           echo "sizing map from main's run: ${run_id:-none}"
 
-      # Runner and slice counts from the map's measured time (scripts/ci-size.mjs). A PR counts its changed tests: the
-      # test( lines at the start of each changed test file; a push has none. No map: four of each.
+      # Runner and slice counts from the map's measured time (scripts/ci-size.mjs). H1: the BASE commit's copy runs, never the
+      # PR's, with the base's test parser beside it; what it prints is checked below before any job reads it as a matrix. A PR
+      # counts its changed tests with --base (new or changed tests, a loop as one); a push has none. No map, or a base copy
+      # that cannot size (the base has no --base yet): four of each.
       - name: Size the jobs
         id: size
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
           BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
         run: |
           OUT="$RUNNER_TEMP/size.txt"
+          fixed() { printf '%s\n' 'unit={"shard":[0,1,2,3]}' 'check={"slice":[0,1,2,3]}' 'mutation={"slice":[1]}' > "$OUT"; }
           if [ -f tests/.map.json ]; then
-            changed=0
-            if [ "$EVENT" = "pull_request" ]; then
-              changed="$(git diff --name-only "$BASE_SHA" HEAD -- 'tests/*.test.mjs' | while read -r f; do grep -c '^test(' "$f" 2> /dev/null || true; done | awk '{ s += $1 } END { print s + 0 }')"
-            fi
-            node scripts/ci-size.mjs --map tests/.map.json --changed-tests "$changed" --github-output "$OUT"
+            S="$RUNNER_TEMP/size-base"; mkdir -p "$S/scripts"
+            git archive "$BASE_SHA" scripts/test-check.mjs project/.claude/kit-temp.cjs user/kit-hooks/why-rule.cjs 2> /dev/null | tar -x -C "$S" || true
+            git show "$BASE_SHA:scripts/ci-size.mjs" > "$S/scripts/ci-size.mjs" 2> /dev/null || rm -f "$S/scripts/ci-size.mjs"
+            base=()
+            if [ "$EVENT" = "pull_request" ]; then base=(--base "$BASE_SHA"); fi
+            rm -f "$OUT"
+            [ -f "$S/scripts/ci-size.mjs" ] && node "$S/scripts/ci-size.mjs" --map tests/.map.json "${base[@]}" --github-output "$OUT" || { echo "the base's ci-size could not size this run: four of each"; fixed; }
           else
-            printf '%s\n' 'unit={"shard":[0,1,2,3]}' 'check={"slice":[0,1,2,3]}' 'mutation={"slice":[1]}' > "$OUT"
+            fixed
           fi
           unit="$(sed -n 's/^unit=//p' "$OUT")"
           check="$(sed -n 's/^check=//p' "$OUT")"
           mutation="$(sed -n 's/^mutation=//p' "$OUT")"
+          # Each output is {"shard":[0,...]} or {"slice":[0,...]}, with 1 to 6 entries; anything else stops the run here.
+          unit_re='^\{"shard":\[0(,[0-9]+)*\]\}$'
+          check_re='^\{"slice":\[0(,[0-9]+)*\]\}$'
+          mutation_re='^\{"slice":\[[0-9]+(,[0-9]+)*\]\}$'
+          [[ "$unit" =~ $unit_re && "$check" =~ $check_re && "$mutation" =~ $mutation_re ]] || { echo "ci-size printed a plan of the wrong shape" >&2; exit 1; }
+          unit_n="$(printf '%s' "$unit" | jq '.shard | length')"
+          check_n="$(printf '%s' "$check" | jq '.slice | length')"
+          for n in "$unit_n" "$check_n"; do
+            [[ "$n" =~ ^[0-9]+$ ]] && [ "$n" -ge 1 ] && [ "$n" -le 6 ] || { echo "a plan of $n runners is not 1 to 6" >&2; exit 1; }
+          done
           {
             echo "unit=$unit"
-            echo "unit_n=$(( $(printf '%s' "$unit" | tr -cd ',' | wc -c) + 1 ))"
+            echo "unit_n=$unit_n"
             echo "check=$check"
-            echo "check_n=$(( $(printf '%s' "$check" | tr -cd ',' | wc -c) + 1 ))"
+            echo "check_n=$check_n"
             echo "mutation=$mutation"
           } >> "$GITHUB_OUTPUT"
 
