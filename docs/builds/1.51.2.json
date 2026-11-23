@@ -630,7 +630,8 @@
     },
     "accepted": [],
     "deferred": [
-      "low: 25 findings, the owner's pick (2026-11-23), in docs/builds/1.51.2.next.jsonl"
+      "low: 25 findings, the owner's pick (2026-11-23), in docs/builds/1.51.2.next.jsonl",
+      "after the sweep: 8 items from the review passes over the fixes and the automated reviews, in the same file; the hand-back crash pass stays a logged pass, the owner's pick (2026-11-23)"
     ],
     "fixes": [
       {
