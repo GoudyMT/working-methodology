@@ -275,6 +275,88 @@ function warmMessage(cwd, input) {
 	});
 }
 
+// K369 (U24): closeout. In a repo whose HEAD commit holds docs/builds/<VERSION>.closeout.json (VERSION read from HEAD), a checker
+// spawn is refused with the defer command, and a tester or writer spawn whose brief has no Ticket: line naming an id in the
+// file's tickets is refused. Only HEAD counts, so a file in the working tree does not. A file that cannot be read, or has no
+// tickets array, refuses such a spawn with "hook error: lead review" and logs its cause to kit-guard-open.log. A repo with no
+// commit, or no closeout file in HEAD, changes nothing.
+const CLOSEOUT_DIR = 'docs/builds';
+
+// One git run in a folder: its status and stdout, launched as gitLine launches git.
+function gitRun(cwd, args) {
+	const r = spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...args], {
+		encoding: 'utf8',
+		timeout: 3000,
+		windowsHide: true,
+		cwd: path.dirname(process.execPath),
+		env: { ...process.env, NoDefaultCurrentDirectoryInExePath: '1' },
+	});
+	return { status: r.status, stdout: r.stdout || '' };
+}
+
+// The tickets of the closeout file in HEAD: null when there is no commit or no such file, and it throws when the file is
+// there but cannot be read or has no tickets array.
+function closeoutTickets(cwd) {
+	if (gitLine(cwd, ['--verify', '-q', 'HEAD']) === null) return null;
+	const version = gitRun(cwd, ['show', 'HEAD:VERSION']);
+	if (version.status !== 0) return null;
+	const rel = `${CLOSEOUT_DIR}/${version.stdout.trim()}.closeout.json`;
+	const listed = gitRun(cwd, ['ls-tree', '--full-tree', '--name-only', 'HEAD', '--', rel]);
+	if (listed.status !== 0) throw new Error(`git cannot list HEAD for ${rel}`);
+	if (listed.stdout.trim() !== rel) return null;
+	const shown = gitRun(cwd, ['show', `HEAD:${rel}`]);
+	if (shown.status !== 0) throw new Error(`${rel} in HEAD cannot be read`);
+	const data = JSON.parse(shown.stdout);
+	if (!data || typeof data !== 'object' || !Array.isArray(data.tickets)) throw new Error(`${rel} has no tickets array`);
+	return data.tickets;
+}
+
+// True when the spawn's Ticket: line names an id the closeout tickets name (ids read as idsOf reads them).
+function ticketNamed(prompt, tickets) {
+	const line = /^[ \t]*ticket:(.*)$/im.exec(prompt);
+	const known = new Set(idsOf(tickets.join(' ')));
+	return line !== null && idsOf(line[1]).some((id) => known.has(id));
+}
+
+// The role a spawn runs as for the closeout check: listRole's tester or writer, plus test-writer (the table's tester role,
+// as WARM_ROLES reads it), by subagent_type or, for a general agent, by its Role: line. Null for every other spawn.
+function closeoutRole(type, prompt) {
+	const role = listRole(type, prompt);
+	if (role) return role;
+	const bare = String(type).split(':').pop().toLowerCase();
+	if (bare === 'test-writer') return 'test-writer';
+	const line = /^[ \t]*role:(.*)$/im.exec(prompt);
+	return (bare === 'general-purpose' || bare === '') && line && line[1].trim().toLowerCase() === 'test-writer' ? 'test-writer' : null;
+}
+
+// The closeout check for a checker, tester or writer spawn. Any other spawn passes without a read of the repo.
+function closeoutGate(cwd, type, prompt) {
+	const checkerCall = isChecker(type, prompt);
+	const role = checkerCall ? null : closeoutRole(type, prompt);
+	if (!checkerCall && !role) return null;
+	const hold = holdMode('closeout-spawn');
+	let tickets;
+	try {
+		tickets = closeoutTickets(cwd);
+	} catch (err) {
+		const cause = String((err && err.message) || err);
+		try {
+			const common = commonDir(cwd);
+			if (common) fs.appendFileSync(path.join(common, OPEN), `${JSON.stringify({ at: new Date().toISOString(), hook: 'agent-model', cause })}\n`);
+		} catch {
+			/* the open log itself failed: the refusal still stands */
+		}
+		return deny(`hook error: lead review (${cause})`);
+	}
+	if (tickets === null) return null;
+	const why = checkerCall
+		? 'a checker spawn in closeout: record the deferral with node user/kit-tools/closeout.mjs defer "<text>" instead'
+		: ticketNamed(prompt, tickets) ? null : `a ${role} spawn in closeout has no Ticket: line naming an id in the closeout tickets`;
+	if (why === null) return null;
+	logRow(cwd, { type: role || type, model: null, want: null, why }, hold);
+	return hold.mode === 'enforce' ? deny(why) : null;
+}
+
 // The hook's answer for one Agent call: a deny when the hold reads enforce and the model is of another family, else nothing.
 function check(input) {
 	let refuse = null;
@@ -315,8 +397,13 @@ function check(input) {
 				if (gate.mode === 'enforce') refuse = deny(`${why}. Run ${LIST_COMMAND} <test files> from that worktree, then spawn.`);
 			}
 		}
-		// The round cap: a checker spawn on a unit with two counted check rounds already is refused (K366).
-		if (isChecker(type, prompt)) refuse = roundGate(cwd, type, model, prompt) || refuse;
+		// The closeout check (K369) comes first in precedence: a checker in closeout is refused, a tester or writer names a
+		// ticket in the closeout list, and the same spawn gets the same refusal on every try, even past the round cap.
+		const closed = closeoutGate(cwd, type, prompt);
+		// The round cap: a checker spawn on a unit with two counted check rounds already is refused (K366). roundGate still
+		// runs for every checker, so its check rows are written as before.
+		const capped = isChecker(type, prompt) ? roundGate(cwd, type, model, prompt) : null;
+		refuse = closed || capped || refuse;
 		// The warm check (K364): a fresh tester or builder spawn while an open one of its lane is under the limit.
 		refuse = refuse || warmSpawn(cwd, input, type, prompt);
 	} catch {

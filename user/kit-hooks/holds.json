@@ -4,6 +4,7 @@
     { "id": "handoff-gate", "hook": "handoff-gate.cjs", "mode": "log" },
     { "id": "spawn-list", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" },
     { "id": "round-cap", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" },
-    { "id": "warm-agents", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" }
+    { "id": "warm-agents", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" },
+    { "id": "closeout-spawn", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" }
   ]
 }
