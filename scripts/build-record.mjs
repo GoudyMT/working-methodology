@@ -9,12 +9,17 @@
 //   node scripts/build-record.mjs notes [<record>]       prints the release notes
 //   node scripts/build-record.mjs release [<record>] [<file>]  writes the notes to a file (default reports/) and
 //                                                        prints the one publish line, its title from the record
+//   node scripts/build-record.mjs --from-plan <plan.md> --records <folder>  prints each unit's tests as file::name keys
+//                                                        (JSON, no file written); a RECORD test the plan lacks is named
 // With no record named, the one for the version in VERSION is read.
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath, pathToFileURL } from 'node:url';
 import { checkSection } from '../project/.claude/visuals.mjs';
+import { check } from '../user/kit-tools/handoff.mjs';
+import { planUnits, testLines, testOf } from '../user/kit-tools/plan-check.mjs';
+import { filesOf } from '../user/kit-tools/test-budget.mjs';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 export const KINDS = { added: 'Added', changed: 'Changed', fixed: 'Fixed', security: 'Security', removed: 'Removed' };
@@ -253,7 +258,78 @@ export function checkRepo(root, file) {
 	return { at, rec, problems: found };
 }
 
-if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href) {
+/**
+ * The tests of each plan unit as "<first test file in its Files cell>::<test name>" keys, in the plan's order, from its
+ * Tests cell. A tester RECORD's "tests" names a test the plan lacks: it goes to notes, is not added, and is not a fault.
+ * Args:
+ *     planText: the plan's markdown text.
+ *     records: [{name, text}] for each .jsonl hand-back in the records folder.
+ * Returns:
+ *     {items: [{unit, tests}], notes: [stderr lines], faults: [stderr lines, which make the run exit 1]}.
+ */
+export function fromPlan(planText, records) {
+	const items = [];
+	const faults = [];
+	const notes = [];
+	const keysOf = new Map();
+	for (const u of planUnits(planText)) {
+		const file = filesOf(u.files).find((f) => /^tests\//.test(f));
+		if (!file) {
+			faults.push(`unit ${u.id} has no test file in its Files cell, so its tests cannot be keyed`);
+			continue;
+		}
+		const keys = testLines(u.tests).map((l) => `${file}::${testOf(l).name}`);
+		keysOf.set(u.id, keys);
+		items.push({ unit: u.id, tests: keys });
+	}
+	for (const { name, text } of records) {
+		const r = check(text);
+		if (!r.ok) {
+			faults.push(`record ${name} is not a valid hand-back: ${r.errors.join('; ')}`);
+			continue;
+		}
+		const role = r.roleLine || {};
+		if (role.role !== 'tester' || role.tests === undefined) continue;
+		if (!Array.isArray(role.tests) || !role.tests.every((k) => typeof k === 'string')) {
+			faults.push(`record ${name} has a tests value that is not a list of test keys`);
+			continue;
+		}
+		const unit = typeof role.unit === 'string' ? role.unit.trim() : '';
+		const planned = keysOf.get(unit) || [];
+		for (const key of role.tests) if (!planned.includes(key)) notes.push(`not in plan: ${unit} ${key}`);
+	}
+	return { items, notes, faults };
+}
+
+// --from-plan <plan.md> --records <folder>: the fromPlan result on stdout (JSON) and stderr; exit 2 on bad input.
+function fromPlanMain(args) {
+	if (args.length !== 3 || args[1] !== '--records') {
+		process.stderr.write('usage: node scripts/build-record.mjs --from-plan <plan.md> --records <folder>\n');
+		return 2;
+	}
+	let r;
+	try {
+		const planText = fs.readFileSync(args[0], 'utf8');
+		const records = fs.readdirSync(args[2]).filter((n) => n.endsWith('.jsonl')).sort()
+			.map((name) => ({ name, text: fs.readFileSync(path.join(args[2], name), 'utf8') }));
+		r = fromPlan(planText, records);
+	} catch (e) {
+		process.stderr.write(`build-record --from-plan: ${e.message}\n`);
+		return 2;
+	}
+	for (const n of r.notes) process.stderr.write(`${n}\n`);
+	if (r.faults.length) {
+		for (const f of r.faults) process.stderr.write(`${f}\n`);
+		return 1;
+	}
+	process.stdout.write(`${JSON.stringify({ items: r.items }, null, 2)}\n`);
+	return 0;
+}
+
+const RUN_DIRECTLY = Boolean(process.argv[1]) && import.meta.url === pathToFileURL(path.resolve(process.argv[1])).href;
+if (RUN_DIRECTLY && process.argv[2] === '--from-plan') {
+	process.exitCode = fromPlanMain(process.argv.slice(3));
+} else if (RUN_DIRECTLY) {
 	const [cmd, file] = process.argv.slice(2);
 	const root = process.env.KIT_RECORD_ROOT ? path.resolve(process.env.KIT_RECORD_ROOT) : ROOT;
 	const r = checkRepo(root, cmd === 'body' ? undefined : file);
@@ -283,7 +359,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(path.resolve(process.ar
 	} else if (['changelog', 'pr', 'notes'].includes(cmd) && r.rec && !problems(r.rec).length) {
 		process.stdout.write({ changelog, pr: prBody, notes }[cmd](r.rec));
 	} else {
-		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>] | release [<record>] [<file>]\n');
+		process.stderr.write(r.rec ? `${problems(r.rec).join('\n')}\n` : 'usage: node scripts/build-record.mjs check | changelog | pr | notes [<record>] | release [<record>] [<file>] | --from-plan <plan.md> --records <folder>\n');
 		process.exitCode = r.rec ? 1 : 2;
 	}
 }

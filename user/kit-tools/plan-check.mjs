@@ -5,8 +5,13 @@
 // (test-budget.mjs) holds; each spec rule has a test line "-> <id>"; guard rows hold (guard-rows.mjs).
 // --lock <unit> writes the row's sha256 to <plan>.locks.json when the plan checks clean; a later check refuses a changed row.
 // --records <folder> checks each .jsonl hand-back (handoff.mjs) against the plan by its role line's unit.
+// --whys prints each unit's test names and their why lines, derived from its Tests cell (K368); a why under six words is a
+// fault in the check. --brief <unit> --role tester|builder prints that unit's brief as markdown: its files, test names,
+// why lines and the lock commands, written from the row so they are never typed by hand.
 //   node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit>]
-// Exit 0 clean, 1 faults on stdout, 2 unreadable input or bad usage (stderr).
+//   node plan-check.mjs <plan.md> --whys
+//   node plan-check.mjs <plan.md> --brief <unit> --role tester|builder
+// Exit 0 clean, 1 faults on stdout (or an unknown unit or role on stderr), 2 unreadable input or bad usage (stderr).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -53,6 +58,70 @@ function unitsTable(text) {
 
 const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
 
+// A Tests cell's lines, each one test: split at <br>, trimmed, no empty line.
+export const testLines = (cell) => String(cell || '').split(/<br\s*\/?>/i).map((l) => l.trim()).filter(Boolean);
+
+// A Tests line's test name (the text before "->") and its spec id (the first "-> <id>" after it), null when it has none.
+export function testOf(line) {
+	const i = line.indexOf('->');
+	if (i < 0) return { name: line.trim(), rule: null };
+	const m = /->\s*([A-Za-z][\w-]*)/.exec(line.slice(i));
+	return { name: line.slice(0, i).trim(), rule: m ? m[1] : null };
+}
+
+// The why a test line derives: "catches" and the test name. The check counts these words (six at least).
+const whyOf = (name) => `catches ${name}`;
+
+// The why line written above a test: its row id is the Title's leading K code, or the unit id (an R row).
+const whyLine = (t, rowId) => `// why: ${whyOf(t.name)}${t.rule ? ` (${rowId} ${t.rule})` : ''}`;
+
+// The Units table's rows: each unit's id, Title, Files and Tests cells, and its row id (the leading K code of its Title,
+// else its unit id). A plan with no Units table or without these columns cannot be read.
+export function planUnits(text) {
+	const table = unitsTable(text);
+	if (table === null) throw new Unreadable('the plan has no ## Units table');
+	const at = {};
+	for (const key of ['Id', 'Title', 'Files', 'Tests']) {
+		const i = table.head.findIndex((h) => h.startsWith(key.toLowerCase()));
+		if (i < 0) throw new Unreadable(`the Units table has no ${key} column`);
+		at[key] = i;
+	}
+	return table.rows.map((row) => {
+		const id = (row[at.Id] || '').replace(/[*_`]/g, '').trim();
+		const title = row[at.Title] || '';
+		const k = /^\s*(K\d+)\b/.exec(title);
+		return { id, title, files: row[at.Files] || '', tests: row[at.Tests] || '', rowId: k ? k[1] : id };
+	}).filter((u) => u.id);
+}
+
+// --whys: each unit's test names and their why lines.
+function whysText(units) {
+	return units.map((u) => [u.id, ...testLines(u.tests).flatMap((l) => {
+		const t = testOf(l);
+		return [`  ${t.name}`, `  ${whyLine(t, u.rowId)}`];
+	})].join('\n')).join('\n') + '\n';
+}
+
+// --brief: one unit's brief for its tester or its builder, from its row. The test files are the Files cell's tests/ paths.
+function briefText(u, role) {
+	const files = filesOf(u.files);
+	const tests = files.filter((f) => TEST_FOLDER.test(f.replace(/\\/g, '/')));
+	const src = files.filter((f) => !TEST_FOLDER.test(f.replace(/\\/g, '/')));
+	if (role === 'tester') {
+		return [`# Tester brief: ${u.id}`, '', `Unit: ${u.title.trim()}`, `Files: ${u.files.trim()}`, '',
+			'Write each test first, with its name and its why line as given:', '',
+			...testLines(u.tests).flatMap((l) => {
+				const t = testOf(l);
+				return [`- ${t.name}`, `  ${whyLine(t, u.rowId)}`];
+			}), '',
+			'Lock before the unit runs, from the repo root:', '', '```', `node user/kit-tools/unit-lock.mjs --tester --files ${tests.join(',')}`, '```', ''].join('\n');
+	}
+	return [`# Builder brief: ${u.id}`, '', `Unit: ${u.title.trim()}`, '',
+		`Source files (edit these): ${src.join(', ')}`, `Tests (locked, never edit): ${tests.join(', ')}`, '',
+		'Run only these tests:', '', '```', `node --test ${tests.join(' ')}`, '```', '',
+		'Lock after the red commit, with its sha:', '', '```', `node user/kit-tools/unit-lock.mjs <red sha> --files ${src.join(',')}`, '```', ''].join('\n');
+}
+
 // The rule ids ("- S1: ...") under a unit's "### <id> spec" section, in order. None when the plan has no such section.
 function specRules(text, id) {
 	const lines = text.replace(/\r\n/g, '\n').split('\n');
@@ -79,7 +148,7 @@ function budgetFaults(id, cells, at, map, rules) {
 	const lines = (cells[at.Tests] || '').split(/<br\s*\/?>/i).map((l) => l.trim()).filter(Boolean);
 	if (lines.length === 0) found.push(`unit ${id} has an empty Tests cell`);
 	if (lines.length > CEILING[b.category]) found.push(`unit ${id} has ${lines.length} test lines, over its ${b.category} ceiling of ${CEILING[b.category]}: split the unit`);
-	for (const l of lines) if (!l.includes('->')) found.push(`unit ${id} has a test line with no "->": ${l}`);
+for (const l of lines) if (!l.includes('->')) found.push(`unit ${id} has a test line with no "->": ${l}`);
 	if (b.category === 'guard') found.push(...guardRowFaults(id, lines));
 	const named = new Set(lines.flatMap((l) => [...l.matchAll(/->\s*([A-Za-z][\w-]*)/g)].map((m) => m[1])));
 	for (const rule of rules) if (!named.has(rule)) found.push(`unit ${id} spec rule ${rule} has no test line with -> ${rule}`);
@@ -254,26 +323,33 @@ function checkRecords(dir, ids) {
 
 function parseArgs(argv) {
 	const pos = [];
-	let records = null;
-	let lock = null;
+	const opt = {};
+	let whys = false;
 	for (let i = 0; i < argv.length; i++) {
-		if (argv[i] === '--records' || argv[i] === '--lock') {
+		if (['--records', '--lock', '--brief', '--role'].includes(argv[i])) {
 			if (i + 1 >= argv.length) return null;
-			if (argv[i] === '--lock') lock = argv[++i];
-			else records = argv[++i];
+			opt[argv[i].slice(2)] = argv[++i];
+		} else if (argv[i] === '--whys') {
+			whys = true;
 		} else if (argv[i].startsWith('--')) {
 			return null;
 		} else {
 			pos.push(argv[i]);
 		}
 	}
-	return pos.length === 1 ? { plan: pos[0], records, lock } : null;
+	const brief = opt.brief ?? null;
+	const records = opt.records ?? null;
+	const lock = opt.lock ?? null;
+	// --whys and --brief print and stop: they take no --records or --lock, and --role goes with --brief only.
+	if (pos.length !== 1 || (whys && brief !== null) || ((whys || brief !== null) && (records !== null || lock !== null))) return null;
+	if ((opt.role !== undefined) !== (brief !== null)) return null;
+	return { plan: pos[0], records, lock, whys, brief, role: opt.role ?? null };
 }
 
 function main(argv) {
 	const args = parseArgs(argv);
 	if (!args) {
-		process.stderr.write('plan-check: usage: node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit>]\n');
+		process.stderr.write('plan-check: usage: node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit>] | <plan.md> --whys | <plan.md> --brief <unit> --role tester|builder\n');
 		return 2;
 	}
 	try {
@@ -282,6 +358,23 @@ function main(argv) {
 			text = fs.readFileSync(args.plan, 'utf8');
 		} catch (e) {
 			throw new Unreadable(`cannot read plan ${args.plan}: ${e.code || e.message}`);
+		}
+		if (args.whys) {
+			process.stdout.write(whysText(planUnits(text)));
+			return 0;
+		}
+		if (args.brief !== null) {
+			const unit = planUnits(text).find((u) => u.id === args.brief);
+			if (!['tester', 'builder'].includes(args.role)) {
+				process.stderr.write(`plan-check: role ${args.role} is not tester or builder\n`);
+				return 1;
+			}
+			if (!unit) {
+				process.stderr.write(`plan-check: unit ${args.brief} is not in the Units table\n`);
+				return 1;
+			}
+			process.stdout.write(briefText(unit, args.role));
+			return 0;
 		}
 		const plan = checkPlan(text, mapOf(args.plan));
 		const lockFile = `${args.plan}.locks.json`;
