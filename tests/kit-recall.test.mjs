@@ -467,6 +467,8 @@ test('a PR runs the reached tests and the security set, or every test; main save
   // The map is kept by main's push run only (each runner's part, then the map-merge job's whole map, which runs only
   // off a PR), and a PR takes it from main's own push run of its base commit, never from the Actions cache, which a PR's
   // earlier run can write (the security review of this build).
+  assert.ok(ci.includes('- name: Keep the coverage map part\n'), 'no step keeps each runner\'s part of the coverage map');
+  assert.match(ci, /^  map-merge:$/m, 'no map-merge job joins the parts');
   const part = ci.split('- name: Keep the coverage map part\n')[1].split('- name:')[0];
   assert.match(part, /if: github\.event_name != 'pull_request'[\s\S]*upload-artifact@[0-9a-f]{40}[\s\S]*name: test-map-part-/);
   assert.match(step('Every test, with the coverage map'), /if: github\.event_name != 'pull_request'[\s\S]*--map/);

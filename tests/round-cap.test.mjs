@@ -281,6 +281,7 @@ test('a marked-up Plan line with no Unit line is refused like a plain one', () =
 });
 
 // why: catches a plan-less checker counted against every plan's rows, so a reused unit id is capped forever (K366 S3, round 2 N5)
+// planted: {"file":"user/kit-hooks/agent-model.cjs","was":"if (plan === null ? row.plan != null :","to":"if (plan === null ? false :"}
 test('a checker with no Plan line counts only rows with no plan', () => {
 	const dir = repo();
 	const under = (plan) => ({ subagent_type: 'checker', prompt: `Plan: ${plan}\nUnit: U3\nCheck.` });

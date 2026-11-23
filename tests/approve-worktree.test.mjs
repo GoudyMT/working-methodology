@@ -130,6 +130,7 @@ test('a worktree git cannot read gives FIX THE CONTRACT, logged', () => {
 });
 
 // why: catches a worktree with no rules file of its own reading nothing, so the main checkout's block is never read or slot-checked (K357 C1)
+// planted: {"file":"user/skills/pre-pr-sweep/approve.mjs","was":"for (const root of [top, mainTop])","to":"for (const root of [top])"}
 test('a worktree that lacks the rules file reads the main checkout\'s file, and a slotted block there still gives FIX THE CONTRACT', () => {
   const clean = twoCheckouts();
   fs.rmSync(path.join(clean.wt, 'standards'), { recursive: true });

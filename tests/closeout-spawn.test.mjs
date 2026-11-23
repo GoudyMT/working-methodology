@@ -255,6 +255,7 @@ test('a git failure inside the closeout gate refuses a checker with "hook error:
 });
 
 // why: catches a ticketed tester counted as a checker because its brief carries Plan: and Unit: lines (K369 S2, round 2 N1)
+// planted: {"file":"user/kit-hooks/agent-model.cjs","was":"return !role && hasLine(prompt, 'plan') && hasLine(prompt, 'units?');","to":"return hasLine(prompt, 'plan') && hasLine(prompt, 'units?');"}
 test('a ticketed tester whose brief carries Plan and Unit lines passes in closeout', () => {
 	const dir = repo(closeoutJson(['F1']));
 	const briefed = { subagent_type: 'tester', prompt: 'Plan: PLAN.md\nUnit: U24\nRole: tester\nTicket: F1\nWrite the tests for the finding.' };

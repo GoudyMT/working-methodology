@@ -11,6 +11,7 @@ kitTemp.sessionRoot();
 
 // why: guards rule:outward-acts and the owner's rule never to lower a gate (2026-11-10): a check that passes a kit
 // whose push guard holds nothing, or whose install leaves a part unwired, is no check.
+// planted: {"file":"scripts/ci-install-check.mjs","was":"/differs from the kit|behind kit|not wired|missing/i","to":"/differs from the kit|behind kit|not wired/i"}
 test('the install check fails on a missing git hook, a push guard that holds nothing, and a hold of the wrong kind', () => {
 	const kit = kitTemp.makeTemp('ici-kit-');
 	const clone = spawnSync('git', ['clone', '--quiet', '--no-hardlinks', path.resolve('.'), kit], { encoding: 'utf8' });
