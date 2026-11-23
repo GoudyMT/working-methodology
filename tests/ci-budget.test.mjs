@@ -26,7 +26,7 @@ const job = (name, ran, { wait = 5, conclusion = 'success', queued = 0 } = {}) =
 
 function repo() {
 	const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ci-budget-'));
-	spawnSync('git', ['init', '-q'], { cwd: dir });
+	spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
 	return dir;
 }
 
