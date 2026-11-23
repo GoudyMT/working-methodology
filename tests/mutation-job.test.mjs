@@ -215,6 +215,7 @@ const minimalJob = () => {
 };
 
 // why: guards rule:ci-gate (the minimal-code job runs on a pull request, in four minutes, after unit-tests)
+// renamed from: the minimal-code job runs on pull requests in twelve minutes over slices 1 to 4
 test('the minimal-code job runs on pull requests in four minutes after unit-tests', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
@@ -224,6 +225,7 @@ test('the minimal-code job runs on pull requests in four minutes after unit-test
 });
 
 // why: guards rule:ci-gate (one run line names flip-plan, the PR base sha and the 150 budget together)
+// renamed from: one run line runs the report for its slice against the PR base sha
 test('one run line runs flip-plan against the PR base sha with budget 150', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
@@ -235,6 +237,7 @@ test('one run line runs flip-plan against the PR base sha with budget 150', () =
 });
 
 // why: guards rule:ci-gate (flip list measured against a map never downloaded)
+// renamed from: the minimal-code job builds its map on a full checkout before the run line
 test('the minimal-code job downloads the base commit map on a full checkout before the run line', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
@@ -246,6 +249,7 @@ test('the minimal-code job downloads the base commit map on a full checkout befo
 });
 
 // why: guards rule:ci-gate (no survivor or failing report may turn the run red; the kit allows no continue-on-error in ci.yml)
+// renamed from: the minimal-code job cannot fail the run: no continue-on-error, the map step tolerates failing tests
 test('the minimal-code job cannot fail the run: no continue-on-error, the run line tolerates a failing report', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
@@ -263,6 +267,7 @@ test('the minimal-code job reads no secrets and does not inherit them', () => {
 });
 
 // why: guards rule:ci-gate (the job's token reads the repository and its runs only, so a PR's code cannot write with it)
+// renamed from: the minimal-code job grants contents: read and nothing else
 test('the minimal-code job grants contents and actions read and nothing else', () => {
 	const job = minimalJob();
 	assert.ok(job, 'no minimal-code job in ci.yml');
