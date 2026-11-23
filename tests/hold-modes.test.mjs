@@ -395,8 +395,10 @@ test('hold-check with no --base takes the highest v* version when a lower one wa
 	assert.match(r.out, /alpha-hold/);
 });
 
-// why: catches an enforce hold that agent-model logs and passes, so a model mismatch is never stopped under enforce
+// why: guards rule:agent-role-table (an enforce hold that agent-model logs and passes lets a model mismatch through)
 test('agent-model refuses a model-mismatch call when its hold reads enforce, and passes and logs it under log', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'user/kit-hooks/agent-model.cjs is missing');
+	assert.ok(fs.existsSync(HOLD_MODE), 'user/kit-hooks/hold-mode.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-modes-');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
 	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
@@ -418,8 +420,10 @@ test('agent-model refuses a model-mismatch call when its hold reads enforce, and
 	assert.match(agentLogText(dir), /"mode":"log"/);
 });
 
-// why: catches a hook copied without hold-mode.cjs logging a plain log row that hides the unread hold; the miss is logged and the call is not refused
+// why: guards rule:agent-role-table (a hook copied without hold-mode.cjs must log its miss, never refuse or hide it)
 test('agent-model marks a log row holdModeMissing when hold-mode.cjs is absent, and not when it is present', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'user/kit-hooks/agent-model.cjs is missing');
+	assert.ok(fs.existsSync(HOLD_MODE), 'user/kit-hooks/hold-mode.cjs is missing');
 	const config = roleConfig({ 'opus-role': 'opus' });
 	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
 	const call = [{ subagent_type: 'opus-role', model: 'haiku' }];
@@ -444,6 +448,8 @@ test('agent-model marks a log row holdModeMissing when hold-mode.cjs is absent, 
 
 // why: catches a broken RECORD that handoff-gate only logs under enforce, so the hand-back reaches the lead with no refusal
 test('handoff-gate refuses a broken RECORD block under enforce, and stays silent for a valid one or under log', () => {
+	assert.ok(fs.existsSync(path.resolve('user/kit-hooks/handoff-gate.cjs')), 'user/kit-hooks/handoff-gate.cjs is missing');
+	assert.ok(fs.existsSync(path.resolve('user/kit-tools/handoff.mjs')), 'user/kit-tools/handoff.mjs is missing');
 	const kit = kitTemp.makeTemp('handoff-gate-kit-');
 	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
 	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
@@ -487,8 +493,10 @@ test('handoff-gate logs the missing-clarity warning for a valid tester record, a
 	assert.equal(rows().length, 1, 'a record with clarity adds no row');
 });
 
-// why: catches a model named in full or in capitals passing the family check under enforce, and a repeat call changing its verdict
+// why: guards rule:agent-role-table (a model named in full or in capitals must not pass the family check under enforce)
 test('agent-model denies a full or capitalised model name of another family, passes its own full id, and repeats its verdict', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'user/kit-hooks/agent-model.cjs is missing');
+	assert.ok(fs.existsSync(HOLD_MODE), 'user/kit-hooks/hold-mode.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-bypass-');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
 	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
@@ -506,7 +514,7 @@ test('agent-model denies a full or capitalised model name of another family, pas
 	assert.deepEqual(verdicts(), first, 'a repeat run gives the same verdict');
 });
 
-// why: catches a corrupt holds list or an unknown mode read as log under enforce, so a damaged list stops nothing and the row hides it
+// why: guards rule:agent-role-table (a damaged holds list or an unknown mode must read as enforce, and the row must show it)
 test('agent-model reads a corrupt holds.json or an unknown mode as enforce, and logs the mode it read', () => {
 	const config = roleConfig({ 'opus-role': 'opus' });
 	const env = { KIT_CLAUDE_HOME: config, CLAUDE_CONFIG_DIR: config };
@@ -527,6 +535,8 @@ test('agent-model reads a corrupt holds.json or an unknown mode as enforce, and 
 
 // why: catches a damaged hand-back record that handoff-gate logs but never refuses under enforce, and a repeat changing its verdict
 test('handoff-gate refuses a non-JSON line, a missing role line, a missing field, and a CRLF broken record under enforce', () => {
+	assert.ok(fs.existsSync(path.resolve('user/kit-hooks/handoff-gate.cjs')), 'user/kit-hooks/handoff-gate.cjs is missing');
+	assert.ok(fs.existsSync(path.resolve('user/kit-tools/handoff.mjs')), 'user/kit-tools/handoff.mjs is missing');
 	const kit = kitTemp.makeTemp('handoff-gate-bypass-');
 	fs.cpSync(path.resolve('user/kit-hooks'), path.join(kit, 'kit-hooks'), { recursive: true });
 	fs.mkdirSync(path.join(kit, 'kit-tools'), { recursive: true });
@@ -559,8 +569,10 @@ test('handoff-gate refuses a non-JSON line, a missing role line, a missing field
 	assert.equal(verdict(['Prose.', 'RECORD:', ROLE, JSON.stringify(FIELDS)].join('\n')), null, 'a valid record is not refused');
 });
 
-// why: catches a plugin-named role call (kit:checker) that agent-model reads as having no role file, so a model mismatch passes under enforce
+// why: guards rule:agent-role-table (a plugin-named role call, kit:checker, must read as its bare role file under enforce)
 test('agent-model reads a plugin role name as its bare role file, refusing a mismatch under enforce', () => {
+	assert.ok(fs.existsSync(AGENT_MODEL), 'user/kit-hooks/agent-model.cjs is missing');
+	assert.ok(fs.existsSync(HOLD_MODE), 'user/kit-hooks/hold-mode.cjs is missing');
 	const hookDir = kitTemp.makeTemp('agent-model-plugin-');
 	fs.copyFileSync(AGENT_MODEL, path.join(hookDir, 'agent-model.cjs'));
 	fs.copyFileSync(HOLD_MODE, path.join(hookDir, 'hold-mode.cjs'));
