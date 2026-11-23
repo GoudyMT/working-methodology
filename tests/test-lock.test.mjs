@@ -68,7 +68,9 @@ function lock(dir, redSha, files) {
 }
 // One PreToolUse call of the edit fence. agentType undefined is the lead's session (no agent_type in the call).
 function fence(dir, agentType, filePath, toolName = 'Edit') {
-	const input = JSON.stringify({ cwd: dir, agent_type: agentType, tool_name: toolName, tool_input: { file_path: filePath } });
+	const text = fs.existsSync(path.resolve(dir, filePath)) ? fs.readFileSync(path.resolve(dir, filePath), 'utf8') : '';
+	const edit = toolName === 'Edit' ? { old_string: text, new_string: text } : {};
+	const input = JSON.stringify({ cwd: dir, agent_type: agentType, tool_name: toolName, tool_input: { file_path: filePath, ...edit } });
 	const r = spawnSync(process.execPath, [FENCE], { cwd: dir, env: isolatedEnv(), input, encoding: 'utf8' });
 	return { code: r.status, out: `${r.stdout}${r.stderr}` };
 }
