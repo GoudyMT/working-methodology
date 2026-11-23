@@ -768,6 +768,7 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_ID: ${{ github.run_id }}
+          RUN_NUMBER: ${{ github.run_number }}
           EVENT: ${{ github.event_name }}
           REF: ${{ github.ref }}
         run: |
@@ -776,7 +777,8 @@ jobs:
           history=()
           # The history is a report's input: the 1.51.3 sweep made a failed fetch skip the trend, never fail the check.
           fetch_history() {
-            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=2" --jq '.workflow_runs[].id' > "$RUNNER_TEMP/prev.txt" || return 1
+            # L1 (the 1.51.3 sweep): only runs older than this one, so a re-run of an old push never reads later ones.
+            gh api "repos/$GITHUB_REPOSITORY/actions/workflows/ci.yml/runs?branch=main&event=push&status=completed&per_page=20" --jq '[.workflow_runs[] | select(.run_number < (env.RUN_NUMBER | tonumber))][:2][].id' > "$RUNNER_TEMP/prev.txt" || return 1
             : > "$RUNNER_TEMP/history.jsonl"
             while read -r id; do
               gh api --paginate "repos/$GITHUB_REPOSITORY/actions/runs/$id/jobs?per_page=100" | jq -s -c '{total_count: .[0].total_count, jobs: [.[].jobs[]]}' >> "$RUNNER_TEMP/history.jsonl" || return 1
