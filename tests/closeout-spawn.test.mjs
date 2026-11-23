@@ -269,3 +269,27 @@ test('a git that cannot run inside the closeout gate refuses the spawn', () => {
 	assert.ok(denied(d), `with no git on PATH the spawn is refused, got ${JSON.stringify(d)}`);
 	assert.match(reason(d), /hook error: lead review/);
 });
+
+// why: catches H3 a git exit 128 or an unwritable agent log letting a ticketless tester through the closeout gate
+test('H3 a git that exits 128, or a log that cannot be written, still refuses a ticketless tester in closeout', () => {
+	const broken = repo(closeoutJson(['F1']));
+	fs.writeFileSync(path.join(broken, '.git', 'HEAD'), 'ref: refs/heads/\n');
+	const [sick] = checkCalls(broken, [tester(null)]);
+	assert.ok(denied(sick), `a rev-parse that exits 128 refuses the ticketless tester, got ${JSON.stringify(sick)}`);
+	const dir = repo(closeoutJson(['F1']));
+	fs.rmSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']));
+	fs.mkdirSync(path.join(git(dir, ['rev-parse', '--path-format=absolute', '--git-common-dir']), 'kit-agent-model.log'));
+	const [logged] = checkCalls(dir, [tester(null)]);
+	assert.ok(denied(logged), `a log write error cannot let a ticketless tester through in closeout, got ${JSON.stringify(logged)}`);
+});
+
+// why: catches M4 a hold-mode.cjs that throws leaving the closeout-spawn hold open for a checker
+test('M4 a hold-mode.cjs that throws makes closeout-spawn refuse', () => {
+	const hookDir = kitTemp.makeTemp('closeout-spawn-hooks-');
+	fs.cpSync(HOOK_DIR, hookDir, { recursive: true });
+	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), "'use strict';\nexports.mode = () => { throw new Error('holds unreadable'); };\n");
+	const dir = repo(closeoutJson(['F1']));
+	const [spawn, bare] = checkCalls(dir, [checker(), tester(null)], hookDir);
+	assert.ok(denied(spawn), `a throwing hold-mode refuses the checker in closeout, got ${JSON.stringify(spawn)}`);
+	assert.ok(denied(bare), `and the ticketless tester, got ${JSON.stringify(bare)}`);
+});

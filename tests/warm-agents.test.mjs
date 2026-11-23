@@ -237,6 +237,18 @@ test('a fresh spawn under another role name of the same table role is still held
 	assert.match(reason(alias), /a tester of lane A is open \(agent a1/, 'the refusal names the table role');
 });
 
+// why: catches M1 a typed agent or a marked-up Role line being missed as an open warm agent
+test('M1 a typed tester and a bold-marked Role brief are open warm agents', () => {
+	const s = session();
+	// Agent a1 has no Role line: its type is in agent-a1.meta.json, as sweep-guard.cjs reads it.
+	fs.writeFileSync(path.join(s.subagents, 'agent-a1.jsonl'), `${[user('Lane: A\nDo the unit.'), assistant('m-a1', usage(50000))].join('\n')}\n`);
+	fs.writeFileSync(path.join(s.subagents, 'agent-a1.meta.json'), JSON.stringify({ agentType: 'tester' }));
+	fs.writeFileSync(path.join(s.subagents, 'agent-a2.jsonl'), `${[user('- **Role:** Tester\n- **Lane:** B\nDo the unit.'), assistant('m-a2', usage(50000))].join('\n')}\n`);
+	const [typed, marked] = checkInputs(repo(), s, [spawn('tester', 'A'), spawn('tester', 'B')]);
+	assert.ok(denied(typed), `a typed tester of lane A with no Role line holds a fresh tester, got ${JSON.stringify(typed)}`);
+	assert.ok(denied(marked), `a "- **Role:** Tester" brief of lane B holds a fresh tester, got ${JSON.stringify(marked)}`);
+});
+
 // why: catches two reads of one transcript give one size (K364 S6)
 test('two reads of one transcript give one size', async () => {
 	assert.ok(fs.existsSync(WARM), 'user/kit-tools/warm.mjs is missing');

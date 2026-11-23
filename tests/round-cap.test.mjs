@@ -54,9 +54,9 @@ const CONFIG = (() => {
 })();
 
 // Runs the real agent-model.cjs once per call, in order, from cwd; one decision per call, null when it lets the call through.
-function checkCalls(cwd, calls) {
+function checkCalls(cwd, calls, hookDir = HOOK_DIR) {
 	const script = "const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); process.stdout.write(JSON.stringify(a.calls.map((c) => m.check({ tool_name: 'Agent', tool_input: c, cwd: a.cwd }))));";
-	const args = JSON.stringify({ hookDir: HOOK_DIR, calls, cwd });
+	const args = JSON.stringify({ hookDir, calls, cwd });
 	const r = spawnSync(process.execPath, ['-e', `const path = require('node:path'); ${script}`], { env: isolatedEnv({ KIT_CLAUDE_HOME: CONFIG, CLAUDE_CONFIG_DIR: CONFIG, KIT_TEST_ARGS: args }), encoding: 'utf8' });
 	assert.equal(r.status, 0, `agent-model.cjs check ran: ${r.stderr}`);
 	return JSON.parse(r.stdout);
@@ -299,4 +299,32 @@ test('the same plan spelled another way is still the same plan', () => {
 		const [, , third] = checkCalls(dir, [at('PLAN.md'), at('PLAN.md'), at(spelling.startsWith(path.sep) || /^[A-Za-z]:/.test(spelling) ? path.join(dir, 'PLAN.md') : spelling)]);
 		assert.ok(denied(third), `"${spelling}" is the plan of the first two rounds, got ${JSON.stringify(third)}`);
 	}
+});
+
+// why: catches M2 a plan spelled with a round note or fragment opening a fresh round count
+test('M2 a plan spelled with a comma, dash, dot or fragment is the same plan', () => {
+	for (const spelling of ['PLAN.md, round 3', 'PLAN.md - round 3', 'PLAN.md.', 'PLAN.md#units']) {
+		const dir = repo();
+		const at = (plan) => ({ subagent_type: 'checker', prompt: `Plan: ${plan}\nUnit: U7\nCheck.` });
+		const [, , third] = checkCalls(dir, [at('PLAN.md'), at('PLAN.md'), at(spelling)]);
+		assert.ok(denied(third), `"${spelling}" is the plan of the first two rounds, got ${JSON.stringify(third)}`);
+	}
+});
+
+// why: catches M3 a Role line naming the checker as a phrase escaping the round cap
+test('M3 a Role line that names the checker as a word counts as a checker', () => {
+	const phrased = (role) => ({ subagent_type: 'general-purpose', prompt: `Plan: PLAN.md\nUnit: U17\nRole: ${role}\nCheck.` });
+	const [, , third] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased('the checker for U17')]);
+	assert.ok(denied(third), `"Role: the checker for U17" is a checker and is the third round, got ${JSON.stringify(third)}`);
+	const [, , tester] = checkCalls(repo(), [checker('U17'), checker('U17'), phrased('the tester for U17')]);
+	assert.equal(tester, null, `a tester phrase is no checker, got ${JSON.stringify(tester)}`);
+});
+
+// why: catches M4 a hold-mode.cjs that throws leaving the round-cap hold open for a checker
+test('M4 a hold-mode.cjs that throws makes round-cap refuse', () => {
+	const hookDir = kitTemp.makeTemp('round-cap-hooks-');
+	fs.cpSync(HOOK_DIR, hookDir, { recursive: true });
+	fs.writeFileSync(path.join(hookDir, 'hold-mode.cjs'), "'use strict';\nexports.mode = () => { throw new Error('holds unreadable'); };\n");
+	const [spawn] = checkCalls(repo(), [checker('U17')], hookDir);
+	assert.ok(denied(spawn), `a throwing hold-mode refuses the checker spawn, got ${JSON.stringify(spawn)}`);
 });
