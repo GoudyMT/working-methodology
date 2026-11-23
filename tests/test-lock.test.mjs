@@ -1136,3 +1136,26 @@ test('pre-push passes a merge of main that drops a test the feature never touche
 	}
 });
 
+// why: catches a push whose remote value this clone never fetched passed or held without saying so, since the hold must fail closed and name the fix
+test('pre-push holds a push whose remote value is not a local commit, and says fetch first, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// Another clone pushes feat/x, so the remote holds a commit this clone never fetched.
+		const parent = kitTemp.makeTemp('lock-other-');
+		git(parent, ['clone', '-q', bare, 'clone']);
+		const other = path.join(parent, 'clone');
+		git(other, ['checkout', '-q', '-b', 'feat/x', 'origin/main']);
+		put(other, { 'src/util.js': 'export const id = (x) => x + 5;\n' });
+		const remoteOnly = commit(other, 'feat: tune util elsewhere');
+		git(other, ['push', '-q', 'origin', 'feat/x']);
+		// This clone's feat/x is a different commit, and it names the remote's value as the old one.
+		git(dir, ['checkout', '-q', '-b', 'feat/x', red]);
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 3;\n' });
+		const tip = commit(dir, 'feat: tune add');
+		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${tip} refs/heads/feat/x ${remoteOnly}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a push whose remote value this clone never fetched: ${r.stderr}`);
+		assert.match(r.stderr, /fetch first/);
+	}
+});
+
