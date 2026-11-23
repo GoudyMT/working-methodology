@@ -73,7 +73,7 @@ test('B2 spec S2: Risk high or any GUARD_PATHS entry fires guard, and a near-mis
 	assert.match(high.stdout, /^category: guard \(ceiling 25; /m);
 	// Each GUARD_PATHS entry gets a file it names: a folder anywhere in the path, a file-name glob, or an exact file name.
 	// Run from the tester-model list itself, so a copy in test-budget.mjs that drops an entry fails here.
-	const sample = (g) => (g.endsWith('/') ? `user/${g}probe.cjs` : g.includes('*') ? g.replace('*', 'probe') : `user/tools/${g}`);
+	const sample = (g) => (g.endsWith('/') ? `user/${g}probe.cjs` : g.includes('*') ? g.replaceAll('*', 'probe') : `user/tools/${g}`);
 	for (const g of GUARD_PATHS) {
 		const res = runBudget(['--files', sample(g), '--risk', 'low']);
 		assert.equal(res.status, 0, `${g}: ${out(res)}`);
@@ -90,6 +90,7 @@ test('B2 spec S2: Risk high or any GUARD_PATHS entry fires guard, and a near-mis
 
 // why: catches an unmapped file counted as docs or glue, so a file the adapter never named gets a cheap budget (S3).
 test('B3 spec S3: the testCategories map sets categories by path or glob, and a file the map does not name counts as logic', async () => {
+	assert.ok(fs.existsSync(BUDGET), 'user/kit-tools/test-budget.mjs is missing');
 	const { CEILING } = await import(pathToFileURL(BUDGET).href);
 	assert.equal(CEILING.data, 2);
 	const map = mapFile({ 'docs/*.md': 'docs', 'kit-tools/exact.cjs': 'glue', 'fixtures/*.json': 'data' });

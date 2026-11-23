@@ -620,6 +620,8 @@ test('a feature-branch push goes without a yes only inside the owner\'s bounds',
 // why: guards rule:outward-acts
 // planted: {"file":"project/.claude/owner-yes.cjs","was":"function yeses(lines, { all = false }","to":"function yeses(lines, { all = true }"}
 test('the pre-push hook lets an AI push a feature branch, scans each pushed commit and holds the rest', { windows: true }, () => {
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'test-push-scan.mjs']) assert.ok(fs.existsSync(path.resolve('project/.claude', f)), `project/.claude/${f} is missing`);
+	assert.ok(fs.existsSync(path.resolve('project/.githooks/pre-push')), 'project/.githooks/pre-push is missing');
 	const dir = kitTemp.makeTemp('push-');
 	const g = (...a) => spawnSync('git', a, { cwd: dir, encoding: 'utf8' });
 	g('init', '-q', '-b', 'main');
@@ -1496,6 +1498,8 @@ test('a marker cleared by printf -v, written into a file, or unset by a built na
 // remote-tracking refs, which any command can write, so one fake ref ended the gate and the first push carried a
 // never-list file out. The remote is asked instead.
 test('a fake remote-tracking ref does not end the first push gate', { windows: true }, () => {
+	for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs', 'owner-yes.cjs', 'test-push-scan.mjs']) assert.ok(fs.existsSync(path.resolve('project/.claude', f)), `project/.claude/${f} is missing`);
+	assert.ok(fs.existsSync(path.resolve('project/.githooks/pre-push')), 'project/.githooks/pre-push is missing');
 	const dir = kitTemp.makeTemp('fpdecoy-');
 	const g = (...a) => spawnSync('git', ['-c', 'user.name=t', '-c', 'user.email=t@x', ...a], { cwd: dir, encoding: 'utf8' });
 	g('init', '-q', '-b', 'main');

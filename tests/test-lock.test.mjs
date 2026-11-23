@@ -699,24 +699,6 @@ test('pre-push holds a merge whose resolution changes a test file away from both
 	}
 });
 
-// why: catches a merge that only brings in a test file one parent already holds being held, the control for the merge hold
-test('pre-push passes a merge that only brings in a test file one parent already holds, in both hooks', () => {
-	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
-		const { dir, bare } = pushRepo();
-		git(dir, ['checkout', '-q', '-b', 'topic']);
-		put(dir, { 'tests/new.test.mjs': 'test("new", () => {});\n' });
-		commit(dir, 'feat: add the new case');
-		git(dir, ['checkout', '-q', 'main']);
-		put(dir, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
-		commit(dir, 'feat: tune util');
-		const m = spawnSync('git', ['merge', '--no-ff', '--no-edit', 'topic'], { cwd: dir, env: isolatedEnv(GIT_ID), encoding: 'utf8' });
-		assert.equal(m.status, 0, `the merge is clean: ${m.stderr}`);
-		const merge = git(dir, ['rev-parse', 'HEAD']);
-		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
-		assert.equal(r.status, 0, `${hook} held a merge that brings in a test file one parent holds: ${r.stderr}`);
-	}
-});
-
 // why: catches a test path with a space pushed unheld, since the hold's path split could read the name as two paths
 test('pre-push holds an edit of a test file whose name has a space, in both hooks', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
@@ -824,6 +806,19 @@ test('pre-push holds a merge that takes a side branch new test file over the rem
 		const ok = pushRun(hook, ctl.dir, ctl.bare, `refs/heads/feat/new ${ctlMerge} refs/heads/feat/new ${ZERO}\n`);
 		assert.equal(ok.status, 0, `${hook} held a merge of main whose test change is on the remote: ${ok.stderr}`);
 		assert.doesNotMatch(ok.stderr, HOLD_RE);
+		// Folded control (was its own test): a merge that only brings in a test file one parent already holds is not held.
+		const t2 = pushRepo();
+		git(t2.dir, ['checkout', '-q', '-b', 'topic']);
+		put(t2.dir, { 'tests/new.test.mjs': 'test("new", () => {});\n' });
+		commit(t2.dir, 'feat: add the new case');
+		git(t2.dir, ['checkout', '-q', 'main']);
+		put(t2.dir, { 'src/util.js': 'export const id = (x) => x + 1;\n' });
+		commit(t2.dir, 'feat: tune util');
+		const mT = spawnSync('git', ['merge', '--no-ff', '--no-edit', 'topic'], { cwd: t2.dir, env: isolatedEnv(GIT_ID), encoding: 'utf8' });
+		assert.equal(mT.status, 0, `the merge is clean: ${mT.stderr}`);
+		const mergeT = git(t2.dir, ['rev-parse', 'HEAD']);
+		const rT = pushRun(hook, t2.dir, t2.bare, `refs/heads/feat/x ${mergeT} refs/heads/feat/x ${ZERO}\n`);
+		assert.equal(rT.status, 0, `${hook} held a merge that brings in a test file one parent holds: ${rT.stderr}`);
 	}
 });
 
@@ -849,6 +844,16 @@ test('pre-push holds an orphan root merge that takes its test file over the remo
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${v1}\n`);
 		assert.notEqual(r.status, 0, `${hook} passed an orphan-root merge over the remote v1: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
+		// Folded control (was its own test): a new orphan ref that only adds tests is not held, since a ref with no merge base is a fresh add.
+		const oT = pushRepo();
+		firstPushDone(oT.dir);
+		git(oT.dir, ['checkout', '-q', '--orphan', 'feat/new-tests']);
+		git(oT.dir, ['rm', '-r', '-q', '-f', '.']);
+		put(oT.dir, { 'tests/fresh.test.mjs': 'test("fresh", () => {});\n' });
+		const freshT = commit(oT.dir, 'test: add the fresh case');
+		const rO = pushRun(hook, oT.dir, oT.bare, `refs/heads/feat/new-tests ${freshT} refs/heads/feat/new-tests ${ZERO}\n`);
+		assert.equal(rO.status, 0, `${hook} held a new orphan ref that only adds tests: ${rO.stderr}`);
+		assert.doesNotMatch(rO.stderr, HOLD_RE);
 	}
 });
 
@@ -1007,7 +1012,7 @@ function hookSandbox(hook, helper) {
 	return path.join(box, '.githooks', 'pre-push');
 }
 
-// why: catches a test-change helper exit the hook misreads, since a no-result exit 10 or a missing helper can let a test change through
+// why: guards rule:test-and-review-cadence (the pre-push hook reads each test-change helper exit, so a no-result exit 10 or a missing helper never lets a test change through)
 test('pre-push reads the test-change helper exit: 10 holds with or without a named commit, 1, 2 and 3 hold, 0 passes, a missing helper holds, in both hooks', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
@@ -1220,18 +1225,4 @@ test('pre-push holds a merge that changes a test path on a remote with no defaul
 	}
 });
 
-// why: catches a new orphan ref that only adds tests held, since a ref with no merge base is a fresh add and must pass
-test('pre-push passes a new orphan ref that only adds tests, in both hooks', () => {
-	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
-		const { dir, bare } = pushRepo();
-		firstPushDone(dir);
-		git(dir, ['checkout', '-q', '--orphan', 'feat/new-tests']);
-		git(dir, ['rm', '-r', '-q', '-f', '.']);
-		put(dir, { 'tests/fresh.test.mjs': 'test("fresh", () => {});\n' });
-		const fresh = commit(dir, 'test: add the fresh case');
-		const r = pushRun(hook, dir, bare, `refs/heads/feat/new-tests ${fresh} refs/heads/feat/new-tests ${ZERO}\n`);
-		assert.equal(r.status, 0, `${hook} held a new orphan ref that only adds tests: ${r.stderr}`);
-		assert.doesNotMatch(r.stderr, HOLD_RE);
-	}
-});
 
