@@ -420,6 +420,36 @@
     "after": 1985,
     "flips": "declared tests at the base and on this branch; the PR run gives the final count"
   },
+  "ciRounds": [
+    {
+      "round": 1,
+      "cause": "The fast cap could not name a test file node left out; guard tests had no planted bug; sentence pins had no label."
+    },
+    {
+      "round": 2,
+      "cause": "Closeout ignored sweep fix rows; Windows ran over the 30 s fast cap; tests left temp repos behind."
+    },
+    {
+      "round": 3,
+      "cause": "Approve read git again on every call, so the trial test ran over the cap; tests lacked tags; a temp repo was left."
+    },
+    {
+      "round": 4,
+      "cause": "Non-ASCII file names in tests and seven untagged tests."
+    },
+    {
+      "round": 5,
+      "cause": "The why parse missed regex marks in a test name; a fixture pasted a path into code; the rule map was stale."
+    },
+    {
+      "round": 6,
+      "cause": "The trial test ran over the 30 s cap again on Linux (second time)."
+    },
+    {
+      "round": 7,
+      "cause": "The sped-up trial test was named as adding no catch; proven instead by a planted bug."
+    }
+  ],
   "holds": {
     "enforce": [
       "spawn-list",
