@@ -23,12 +23,17 @@ jobs:
   # E31: the suite runs on Linux, where it took 22 s against about 7 minutes on Windows (8 shards on the owner's PC,
   # 2026-11-09). The tests marked { windows: true } run on Windows (below), and are skipped here.
   unit-tests:
+    needs: [lanes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
     # actions: read finds main's run and its coverage map for a PR.
     permissions:
       contents: read
       actions: read
+    # The runners: lanes sizes them from the map's measured time, and each runs its slice of the suite.
+    strategy:
+      matrix: ${{ fromJSON(needs.lanes.outputs.unit) }}
+      fail-fast: false
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -73,17 +78,18 @@ jobs:
           S="$RUNNER_TEMP/base/scripts/spawn-check.mjs"; [ -f "$S" ] || { echo "the base has no spawn-check.mjs: this PR's copy runs"; S=scripts/spawn-check.mjs; }
           node "$S" .
 
-      # Push to main: every test, through the guarded runner, recording the coverage map, kept with this run.
+      # Push to main: this runner's slice of every test, through the guarded runner, recording its part of the coverage map.
+      # The map-merge job joins the parts into the whole map.
       - name: Every test, with the coverage map
         if: github.event_name != 'pull_request'
-        run: node scripts/test-run.mjs --map --shards 4
+        run: node scripts/test-run.mjs --map --slice ${{ matrix.shard }}/${{ needs.lanes.outputs.unit_n }} --shards 4
 
-      - name: Keep the coverage map
+      - name: Keep the coverage map part
         if: github.event_name != 'pull_request'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          name: test-map
-          path: tests/.map.json
+          name: test-map-part-${{ matrix.shard }}
+          path: tests/.map-part-${{ matrix.shard }}.json
           include-hidden-files: true
           retention-days: 30
 
@@ -131,28 +137,28 @@ jobs:
 
       - name: Every test
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope != 'changed'
-        run: node scripts/test-run.mjs --shards 4
+        run: node scripts/test-run.mjs --shards 4 --slice ${{ matrix.shard }}/${{ needs.lanes.outputs.unit_n }}
 
       # The security set runs on every PR whatever the change reaches (E32 rule 4: security tests never move for speed).
       # It joins the changed run (--always), so a security test the change reaches runs once (K105); over half the suite
       # reached, the runner runs every test.
       - name: The tests the change reaches
         if: github.event_name == 'pull_request' && steps.scope.outputs.scope == 'changed'
-        run: node scripts/test-run.mjs --changed --shards 4 --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
+        run: node scripts/test-run.mjs --changed --shards 4 --slice ${{ matrix.shard }}/${{ needs.lanes.outputs.unit_n }} --always tests/guards-hold.test.mjs --always tests/guards-outside.test.mjs --always tests/owner-proof.test.mjs --always tests/task-gate.test.mjs --always tests/guard-dispatch.test.mjs --always tests/guard-prompts.test.mjs
 
   # T15 Part A: each test the PR adds or changes, held to the bar for a new test. Strict since K24 (the owner,
   # 2026-11-17): a finding fails the job; a test the time budget left unmeasured is named only.
   test-check:
     if: github.event_name == 'pull_request'
+    needs: [lanes]
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # Four machines, each a quarter of the changed tests (K13): one ran past 15 minutes on a PR with 616.
+    # The slices: lanes sizes them at one per 100 changed tests (K13): one machine ran past 15 minutes on a PR with 616.
     # K95: two slices of PR 47 still ran past it measuring flips and reported nothing; 12 minutes of budget leaves
     # room to set up and to report, and names each test it could not check.
     strategy:
+      matrix: ${{ fromJSON(needs.lanes.outputs.check) }}
       fail-fast: false
-      matrix:
-        slice: [0, 1, 2, 3]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -190,13 +196,59 @@ jobs:
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
-          SLICE: ${{ matrix.slice }}
         # K105: a PR that moves VERSION carries its build record; each test its fix ledger names gets a verdict here.
         run: |
           record=()
           if ! git diff --quiet "$BASE_SHA" HEAD -- VERSION; then record=(--record "docs/builds/$(tr -d '\r\n' < VERSION).json"); fi
           G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-check.mjs" ] || { echo "the base has no scripts/test-check.mjs: this PR's copy runs"; G=.; }
-          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice "$SLICE/4" --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+          node "$G/scripts/test-check.mjs" "$BASE_SHA" --strict --slice ${{ matrix.slice }}/${{ needs.lanes.outputs.check_n }} --budget 720 "${record[@]}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  # The one name the ruleset requires for the test check: it fails unless every slice passed, so the required check reports
+  # whatever the slice count is. A slice that failed or was skipped fails it.
+  test-check-all:
+    name: "test-check (all)"
+    if: always() && github.event_name == 'pull_request'
+    needs: [lanes, test-check]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every test-check slice passed
+        if: needs.test-check.result != 'success'
+        run: exit 1
+
+  # On a push to main, the parts of the coverage map from the unit runners, joined into the whole map (map-merge.mjs)
+  # that the next PR selects by and that sizes the jobs.
+  map-merge:
+    needs: [unit-tests]
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Join the map parts
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          gh run download "$RUN_ID" --repo "$REPO" --pattern 'test-map-part-*' --dir "$RUNNER_TEMP/parts"
+          mapfile -t parts < <(find "$RUNNER_TEMP/parts" -name '.map-part-*.json' | sort)
+          node scripts/map-merge.mjs "${parts[@]}"
+
+      - name: Keep the coverage map
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-map
+          path: tests/.map.json
+          include-hidden-files: true
+          retention-days: 30
 
   # What only the owner's machine shows: drive paths, Git for Windows' sh running the git hooks, junctions; and the
   # guards' own proofs, since the guards guard a Windows machine.
@@ -276,9 +328,18 @@ jobs:
   lanes:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # actions: read finds the coverage map that sizes the jobs: the base commit's on a PR, the previous main push's on a push.
+    permissions:
+      contents: read
+      actions: read
     outputs:
       slow: ${{ steps.find.outputs.slow }}
       install: ${{ steps.install.outputs.install }}
+      unit: ${{ steps.size.outputs.unit }}
+      unit_n: ${{ steps.size.outputs.unit_n }}
+      check: ${{ steps.size.outputs.check }}
+      check_n: ${{ steps.size.outputs.check_n }}
+      mutation: ${{ steps.size.outputs.mutation }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -304,6 +365,50 @@ jobs:
           git show "$BASE_SHA:scripts/pr-scope.mjs" > "$RUNNER_TEMP/pr-scope.mjs" 2>/dev/null || true
           lane="$(node "$RUNNER_TEMP/pr-scope.mjs" --install "$BASE_SHA" 2>/dev/null | grep -E '^install=(true|false)$' || true)"
           echo "${lane:-install=true}" >> "$GITHUB_OUTPUT"
+
+      # The map that sizes the jobs: the base commit's on a PR, the previous main push's on a push (its run, found through
+      # the API, as the unit job finds the map it selects by). None found, the size step takes its fallback.
+      - name: Coverage map for the sizing
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          SIZE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          rm -f tests/.map.json
+          run_id="$(gh run list --repo "$REPO" --workflow ci.yml --branch main --event push --commit "$SIZE_SHA" --json databaseId,headSha,event,headBranch --jq "[.[] | select(.headSha == \"$SIZE_SHA\" and .event == \"push\" and .headBranch == \"main\")][0].databaseId // empty")" || run_id=""
+          if [ -n "$run_id" ]; then gh run download "$run_id" --repo "$REPO" --name test-map --dir tests || rm -f tests/.map.json; fi
+          echo "sizing map from main's run: ${run_id:-none}"
+
+      # Runner and slice counts from the map's measured time (scripts/ci-size.mjs). A PR counts its changed tests: the
+      # test( lines at the start of each changed test file; a push has none. No map: four of each.
+      - name: Size the jobs
+        id: size
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.before }}
+        run: |
+          OUT="$RUNNER_TEMP/size.txt"
+          if [ -f tests/.map.json ]; then
+            changed=0
+            if [ "$EVENT" = "pull_request" ]; then
+              changed="$(git diff --name-only "$BASE_SHA" HEAD -- 'tests/*.test.mjs' | while read -r f; do grep -c '^test(' "$f" 2> /dev/null || true; done | awk '{ s += $1 } END { print s + 0 }')"
+            fi
+            node scripts/ci-size.mjs --map tests/.map.json --changed-tests "$changed" --github-output "$OUT"
+          else
+            printf '%s\n' 'unit={"shard":[0,1,2,3]}' 'check={"slice":[0,1,2,3]}' 'mutation={"slice":[1]}' > "$OUT"
+          fi
+          unit="$(sed -n 's/^unit=//p' "$OUT")"
+          check="$(sed -n 's/^check=//p' "$OUT")"
+          mutation="$(sed -n 's/^mutation=//p' "$OUT")"
+          {
+            echo "unit=$unit"
+            echo "unit_n=$(( $(printf '%s' "$unit" | tr -cd ',' | wc -c) + 1 ))"
+            echo "check=$check"
+            echo "check_n=$(( $(printf '%s' "$check" | tr -cd ',' | wc -c) + 1 ))"
+            echo "mutation=$mutation"
+          } >> "$GITHUB_OUTPUT"
 
   # T15 D1 and D2: install, upgrade and the guards, on both systems the kit runs on.
   install-check:
@@ -408,13 +513,13 @@ jobs:
   # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
   # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
   kit-tests:
-    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check]
+    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge]
     if: always()
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Every test job passed
-        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped')
+        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped') || (needs.map-merge.result != 'success' && needs.map-merge.result != 'skipped')
         run: exit 1
 
       # Skipped only when the lanes job found no install or guard change; one that ran must pass.
