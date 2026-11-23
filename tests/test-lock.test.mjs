@@ -1001,3 +1001,26 @@ test('pre-push reads the test-change helper exit: 10 holds with or without a nam
 		assert.notEqual(r.status, 0, `${hook} passed a push with its test-change helper missing: ${r.stderr}`);
 	}
 });
+
+// why: catches a merge to main that restores a weak test copy and drops another test pushed unheld, since its diff against a first parent forked before the test existed is empty
+test('pre-push holds a merge to main that restores a weak test copy and drops another test, in both hooks', () => {
+	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
+		const { dir, red, bare } = pushRepo();
+		firstPushDone(dir);
+		// Main holds the strong copy and a second test; the remote main holds both.
+		put(dir, { 'tests/strong.test.mjs': 'test("strong", () => {});\n', 'tests/other.test.mjs': 'test("other", () => {});\n' });
+		const mainTip = commit(dir, 'test: add the strong and other cases');
+		git(dir, ['push', '-q', 'origin', 'main']);
+		// The branch forks from red, before either test existed, and adds a weak copy of the strong one.
+		git(dir, ['checkout', '-q', '-b', 'old', red]);
+		put(dir, { 'tests/strong.test.mjs': 'test("ok", () => {});\n' });
+		commit(dir, 'feat: add the strong case');
+		// -s ours keeps the branch's tree, so the merge holds the weak copy and no other test; its first parent is the branch.
+		assert.equal(mergeRef(dir, 'main', ['-s', 'ours']).status, 0, 'the ours merge is clean');
+		const merge = git(dir, ['rev-parse', 'HEAD']);
+		const r = pushRun(hook, dir, bare, `refs/heads/main ${merge} refs/heads/main ${mainTip}\n`);
+		assert.notEqual(r.status, 0, `${hook} passed a merge to main that restores a weak tests/strong.test.mjs and drops tests/other.test.mjs: ${r.stderr}`);
+		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
