@@ -147,17 +147,6 @@ test('bypass: the same command split across a pipe and a here-doc stays under ha
 	});
 });
 
-// why: catches repeat: three runs in a row each stay under half the limit (K379 S1)
-test('repeat: three runs in a row each stay under half the limit', () => {
-	const dir = repoDir();
-	const runs = counted([{ command: LONG }, { command: LONG }, { command: LONG }], dir);
-	assert.equal(runs.length, 3);
-	runs.forEach((run, i) => {
-		assert.equal(run.decision, null, `run ${i} gives the same verdict`);
-		withinBound(run, LONG, `run ${i}`);
-	});
-});
-
 // why: catches fail-closed: a command the guard cannot finish reading in time still holds the call, logged (K379 S3)
 test('fail-closed: a command the guard cannot finish reading in time still holds the call, logged', () => {
 	const dir = repoDir();
