@@ -141,7 +141,7 @@ function holdLines(samples) {
 
 // The next number for this label: one more than the highest saved cand-<label>-<n> or base-<label>-<n>.
 function nextNumber(label, dirs) {
-  const pattern = new RegExp(`^(?:cand|base)-${label.replace(/\./g, '\\.')}-(\\d+)\\.md$`);
+  const pattern = new RegExp(`^(?:cand|base)-${label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}-(\\d+)\\.md$`);
   let top = 0;
   for (const dir of dirs) {
     let names = [];
