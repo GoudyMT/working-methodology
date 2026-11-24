@@ -437,7 +437,7 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
   // E32: the lanes job and the slow lane join the gate; a slow lane skipped for having no test passes.
-  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all\]$/m); // pin: 1 (GitHub reads the needs line)
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all, static\]$/m); // pin: 1 (GitHub reads the needs line)
   // T15 D1/D2: the install check, skipped only when the lanes job found no install or guard change.
   assert.ok(gate.includes("if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')")); // pin: 1
   assert.match(job('install-check'), /^    if: needs\.lanes\.outputs\.install == 'true'$[\s\S]*os: \[ubuntu-latest, windows-latest\][\s\S]*run: \|[\s\S]*node scripts\/ci-install-check\.mjs$/m);
@@ -498,7 +498,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   // pin: 1 (GitHub runs these lines)
   assert.match(step, /^\s+git show "\$PR_BASE:scripts\/recall\.mjs" > scripts\/recall-gate-base\.mjs$/m);
   assert.match(step, /^\s+node scripts\/recall-gate-base\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
-  assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
+  assert.match(step, /^\s+if: \$\{\{ !cancelled\(\) && github\.event_name == 'pull_request' \}\}$/m);
   assert.match(step, /^\s+PR_BASE: origin\/\$\{\{ github\.base_ref \}\}$/m);
   // pin: 1 (GitHub reads this line)
   assert.match(step, /^\s+PR_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);

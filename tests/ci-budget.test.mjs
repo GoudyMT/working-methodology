@@ -197,7 +197,7 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 	const line = kit.split('\n').find((l) => l.includes('scripts/ci-budget.mjs'));
 	assert.ok(line, 'kit-tests never runs scripts/ci-budget.mjs');
 	assert.match(line, /--jobs \S+/);
-	assert.match(line, /--self kit-tests(\s|$)/);
+	assert.match(line, /--self "\$\{\{ github\.job \}\}"(\s|$)/);
 	assert.ok(
 		line.includes('node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs'),
 		`the step does not run the base copy when it exists, in one line: ${line}`,
