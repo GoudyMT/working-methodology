@@ -241,7 +241,7 @@ test('fail-closed: an unreadable tier list reads as high and blocks, logged', ()
 });
 
 
-// why: catches a plugin stop whose hook-error.cjs is missing letting the stop through with no row (S1F4)
+// why: guards the owner's hook tier decision of 2026-11-23: a plugin stop with no hook-error.cjs is denied with a row (S1F4)
 test('a plugin stop with hook-error.cjs missing is denied with its own row', () => {
 	// A plugin root with a valid manifest (every file the launcher needs, hashed) whose kit-hooks hold one crashing role hook and
 	// no hook-error.cjs, so subagentStop reaches the role hooks.

@@ -116,7 +116,7 @@ test('the report names the lands-first path: one patch to main holding every fau
   assert.ok(report.text.includes(line), 'Base-copy report does not end with the lands-first line');
 });
 
-// why: catches the static job holds the content checks with no needs and every step if !cancelled(), and the required rollup needs it (K373 CIFP)
+// why: pin: GitHub reads the static job's needs, its step conditions and the rollup that waits for it (K373)
 test('the static job holds the content checks with no needs and every step if !cancelled(), and the required rollup needs it', () => {
   const job = jobBlock('static');
   assert.ok(!job.some((l) => /^    needs:/.test(l)), 'the static job has needs');

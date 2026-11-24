@@ -44,7 +44,7 @@ test('both agent-teams files say a retest commit is checked by test-integrity an
 	assert.equal(a, b, 'the two files carry the same paragraph');
 });
 
-// why: catches a skill that does not say a feature-branch push never asks, or drops main, tags, force and deletes from the owner's yes (S2)
+// why: guards rule:outward-acts (the skill says which pushes ask: main, tags, force and deletes do, a feature branch does not) (S2)
 test('SKILL.md says a feature-branch push never asks, and main, tags, force and deletes still need the owner pop-up or yes record', () => {
 	const s = read('user', 'skills', 'agent-team-build', 'SKILL.md');
 	const never = /(?:feature[- ]branch push|push(?:es)? to a? ?feature[- ]branch)[\s\S]{0,120}never (?:asks?|waits?)|never (?:asks?|waits?)[\s\S]{0,120}feature[- ]branch/i;

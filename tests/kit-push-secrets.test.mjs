@@ -86,7 +86,7 @@ test('a push whose test builds the value from joined parts at run time passes th
 	assert.match(r.out, /NO SECRET SHAPES/, 'the scan did not read the pushed commit');
 });
 
-// why: catches bypass: a key added in one commit and taken out in the next is still blocked, since every pushed commit is read (K371 S1)
+// why: guards rule:security-standards (a key in any pushed commit is blocked, even one taken out later) (K371 S1)
 test('bypass: a key added in one commit and taken out in the next is still blocked, since every pushed commit is read', () => {
 	const { work, none } = repo();
 	assert.equal(record(work, FILE, LITERAL, none).status, 0, 'the first setup commit did not land');

@@ -184,7 +184,7 @@ test('with no record nothing changes', () => {
 	assert.ok(denied(held), `with a record the spawn is refused, got ${JSON.stringify(held)}`);
 });
 
-// why: catches holds.json sets the lead-state hold to enforce with tier high (owner 03:16Z), and a test fails if it reads otherwise (K374 S5)
+// why: guards the owner's 03:16Z decision of 2026-11-23: the lead-state hold is enforced at tier high (K374 S5)
 // renamed from: holds.json sets the lead-state hold to enforce with tier high (Max 03:16Z), and a test fails if it reads otherwise
 test('holds.json sets the lead-state hold to enforce with tier high (owner 03:16Z), and a test fails if it reads otherwise', () => {
 	const hold = JSON.parse(fs.readFileSync(HOLDS, 'utf8')).holds.find((h) => h.id === 'lead-state');

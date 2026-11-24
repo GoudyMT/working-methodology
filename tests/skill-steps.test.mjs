@@ -27,7 +27,7 @@ test('the Rows line is locked at kickoff with --lock-rows and a later find goes 
 	}
 });
 
-// why: catches a skill that leaves a base-copy report fault to ride in the batch instead of one lands-first patch to main (S2)
+// why: doc claim: the skill sends a base-copy report fault into one lands-first patch to main (S2)
 test('a base-copy report fault goes into one lands-first patch to main, planned when the report first shows it', () => {
 	const s = SKILL();
 	assert.match(s, /base[- ]copy/i, 'SKILL.md names the base-copy report fault');
@@ -64,7 +64,7 @@ test('a fresh lead runs lead-state check, a hook error follows its tier, and a h
 	assert.match(s, /cap raise[\s\S]{0,60}(?:owner|Max)'?s choice/i, 'F4: a cap raise is the owner\'s choice');
 });
 
-// why: catches a tester brief that lets a secret-shaped test value be written whole in the test file (S4)
+// why: doc claim: the tester brief says a secret-shaped test value is joined from parts at run time (S4)
 test('the tester brief joins a secret-shaped test value from parts at run time, never written whole', () => {
 	const t = TESTER();
 	assert.match(t, /secret/i, 'tester-brief.md names secret-shaped values');

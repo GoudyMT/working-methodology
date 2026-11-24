@@ -350,7 +350,7 @@ test('test-integrity passes a retest: commit and lists it in retests.json and th
 	}
 });
 
-// why: catches CI running the PR's own copy of test-integrity so a PR could change the check that grades it (K367 S5)
+// why: pin: GitHub runs the base commit's copy of test-integrity in its own job, never the PR's copy (K367 S5)
 test('ci.yml runs the base commit copy of test-integrity, never the PR copy, in its own job', () => {
 	const ci = fs.readFileSync(CI, 'utf8');
 	const start = ci.search(/^ {2}test-integrity:\s*$/m);

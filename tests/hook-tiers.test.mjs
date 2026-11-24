@@ -97,7 +97,7 @@ test('tier(id) reads security, high or small from holds.json', () => {
 	assert.equal(mode('grounding'), 'enforce', 'a hook listed only for its tier reads as enforce');
 });
 
-// why: catches an unknown id or a missing tier reads as high (K375 S1)
+// why: guards the owner's hook tier decision of 2026-11-23: a hook with no readable tier is treated as high (K375 S1)
 test('an unknown id or a missing tier reads as high', () => {
 	const m = load(hookDir(holdsOf([['no-tier'], ['null-tier', null], ['number-tier', 3], ['kept', 'small']])));
 	needTier(m);
@@ -131,7 +131,7 @@ test("every hook the kit installs (kit-hooks/*.cjs and guard.cjs's PROJECT and U
 	}
 });
 
-// why: catches onError under high or security returns a deny "hook error: lead review: <hook>" and logs one JSON line (K375 S3)
+// why: guards the owner's hook tier decision of 2026-11-23: a crashed high or security hook denies and logs one row (K375 S3)
 test('onError under high or security returns a deny "hook error: lead review: <hook>" and logs one JSON line', () => {
 	const m = load(hookDir(holdsOf([['sec-hook', 'security'], ['high-hook', 'high']])));
 	needOnError(m);

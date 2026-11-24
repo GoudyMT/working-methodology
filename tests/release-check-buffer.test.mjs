@@ -137,7 +137,7 @@ test('a reply too large even for the raised buffer is named too large, never as 
 	assert.doesNotMatch(out, /PASS tag v1\.1\.0 on the merge/, out);
 });
 
-// why: catches the 1.51.3 notes still saying a renamed job starts its trend afresh (K388 S3)
+// why: doc claim: the 1.51.3 notes no longer say a renamed job starts its trend afresh (K388 S3)
 test('the notes from docs/builds/1.51.3.json no longer say a renamed job starts its trend afresh', () => {
 	const text = notes(JSON.parse(fs.readFileSync(RECORD, 'utf8')));
 	assert.doesNotMatch(text, /starts its trend afresh/);
