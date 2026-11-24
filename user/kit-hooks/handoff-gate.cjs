@@ -1,8 +1,8 @@
 // The hand-back gate. On SubagentHandback, a message whose RECORD: block fails the record check (kit-tools/handoff.mjs,
 // or uses CRLF line endings) is logged to <git common dir>/kit-guard-open.log with the check's errors. A valid record's
 // warnings (such as a missing clarity) are logged too. Its hold (holds.json, read through hold-mode.cjs) decides the
-// refusal: under enforce a broken record gets the PreToolUse deny shape, so the lead sees it refused; under log, or with
-// hold-mode.cjs missing, nothing is printed and the hand-back reaches the lead. A valid record prints nothing. A message
+// refusal: under enforce a broken record gets the PreToolUse deny shape, so the lead sees it refused; under log, nothing is
+// printed and the hand-back reaches the lead; a hold-mode.cjs that will not load reads as enforce. A valid record prints nothing. A message
 // with no RECORD: line is not this gate's to log.
 // The check runs as its own program, from node's own folder, so this hook process loads only its own folder.
 const fs = require('fs');
@@ -13,12 +13,13 @@ const { isTestFile, tests, whyFault } = require('./why-rule.cjs');
 // git as test-scope.cjs runs it: the repo's own config may name a program git runs (fsmonitor), so that is off.
 const git = (cwd, ...a) => spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', ...a], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
 
-// The hold's mode from hold-mode.cjs beside this file; a copy without it falls back to log and the row says so.
+// The hold's mode from hold-mode.cjs beside this file. A copy that will not load, or a mode() that throws, reads as enforce
+// (this gate's high tier), so a broken hold cannot wave a broken hand-back through; the row says it was missing.
 function holdMode() {
 	try {
 		return { mode: require('./hold-mode.cjs').mode('handoff-gate') };
 	} catch {
-		return { mode: 'log', missing: true };
+		return { mode: 'enforce', missing: true };
 	}
 }
 

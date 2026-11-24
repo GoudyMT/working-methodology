@@ -1,10 +1,27 @@
 {
   "holds": [
-    { "id": "agent-model", "hook": "agent-model.cjs", "mode": "log" },
+    { "id": "agent-model", "hook": "agent-model.cjs", "mode": "log", "tier": "high" },
     { "id": "handoff-gate", "hook": "handoff-gate.cjs", "mode": "enforce", "tier": "high" },
     { "id": "spawn-list", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" },
     { "id": "round-cap", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" },
     { "id": "warm-agents", "hook": "agent-model.cjs", "mode": "enforce", "tier": "small" },
-    { "id": "closeout-spawn", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" }
+    { "id": "closeout-spawn", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "lead-state", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "sweep-lock", "hook": "agent-model.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "owner-proof", "hook": "owner-proof.cjs", "mode": "enforce", "tier": "security" },
+    { "id": "task-gate", "hook": "task-gate.cjs", "mode": "enforce", "tier": "security" },
+    { "id": "guard-outward", "hook": "guard-outward.cjs", "mode": "enforce", "tier": "security" },
+    { "id": "guard-delete", "hook": "guard-delete.cjs", "mode": "enforce", "tier": "security" },
+    { "id": "guard-read", "hook": "guard-read.cjs", "mode": "enforce", "tier": "security" },
+    { "id": "sweep-guard", "hook": "sweep-guard.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "canary", "hook": "canary.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "edit-fence", "hook": "edit-fence.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "clean-tree", "hook": "clean-tree.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "test-scope", "hook": "test-scope.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "call-cap", "hook": "call-cap.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "ci-fix", "hook": "ci-fix.cjs", "mode": "enforce", "tier": "high" },
+    { "id": "grounding", "hook": "grounding.cjs", "mode": "enforce", "tier": "small" },
+    { "id": "kit-gate", "hook": "kit-gate.cjs", "mode": "enforce", "tier": "small" },
+    { "id": "record-counts", "hook": "record-counts.cjs", "mode": "enforce", "tier": "small" }
   ]
 }
