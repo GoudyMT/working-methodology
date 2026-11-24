@@ -11,6 +11,7 @@ import path from 'node:path';
 import { createRequire } from 'node:module';
 import { pathToFileURL } from 'node:url';
 import safeSpawn from './safe-spawn.cjs';
+import { GATE_FILE, gateLine, loosened, popUpAnswer, popUpReadable, attempt2Acts } from './ci-digest.mjs';
 
 const TEST_FILE = /^tests\/.+\.test\.mjs$/;
 // The one parse of a test file's tests, shared with the why rule at save (indented, aliased, named-array and loop tests).
@@ -196,6 +197,270 @@ function problemsIn(root) {
 	for (const [id, n] of uses) {
 		if (n > 1) problems.push(`ticket ${id} is used by ${n} fix rows: a ticket covers one new test or file`);
 	}
+	// K399 U21 (RESULT 2.5): the CI diagnoses and the gate numbers of the range after the swept head.
+	const cf = cifixOf(root, version);
+	if (cf !== null) problems.push(...cifixProblems(root, cf, head, end));
+	if (head !== null) problems.push(...gateProblems(root, commitOf(root, process.env.PR_BASE) || head, end, cf ? cf.lines : []));
+	return problems;
+}
+
+const CAUSES = ['code', 'pin', 'env'];
+// The proof ci-fix.mjs wrote into a line: a session, the grant as its id, an act quoting the line, and the answer time.
+const proofOk = (line, acts, grant) => {
+	const p = line.proof;
+	return !!p && typeof p === 'object' && typeof p.session === 'string' && p.session !== '' && p.id === grant && acts.includes(p.act) && Number.isFinite(p.at);
+};
+// The pop-up the proof names is re-read from proof.session: the answer must be the grant's accepted Yes, to the proof's act, at
+// the proof's time (K399 U22, 06:52Z ruling 4). A record that cannot be read fails, except in GitHub Actions (ruling 6), where
+// the proof is checked for consistency only: there is no pop-up record in CI, and the cifix record has one writer, ci-fix.mjs.
+const liveProof = (root, line, acts, grant) => {
+	const sid = line.proof.session;
+	if (!popUpReadable(root, sid)) return process.env.GITHUB_ACTIONS === 'true';
+	const ans = popUpAnswer(acts, root, sid);
+	if (!ans || !ans.yes || ans.id !== grant || ans.at !== line.proof.at || ans.act !== line.proof.act) return false;
+	return !revokedNow(root, line.proof);
+};
+// A newer answer to the proof's own act in the current session's record that is not a Yes revokes the proof (K399 U22,
+// 06:52Z ruling 7). No current session, or one whose record cannot be read, revokes nothing.
+const revokedNow = (root, proof) => {
+	const cur = process.env.CLAUDE_CODE_SESSION_ID;
+	if (!cur || !popUpReadable(root, cur)) return false;
+	const later = popUpAnswer([proof.act], root, cur);
+	return !!later && !later.yes && later.at > proof.at;
+};
+// A sha that names a commit of this branch's history: a full sha that is an ancestor of HEAD (git merge-base through the safe call).
+const inHistory = (root, sha) => /^[0-9a-f]{40}$/i.test(String(sha)) && safeSpawn.gitRead(root, ['merge-base', '--is-ancestor', String(sha), 'HEAD'], { encoding: 'utf8' }).status === 0;
+// The cifix record of the build: { rel, lines }, or null when the build has none. A line that is not JSON is unreadable.
+function cifixOf(root, version) {
+	const rel = `docs/builds/${version}.cifix.jsonl`;
+	if (!fs.existsSync(path.join(root, rel))) return null;
+	const lines = fs.readFileSync(path.join(root, rel), 'utf8').split('\n').filter((l) => l.trim() !== '').map((l, i) => {
+		try {
+			return JSON.parse(l);
+		} catch {
+			throw new Unreadable(`${rel} line ${i + 1} is not readable JSON`);
+		}
+	});
+	return { rel, lines };
+}
+
+// Each diagnosis line is well formed; each fix: or retest: commit after the swept head stays inside the files a line names,
+// and a pin file changes only in a retest: commit.
+function cifixProblems(root, { rel, lines }, head, end) {
+	const problems = [];
+	lines.forEach((l, i) => {
+		if (!l || typeof l !== 'object') throw new Unreadable(`${rel} line ${i + 1} is not an object`);
+		if (!CAUSES.includes(l.cause)) problems.push(`cifix: ${rel} line ${i + 1} has cause ${JSON.stringify(l.cause)}: code, pin or env`);
+		const n = typeof l.fix === 'string' ? l.fix.trim().split(/\s+/).filter(Boolean).length : 0;
+		if (n < 6) problems.push(`cifix: ${rel} line ${i + 1} has a fix of ${n} words: 6 or more`);
+		if (l.attempt === 2) {
+			// Every run (CI too, no session id): the grant is the id ci-fix.mjs wrote in the line's proof, the proof's act is an
+			// accepted act for the item, and no other line uses the grant (F6, U22 ruling 1).
+			const grant = typeof l.grant === 'string' ? l.grant.trim() : '';
+			const acts = attempt2Acts(String(l.key));
+			if (grant === '') problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 with no grant: the grant is the id of Max's accepted pop-up quoting the item`);
+			else if (!proofOk(l, acts, grant)) problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 whose proof does not match: it needs the grant ${grant} as its id and an act quoting ${l.key}`);
+			else if (lines.some((o, k) => k !== i && o && o.grant === grant)) problems.push(`cifix: ${rel} line ${i + 1} reuses grant ${grant}: a pop-up yes is spent once`);
+			else if (!liveProof(root, l, acts, grant)) problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 whose proof does not match Max's accepted Yes at proof.session, grant ${grant}, ${l.key}`);
+		} else if (l.attempt !== 1) problems.push(`cifix: ${rel} line ${i + 1} has attempt ${JSON.stringify(l.attempt)}: 1, or 2 with a grant`);
+	});
+	if (head === null) return problems;
+	// A fix: or retest: commit pairs with the newest cifix line committed before it (RESULT 2.5): its files must be that
+	// line's files, and a pin line's file changes only in a retest: commit. Each commit's own copy of the record gives its lines.
+	// The newest run's lines: those added by the newest commit that added any (F8). Only fix(ci): and retest(ci): commits
+	// pair with them (F9).
+	// Ruling 2: a gate: line (an owner's yes) never starts or replaces the diagnosis group. It is kept apart: its files are
+	// allowed in the CI fix commits that follow it, but it is no diagnosis.
+	const isGate = (line) => String(line?.key).startsWith('gate:');
+	let group = null;
+	let gates = [];
+	let seen = 0;
+	for (const row of git(root, ['log', '--reverse', '--format=%H %s', `${head}..${end}`]).split('\n').filter(Boolean)) {
+		const sha = row.slice(0, 40);
+		const subject = row.slice(41);
+		const copy = safeSpawn.gitRead(root, ['show', `${sha}:${rel}`], { encoding: 'utf8' });
+		if (copy.status === 0) {
+			const parsed = copy.stdout.split('\n').filter((x) => x.trim() !== '');
+			const added = [];
+			for (let k = seen; k < parsed.length; k++) {
+				try {
+					added.push({ line: JSON.parse(parsed[k]), no: k + 1 });
+				} catch {
+					/* a bad line is reported by the record check above */
+				}
+			}
+			const diag = added.filter(({ line }) => !isGate(line));
+			if (diag.length) {
+				group = diag;
+				gates = [];
+			}
+			if (group !== null) gates.push(...added.filter(({ line }) => isGate(line)));
+			seen = parsed.length;
+		}
+		if (group === null) continue;
+		const named = new Map();
+		for (const { line, no } of [...group, ...gates]) for (const f of Array.isArray(line.files) ? line.files : []) named.set(f, no);
+		const files = git(root, ['show', '--name-only', '--format=', sha]).split('\n').filter((f) => f && f !== rel);
+		// A CI fix commit is fix(ci): or retest(ci): (also with !, and the fixup!, squash! and amend! forms): any other commit
+		// that touches a file the newest run's diagnoses name is no CI fix, so it pairs with no line and is a fault.
+		if (!/^((fixup|squash|amend)! )?(fix|retest)\(ci\)!?:/.test(subject)) {
+			// An owner-yes line (key gate:...) is no diagnosis: it names the gate file Max allowed, not a red item's file.
+			const diagnosed = new Map();
+			for (const { line, no } of group) if (!String(line.key).startsWith('gate:')) for (const f of Array.isArray(line.files) ? line.files : []) diagnosed.set(f, no);
+			for (const f of files) if (diagnosed.has(f)) problems.push(`cifix: commit ${sha.slice(0, 12)} changes ${f}, which the newest run's cifix line ${diagnosed.get(f)} names, as "${subject}": a CI fix is a fix(ci): or retest(ci): commit`);
+			continue;
+		}
+		for (const f of files) {
+			if (!named.has(f)) problems.push(`cifix: commit ${sha.slice(0, 12)} changes ${f}, outside the files of the newest run's cifix lines (${group.map((g) => g.no).join(', ')})`);
+			const pinned = group.some(({ line }) => line.cause === 'pin' && (Array.isArray(line.files) ? line.files : []).includes(f));
+			if (pinned && !/^((fixup|squash|amend)! )?retest\(ci\)!?:/.test(subject)) problems.push(`cifix: commit ${sha.slice(0, 12)} changes pin file ${f} as "${subject}": a pin fix must be a retest(ci): commit`);
+		}
+	}
+	return problems;
+}
+
+// The test starts of a test file's text: [{ i, name }], from testStarts (the file's own parser) plus the test.skip( and
+// test.only( forms it does not read, so a skipped test is a kept test (K399 U22, 07:20Z ruling 9).
+const SKIP_FORM = /(?<![\w$.])test\.(?:skip|only)\(\s*(['"`])((?:\\.|(?!\1).)*)\1/;
+function startsOf(text) {
+	const lines = text.replace(/\r\n/g, '\n').split('\n');
+	const starts = testStarts(lines.join('\n')).map((s) => ({ i: s.i, name: s.name }));
+	lines.forEach((l, i) => {
+		const m = SKIP_FORM.exec(l);
+		if (m) starts.push({ i, name: m[2] });
+	});
+	return starts.sort((a, b) => a.i - b.i);
+}
+
+// Each test's lines: { name, from, to }. A test ends on its own line when its call closes there, else at the first closing
+// line at the margin below it (why-rule.cjs tests()), else at the line before the next start.
+function spansOf(text) {
+	const lines = text.replace(/\r\n/g, '\n').split('\n');
+	const starts = startsOf(text);
+	return starts.map((s, k) => {
+		let to = k + 1 < starts.length ? starts[k + 1].i - 1 : lines.length - 1;
+		if (/\}\)\s*;?\s*$/.test(lines[s.i])) to = s.i;
+		else {
+			const close = lines.findIndex((l, j) => j > s.i && j <= to && /^\}\)/.test(l));
+			if (close >= 0) to = close;
+		}
+		return { name: s.name, from: s.i, to };
+	});
+}
+
+// The test each timeout: line of a test file's text sits in: { text, name } per line; name is null when the line is outside
+// every test's lines.
+function timeoutHolders(text) {
+	const lines = text.replace(/\r\n/g, '\n').split('\n');
+	const spans = spansOf(text);
+	const out = [];
+	lines.forEach((l, i) => {
+		if (!/timeout:\s*\d/.test(l)) return;
+		const inside = spans.filter((s) => s.from <= i && i <= s.to);
+		out.push({ text: l.trim(), name: inside.length ? inside[inside.length - 1].name : null });
+	});
+	return out;
+}
+
+// A test name in the new text that the base text does not have: a rename, or a new test (ruling 9).
+function newNamesIn(was, now) {
+	const old = new Set(startsOf(was).map((s) => s.name));
+	return startsOf(now).some((s) => !old.has(s.name));
+}
+
+// The string literals ('x', "x" or `x`) of a text, unescaped, so 'the owner\'s yes' reads as the name it stands for.
+function literalsIn(text) {
+	const out = new Set();
+	for (const l of text.split('\n')) {
+		for (const m of l.matchAll(/'((?:\\.|[^'\\])*)'|"((?:\\.|[^"\\])*)"|`((?:\\.|[^`\\])*)`/g)) out.add((m[1] ?? m[2] ?? m[3]).replace(/\\(.)/g, '$1'));
+	}
+	return out;
+}
+
+// A lost timeout: line (text) is allowed only when every test that held a line of that text is gone from the new text: its
+// name is not among the new text's test names and not an unescaped string literal in it (K399 U22, 06:52Z ruling 8; 08:10Z
+// ruling 10; security review of 0698f77d). No holder found: not allowed.
+function timeoutLossOk(was, now, text) {
+	const named = new Set(startsOf(now).map((s) => s.name));
+	const literals = literalsIn(now);
+	const holders = timeoutHolders(was).filter((h) => h.text === text);
+	return holders.length > 0 && holders.every((h) => h.name !== null && !named.has(h.name) && !literals.has(h.name));
+}
+
+// A gate-file number that rises on a cap line or falls on a floor line, against the base, needs an owner-yes record:
+// a cifix line {key: "gate:<file>:<line text>", grant}. A line that is neither cap nor floor may change.
+function gateProblems(root, base, end, lines) {
+	const problems = [];
+	if (base === null) return problems;
+	const files = git(root, ['-c', 'core.quotePath=false', 'diff', '--name-only', base, end]).split('\n').filter(Boolean);
+	const showOf = (rev, f) => {
+		const r = safeSpawn.gitRead(root, ['show', `${rev}:${f}`], { encoding: 'utf8' });
+		return r.status === 0 ? r.stdout : null;
+	};
+	for (const f of files) {
+		if (!/^tests\/.+\.test\.mjs$/.test(f) && !GATE_FILE.test(f)) continue;
+		const was = showOf(base, f);
+		const now = showOf(end, f);
+		if (was === null || now === null) continue;
+		// The lines of the file as gate lines (the shared reader: comments left out, every number kept), matched by their key.
+		const old = was.replace(/\r\n/g, '\n').split('\n').map((o) => gateLine(f, o));
+		const used = new Set();
+		// Ruling 1, with the proof (K399 U22 ruling 1, 05:25Z): a gate grant is the id ci-fix.mjs wrote in the line's proof, the
+		// proof's act quotes this gate line (the full act, or the line alone), and no other line uses that id. Where this
+		// session's record can be read, the pop-up is re-read live too.
+		const ownedBy = (text) => lines.some((l, k) => {
+			if (!l || l.key !== `gate:${f}:${text}` || typeof l.grant !== 'string' || l.grant.trim() === '') return false;
+			const grant = l.grant.trim();
+			const full = `ci-fix gate-yes ${f}:${text}`;
+			const acts = [full, text];
+			if (!proofOk(l, acts, grant) || lines.some((o, j) => j !== k && o && typeof o.grant === 'string' && o.grant.trim() === grant)) return false;
+			// A bare-line act (the line alone, no file) binds to a file only through proof.file, which must be this line's file.
+			if (l.proof.act !== full && (l.proof.file !== f || !inHistory(root, l.proof.sha))) return false;
+			return liveProof(root, l, acts, grant);
+		});
+		const GRANT_NEED = (text) => `(a cifix line {key: "gate:${f}:${text}", grant: the id of Max's accepted pop-up quoting ci-fix gate-yes ${f}:${text}, with its proof, used by no other line})`;
+		// First pair each new gate line with its base line by key. A gate file holds every unpaired line, removed or new, as the
+		// hook's gateChange does (K399 U22 ruling 27.05Z), whether or not the other side changed.
+		const strict = GATE_FILE.test(f);
+		const pairs = [];
+		for (const raw of now.replace(/\r\n/g, '\n').split('\n')) {
+			const g = gateLine(f, raw);
+			if (!g) continue;
+			const idx = old.findIndex((o, j) => o && !used.has(j) && o.key === g.key);
+			if (idx >= 0) used.add(idx);
+			pairs.push({ g, idx });
+		}
+		const gone = old.some((o, j) => o && !used.has(j));
+		if (strict) {
+			for (let j = 0; j < old.length; j++) {
+				const o = old[j];
+				if (o && !used.has(j) && !ownedBy(o.text)) problems.push(`gate: ${f} "${o.text}" removes a ${o.kind} line with no owner-yes record ${GRANT_NEED(o.text)}`);
+			}
+		} else {
+			// A test file's timeout: lines (K399 U22, 05:33Z; ruling 3, 06:17Z): the lost ones are held unless their number is no
+			// greater than the drop in the count of test( calls, so one deleted test covers one timeout: line. A rewrite (a new
+			// one unpaired) is held by the new-line rule below.
+			const lostT = old.filter((o, j) => o && !used.has(j) && /timeout:\s*\d/.test(o.text));
+			const newT = pairs.some(({ g, idx }) => idx < 0 && /timeout:\s*\d/.test(g.text));
+			// Ruling 9: the lost lines are no more than the drop in test starts, and no new name appears (a rename).
+			const countOk = lostT.length <= startsOf(was).length - startsOf(now).length && !newNamesIn(was, now);
+			const unowned = lostT.find((o) => !(countOk && timeoutLossOk(was, now, o.text)) && !ownedBy(o.text));
+			if (lostT.length && !newT && unowned) problems.push(`gate: ${f} "${unowned.text}" removes a timeout line whose test is kept, with no owner-yes record ${GRANT_NEED(unowned.text)}`);
+		}
+		for (const { g, idx } of pairs) {
+			if (idx < 0) {
+				// A line holding both kinds is held on any change. Ruling 9: a new line whose key is not in the base, while a base
+				// gate line is gone (a rewrite such as 6e4 or 60_000), is a loosening; in a gate file every new unpaired line is held.
+				if ((strict || g.kind === 'mixed' || gone) && !ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${g.kind === 'mixed' ? 'mixes a cap and a floor' : 'is a gate line with no base line'} and is changed with no owner-yes record ${GRANT_NEED(g.text)}`);
+				continue;
+			}
+			// Every number on the line counts: a two-number cap line is loosened by its second number too (F10).
+			const at = loosened(g.kind, old[idx].nums, g.nums);
+			if (at < 0) continue;
+			const verb = g.kind === 'cap' ? 'raises a cap' : g.kind === 'floor' ? 'lowers a floor' : 'changes a mixed cap and floor';
+			if (!ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${verb} from ${old[idx].nums[at]} to ${g.nums[at]} with no owner-yes record ${GRANT_NEED(g.text)}`);
+		}
+	}
 	return problems;
 }
 
@@ -211,6 +476,11 @@ function logFail(root, cause) {
 }
 
 function check(root) {
+	// K413 (U21 S7): a project with no VERSION has no build record, so nothing is owed: no log line, exit 0.
+	if (!fs.existsSync(path.join(root, 'VERSION'))) {
+		process.stdout.write('no build record: nothing to close out\n');
+		return 0;
+	}
 	let problems;
 	try {
 		problems = problemsIn(root);
@@ -226,10 +496,16 @@ function check(root) {
 
 // A deferred item for the next patch: one JSON line, no approval.
 function defer(root, text) {
-	const version = versionOf(root);
-	const file = path.join(root, 'docs', 'builds', `${version}.next.jsonl`);
-	fs.mkdirSync(path.dirname(file), { recursive: true });
-	fs.appendFileSync(file, `${JSON.stringify({ text, at: new Date().toISOString() })}\n`);
+	// K413 (U21 S7): with no VERSION the line goes to next.jsonl, never a stack trace.
+	const hasVersion = fs.existsSync(path.join(root, 'VERSION'));
+	try {
+		const file = path.join(root, 'docs', 'builds', hasVersion ? `${versionOf(root)}.next.jsonl` : 'next.jsonl');
+		fs.mkdirSync(path.dirname(file), { recursive: true });
+		fs.appendFileSync(file, `${JSON.stringify({ text, at: new Date().toISOString() })}\n`);
+	} catch (e) {
+		process.stderr.write(`closeout: the deferred line could not be written: ${e.code || e.message}\n`);
+		return 1;
+	}
 	process.stdout.write('written, carry on\n');
 	return 0;
 }

@@ -2405,6 +2405,8 @@ export function build({ kit }) {
   // plan-check and count-gate read the plan graph and its spawn helper; an installed kit holds user/ only, so each gets an exact copy here.
   out.set('user/kit-tools/plan-graph.mjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'plan-graph.mjs'), 'utf8'));
   out.set('user/kit-tools/safe-spawn.cjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'safe-spawn.cjs'), 'utf8'));
+  // ci-wait.mjs and ci-fix.mjs read the CI digest the same way: one module, an exact copy in user/ (K399 U21).
+  out.set('user/kit-tools/ci-digest.mjs', fs.readFileSync(path.join(kit, 'project', '.claude', 'ci-digest.mjs'), 'utf8'));
   for (const [rel, text] of roleFiles(kit)) out.set(rel, text);
   out.set('project/standards/INDEX.md', stamp('rules/ (every module)') + ['', '# Rule Index', '',
     'Every rule by its fixed ID. A pointer `rule:<id>` anywhere in this project means: find the ID here, then read',
