@@ -1297,6 +1297,8 @@ test('the pre-push hook refuses a push over an armed head until it is disarmed, 
     const { dir, head, other, bare } = armedRepo();
     fs.mkdirSync(path.join(dir, '.githooks'));
     fs.copyFileSync(path.resolve(hook), path.join(dir, '.githooks', 'pre-push'));
+    // The pre-push hook refuses a push when its secret scan is missing, so the scratch project/.claude carries the scan and what it imports.
+    for (const f of ['secret-shapes.mjs', 'secret-patterns.mjs']) fs.copyFileSync(path.resolve('project/.claude', f), path.join(dir, 'project', '.claude', f));
     const log = path.join(dir, '.git', 'kit-merge-gate.log');
     const push = (remote) => spawnSync('sh', [path.join(dir, '.githooks', 'pre-push'), 'origin', bare], { encoding: 'utf8', cwd: dir,
       input: `refs/heads/feat/x ${other} refs/heads/feat/x ${remote}\n`, env: { ...process.env, KIT_PUSH_APPROVED: '', AI_AGENT: '', CLAUDECODE: '' } });
