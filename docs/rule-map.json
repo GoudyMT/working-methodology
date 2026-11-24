@@ -830,10 +830,12 @@
   "test-integrity": {
    "guards": [],
    "scripts": [
-    "project/.claude/test-push-scan.mjs"
+    "project/.claude/test-push-scan.mjs",
+    "scripts/test-integrity.mjs"
    ],
    "tests": [
     "tests/kit-recall.test.mjs",
+    "tests/test-integrity.test.mjs",
     "tests/test-lock.test.mjs",
     "tests/unit-check.test.mjs"
    ],
