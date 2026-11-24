@@ -535,6 +535,13 @@
         "tests/skill-steps.test.mjs::the tester brief joins a secret-shaped test value from parts at run time, never written whole",
         "tests/skill-steps.test.mjs::a gate, study, trial or check asked for in a build thread starts with side-job.mjs start and the lead keeps building"
       ]
+    },
+    {
+      "id": "U29",
+      "kind": "added",
+      "reach": "projects",
+      "text": "A message about a size budget or cap cues the trim-first rule, which looks for bloat before asking for room.",
+      "evidence": "rules/cues.json"
     }
   ],
   "verification": [
