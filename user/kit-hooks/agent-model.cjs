@@ -277,6 +277,16 @@ function hookError(cwd, common, err) {
 	return deny(`hook error: lead review (${cause})`);
 }
 
+// The answer for a throw no gate caught: hook-error.cjs names the hold whose gate threw, and that hold's tier decides (a high-tier
+// hold refuses). The local refusal stands when hook-error.cjs cannot load, so the call is still refused.
+function onErrorOf(id, err, cwd) {
+	try {
+		return require('./hook-error.cjs').onError(id, err, cwd);
+	} catch {
+		return hookError(cwd, null, err);
+	}
+}
+
 // The fail-open note: one row {at, hook, cause} in kit-guard-open.log; a failure to write it is swallowed (the call passes).
 function openRow(cwd, cause) {
 	try {
@@ -439,26 +449,30 @@ function closeoutGate(cwd, type, prompt) {
 	}
 }
 
-// K399 (U20): once the branch's sweep is recorded, no reviewer, checker or review pass is started. The record is an outcome line
-// in <git common>/kit-sweep-approvals.jsonl whose contract matches a decision line on this branch (an outcome with noneRan true is
-// no sweep). A tester or builder goes through only with a Ticket: line naming an unused finding of the closeout file in the working
-// tree (its name from HEAD's VERSION), or "Ticket: none" while a finding that is not a ticket is listed. Each refusal and each
-// allowed ticket spawn appends one row to kit-agent-model.log. An unreadable record or file, or a hook error, refuses with "hook
-// error: lead review" and logs one row to kit-guard-open.log (fail-closed). Other spawns never read the record.
+// K399 (U20): once the branch's sweep is recorded, no reviewer, checker or review pass is started, and any other spawn is refused
+// unless it is a tester, builder, writer or implementer whose Ticket: line names an unused finding of the closeout file in the
+// working tree (its name from HEAD's VERSION). Each ticket is used once per role, so one tester and one builder per finding. "Ticket:
+// none" names the id of a listed finding that is not a ticket, used once like the rest. The record is an outcome line in <git
+// common>/kit-sweep-approvals.jsonl whose contract matches a decision line on this branch or at a commit HEAD holds (an outcome with
+// noneRan true is no sweep); on a detached HEAD any recorded sweep counts. Each refusal and each allowed ticket spawn appends one
+// row to kit-agent-model.log. An unreadable record or file, or a hook error, refuses with "hook error: lead review" and logs one row
+// to kit-guard-open.log (fail-closed).
 const SWEEP_RECORD = 'kit-sweep-approvals.jsonl';
 const SWEEP_REVIEW = ['checker', 'reviewer', 'test-reviewer'];
+// The roles a recorded sweep lets through with a ticket, each under its table role: the warm table's tester and builder, plus writer.
+const SWEEP_BUILD = new Map([...WARM_ROLES, ['writer', 'writer']]);
 const SWEEP_PHRASE = /(?<![\w-])(checker|reviewer|test-reviewer)(?![\w-])|\breview\s+pass\b/i;
 const DEFER_TOOL = path.join(__dirname, '..', 'kit-tools', 'closeout.mjs').replace(/\\/g, '/');
 // Quoted only when the folder holds a space, so the line reads closeout.mjs defer "<text>" in the usual case.
 const SWEEP_DEFER = `node ${/\s/.test(DEFER_TOOL) ? `"${DEFER_TOOL}"` : DEFER_TOOL} defer "<text>"`;
 
-// The sweep role of a spawn: {kind: 'review', role} for a reviewer, checker or review pass, {kind: 'build', role} for a tester or
-// builder (the table's roles), else null. A general agent's Role: line decides by its earliest role word; with no Role: line its
+// The sweep role of a spawn: {kind: 'review', role} for a reviewer, checker or review pass, {kind: 'build', role} for a tester,
+// builder, writer or implementer (SWEEP_BUILD's roles), else null. A general agent's Role: line decides by its earliest role word; with no Role: line its
 // whole brief is read for a review word, so "You are the reviewer for ..." is caught too.
 function sweepRoleOf(type, prompt) {
 	const bare = String(type).split(':').pop().trim().toLowerCase();
 	if (SWEEP_REVIEW.includes(bare)) return { kind: 'review', role: bare };
-	if (WARM_ROLES.has(bare)) return { kind: 'build', role: WARM_ROLES.get(bare) };
+	if (SWEEP_BUILD.has(bare)) return { kind: 'build', role: SWEEP_BUILD.get(bare) };
 	if (bare !== 'general-purpose' && bare !== '') return null;
 	if (!hasLine(prompt, 'role')) {
 		const m = SWEEP_PHRASE.exec(String(prompt));
@@ -472,13 +486,15 @@ function sweepRoleOf(type, prompt) {
 	}
 	if (best === null) return null;
 	if (SWEEP_REVIEW.includes(best.n) || best.n === 'review pass') return { kind: 'review', role: best.n };
-	if (WARM_ROLES.has(best.n)) return { kind: 'build', role: WARM_ROLES.get(best.n) };
+	if (SWEEP_BUILD.has(best.n)) return { kind: 'build', role: SWEEP_BUILD.get(best.n) };
 	return null;
 }
 
-// The branch's recorded sweep: {contract, since} for a decision on this branch that an outcome line without noneRan closes, else
-// null. since is the decision's time in ms (0 when it has none). Throws on a line that is not a record, so the caller fails closed.
-function recordedSweep(common, branch) {
+// The recorded sweep: {contract, since} for a decision that an outcome line without noneRan closes, when the decision is on this
+// branch or its head is HEAD or an ancestor of HEAD (a new branch at the swept commit keeps the lock). branch is null on a detached
+// HEAD, where any recorded sweep counts, so the lock fails closed. since is the decision's time in ms (0 when it has none). Else
+// null. Throws on a line that is not a record, or when git cannot run, so the caller fails closed.
+function recordedSweep(cwd, common, branch) {
 	let text;
 	try {
 		text = fs.readFileSync(path.join(common, SWEEP_RECORD), 'utf8');
@@ -491,12 +507,20 @@ function recordedSweep(common, branch) {
 		if (!o || typeof o !== 'object' || Array.isArray(o)) throw new Error(`${SWEEP_RECORD} has a line that is not a record`);
 		return o;
 	});
-	if (branch === '') return null;
 	for (const d of rows) {
-		if (d.kind !== 'decision' || d.branch !== branch || typeof d.contract !== 'string') continue;
-		if (rows.some((o) => o.kind === 'outcome' && o.contract === d.contract && o.noneRan !== true)) return { contract: d.contract, since: Date.parse(String(d.time)) || 0 };
+		if (d.kind !== 'decision' || typeof d.contract !== 'string') continue;
+		if (!rows.some((o) => o.kind === 'outcome' && o.contract === d.contract && o.noneRan !== true)) continue;
+		if (branch === null || d.branch === branch || headAncestor(cwd, d.head)) return { contract: d.contract, since: Date.parse(String(d.time)) || 0 };
 	}
 	return null;
+}
+
+// A commit id the decision's head may be: hex only, so no value can reach git as an option.
+const COMMIT_ID = /^[0-9a-f]{4,64}$/i;
+// True when commit head is HEAD or one of its ancestors. A head that is not a commit id, or that git does not know, is not.
+function headAncestor(cwd, head) {
+	if (typeof head !== 'string' || !COMMIT_ID.test(head)) return false;
+	return gitRun(cwd, ['merge-base', '--is-ancestor', head, 'HEAD']).status === 0;
 }
 
 // The canonical id of a finding id, as idsOf reads an id.
@@ -517,53 +541,58 @@ function sweepFindings(cwd) {
 	return co.findings;
 }
 
-// The ids the allowed ticket spawns of this repo already named, read from kit-agent-model.log: the rows with a ticket and no reason,
-// written at or after the sweep's decision. An unreadable log throws.
+// The ticket uses of this repo's allowed spawns, read from kit-agent-model.log: "<id>|<role>" for each row with a ticket and no
+// reason, written at or after the sweep's decision. An id is used once per role. An unreadable log throws.
 function usedTickets(common, since) {
 	const file = path.join(common, LOG);
 	if (!fs.existsSync(file)) return new Set();
 	return new Set(fs.readFileSync(file, 'utf8').split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l))
-		.filter((r) => r.ticket && r.reason === undefined && Date.parse(String(r.at)) >= since).map((r) => r.ticket));
+		.filter((r) => r.ticket && r.reason === undefined && Date.parse(String(r.at)) >= since).map((r) => `${r.ticket}|${r.role}`));
 }
 
-// The sweep lock for an Agent or Task spawn: null for every spawn with no sweep role, and for a recorded sweep's allowed ticket spawn;
-// else the refusal (enforce) or a logged pass (log). Fail-closed: any error refuses with "hook error: lead review".
+// The sweep lock for an Agent or Task spawn: null when no sweep is recorded for this branch, and for a recorded sweep's allowed
+// ticket spawn; else the refusal (enforce) or a logged pass (log). Once a sweep is recorded a spawn with no build role is refused
+// by default. Fail-closed: any error refuses with "hook error: lead review".
 function sweepGate(cwd, input, type, prompt, pending) {
-	const role = sweepRoleOf(type, prompt);
-	if (role === null) return null;
 	let common = null;
 	try {
 		common = commonDir(cwd);
 		if (common === null) return null;
 		const branch = gitRun(cwd, ['symbolic-ref', '--short', '-q', 'HEAD']);
 		if (branch.status !== 0 && branch.status !== 1) throw new Error('git cannot read the branch');
-		const sweep = recordedSweep(common, branch.status === 0 ? branch.stdout.trim() : '');
+		const sweep = recordedSweep(cwd, common, branch.status === 0 ? branch.stdout.trim() : null);
 		if (sweep === null) return null;
+		const role = sweepRoleOf(type, prompt);
 		const hold = holdMode('sweep-lock', true);
 		const unit = unitsOf(prompt)[0] || null;
 		const session = String(input.session_id || '');
 		let why = null;
-		let ticket = 'none';
-		if (role.kind === 'review') {
+		let ticket = null;
+		if (role === null) {
+			why = `a ${type || 'general'} spawn is refused after the sweep: only a tester, builder, writer or implementer with a Ticket: line naming a listed finding may start`;
+		} else if (role.kind === 'review') {
 			why = `a ${role.role} spawn is refused after the sweep: the sweep is recorded, so no review or check starts; record the deferral with ${SWEEP_DEFER} instead`;
 		} else {
 			const findings = sweepFindings(cwd);
 			const named = lineValue(prompt, 'ticket');
 			if (named === null) {
 				why = `a ${role.role} spawn after the sweep needs a Ticket: line naming an unused listed finding`;
-			} else if (/^none$/i.test(named)) {
-				if (!findings.some((f) => !isTicketFinding(f))) why = 'Ticket: none, but the sweep lists no finding that is not a ticket';
+			} else if (/^none\b/i.test(named)) {
+				ticket = idsOf(named.replace(/^none\b/i, ''))[0] || null;
+				const finding = ticket === null ? undefined : findings.find((f) => canonId(f.id) === ticket);
+				if (finding === undefined) why = 'Ticket: none needs the id of a listed finding that is not a ticket, such as Ticket: none F2';
+				else if (isTicketFinding(finding)) why = `Ticket: none names ${ticket}, which is a ticket finding: name it as Ticket: ${ticket}`;
 			} else {
 				ticket = idsOf(named)[0] || null;
 				if (ticket === null || !findings.some((f) => canonId(f.id) === ticket)) why = `Ticket: ${named} names no finding the sweep lists`;
-				else if (usedTickets(common, sweep.since).has(ticket)) why = `finding ${ticket} is already named by a spawn after the sweep`;
 			}
+			if (why === null && usedTickets(common, sweep.since).has(`${ticket}|${role.role}`)) why = `finding ${ticket} is already named by a ${role.role} spawn after the sweep`;
 		}
 		if (why === null) {
 			pending.row = () => logRow(cwd, { type, role: role.role, unit, session, ticket }, hold);
 			return null;
 		}
-		logRow(cwd, { type, role: role.role, unit, session, reason: why }, hold);
+		logRow(cwd, { type, role: role === null ? null : role.role, unit, session, reason: why }, hold);
 		return hold.mode === 'enforce' ? deny(why) : null;
 	} catch (err) {
 		return hookError(cwd, common, err);
@@ -571,12 +600,14 @@ function sweepGate(cwd, input, type, prompt, pending) {
 }
 
 // K374 (U6): a fresh lead starts no agent before a passing state check. With a plans/<folder>/lead-state.json in the repo, an
-// Agent or Task spawn is refused until this session holds a pass in <git common>/kit-lead-state-ok whose sha is the record's
+// Agent, Task or SendMessage call is refused until this session holds a pass in <git common>/kit-lead-state-ok/<session> whose sha is the record's
 // (lead-state.mjs check writes it on VERDICT ok only). A compact_boundary line in this session's transcript later than the pass
 // drops the pass and the session's phase-card marker. High tier: an unreadable record or a hook error refuses with "hook error:
 // lead review" and logs one row.
 const LEAD_RECORD = 'lead-state.json';
 const LEAD_PASS = 'kit-lead-state-ok';
+// A session's pass file name under LEAD_PASS: the same rule lead-state.mjs writes it with.
+const passName = (sid) => String(sid).replace(/[^\w-]/g, '_');
 const LEAD_TOOL = path.join(__dirname, '..', 'kit-tools', 'lead-state.mjs').replace(/\\/g, '/');
 const CARD_DIR = 'kit-phase-card';
 
@@ -594,10 +625,11 @@ function leadRecordOf(top) {
   return best ? best.file : null;
 }
 
-// The pass file's {session, sha, at}; null when there is none or it does not read as an object (no pass refuses the spawn).
-function leadPassOf(common) {
+// The session's pass {session, sha, at} from <common>/kit-lead-state-ok/<session>; null when there is none (a single file an older
+// build left there reads as none too) or it does not read as an object (no pass refuses the spawn).
+function leadPassOf(common, sid) {
   let text;
-  try { text = fs.readFileSync(path.join(common, LEAD_PASS), 'utf8'); } catch (e) { if (e.code === 'ENOENT') return null; throw e; }
+  try { text = fs.readFileSync(path.join(common, LEAD_PASS, passName(sid)), 'utf8'); } catch (e) { if (e.code === 'ENOENT' || e.code === 'ENOTDIR') return null; throw e; }
   try { const p = JSON.parse(text); return p && typeof p === 'object' && !Array.isArray(p) ? p : null; } catch { return null; }
 }
 
@@ -642,9 +674,9 @@ function leadGate(cwd, input, type) {
     if (sid === '') throw new Error('the spawn names no session id');
     const rec = JSON.parse(fs.readFileSync(file, 'utf8'));
     if (!rec || typeof rec !== 'object' || typeof rec.sha !== 'string' || typeof rec.plan !== 'string') throw new Error(`${file} is not a lead state record`);
-    let pass = leadPassOf(common);
+    let pass = leadPassOf(common, sid);
     if (pass && pass.session === sid && input.transcript_path && compactedAfter(String(input.transcript_path), String(pass.at))) {
-      fs.rmSync(path.join(common, LEAD_PASS), { force: true });
+      fs.rmSync(path.join(common, LEAD_PASS, passName(sid)), { force: true });
       fs.rmSync(path.join(common, CARD_DIR, sid.replace(/[^\w.-]/g, '_')), { force: true });
       pass = null;
     }
@@ -672,6 +704,9 @@ function check(input) {
 	let cwd = process.cwd();
 	let checkerSpawn = false;
 	let closed = null;
+	// The high-tier hold whose gate ran last: a throw no gate caught is answered as that hold. Every spawn and SendMessage passes
+	// the lead-state gate first, so before any other gate runs the answer is lead-state's.
+	let gate = 'lead-state';
 	const pending = { row: null };
 	try {
 		const call = input && input.tool_input && typeof input.tool_input === 'object' ? input.tool_input : {};
@@ -679,7 +714,8 @@ function check(input) {
 		const model = call.model == null || call.model === '' ? null : String(call.model);
 		cwd = String((input && input.cwd) || process.cwd());
 		// K374 (U6) runs first, so every spawn form gets the same refusal whatever the other gates would say.
-		if (input && (input.tool_name === 'Agent' || input.tool_name === 'Task')) {
+		if (input && (input.tool_name === 'Agent' || input.tool_name === 'Task' || input.tool_name === 'SendMessage')) {
+			gate = 'lead-state';
 			const lead = leadGate(cwd, input, type);
 			if (lead) return lead;
 		}
@@ -687,6 +723,7 @@ function check(input) {
 		const prompt = call.prompt == null ? '' : String(call.prompt);
 		// K399 (U20) runs before the other gates, so a refused review or check starts no later gate's log row.
 		if (input && (input.tool_name === 'Agent' || input.tool_name === 'Task')) {
+			gate = 'sweep-lock';
 			const sweep = sweepGate(cwd, input, type, prompt, pending);
 			if (sweep) return sweep;
 		}
@@ -694,6 +731,7 @@ function check(input) {
 		// The closeout check (K369) runs before any log write below, so a log that cannot be written does not let a tester or
 		// writer through in closeout. It comes first in precedence: a checker in closeout is refused, a tester or writer names
 		// a ticket in the closeout list, and the same spawn gets the same refusal on every try, even past the round cap.
+		gate = 'closeout-spawn';
 		closed = closeoutGate(cwd, type, prompt);
 		const want = roleModel(type);
 		const hold = holdMode('agent-model');
@@ -728,6 +766,7 @@ function check(input) {
 		}
 		// The round cap: a checker spawn on a unit with two counted check rounds already is refused (K366). roundGate still
 		// runs for every checker, so its check rows are written as before.
+		if (checkerSpawn) gate = 'round-cap';
 		const capped = checkerSpawn ? roundGate(cwd, type, model, prompt, closed || refuse) : null;
 		refuse = closed || capped || refuse;
 		// The warm check (K364): a fresh tester or builder spawn while an open one of its lane is under the limit.
@@ -743,12 +782,7 @@ function check(input) {
 	} catch (err) {
 		if (checkerSpawn || pending.row) return hookError(cwd, null, err);
 		if (closed) return closed;
-		/* any other call passes; the row says it passed unchecked */
-		try {
-			logRow(cwd, { type: '', model: null, want: null, why: 'hook error: the call passes unchecked' }, holdMode('agent-model'));
-		} catch {
-			/* the log itself failed: nothing more to do */
-		}
+		return onErrorOf(gate, err, cwd);
 	}
 	return refuse;
 }

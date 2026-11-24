@@ -15,7 +15,7 @@ import { spawnSync } from 'node:child_process';
 import { openAgents } from './warm.mjs';
 
 const RECORD_NAME = 'lead-state.json';
-const PASS_NAME = 'kit-lead-state-ok';
+const PASS_DIR = 'kit-lead-state-ok';
 const HOOK_LOG = 'kit-guard-open.log';
 const HOOK = 'lead-state';
 const RECORD_VERSION = 1;
@@ -72,6 +72,25 @@ function readOpt(file) {
 		if (e.code === 'ENOENT') return null;
 		throw new FullRead(file, `cannot read ${file}: ${e.code || e.message}`);
 	}
+}
+
+// The hook log's rows: one JSON object per non-blank line. A line that is not one (a torn write, a hand edit) is skipped and
+// counted, so one bad line cannot make every read a full read.
+function hookRows(buf) {
+	const rows = [];
+	let skipped = 0;
+	for (const raw of buf.toString('utf8').split(/\r?\n/)) {
+		if (!raw.trim()) continue;
+		let o = null;
+		try {
+			o = JSON.parse(raw);
+		} catch {
+			/* not a row: counted below */
+		}
+		if (o !== null && typeof o === 'object' && !Array.isArray(o)) rows.push(o);
+		else skipped++;
+	}
+	return { rows, skipped };
 }
 
 // One JSON object per non-blank line; a line that is not one makes the file unreadable.
@@ -148,18 +167,17 @@ function build(planArg, transcript = null) {
 		if (e.step === 'merged' && filled(e.unit) && !merged.includes(e.unit.trim())) merged.push(e.unit.trim());
 	}
 
-	const hookErrors = hookBuf === null
-		? []
-		: jsonLines(hookBuf, hookFile)
-				.filter((e) => e.kind === 'hook-error' && filled(e.id) && !reported.has(e.id.trim()))
-				.map((e) => ({ id: e.id.trim(), hook: e.hook ?? null, cause: e.cause ?? null, at: e.at ?? null }));
+	const hookLog = hookBuf === null ? { rows: [], skipped: 0 } : hookRows(hookBuf);
+	const hookErrors = hookLog.rows
+		.filter((e) => e.kind === 'hook-error' && filled(e.id) && !reported.has(e.id.trim()))
+		.map((e) => ({ id: e.id.trim(), hook: e.hook ?? null, cause: e.cause ?? null, at: e.at ?? null }));
 
 	const steps = jsonLines(checklistBuf, checklistFile).filter((e) => !('kind' in e) || filled(e.item));
 	for (const e of steps) if (!filled(e.item)) throw new FullRead(checklistFile, `${checklistFile} has a line with no item`);
 	const undone = steps.filter((e) => e.done !== true);
 	const owed = undone.map((e) => e.item);
 
-	return {
+	const rec = {
 		version: RECORD_VERSION,
 		plan: label(plan),
 		planSha: sha256(planBuf),
@@ -175,6 +193,12 @@ function build(planArg, transcript = null) {
 		sources,
 		agents: agentsOf(transcript),
 	};
+	return { rec, skipped: hookLog.skipped };
+}
+
+// Says how many hook-log lines were skipped as not rows, once, so a torn line is visible without stopping the record.
+function noteSkipped(n) {
+	if (n > 0) say(`lead-state: skipped ${n} ${n === 1 ? 'line' : 'lines'} of ${HOOK_LOG} that ${n === 1 ? 'is' : 'are'} not a row`);
 }
 
 // The record with its sha: the sha of the record's fields, sorted, so a hand edit of any field breaks it.
@@ -195,23 +219,29 @@ function fullRead(planArg, e) {
 }
 
 function write(planArg, transcript) {
-	let rec;
+	let built;
 	try {
-		rec = build(planArg, transcript);
+		built = build(planArg, transcript);
 	} catch (e) {
 		if (e instanceof FullRead) return fullRead(planArg, e);
 		throw e;
 	}
+	noteSkipped(built.skipped);
 	const file = path.join(path.dirname(path.resolve(planArg)), RECORD_NAME);
-	fs.writeFileSync(file, `${JSON.stringify(seal(rec), null, 2)}\n`);
+	fs.writeFileSync(file, `${JSON.stringify(seal(built.rec), null, 2)}\n`);
 	say(`lead-state: wrote ${file}`);
 	return 0;
 }
 
-// The pass a session earns with a check that says ok: {session, sha, at}, in the git common folder, read by agent-model.cjs.
+// The pass a session earns with a check that says ok: {session, sha, at}, in <git common>/kit-lead-state-ok/<session>, read by
+// agent-model.cjs. One file per session, so two sessions in one repo never overwrite each other's pass.
 function writePass(planDir, session, sha) {
 	const common = path.resolve(planDir, gitOut(planDir, ['rev-parse', '--git-common-dir']));
-	fs.writeFileSync(path.join(common, PASS_NAME), `${JSON.stringify({ session, sha, at: new Date().toISOString() })}\n`);
+	const dir = path.join(common, PASS_DIR);
+	// A single file an older build left at this path is not a folder: it is replaced, so the session's pass can be written.
+	if (fs.existsSync(dir) && !fs.statSync(dir).isDirectory()) fs.rmSync(dir, { force: true });
+	fs.mkdirSync(dir, { recursive: true });
+	fs.writeFileSync(path.join(dir, String(session).replace(/[^\w-]/g, '_')), `${JSON.stringify({ session, sha, at: new Date().toISOString() })}\n`);
 }
 
 function check(planArg, session) {
@@ -236,13 +266,15 @@ function check(planArg, session) {
 	const { sha, ...rest } = stored;
 	if (sha256(canon(rest)) !== sha) return verdict('refused (record edited by hand)', 1);
 
-	let live;
+	let built;
 	try {
-		live = build(planArg);
+		built = build(planArg);
 	} catch (e) {
 		if (e instanceof FullRead) return fullRead(planArg, e);
 		throw e;
 	}
+	const live = built.rec;
+	noteSkipped(built.skipped);
 	const changed = [];
 	for (const f of FIELDS) {
 		const same = canon(stored[f]) === canon(live[f]);
