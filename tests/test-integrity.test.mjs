@@ -300,7 +300,7 @@ test('test-integrity passes a retest: commit and lists it in retests.json and th
 	assert.ok(list[0].sha.length >= 7 && retest.startsWith(list[0].sha), `sha ${list[0].sha}`);
 	assert.equal(list[0].subject, 'retest: tighten the add case');
 	assert.deepEqual(list[0].files, ['tests/add.test.mjs']);
-	const line = new RegExp(`^retest: ${list[0].sha.slice(0, 7)}[0-9a-f]* retest: tighten the add case$`, 'm');
+	const line = new RegExp(`^retest: ${list[0].sha.slice(0, 7)}[0-9a-f]* \`retest: tighten the add case\`$`, 'm');
 	assert.match(fs.readFileSync(summary, 'utf8'), line);
 	// Only a subject that starts with retest: is exempt: a retest: later in the subject, or in the body, is not.
 	for (const [subject, body] of [['fix: retest: tighten the add case', null], ['fix: loosen', 'retest: approved']]) {
