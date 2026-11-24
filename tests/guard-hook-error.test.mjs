@@ -169,3 +169,28 @@ test('fail-closed: a missing hook-error.cjs blocks the call, logged', () => {
 	const fine = setup({ hooks: { 'canary.cjs': 'exports.check = () => null;\n' }, drop: ['hook-error.cjs'] });
 	assert.doesNotMatch(agent(fine).permissionDecisionReason || '', /hook error/);
 });
+
+// why: catches call-cap crashing for an agent letting the call through with no hook-error answer (S1F1)
+test('call-cap crashing for an agent answers by its tier high, with one hook-error row', async () => {
+	const { createRequire } = await import('node:module');
+	const repo = kitTemp.makeTemp('guard-hook-error-cap-repo-');
+	const init = spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, encoding: 'utf8' });
+	assert.equal(init.status, 0, init.stderr);
+	const kit = kitTemp.makeTemp('guard-hook-error-cap-kit-');
+	fs.cpSync(USER_SRC, path.join(kit, 'kit-hooks'), { recursive: true });
+	const cap = createRequire(import.meta.url)(path.join(kit, 'kit-hooks', 'call-cap.cjs'));
+	// A call whose tool_input cannot be read: check() throws after the agent is known.
+	const broken = { cwd: repo, agent_id: 'a1', agent_type: 'builder', tool_name: 'Bash', get tool_input() { throw new Error('cap boom\nsecond line'); } };
+	const out = cap.check(broken);
+	assert.ok(out, 'call-cap is tier high: a crash must not pass the call');
+	assert.equal(out.hookSpecificOutput.permissionDecision, 'deny', JSON.stringify(out));
+	assert.match(out.hookSpecificOutput.permissionDecisionReason, /hook error: lead review: call-cap/);
+	const file = path.join(repo, '.git', 'kit-guard-open.log');
+	const rows = fs.existsSync(file) ? fs.readFileSync(file, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l)) : [];
+	const errs = rows.filter((r) => r.kind === 'hook-error');
+	assert.equal(errs.length, 1, JSON.stringify(rows));
+	assert.equal(errs[0].id, 'call-cap');
+	assert.equal(errs[0].tier, 'high');
+	// Folded control: a call that does not crash is passed.
+	assert.equal(cap.check({ cwd: repo, agent_id: 'a1', agent_type: 'builder', tool_name: 'Read', tool_input: {} }), null);
+});

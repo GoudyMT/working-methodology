@@ -239,3 +239,55 @@ test('fail-closed: an unreadable tier list reads as high and blocks, logged', ()
 	assert.match(stop.stderr, /hook error: lead review: hook-error\.cjs is missing/);
 	assert.equal(errorRows(noHelper.repo).length, 1, JSON.stringify(rowsOf(noHelper.repo)));
 });
+
+
+// why: catches a plugin stop whose hook-error.cjs is missing letting the stop through with no row (S1F4)
+test('a plugin stop with hook-error.cjs missing is denied with its own row', () => {
+	// A plugin root with a valid manifest (every file the launcher needs, hashed) whose kit-hooks hold one crashing role hook and
+	// no hook-error.cjs, so subagentStop reaches the role hooks.
+	function manifestRoot() {
+		const crypto = createRequire(import.meta.url)('node:crypto');
+		const repo = kitTemp.makeTemp('role-hook-error-stop-repo-');
+		const init = spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: repo, encoding: 'utf8' });
+		assert.equal(init.status, 0, init.stderr);
+		const root = kitTemp.makeTemp('role-hook-error-stop-root-');
+		const files = { 'launch.cjs': '// stub\n', 'hooks/hooks.json': '{}\n', 'roles.json': JSON.stringify({ builder: { Stop: ['edit-fence.cjs'] } }), 'kit-install.json': '{}\n', 'kit-tools/kit-launch.cjs': '// stub\n', 'kit/project/.claude/guard.cjs': '// stub\n', 'kit-hooks/edit-fence.cjs': 'process.exit(1);\n', 'plugin-launch.cjs': fs.readFileSync(LAUNCH, 'utf8') };
+		const sums = {};
+		for (const [rel, text] of Object.entries(files)) {
+			fs.mkdirSync(path.dirname(path.join(root, rel)), { recursive: true });
+			fs.writeFileSync(path.join(root, rel), text);
+			sums[rel] = crypto.createHash('sha256').update(text).digest('hex');
+		}
+		fs.writeFileSync(path.join(root, 'guard-manifest.json'), JSON.stringify({ files: sums }));
+		return { repo, root };
+	}
+	const { repo, root } = manifestRoot();
+	// The launcher as Claude Code runs it: its own copy, from the plugin root, in subagent-stop mode.
+	const r = spawnSync(process.execPath, [path.join(root, 'plugin-launch.cjs'), 'subagent-stop'], { input: JSON.stringify({ agent_type: 'kit:builder', cwd: repo }), cwd: repo, encoding: 'utf8' });
+	assert.equal(r.status, 2, `a crashed role hook with no helper holds the stop: exit ${r.status}, stderr ${r.stderr}`);
+	assert.match(String(r.stderr), /hook error: lead review/);
+	const rows = errorRows(repo);
+	assert.equal(rows.length, 1, JSON.stringify(rowsOf(repo)));
+});
+
+// why: catches a Stop crash that repeats exiting 2 on every stop so the agent can never stop (S1F5)
+test('a Stop crash with stop_hook_active true lets the stop through and logs the row', async () => {
+	const { default: os } = await import('node:os');
+	for (const hookFile of ['clean-tree.cjs', 'canary.cjs']) {
+		const s = setup();
+		const input = { hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'a1', session_id: `role-hook-error-${process.pid}-${hookFile}`, cwd: s.repo, last_assistant_message: 'a report with no phrase' };
+		const snap = path.join(os.tmpdir(), `kit-clean-tree-${`${input.session_id}-${input.agent_id}`.replace(/[^\w-]/g, '')}.json`);
+		if (hookFile === 'clean-tree.cjs') fs.writeFileSync(snap, '{ corrupt snapshot');
+		else fs.writeFileSync(path.join(s.repo, '.git', 'kit-canary-blocked'), 'in the way');
+		const run = (extra) => spawnSync(process.execPath, [path.join(s.kit, 'kit-hooks', hookFile)], { input: JSON.stringify({ ...input, ...extra }), cwd: s.repo, encoding: 'utf8' });
+		try {
+			const first = run({});
+			assert.equal(first.status, 2, `${hookFile}: the first crashing stop blocks: ${first.stderr}`);
+			const again = run({ stop_hook_active: true });
+			assert.equal(again.status, 0, `${hookFile}: a repeated crash with stop_hook_active lets the stop through: exit ${again.status}, stderr ${again.stderr}`);
+			assert.equal(errorRows(s.repo).length, 2, `${hookFile}: each crash logs its row: ${JSON.stringify(rowsOf(s.repo))}`);
+		} finally {
+			fs.rmSync(snap, { force: true });
+		}
+	}
+});

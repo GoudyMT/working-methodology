@@ -195,3 +195,18 @@ test('fail-closed: a missing hook-error.cjs exits 2, logged', () => {
 	const ok = runHook(fine, 'edit-fence.cjs', editCall(fine));
 	assert.equal(ok.status, 0, ok.stderr);
 });
+
+// why: catches a crash while the hook loads its own requires exiting 1, which never blocks (S1F3)
+test('a crash at module load in edit-fence, clean-tree and canary blocks like any other crash', () => {
+	for (const [file, call, id] of [['edit-fence.cjs', editCall, 'edit-fence'], ['clean-tree.cjs', treeCall, 'clean-tree'], ['canary.cjs', (s) => ({ hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'a1', session_id: 's1', cwd: s.repo, last_assistant_message: 'x' }), 'canary']]) {
+		// With safe-spawn.cjs gone, the hook's top-level require throws before any try.
+		const s = setup({ drop: ['safe-spawn.cjs'] });
+		const r = runHook(s, file, call(s));
+		assert.notEqual(r.status, 1, `${file}: a load crash must not be a bare exit 1 (stderr ${r.stderr})`);
+		assert.equal(r.status, 2, `${file}: tier high, so a load crash blocks: exit ${r.status}, stderr ${r.stderr}`);
+		assert.match(`${r.stdout}${r.stderr}`, new RegExp(`hook error: lead review: ${id}`), file);
+	}
+	// Folded control: the same hooks with every file in place do not block this call.
+	const fine = setup();
+	assert.equal(runHook(fine, 'edit-fence.cjs', editCall(fine)).status, 0);
+});
