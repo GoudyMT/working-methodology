@@ -15,6 +15,7 @@ const RUNNER = fileURLToPath(new URL('../scripts/recall-arms.mjs', import.meta.u
 const KIT_SOURCE = path.resolve(path.dirname(RUNNER), '..');
 const LOGIN_PHRASE = 'run claude, then /login, with CLAUDE_CONFIG_DIR set to';
 const HOUR = 3600 * 1000;
+const RELEASE_VERSION = '0.0.1-release-fixture';
 const login = (expiresAt) => JSON.stringify({ claudeAiOauth: { expiresAt, refreshToken: 'fixture-refresh' } });
 const QUIET = [{ cpu: 10, gpu: 10 }, { cpu: 12, gpu: 11 }, { cpu: 9, gpu: 10 }];
 const LABEL = () => `arms${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
@@ -65,6 +66,10 @@ function setup(label) {
 	};
 	for (const dir of [ctx.home, ctx.probe, ctx.release, ctx.stubDir, ctx.runs]) fs.mkdirSync(dir, { recursive: true });
 	fs.writeFileSync(ctx.stub, STUB);
+	// The release fixture is installable the way a real kit is: install user reads its VERSION, kit.config.json and user/.
+	fs.writeFileSync(path.join(ctx.release, 'VERSION'), `${RELEASE_VERSION}\n`);
+	fs.writeFileSync(path.join(ctx.release, 'kit.config.json'), '{}\n');
+	fs.mkdirSync(path.join(ctx.release, 'user'), { recursive: true });
 	return ctx;
 }
 
@@ -234,10 +239,7 @@ test("each arm's config folder holds a kit-install.json from its own kit before 
 	const ctx = setup(LABEL());
 	writeLogin(ctx, login(Date.now() + HOUR));
 	// The release fixture is a kit folder with its own version, so an install from it reads differently from the candidate's.
-	const releaseVersion = '0.0.1-release-fixture';
-	fs.writeFileSync(path.join(ctx.release, 'VERSION'), `${releaseVersion}\n`);
-	fs.writeFileSync(path.join(ctx.release, 'kit.config.json'), '{}\n');
-	fs.mkdirSync(path.join(ctx.release, 'user'), { recursive: true });
+	const releaseVersion = RELEASE_VERSION;
 	// This stub records the folder's kit-install.json at the moment it starts, which is when recall.mjs checks the user layer.
 	const probeStub = path.join(path.dirname(ctx.stub), 'stub-install-probe.mjs');
 	fs.writeFileSync(probeStub, `import fs from 'node:fs';
