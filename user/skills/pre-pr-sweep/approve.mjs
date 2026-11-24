@@ -1567,6 +1567,8 @@ function outcome() {
 	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) warns.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
 	// The reviewer model rule rests on the model a role names. A role that recorded no model cannot be read, so it
 	// pauses and is logged; a role on another model is the lead's to rerun: printed, never a pause (K377 S4).
+	// A mismatch is a warning row that keeps the sweep out of the clean run (S5F1); it is not a pause.
+	const mismatches = [];
 	per.forEach((x, i) => {
 		// The model the decision cleared, so an edit to the contract after it hides nothing.
 		const named = (decision.models || [])[i] ?? (roles[i] ? roleModel(roles[i]) : null);
@@ -1576,10 +1578,14 @@ function outcome() {
 			guardRow(`no recorded model for ${x.role} in sweep ${decision.hash}`);
 			return;
 		}
-		if (modelKey(named) !== modelKey(x.model)) console.log(`    rerun ${x.role} on ${named}: it ran on ${x.model}, not the model the contract named. The lead reruns it; this is no pause.`);
+		if (modelKey(named) !== modelKey(x.model)) {
+			console.log(`    rerun ${x.role} on ${named}: it ran on ${x.model}, not the model the contract named. The lead reruns it; this is no pause.`);
+			mismatches.push(`${x.role} ran on ${x.model}, not the model the contract named (${named}); the lead reruns it`);
+		}
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
 	for (const w of warns) write({ kind: 'warning', contract: contractFile, hash: decision.hash, reason: w });
+	for (const m of mismatches) write({ kind: 'warning', contract: contractFile, hash: decision.hash, reason: m, mismatch: true });
 	for (const id of alive) console.log(`    ${id} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
 	console.log(trips.length ? `Outcome logged; auto-approval paused: ${trips.join('; ')}` : `Outcome logged: ${nums.tokens.toLocaleString('en-US')} processed tokens over ${per.length} role(s).`);
 	for (const w of warns) console.log(`    Warning, no pause: ${w}`);
@@ -1596,7 +1602,7 @@ function outcome() {
 
 // K377 S1-S3: the run of clean sweeps at the end of the log. A sweep is clean when no pause came before the next sweep and
 // no reviewer stopped under 80% of its ceiling, read in the role's own ceiling unit (its row's, else the decision line's).
-// A pause resets the run whatever its chain link says; a warning, decision or resume does not; an outcome with no roles
+// A pause resets the run whatever its chain link says, and so does a model-mismatch warning; other warnings, decisions and resumes do not; an outcome with no roles
 // (none ran) or closed by the owner is skipped; a line nobody can read ends the run and gets one row in the guard log.
 const PROVEN_RUN = 5;
 function cleanRun() {
@@ -1620,6 +1626,9 @@ function cleanRun() {
 		if (e.prev !== (i ? sha(lines[i - 1]) : '')) { run = 0; if (e.kind === 'decision') unit = 'unknown'; return; }
 		if (e.kind === 'decision') unit = e.ceilingUnit === 'dollars' ? 'dollars' : 'tokens';
 		else if (e.kind === 'pause') run = 0;
+		// A reviewer on another model than the contract named: its sweep is no clean sweep (S5F1).
+		else if (e.kind === 'warning' && e.mismatch) run = 0;
+		// A reviewer on another model than the contract named: its sweep is no clean sweep (S5F1).
 		else if (e.kind === 'outcome' && Array.isArray(e.roles) && e.roles.length && !e.noneRan && !e.closedByOwner) {
 			const low = e.roles.some((r) => {
 				if (!r || !r.stopped) return false;
