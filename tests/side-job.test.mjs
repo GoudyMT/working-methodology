@@ -203,3 +203,35 @@ test('a second start of the same kind while one runs is refused, naming the runn
 	assert.equal(other.status, 0, other.text);
 	await awaitPid(other.pidFile);
 });
+
+// why: catches a reused pid of a dead supervisor reading as running, holding its kind and letting stop kill a stranger
+test('a job whose supervisor pid now belongs to another process reads as stale: its kind restarts and stop spares the process', async () => {
+	const { spawn } = await import('node:child_process');
+	const ctx = setup();
+	const first = start(ctx, 'gate', { STUB_MODE: 'sleep' });
+	const job = parse(first.text);
+	assert.ok(job, `start did not print its id and log path: ${first.text}`);
+	const stubPid = await awaitPid(first.pidFile);
+	assert.ok(stubPid, 'the stub command never ran');
+	const logFile = path.join(ctx.repo, '.git', 'kit-side-jobs.jsonl');
+	const rows = fs.readFileSync(logFile, 'utf8').split('\n').filter(Boolean).map((l) => JSON.parse(l));
+	const supervisor = rows.find((r) => r.event === 'start' && r.id === job.id).pid;
+	// The real supervisor and its job die with no end row, as a crash leaves them.
+	process.kill(supervisor);
+	process.kill(stubPid);
+	assert.ok(await waitFor(() => !alive(supervisor) && !alive(stubPid)), 'the first job did not die');
+	// An unrelated live process now holds the pid the record names.
+	const stranger = spawn(process.execPath, [ctx.stub], { stdio: 'ignore' });
+	pids.push(stranger.pid);
+	const reused = rows.map((r) => (r.event === 'start' && r.id === job.id ? { ...r, pid: stranger.pid } : r));
+	fs.writeFileSync(logFile, `${reused.map((r) => JSON.stringify(r)).join('\n')}\n`);
+	assert.ok(alive(stranger.pid), 'the unrelated process is not alive');
+	assert.doesNotMatch(run(ctx, ['status', job.id]).text, /^running/, 'a reused pid still reads as running');
+	const stopped = run(ctx, ['stop', job.id]);
+	assert.doesNotMatch(stopped.text, /^stopped /, `stop claimed to stop a stranger: ${stopped.text}`);
+	await new Promise((r) => setTimeout(r, 1500));
+	assert.ok(alive(stranger.pid), 'stop killed the unrelated process that reused the pid');
+	const again = start(ctx, 'gate', { STUB_MODE: 'sleep' });
+	assert.equal(again.status, 0, `a reused pid still held the gate kind: ${again.text}`);
+	assert.ok(await awaitPid(again.pidFile), 'the restarted gate job never ran');
+});
