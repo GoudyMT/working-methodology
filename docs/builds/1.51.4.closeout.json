@@ -1,0 +1,496 @@
+{
+  "version": "1.51.4",
+  "head": "b14413d44832a5de7bfcf9a035149a92f9aa04da",
+  "findings": [
+    {
+      "id": "S13F1",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "The owner's first name is hard-coded in new hook text, tool text, tests and the record"
+    },
+    {
+      "id": "S15F1",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "Rule text says a retest is never held at push, but the project pre-push hook still holds test-change and retest pushes (project relax is deferred)"
+    },
+    {
+      "id": "S15F2",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "stale comment says a retest waits on the owner's yes"
+    },
+    {
+      "id": "S15F3",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "unit-check prints owner yes needed for each retest"
+    },
+    {
+      "id": "S15F4",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "example describes old trial pauses"
+    },
+    {
+      "id": "S15F5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "hook-error tier list omits the security tier"
+    },
+    {
+      "id": "S8F2",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "retest titles promise widening, reset and pause; bodies only assert absence"
+    },
+    {
+      "id": "S8F3",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "retests replaced distinct refusal texts with a shared weaker one"
+    },
+    {
+      "id": "S8F4",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "notEqual allow passes when the guard does not detect the act"
+    },
+    {
+      "id": "S9F1",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "No test shows the kit pre-push still holds tag or force pushes; retested loops only check status 0"
+    },
+    {
+      "id": "S9F2",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "retested test titles still say holds or pauses while asserting the opposite"
+    },
+    {
+      "id": "S9F3",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "retests replaced positive pause assertions with doesNotMatch only"
+    },
+    {
+      "id": "S9F4",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "sweep lock behaviours with no test: since filter, log mode, general agent in a build role, Ticket: NONE"
+    },
+    {
+      "id": "S9F5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "holds.json test only re-reads JSON"
+    },
+    {
+      "id": "S9F6",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "unwritable-log fixture depends on chmod"
+    },
+    {
+      "id": "S7F4",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "tier() duplicate-entry rule untested"
+    },
+    {
+      "id": "S7F5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "leadGate printed-command safety and edge branches untested"
+    },
+    {
+      "id": "S7F6",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "repeat tests are second proofs of stateless functions"
+    },
+    {
+      "id": "S12F1",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "alive(pid) with no start-time check: a dead supervisor plus PID reuse blocks the kind forever, and stop kills an unrelated process tree"
+    },
+    {
+      "id": "S12F2",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "one lead-state pass per git common folder; two sessions overwrite each other's pass"
+    },
+    {
+      "id": "S12F3",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "skill says write the file list after the spawn, but the hold refuses the spawn without it; git-path command lacks -C"
+    },
+    {
+      "id": "S12F4",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "investigation side job runs under the same denying hooks, no kind named, refused while another of its kind runs"
+    },
+    {
+      "id": "S12F5",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "on Windows the bare-name candidate wins over PATHEXT, so an npm shim breaks every side job"
+    },
+    {
+      "id": "S12F6",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "folder guard protects only two folders"
+    },
+    {
+      "id": "S16F2",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "U25 and U27 claim reach projects and list the project hook, which the diff does not change"
+    },
+    {
+      "id": "S16F3",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "only a broken safety net pauses is overstated; other pause causes remain"
+    },
+    {
+      "id": "S16F5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "High tier bullet says pause, the high-tier block bullet says keep building"
+    },
+    {
+      "id": "S11F1",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "each arm folder holds only the login, so recall.mjs refuses it (no kit-install.json) and both arms fail"
+    },
+    {
+      "id": "S11F2",
+      "severity": "high",
+      "security": false,
+      "owner": false,
+      "text": "after a Rows change the build is stuck: defer leaves the fault, --lock-rows will not re-lock, only hand edits get out"
+    },
+    {
+      "id": "S11F3",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "defer command prints the whole Rows line raw in double quotes"
+    },
+    {
+      "id": "S11F4",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "probe login gated on access-token expiry; refreshed tokens thrown away"
+    },
+    {
+      "id": "S11F5",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "load hold exits at once though docs say it waits; no retry line"
+    },
+    {
+      "id": "S11F6",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "laneOf splits only on comma and then"
+    },
+    {
+      "id": "S1F1",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "call-cap (tier high) passes the call on every crash: safeCheck swallows the throw before guard.cjs hookFailed"
+    },
+    {
+      "id": "S1F2",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "a crash in agent-model high-tier holds passes every non-checker spawn"
+    },
+    {
+      "id": "S1F3",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "a crash at module load escapes the try and exits 1, non-blocking on the direct role-file path"
+    },
+    {
+      "id": "S1F4",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "plugin SubagentStop: missing hook-error.cjs lets the stop through with no row"
+    },
+    {
+      "id": "S1F5",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a deterministic Stop-path crash exits 2 every stop, so the agent can never stop"
+    },
+    {
+      "id": "S1F6",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "kit-gate (small) blocks every prompt when its helper is missing or tiers unreadable"
+    },
+    {
+      "id": "S3F1",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "a decoy line with the same key and the old number takes the first-match pairing, so a raised timeout passes the hold and closeout"
+    },
+    {
+      "id": "S5F1",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a reviewer on another or unreadable model is only printed: no pause, no warning row, counted clean"
+    },
+    {
+      "id": "S5F2",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "release record matches its tag case-insensitively"
+    },
+    {
+      "id": "S5F3",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "an unheld call cap only prints when unbounded though the header says it pauses"
+    },
+    {
+      "id": "S5F4",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "a hand edit before the last resume sets no pause (pre-existing)"
+    },
+    {
+      "id": "S10F1",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "kit-hook legs of the retest-push and marker tests cannot fail; dead owner-yes controls; titles say refuses"
+    },
+    {
+      "id": "S10F3",
+      "severity": "medium",
+      "security": false,
+      "owner": false,
+      "text": "branch === def term never decides in any test"
+    },
+    {
+      "id": "S10F4",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "process.exit(0) inside a new block passes (already a defer row)"
+    },
+    {
+      "id": "S10F5",
+      "severity": "low",
+      "security": false,
+      "owner": false,
+      "text": "test name says both hooks pass but asserts project hook held; ci-budget pin lost job name"
+    },
+    {
+      "id": "S2F1",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "sweep lock role check is an allow-list: Explore/Plan, a Role: line with no listed word, 'lead reviewer', 'reviewers' pass"
+    },
+    {
+      "id": "S2F2",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "a ticket is single-use, so the tester-then-builder pair is refused at the builder; a ticket for a spawn that never ran stays used"
+    },
+    {
+      "id": "S2F3",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "Ticket: none never used up"
+    },
+    {
+      "id": "S2F4",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "sweep lock keyed on branch name only (already a defer row)"
+    },
+    {
+      "id": "S2F5",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "lead-state gate skips SendMessage, is off when the record is moved, pass file unsealed (partly a defer row)"
+    },
+    {
+      "id": "S2F6",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "one non-JSON line in kit-guard-open.log makes write and check full-read for good, refusing every spawn"
+    },
+    {
+      "id": "S2F7",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "sweep lock reads findings from the working tree"
+    },
+    {
+      "id": "S4F1",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "a fresh test( block counts as pure addition but its arguments run at load or in an old test's scope, switching off asserts"
+    },
+    {
+      "id": "S4F2",
+      "severity": "high",
+      "security": true,
+      "owner": false,
+      "text": "CI secret scan reads only the net diff; a key added then removed passes CI and stays in history"
+    },
+    {
+      "id": "S4F3",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "all scans skip files git treats as binary"
+    },
+    {
+      "id": "S4F4",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "closeOf ignores regex literals, so return; can ride inside a fresh block in an old test body"
+    },
+    {
+      "id": "S4F5",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "test runner and CI wiring are not test paths, so a commit can drop tests unlisted"
+    },
+    {
+      "id": "S4F6",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "PR body check accepts a hidden retest name"
+    },
+    {
+      "id": "S6F1",
+      "severity": "medium",
+      "security": true,
+      "owner": false,
+      "text": "a retest subject goes into the step summary unescaped; an open HTML comment hides later retest lines"
+    },
+    {
+      "id": "S6F2",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "a failed job with no failed step counts as a lost runner; PR code can produce that"
+    },
+    {
+      "id": "S6F3",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "subjects and paths printed with control characters"
+    },
+    {
+      "id": "S6F4",
+      "severity": "low",
+      "security": true,
+      "owner": false,
+      "text": "ci-audit prints job and step names raw"
+    }
+  ],
+  "tickets": [
+    "S15F1",
+    "S9F1",
+    "S12F1",
+    "S11F1",
+    "S11F2",
+    "S1F1",
+    "S1F2",
+    "S1F3",
+    "S1F4",
+    "S1F5",
+    "S1F6",
+    "S3F1",
+    "S5F1",
+    "S5F2",
+    "S5F3",
+    "S5F4",
+    "S2F1",
+    "S2F2",
+    "S2F3",
+    "S2F4",
+    "S2F5",
+    "S2F6",
+    "S2F7",
+    "S4F1",
+    "S4F2",
+    "S4F3",
+    "S4F4",
+    "S4F5",
+    "S4F6",
+    "S6F1",
+    "S6F2",
+    "S6F3",
+    "S6F4"
+  ]
+}
