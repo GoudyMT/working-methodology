@@ -22,6 +22,8 @@ Settled at approval too: the copy lines and the size-raise band, and one schedul
   (`--files` with the unit's paths, `--risk` with its Risk, `--map` with the project's kit.config.json); the Category
   cell may raise it, never lower it. Each Tests line reads `<what it checks> -> <spec line or rule id>`, the lines split
   by `<br>`. plan-check refuses a unit whose test lines pass its category's ceiling: split the unit.
+- **Rows** are locked at kickoff: run `plan-check.mjs <plan.md> --lock-rows` once the Units table is final. A find
+  that comes later does not edit the table; it goes out with `closeout.mjs defer "<text>"`.
 - **Risk and Tester** set the tester's model. The first of six criteria that fires sets Sonnet; none keeps Haiku: R1 Risk is "high"; R2 a file is on the guard, hook or gate list (GUARD_PATHS in tester-model.mjs); R3 two or more other units run after this one; R4 the test review has a vague or uncovered line; R5 Tests to write first names no input and expected output (a "->" line); R6 Tester is "sonnet" or higher, written by the owner at approval. A blank Tester keeps Haiku. Print the model and the criterion that fired
   with the kit's tester-model.mjs (its path is on the "Kit tools this session" start-up line), giving this plan and the unit.
 - **Runs:** "parallel" only when the unit shares no file, port, server or fixture with another parallel unit.

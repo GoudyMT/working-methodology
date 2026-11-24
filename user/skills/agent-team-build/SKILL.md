@@ -117,7 +117,7 @@ Every build has a written plan file that every agent reads before its unit runs:
    bisect by re-checking per pick. A trim pass's brief
    carries an allow-list of what may be trimmed; the lead diffs each trim commit against it before keeping it, and a
    line outside it is reverted and the run stops for the user. Run the project's **full gate** - every step its CI
-   runs; where CI runs it, the push is that run (rule:ci-gate). A red gate is a finding: diagnose with data, fix the root, one change per commit. Remove the finished
+   runs; where CI runs it, the push is that run (rule:ci-gate). A red gate is a finding: diagnose with data, fix the root, one change per commit. On CI red, run `ci-fix.mjs list` (never raw logs), then `ci-fix.mjs diagnose`, then fix only the named files. A second red on the same test means ask the owner; a cap raise is the owner's choice. Remove the finished
    worktrees.
 6. **Review (lead and user).** The project's pre-PR review runs as ONE review wave on the integrated branch,
    scaled to stakes, under a Swarm Contract cleared by `{{CLAUDE_HOME}}/skills/pre-pr-sweep/approve.mjs` first (the user decides only on its ASK; FIX THE CONTRACT is the lead's to fix and rerun;
@@ -128,9 +128,9 @@ Every build has a written plan file that every agent reads before its unit runs:
    commit; a high, critical, security or owner-rule fix with a test that fails before it, a low or medium one only when a
    real input shows it (rule:finding-pipeline). Then the fix check (rule:finding-pipeline): each fix's test fails on the
    code before it, and CI's test check states each named fix test's verdict. No checker re-reviews the fixes, and
-   there is no re-sweep: a second sweep is the user's call. Group the findings with `{{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`, so each lane shares no file with another (lanes.mjs groups sweep findings only; a plan's units are split by plan-graph), and a fix merges once its tests pass and CI is green, with no re-review. Then
+   there is no re-sweep: a second sweep is the user's call. Group the findings with `{{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`, so each lane shares no file with another (lanes.mjs groups sweep findings only; a plan's units are split by plan-graph), and a fix merges once its tests pass and CI is green, with no re-review. Sweep fixes get no review or check rounds: after the sweep, fixes are test-first and CI is the gate. Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
-   wait for the user, except a feature-branch push inside the user's bound (rule:outward-acts). For any other push
+   wait for the user. A feature-branch push never asks, while main, tags, force and deletes still need the owner's pop-up or yes record (rule:outward-acts). For any other push
    the lead asks in a pop-up quoting the exact command, `KIT_PUSH_APPROVED=1` included, and runs it after the user's
    Yes; the project's git pre-push hook blocks an agent's push to main, a tag, a force or a delete without both.
 7. **Record (lead).** The plan's progress, ticked with evidence; the scoreboard line, with the canary counts from
@@ -144,10 +144,12 @@ message of each turn, which is what the lead receives.
 
 ## The overwatch lead
 
-The build lead runs the batch as the overwatch lead. It is the build lead, not an extra role: it adds no seat to the roles table, and it keeps the lead's tools. Its run, in order:
+The build lead runs the batch as the overwatch lead. It is the build lead, not an extra role: it adds no seat to the roles table, and it keeps the lead's tools.
 
-1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and build the lanes from plan-graph's output: units that touch one file share a lane.
-2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. Right after a tester's or writer's spawn, the lead writes that agent's file list to `kit-unit-files.txt` in the agent's worktree (see "Lead lessons from this patch"), so the files it may touch are fixed before its first edit.
+A fresh lead (a new session, or a lead after a compaction) runs `lead-state check` before taking a phase. Its run, in order:
+
+1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and build the lanes from plan-graph's output: units that touch one file share a lane. At kickoff, lock the Rows line with `plan-check.mjs <plan.md> --lock-rows`; a later find goes out with `closeout.mjs defer "<text>"`, and the locked Rows line does not change.
+2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. Right after a tester's or writer's spawn, the lead writes that agent's unit list file (`kit-unit-files.txt`) at the git path, `git rev-parse --git-path kit-unit-files.txt`, not in the worktree (see "Lead lessons from this patch"), so the files it may touch are fixed before its first edit.
 3. **Answer lane questions.** Each question from a lane gets one answer, written in that lane's log.
 4. **Log every step.** Write each step as a JSON line (unit, step, at, by), and read the checklist after each merge: `node {{CLAUDE_HOME}}/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>`. After the tester's red commit, the lead locks the unit's row with `node {{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> --lock <unit>`; the count gate then checks the commit's new tests against that row with `node {{CLAUDE_HOME}}/kit-tools/unit-check.mjs <base>..<head> --plan <plan.md> --unit <id>`.
 5. **Spin down the teams.** Stop each agent once its lane hands back, and leave none running. The lead adds an `agent` key (the agent id it got back) to the role line of every hand-back record it saves.
@@ -155,6 +157,8 @@ The build lead runs the batch as the overwatch lead. It is the build lead, not a
 7. **One sweep.** Run the pre-PR sweep once, on the integrated branch.
 8. **Fixes in lanes.** Each finding the sweep names is fixed in its own lane, under the same merge rule.
 9. **CI gate, then the owner's yes.** Wait for CI to go green, then ask the owner's yes before any outward act.
+
+A gate, study, trial or check asked for in a build's thread starts with `side-job.mjs start`; the lead keeps building.
 
 ## Lead lessons from this patch
 
@@ -181,7 +185,14 @@ Each lesson below came from a real run. Follow it as written.
 - The agent-model hook holds a fresh tester or builder spawn while an open agent of the same lane is under 150000
   tokens (`WARM_LIMIT` in `warm.mjs`): continue that agent with `SendMessage`. At or over 150000 tokens, the
   agent-model hook holds the SendMessage instead: spawn a fresh agent and log the reset with `warm.mjs reset`.
-- A unit gets at most 2 check rounds. The agent-model hook enforces the cap and refuses a third checker spawn.
+- A unit gets at most 2 check rounds. The agent-model hook enforces the cap and refuses a third checker spawn. The round cap counts only briefs with a `Plan:` line and a `Unit:` id.
+
+**Hook errors, by tier.**
+- High: the lead reviews the error; if it cannot, pause and tell the owner.
+- Small: log it and report it.
+- A high-tier block: the lead triages it and states its scope; fixes it as well as it can at that point so the build
+  keeps going; and opens a separate investigation with `side-job.mjs start` that finds the root cause and corrects it,
+  so the block does not recur.
 
 **How many at once, and the log.**
 - Lead practice, not checked by code: up to 3 test reviewers and 2 checkers run at once. Start one more only when over 2 units wait for that role. The lane caps above are lead practice too.
@@ -193,6 +204,8 @@ Each lesson below came from a real run. Follow it as written.
 2. Make one fix per finding. Each fix has its own commit.
 3. A finding you will not fix now goes to `closeout.mjs defer "<text>"`; it prints "written, carry on".
 4. Run `closeout.mjs check` last. A build record with a sweep and no passing closeout fails CI.
+
+A base-copy report fault goes into one lands-first patch to main, planned when the report first shows it.
 
 | Step | The lead may | The lead may not |
 |---|---|---|
