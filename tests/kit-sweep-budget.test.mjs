@@ -1474,6 +1474,7 @@ test('an out-of-trial model cleared by the owner does not pause at the outcome a
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 1 ? 'claude-haiku-5-5' : 'claude-opus-5-5', u: [0, 100, 0, 0] }]])));
   const out = logOutcome(r, ids, cfg);
   assert.equal(out.status, 0, out.stdout);
+  assert.match(out.stdout, /^Outcome logged: [\d,]+ processed tokens over 3 role\(s\)\./m, 'the outcome row is the plain one');
   assert.doesNotMatch(out.stdout, /paused/, 'the model the owner cleared is the one it ran on: no pause');
   assert.doesNotMatch(out.stdout, /it ran on claude-haiku-5-5/, 'and no rerun names it');
 });

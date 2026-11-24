@@ -329,7 +329,7 @@ test('no count of approvals makes a trial review due, and a drift signal is a lo
     for (let i = 1; i < n; i++) for (const e of pair) { last = JSON.stringify({ ...e, prev: crypto.createHash('sha256').update(last).digest('hex').slice(0, 16) }); fs.appendFileSync(log, `${last}\n`); }
   };
   // No count of approvals makes a trial review due, so each approval after 9, 10 and 20 goes through with no pause.
-  const clear = () => { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, a.stdout); assert.doesNotMatch(a.stdout, /trial review/); outcome(r); };
+  const clear = () => { nextBranch(r.dir); const a = approveIn(r.dir, [r.f]); assert.equal(a.status, 0, a.stdout); assert.match(a.stdout, /^APPROVED - /m); assert.doesNotMatch(a.stdout, /trial review/); outcome(r); };
   approveN(9); clear();
   approveN(10); clear();
   approveN(20); clear();
@@ -341,6 +341,7 @@ test('no count of approvals makes a trial review due, and a drift signal is a lo
   nextBranch(r.dir);
   const afterDrift = approveIn(r.dir, [r.f]);
   assert.equal(afterDrift.status, 0, afterDrift.stdout);
+  assert.match(afterDrift.stdout, /^APPROVED - /m, 'the approval line is printed after a drift signal');
   assert.doesNotMatch(afterDrift.stdout, /paused/i, 'no pause after a drift signal');
   outcome(r);
   approveN(10); clear();
@@ -377,6 +378,7 @@ test('the trial needs each outcome, rejects bad numbers, warns on repeats, passe
   nextBranch(t.dir);
   const after = approveIn(t.dir, [t.f]);
   assert.equal(after.status, 0, after.stdout);
+  assert.match(after.stdout, /^APPROVED - /m, 'the 11th approval is printed');
   assert.doesNotMatch(after.stdout, /trial review/i, 'no trial review after 10 approvals');
   assert.match(approveIn(t.dir, ['--summary']).stdout, /approved: 11[\s\S]*auto-approval: on/);
   const e = approveRun(featureContract());
