@@ -530,8 +530,11 @@ function gateChange(rel, before, after) {
 		if (added.length) return { text: added[0].text, kind: added[0].kind, why: 'added' };
 	} else {
 		// A test file's timeout: lines (K399 U22, 05:33Z; ruling 3, 06:17Z): more new lines of a key than the base has is a rewrite,
-		// held; a lost one is held unless the test it sat in is gone from the new text (ruling 8, 06:52Z).
-		if (added.length) return { text: added[0].text, kind: added[0].kind, why: 'added' };
+		// held; a lost one is held unless the test it sat in is gone from the new text (ruling 8, 06:52Z). A new line whose key
+		// the base lacks is a new test's own line, held only beside a lost line (a rewrite such as 6e4) or when mixed.
+		const baseKeys = new Set(pairs.map(([x]) => x.key).concat(lost.map((x) => x.key)));
+		const held = added.find((y) => baseKeys.has(y.key) || lost.length > 0 || y.kind === 'mixed');
+		if (held) return { text: held.text, kind: held.kind, why: 'added' };
 		const gone = lost.filter((x) => TIMEOUT.test(x.text));
 		if (gone.length) {
 			// Ruling 9: the lost lines are no more than the drop in test starts, and no new name appears (a rename).

@@ -463,8 +463,12 @@ function gateProblems(root, base, end, lines) {
 			const unowned = lostT.find((o) => !(countOk && timeoutLossOk(was, now, o.text)) && !ownedBy(o.text));
 			if (lostT.length && !newT && unowned) problems.push(`gate: ${f} "${unowned.text}" removes a timeout line whose test is kept, with no owner-yes record ${GRANT_NEED(unowned.text)}`);
 		}
-		// A new line with no base line of its key (more lines of the key than the base has) is held; a line holding both kinds is held on any change.
+		// A new line past the base's lines of its key is held (a decoy cannot hide a raised one); a line holding both kinds is
+		// held on any change. In a test file a new line whose key the base lacks is a new test's own line, held only beside a
+		// lost line (a rewrite such as 6e4, ruling 9); a gate file holds every new line.
+		const baseKeys = new Set(oldG.map((o) => o.key));
 		for (const g of added) {
+			if (!strict && !baseKeys.has(g.key) && lost.length === 0 && g.kind !== 'mixed') continue;
 			if (!ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${g.kind === 'mixed' ? 'mixes a cap and a floor' : 'is a gate line with no base line'} and is changed with no owner-yes record ${GRANT_NEED(g.text)}`);
 		}
 		for (const [o, g] of pairs) {
