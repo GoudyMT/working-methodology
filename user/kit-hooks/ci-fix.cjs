@@ -493,37 +493,47 @@ function gateEntries(rel, text) {
 	return lf(text).split('\n').map((line) => gateLine(rel, line)).filter(Boolean);
 }
 
+// The base and new gate lines paired as multisets, per key (K399 S3F1): the lines of one key are sorted by their numbers and
+// paired in order, so a decoy line with the old number cannot take the pairing from a raised one. The base lines left over
+// are lost, the new lines left over are added.
+function pairGateLines(was, now) {
+	const byNums = (a, b) => {
+		for (let i = 0; i < Math.max(a.nums.length, b.nums.length); i++) {
+			const d = (a.nums[i] ?? -1) - (b.nums[i] ?? -1);
+			if (d !== 0) return d;
+		}
+		return 0;
+	};
+	const pairs = [];
+	const lost = [];
+	const added = [];
+	for (const key of new Set([...was, ...now].map((x) => x.key))) {
+		const xs = was.filter((x) => x.key === key).sort(byNums);
+		const ys = now.filter((y) => y.key === key).sort(byNums);
+		const n = Math.min(xs.length, ys.length);
+		for (let i = 0; i < n; i++) pairs.push([xs[i], ys[i]]);
+		lost.push(...xs.slice(n));
+		added.push(...ys.slice(n));
+	}
+	return { pairs, lost, added };
+}
+
 // The loosening in a gate file against its text before: a cap or floor line removed or added (gate files only), or on a
 // matched line any number that a cap raised or a floor lowered (every number on the line counts), or any number of a line that
 // holds both kinds. Null when none.
 function gateChange(rel, before, after) {
 	const { loosened } = lib();
 	const strict = inGate(rel);
-	const was = gateEntries(rel, before);
-	const now = gateEntries(rel, after);
-	const used = new Set();
-	const pairs = [];
-	const lost = [];
-	for (const x of was) {
-		const j = now.findIndex((y, idx) => !used.has(idx) && y.key === x.key);
-		if (j < 0) {
-			if (strict) return { text: x.text, kind: x.kind, why: 'removed' };
-			lost.push(x);
-			continue;
-		}
-		used.add(j);
-		pairs.push([x, now[j]]);
-	}
+	const { pairs, lost, added } = pairGateLines(gateEntries(rel, before), gateEntries(rel, after));
 	if (strict) {
-		const added = now.findIndex((_, idx) => !used.has(idx));
-		if (added >= 0) return { text: now[added].text, kind: now[added].kind, why: 'added' };
+		if (lost.length) return { text: lost[0].text, kind: lost[0].kind, why: 'removed' };
+		if (added.length) return { text: added[0].text, kind: added[0].kind, why: 'added' };
 	} else {
-		// A test file's timeout: lines (K399 U22, 05:33Z; ruling 3, 06:17Z): a base one gone while a new one is unpaired is a
-		// rewrite, held; a lost one is held unless the test it sat in is gone from the new text (ruling 8, 06:52Z).
+		// A test file's timeout: lines (K399 U22, 05:33Z; ruling 3, 06:17Z): more new lines of a key than the base has is a rewrite,
+		// held; a lost one is held unless the test it sat in is gone from the new text (ruling 8, 06:52Z).
+		if (added.length) return { text: added[0].text, kind: added[0].kind, why: 'added' };
 		const gone = lost.filter((x) => TIMEOUT.test(x.text));
 		if (gone.length) {
-			const fresh = now.find((y, idx) => !used.has(idx) && TIMEOUT.test(y.text));
-			if (fresh) return { text: fresh.text, kind: fresh.kind, why: 'added' };
 			// Ruling 9: the lost lines are no more than the drop in test starts, and no new name appears (a rename).
 			const countOk = gone.length <= startsOf(before).length - startsOf(after).length && !newNamesIn(before, after);
 			const kept = gone.find((x) => !(countOk && timeoutLossOk(before, after, x.text)));
@@ -626,7 +636,7 @@ function gateText(rel, change, input) {
 		: change.why === 'added' ? `adds a ${change.kind} line "${change.text}"`
 			: `changes a ${change.kind} from ${change.from} to ${change.to}`;
 	const { askText } = require('../kit-tools/owner-yes.cjs');
-	return askText(`${rel} ${what}; fix the cost at its source first, or put a separate cap to Max as a choice`, input);
+	return askText(`${rel} ${what}; fix the cost at its source first, or put a separate cap to the owner as a choice`, input);
 }
 
 // The first reason a write is refused, or null when it goes through. The order: the cifix record, (d), (b), held red, (a),
@@ -634,7 +644,7 @@ function gateText(rel, change, input) {
 function judge(ctx, w) {
 	if (w.unresolved) {
 		// An unclear write whose text names a gate file or the cifix record is held in any state, in any folder.
-		if (lib().GATE_TEXT.test(String(w.text || w.rel).replace(/\\/g, '/'))) return `Held for Max: ${w.reason}, and it names a gate file or the cifix record. Fix the cost at its source first, or put a separate cap to Max as a choice.`;
+		if (lib().GATE_TEXT.test(String(w.text || w.rel).replace(/\\/g, '/'))) return `Held for the owner: ${w.reason}, and it names a gate file or the cifix record. Fix the cost at its source first, or put a separate cap to the owner as a choice.`;
 		// Any other unclear target is a write to the call's repo: refused only where that repo is red, provisional or swept.
 		if (w.repo === null) return null;
 		const info = infoOf(ctx, w.repo);
@@ -654,8 +664,8 @@ function judge(ctx, w) {
 	const held = info.red && info.twice.find((it) => k === String(it.file || '').toLowerCase()
 		|| info.earlier(it).some((l) => (Array.isArray(l.files) ? l.files : []).some((f) => String(f).toLowerCase() === k)));
 	if (held) {
-		logRow(info.repo.common, `owner-ask: ${held.name} is red a second time (${held.key}); its files are held until Max says yes`);
-		return `Held for Max: ${held.name} is red a second time (${held.key}). Stop and ask Max: a grant id (ci-fix.mjs diagnose <n> --grant <id>) allows attempt 2.`;
+		logRow(info.repo.common, `owner-ask: ${held.name} is red a second time (${held.key}); its files are held until the owner says yes`);
+		return `Held for the owner: ${held.name} is red a second time (${held.key}). Stop and ask the owner: a grant id (ci-fix.mjs diagnose <n> --grant <id>) allows attempt 2.`;
 	}
 	// (b)
 	if (info.sweep) {
@@ -685,9 +695,9 @@ function judge(ctx, w) {
 	// cannot require an ES module (before 22.12) then holds only those writes with the hook error, not every edit.
 	const gate = MAY_BE_GATE.test(k) && inGate(k);
 	const timeoutEdit = TEST_FILE.test(k) && /timeout:\s*\d/.test(`${w.before}\n${w.after}`);
-	if (w.bash && gate) return `Held for Max: a shell write to the gate file ${w.rel} cannot be read here. Fix the cost at its source first, or put a separate cap to Max as a choice.`;
-	if (!w.bash && gate && !w.exists) return `Held for Max: ${w.rel} is a new gate file. Fix the cost at its source first, or put a separate cap to Max as a choice.`;
-	if (!w.bash && gate && w.unmatched) return `Held for Max: the edit to ${w.rel} does not match its text, so its numbers cannot be checked. Fix the cost at its source first, or put a separate cap to Max as a choice.`;
+	if (w.bash && gate) return `Held for the owner: a shell write to the gate file ${w.rel} cannot be read here. Fix the cost at its source first, or put a separate cap to the owner as a choice.`;
+	if (!w.bash && gate && !w.exists) return `Held for the owner: ${w.rel} is a new gate file. Fix the cost at its source first, or put a separate cap to the owner as a choice.`;
+	if (!w.bash && gate && w.unmatched) return `Held for the owner: the edit to ${w.rel} does not match its text, so its numbers cannot be checked. Fix the cost at its source first, or put a separate cap to the owner as a choice.`;
 	if (!w.bash && (gate || timeoutEdit)) {
 		const change = gateChange(k, w.before, w.after);
 		if (change) return gateText(w.rel, change, ctx.input);

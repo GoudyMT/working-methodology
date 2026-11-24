@@ -387,6 +387,30 @@ function timeoutLossOk(was, now, text) {
 	return holders.length > 0 && holders.every((h) => h.name !== null && !named.has(h.name) && !literals.has(h.name));
 }
 
+// The base and new gate lines paired as multisets, per key (K399 S3F1, as ci-fix.cjs gateChange): the lines of one key are
+// sorted by their numbers and paired in order. The base lines left over are lost, the new lines left over are added.
+function pairGateLines(was, now) {
+	const byNums = (a, b) => {
+		for (let i = 0; i < Math.max(a.nums.length, b.nums.length); i++) {
+			const d = (a.nums[i] ?? -1) - (b.nums[i] ?? -1);
+			if (d !== 0) return d;
+		}
+		return 0;
+	};
+	const pairs = [];
+	const lost = [];
+	const added = [];
+	for (const key of new Set([...was, ...now].map((x) => x.key))) {
+		const xs = was.filter((x) => x.key === key).sort(byNums);
+		const ys = now.filter((y) => y.key === key).sort(byNums);
+		const n = Math.min(xs.length, ys.length);
+		for (let i = 0; i < n; i++) pairs.push([xs[i], ys[i]]);
+		lost.push(...xs.slice(n));
+		added.push(...ys.slice(n));
+	}
+	return { pairs, lost, added };
+}
+
 // A gate-file number that rises on a cap line or falls on a floor line, against the base, needs an owner-yes record:
 // a cifix line {key: "gate:<file>:<line text>", grant}. A line that is neither cap nor floor may change.
 function gateProblems(root, base, end, lines) {
@@ -403,8 +427,7 @@ function gateProblems(root, base, end, lines) {
 		const now = showOf(end, f);
 		if (was === null || now === null) continue;
 		// The lines of the file as gate lines (the shared reader: comments left out, every number kept), matched by their key.
-		const old = was.replace(/\r\n/g, '\n').split('\n').map((o) => gateLine(f, o));
-		const used = new Set();
+		const oldG = was.replace(/\r\n/g, '\n').split('\n').map((o) => gateLine(f, o)).filter(Boolean);
 		// Ruling 1, with the proof (K399 U22 ruling 1, 05:25Z): a gate grant is the id ci-fix.mjs wrote in the line's proof, the
 		// proof's act quotes this gate line (the full act, or the line alone), and no other line uses that id. Where this
 		// session's record can be read, the pop-up is re-read live too.
@@ -422,43 +445,34 @@ function gateProblems(root, base, end, lines) {
 		// First pair each new gate line with its base line by key. A gate file holds every unpaired line, removed or new, as the
 		// hook's gateChange does (K399 U22 ruling 27.05Z), whether or not the other side changed.
 		const strict = GATE_FILE.test(f);
-		const pairs = [];
-		for (const raw of now.replace(/\r\n/g, '\n').split('\n')) {
-			const g = gateLine(f, raw);
-			if (!g) continue;
-			const idx = old.findIndex((o, j) => o && !used.has(j) && o.key === g.key);
-			if (idx >= 0) used.add(idx);
-			pairs.push({ g, idx });
-		}
-		const gone = old.some((o, j) => o && !used.has(j));
+		// Paired as multisets per key (K399 S3F1): a decoy line with the old number cannot take the pairing from a raised one.
+		const newG = now.replace(/\r\n/g, '\n').split('\n').map((raw) => gateLine(f, raw)).filter(Boolean);
+		const { pairs, lost, added } = pairGateLines(oldG, newG);
 		if (strict) {
-			for (let j = 0; j < old.length; j++) {
-				const o = old[j];
-				if (o && !used.has(j) && !ownedBy(o.text)) problems.push(`gate: ${f} "${o.text}" removes a ${o.kind} line with no owner-yes record ${GRANT_NEED(o.text)}`);
+			for (const o of lost) {
+				if (!ownedBy(o.text)) problems.push(`gate: ${f} "${o.text}" removes a ${o.kind} line with no owner-yes record ${GRANT_NEED(o.text)}`);
 			}
 		} else {
 			// A test file's timeout: lines (K399 U22, 05:33Z; ruling 3, 06:17Z): the lost ones are held unless their number is no
 			// greater than the drop in the count of test( calls, so one deleted test covers one timeout: line. A rewrite (a new
 			// one unpaired) is held by the new-line rule below.
-			const lostT = old.filter((o, j) => o && !used.has(j) && /timeout:\s*\d/.test(o.text));
-			const newT = pairs.some(({ g, idx }) => idx < 0 && /timeout:\s*\d/.test(g.text));
+			const lostT = lost.filter((o) => /timeout:\s*\d/.test(o.text));
+			const newT = added.some((g) => /timeout:\s*\d/.test(g.text));
 			// Ruling 9: the lost lines are no more than the drop in test starts, and no new name appears (a rename).
 			const countOk = lostT.length <= startsOf(was).length - startsOf(now).length && !newNamesIn(was, now);
 			const unowned = lostT.find((o) => !(countOk && timeoutLossOk(was, now, o.text)) && !ownedBy(o.text));
 			if (lostT.length && !newT && unowned) problems.push(`gate: ${f} "${unowned.text}" removes a timeout line whose test is kept, with no owner-yes record ${GRANT_NEED(unowned.text)}`);
 		}
-		for (const { g, idx } of pairs) {
-			if (idx < 0) {
-				// A line holding both kinds is held on any change. Ruling 9: a new line whose key is not in the base, while a base
-				// gate line is gone (a rewrite such as 6e4 or 60_000), is a loosening; in a gate file every new unpaired line is held.
-				if ((strict || g.kind === 'mixed' || gone) && !ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${g.kind === 'mixed' ? 'mixes a cap and a floor' : 'is a gate line with no base line'} and is changed with no owner-yes record ${GRANT_NEED(g.text)}`);
-				continue;
-			}
+		// A new line with no base line of its key (more lines of the key than the base has) is held; a line holding both kinds is held on any change.
+		for (const g of added) {
+			if (!ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${g.kind === 'mixed' ? 'mixes a cap and a floor' : 'is a gate line with no base line'} and is changed with no owner-yes record ${GRANT_NEED(g.text)}`);
+		}
+		for (const [o, g] of pairs) {
 			// Every number on the line counts: a two-number cap line is loosened by its second number too (F10).
-			const at = loosened(g.kind, old[idx].nums, g.nums);
+			const at = loosened(g.kind, o.nums, g.nums);
 			if (at < 0) continue;
 			const verb = g.kind === 'cap' ? 'raises a cap' : g.kind === 'floor' ? 'lowers a floor' : 'changes a mixed cap and floor';
-			if (!ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${verb} from ${old[idx].nums[at]} to ${g.nums[at]} with no owner-yes record ${GRANT_NEED(g.text)}`);
+			if (!ownedBy(g.text)) problems.push(`gate: ${f} "${g.text}" ${verb} from ${o.nums[at]} to ${g.nums[at]} with no owner-yes record ${GRANT_NEED(g.text)}`);
 		}
 	}
 	return problems;

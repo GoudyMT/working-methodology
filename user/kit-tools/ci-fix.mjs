@@ -203,7 +203,7 @@ function cmdDiagnose(d, root, argv) {
 	let ok = null;
 	if (attempt === 2) {
 		ok = acceptedYes(root, attempt2Acts(item.key), cf.lines);
-		if (!ok || ok.id !== grant) return refuse(root, 'diagnose', `grant ${grant} is not an accepted pop-up from Max quoting ${item.key}: ask first`);
+		if (!ok || ok.id !== grant) return refuse(root, 'diagnose', `grant ${grant} is not an accepted pop-up from the owner quoting ${item.key}: ask first`);
 	}
 	const line = { run: s.run, key: item.key, cause, fix, files, attempt, ...(grant ? { grant } : {}), ...(ok ? { proof: proofOf(ok) } : {}) };
 	fs.mkdirSync(path.dirname(cf.file), { recursive: true });
@@ -249,10 +249,10 @@ function cmdGateYes(d, root, argv) {
 	// failing item names that file (the gate item the change answers), and only for the red state of HEAD.
 	const acts = [`ci-fix gate-yes ${file}:${line}`, ...(bareOk && named.includes(file) ? [line] : [])];
 	const ok = acceptedYes(root, acts, cf.lines);
-	if (ok === null) return refuse(root, 'gate-yes', `no fresh accepted pop-up from Max quotes \`ci-fix gate-yes ${file}:${line}\`: ask first`);
+	if (ok === null) return refuse(root, 'gate-yes', `no fresh accepted pop-up from the owner quotes \`ci-fix gate-yes ${file}:${line}\`: ask first`);
 	// A bare-line proof carries the file it binds to and the CI state's head at write time; closeout accepts it only for that file.
 	const proof = ok.act === line ? { ...proofOf(ok), file, sha: stateSha } : proofOf(ok);
-	const rec = { run, key: `gate:${file}:${line}`, cause: 'env', fix: 'Max accepted this gate line change', files: [file], attempt: 1, grant: ok.id, proof };
+	const rec = { run, key: `gate:${file}:${line}`, cause: 'env', fix: 'the owner accepted this gate line change', files: [file], attempt: 1, grant: ok.id, proof };
 	fs.mkdirSync(path.dirname(cf.file), { recursive: true });
 	fs.appendFileSync(cf.file, `${JSON.stringify(rec)}\n`);
 	process.stdout.write(`owner-yes written for ${rec.key}\n`);
