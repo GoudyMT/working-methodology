@@ -8,6 +8,46 @@ const os = require('os');
 const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
 
+// K375 (U10): a crash in this hook obeys its tier. hook-error.cjs decides (a deny under high, which a stop blocks too); with
+// the helper missing the call is refused and one row is written, found with fs reads only (no child process). `where` is
+// the call's cwd, set once the input is read; the process cwd stands in for an unread input.
+const HOOK = 'clean-tree';
+let where = process.cwd();
+
+// The git common dir of `where`, from fs reads only: a folder's .git is the common dir; a "gitdir:" file names a worktree's
+// folder, whose commondir file names the common one. Null when `where` is in no repo.
+function commonDirFs(from) {
+	let dir = path.resolve(String(from));
+	for (;;) {
+		const dotGit = path.join(dir, '.git');
+		if (fs.existsSync(dotGit)) {
+			if (fs.statSync(dotGit).isDirectory()) return dotGit;
+			const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+			if (!m) return null;
+			const gitdir = path.resolve(dir, m[1].trim());
+			try { return path.resolve(gitdir, fs.readFileSync(path.join(gitdir, 'commondir'), 'utf8').trim()); } catch { return gitdir; }
+		}
+		const up = path.dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
+}
+
+// The refusal for stderr when this hook's crash is a deny, or null when its tier lets the call through.
+function failed(error) {
+	let helper = null;
+	try { helper = require('./hook-error.cjs'); } catch { helper = null; }
+	if (helper) {
+		const answer = helper.onError(HOOK, error, where);
+		return answer ? answer.hookSpecificOutput.permissionDecisionReason : null;
+	}
+	try {
+		const dir = commonDirFs(where);
+		if (dir) fs.appendFileSync(path.join(dir, 'kit-guard-open.log'), `${JSON.stringify({ kind: 'hook-error', id: 'hook-error', hook: `${HOOK}.cjs`, error: `hook-error.cjs is missing: ${String((error && error.message) || error).split('\n')[0]}`, at: new Date().toISOString() })}\n`);
+	} catch { /* the refusal stands without its row */ }
+	return 'hook error: lead review: hook-error.cjs is missing';
+}
+
 // A worktree's state: the file list plus a hash of every change's content, so a second edit to a file that was
 // already changed still shows. Ignored files are left out: the unit tests a checker may run write caches there,
 // and hashing node_modules on every command is too slow. A guard against accidents, not against a checker set on
@@ -41,6 +81,7 @@ function trees(cwd) {
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+	where = input.cwd || where;
 	const cwd = input.cwd || process.cwd();
 	// Keyed by agent too: checkers started by one session share its session_id.
 	const key = `${input.session_id || 'none'}-${input.agent_id || 'main'}`.replace(/[^\w-]/g, '');
@@ -71,4 +112,15 @@ function main() {
 	return 2;
 }
 
-try { process.exitCode = main(); } catch { process.exitCode = 0; }
+// A crash obeys the tier: under high a deny is exit 2 with its reason on stderr, a stop blocked once as the check does.
+try {
+	process.exitCode = main();
+} catch (error) {
+	const reason = failed(error);
+	if (reason) {
+		process.stderr.write(`${reason}\n`);
+		process.exitCode = 2;
+	} else {
+		process.exitCode = 0;
+	}
+}
