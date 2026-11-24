@@ -266,7 +266,7 @@ export function score(files, mapFile, label, kit = KIT, again = null) {
   // Lower on one look, under the floor: named, though the floor already decides.
   const onceLine = !r.asked.length && r.lower.length ? [`lower once: ${r.lower.join(', ')}`] : [];
   const modelLine = models.size && [...models][0] !== GATE_PIN ? [`model: ${[...models][0]}`] : [];
-  const lines = [...modelLine, `scorers: ${SCORERS}`, ...askedLine, ...onceLine, `worse: ${r.worse.join(', ') || 'none'}`, controlLine, line];
+  const lines = [...modelLine, `scorers: ${SCORERS}`, ...askedLine, ...onceLine, `worse: ${r.worse.join(', ') || 'none'}`, controlLine, line, `release median: ${r.baseMedian}`];
   // K231 (S7): the user layer counts as measured only when every candidate and release run carried only its own CLAUDE.md.
   // Named by arm and reason, never by run, as the rest of the score is.
   const notOwn = {};

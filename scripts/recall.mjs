@@ -85,6 +85,8 @@ const CONTROL_FROM = 4;
 export const FLOOR = 14;
 const SCORERS_LINE = /^scorers: (\d+)$/;
 const WORSE_LINE = /^worse: (.+)$/;
+// The release's exact median: the gate line rounds it up, so a new test set is judged on this one.
+const RELEASE_LINE = /^release median: (\d+(?:\.\d+)?)$/;
 const BEHAVE_WORSE_LINE = /^behaviour worse: (.+)$/;
 // Seen twice: a line the score tools print when a question or scenario was lower on the first look.
 const ONCE_LINE = /^(?:behaviour )?lower once: (.+)$/;
@@ -359,7 +361,7 @@ export function runHeader({ label, keys, facts, when, cli, only = null, userLaye
 // the K116 check is not asked for (the gate command always reads it).
 // behaviour is { suite, bar } from the head's suite when the caller reads the behaviour line; left out, it is not asked.
 // floor is the K198 floor the gate command passes; left out (a direct call), the K198 lines are not asked for.
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour, floor, count = null }) {
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour, floor, count = null, rowsOk = true }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
   // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no
@@ -404,6 +406,7 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   const scorers = lastOf(SCORERS_LINE);
   const worse = lastOf(WORSE_LINE);
   const behaveWorse = lastOf(BEHAVE_WORSE_LINE);
+  const release = lastOf(RELEASE_LINE);
   // The floor is the whole test set, never under FLOOR: a score of 14 on a bigger set is not a pass.
   const top = Math.max(floor ?? 0, count ?? 0);
   const behaveTop = Math.max(floor ?? 0, behaviour?.count ?? 0);
@@ -426,9 +429,14 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
       if (!m) return `cannot read the ${a[1] ? 'behaviour ' : ''}asked again line: ${item}`;
       return Number(m[4]) < Number(m[5]) && `${m[1]} was lower on both looks (${item.trim()}), so it is worse`;
     })),
-    behave && behaviour.count != null && behaviour.count < floor && `the behaviour suite has ${behaviour.count} scenarios, under the floor of ${floor}: a test set never shrinks under it`,
-    newSet && count != null && count < floor && `the keys hold ${count} questions, under the floor of ${floor}: a test set never shrinks under it`,
+    behave && behaviour.count != null && !(behaviour.count >= floor) && `the behaviour suite has ${behaviour.count} scenarios, under the floor of ${floor}: a test set never shrinks under it`,
+    newSet && !(count >= floor) && `the keys hold ${count} questions, under the floor of ${floor}: a test set never shrinks under it`,
     ...(newSet ? [
+      !rowsOk && 'a new test set: the key rows do not match the declared question count, numbered from 1',
+      !(count >= (was.count ?? 0)) && `a new test set: ${count} questions, and a set never shrinks under the base's ${was.count}`,
+      behaviour && !(behaviour.count >= (behaviour.baseCount ?? 0)) && `a new test set: ${behaviour.count} scenarios, and a set never shrinks under the base's ${behaviour.baseCount}`,
+      was.bar != null && !(bar >= was.bar) && `a new test set: the pass bar ${bar} is under the base's ${was.bar}`,
+      !release ? 'a new test set: the exact release median is not recorded: add the "release median:" line recall-score.mjs score prints' : Number(release[1]) < top && `a new test set: the release median ${release[1]} is under the floor of ${top}`,
       Number(baseline) < top && `a new test set: the release's baseline ${baseline} is under the floor of ${top}`,
       Number(control) !== 0 && `a new test set: the control ${control ?? 'is not recorded'} is not 0`,
       behave && Number(behave[3]) < behaveTop && `a new test set: behaviour baseline ${behave[3]} is under the floor of ${behaveTop}`,
@@ -503,11 +511,16 @@ function gate([base, head]) {
     const s = JSON.parse(suiteText);
     const b = baseSuite ? JSON.parse(baseSuite) : {};
     const bar = Math.max(Number.isInteger(s.pass) ? s.pass : 0, Number.isInteger(b.pass) ? b.pass : 0);
-    return { suite: s.version, base: Number.isInteger(b.version) ? b.version : null, bar: bar || Infinity, count: (s.scenarios || []).length || null, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
+    return { suite: s.version, base: Number.isInteger(b.version) ? b.version : null, baseCount: Array.isArray(b.scenarios) ? b.scenarios.length : 0, bar: bar || Infinity, count: Array.isArray(s.scenarios) ? s.scenarios.length : 0, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
   })() : undefined;
+  // The base's own question count and bar, which a new set never goes under; keys no reader can parse hold none.
+  const baseKeys = baseVersion(QUESTIONS_REL);
+  const baseSet = (() => { try { return baseKeys == null ? {} : { count: questionCount(onBase(QUESTIONS_REL), baseKeys), bar: passBar(onBase(QUESTIONS_REL), baseKeys) }; } catch { return {}; } })();
   const r = checkGate({
     floor: FLOOR,
     count: questionCount(now(QUESTIONS_REL), keys),
+    // The count is declared in the keys' own Pass line, so a new set must show that many rows, numbered from 1.
+    rowsOk: (() => { const q = questions(now(QUESTIONS_REL), keys); return q.length === questionCount(now(QUESTIONS_REL), keys) && q.every((x, i) => x.n === i + 1); })(),
     behaviour,
     scored,
     after,
@@ -519,7 +532,7 @@ function gate([base, head]) {
     keys,
     // Keys recall cannot run (no Pass line) cannot grade a PR (B7).
     bar: (() => { questionCount(now(QUESTIONS_REL), keys); return passBar(now(QUESTIONS_REL), keys); })(),
-    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), edited },
+    was: { brief: baseVersion(BRIEF), keys: baseVersion(QUESTIONS_REL), edited, ...baseSet },
   });
   console.log(r.detail);
   if (!r.ok) process.exitCode = 1;
