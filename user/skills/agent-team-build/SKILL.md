@@ -130,7 +130,7 @@ Every build has a written plan file that every agent reads before its unit runs:
    code before it, and CI's test check states each named fix test's verdict. No checker re-reviews the fixes, and
    there is no re-sweep: a second sweep is the user's call. Group the findings with `{{CLAUDE_HOME}}/kit-tools/lanes.mjs <findings.jsonl> [--files <files.json>]`, so each lane shares no file with another (lanes.mjs groups sweep findings only; a plan's units are split by plan-graph), and a fix merges once its tests pass and CI is green, with no re-review. Sweep fixes get no review or check rounds: after the sweep, fixes are test-first and CI is the gate. Then
    one visual check with the user if anything visible changed. Outward acts (push, pull request, merge, release)
-   wait for the user. A feature-branch push never asks, while main, tags, force and deletes still need the owner's pop-up or yes record (rule:outward-acts). For any other push
+   wait for the user. A feature-branch push never asks in the kit repo (a project's pre-push hook still holds one with a test change until test-integrity ships in the project CI template), while main, tags, force and deletes still need the owner's pop-up or yes record (rule:outward-acts). For any other push
    the lead asks in a pop-up quoting the exact command, `KIT_PUSH_APPROVED=1` included, and runs it after the user's
    Yes; the project's git pre-push hook blocks an agent's push to main, a tag, a force or a delete without both.
 7. **Record (lead).** The plan's progress, ticked with evidence; the scoreboard line, with the canary counts from
