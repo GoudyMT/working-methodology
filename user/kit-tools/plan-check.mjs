@@ -81,6 +81,27 @@ function rowsLineOf(text) {
 	return text.split(/\r?\n/).find((l) => l.startsWith('- **Rows')) ?? null;
 }
 
+// The row ids a Rows line lists: the text after its colon, split at commas, with the markup taken out. Only plain ids
+// (letters and digits) count, so a defer command never carries anything a shell could read.
+function rowIdsOf(rowsLine) {
+	if (!rowsLine) return [];
+	const after = rowsLine.slice(rowsLine.indexOf(':') + 1);
+	return after.replace(/[*_`]/g, '').split(',').map((s) => s.trim()).filter((s) => /^[A-Za-z0-9]+$/.test(s));
+}
+
+// The locked Rows line text beside the locks file (<plan>.rows.txt), or null when it is missing or does not hash to the
+// locked sha. The locks file keeps only the sha, so the text lives in its own sidecar.
+function lockedRowsOf(plan, locks) {
+	if (!Object.prototype.hasOwnProperty.call(locks, 'rows')) return null;
+	let text;
+	try {
+		text = fs.readFileSync(`${plan}.rows.txt`, 'utf8');
+	} catch {
+		return null;
+	}
+	return sha(text) === locks.rows ? text : null;
+}
+
 // A Tests cell's lines, each one test: split at <br>, trimmed, no empty line.
 export const testLines = (cell) => String(cell || '').split(/<br\s*\/?>/i).map((l) => l.trim()).filter(Boolean);
 
@@ -266,13 +287,22 @@ const CLOSEOUT_TOOL = path.join(import.meta.dirname, 'closeout.mjs').replace(/\\
 
 // A locked unit whose row text no longer hashes to its lock is a fault; a locked unit with no row is one too. A locked
 // Rows line that no longer hashes to its lock is a fault too: a new find goes to the next patch, not into this build.
-function lockFaults(locks, raw, rowsLine) {
+function lockFaults(locks, raw, rowsLine, lockedRows) {
 	const units = Object.entries(locks).filter(([id]) => id !== ROWS_KEY).flatMap(([id, hex]) => {
 		if (!raw.has(id)) return [`locked unit ${id} has no row in the Units table`];
 		return sha(raw.get(id)) === hex ? [] : [`unit ${id}: the locked row changed since --lock`];
 	});
 	if (!Object.prototype.hasOwnProperty.call(locks, ROWS_KEY) || (rowsLine !== null && sha(rowsLine) === locks[ROWS_KEY])) return units;
-	return [...units, `the Rows line changed after the build started: a new find goes to the next patch with node ${CLOSEOUT_TOOL} defer "${rowsLine ?? '(no Rows line)'}"`];
+	const restore = lockedRows === null
+		? 'restore the locked Rows line from git (its <plan>.rows.txt is missing or does not match the lock)'
+		: `restore this Rows line after deferring the new row: ${lockedRows}`;
+	const locked = rowIdsOf(lockedRows);
+	const added = lockedRows === null ? [] : rowIdsOf(rowsLine).filter((id) => !locked.includes(id));
+	return [
+		...units,
+		`the Rows line changed after the build started: a new find goes to the next patch; ${restore}`,
+		...added.map((id) => `the added row ${id} goes to the next patch: node ${CLOSEOUT_TOOL} defer "${id}"`),
+	];
 }
 
 // For unit-check's count gate: one unit's row of a plan. Its Files paths, its Tests line count, and whether its row
@@ -296,7 +326,8 @@ export function unitGate(plan, id) {
 export function planFaults(plan) {
 	const text = fs.readFileSync(plan, 'utf8');
 	const p = checkPlan(text, mapOf(plan));
-	return [...p.faults, ...lockFaults(readLocks(`${plan}.locks.json`), p.raw, rowsLineOf(text))];
+	const locks = readLocks(`${plan}.locks.json`);
+	return [...p.faults, ...lockFaults(locks, p.raw, rowsLineOf(text), lockedRowsOf(plan, locks))];
 }
 
 // The role line of a hand-back: the first non-blank line after the last RECORD: line, as handoff.mjs reads it.
@@ -443,10 +474,11 @@ function main(argv) {
 		const locks = readLocks(lockFile);
 		const rec = args.records === null ? { found: [], warnings: [], read: 0 } : checkRecords(args.records, plan.ids);
 		const rowsLine = rowsLineOf(text);
-		const lines = [...plan.faults, ...lockFaults(locks, plan.raw, rowsLine), ...rec.found];
+		const lines = [...plan.faults, ...lockFaults(locks, plan.raw, rowsLine, lockedRowsOf(args.plan, locks)), ...rec.found];
 		if (args.lockRows && rowsLine === null) lines.push('the plan has no Rows line to lock');
 		if (args.lockRows && lines.length === 0) {
 			fs.writeFileSync(lockFile, `${JSON.stringify({ ...locks, [ROWS_KEY]: sha(rowsLine) }, null, 2)}\n`);
+				fs.writeFileSync(`${args.plan}.rows.txt`, rowsLine);
 			process.stdout.write(`locked: ${ROWS_KEY} in ${lockFile}\n`);
 		} else if (args.lockRows) {
 			process.stdout.write('not locked: rows, the plan has faults\n');
