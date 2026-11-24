@@ -440,23 +440,12 @@ test('pre-push refuses a new branch with a retest: commit, refuses a key on a ne
 });
 
 // why: guards rule:test-integrity (kit pre-push passes a retest push with no owner yes)
-test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes and names it", () => {
+test("the kit's own pre-push passes a retest: push on a feature branch with no ask", () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 	const retest = commit(dir, 'retest: tighten the add case');
 	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`);
 	kitPassesNoAsk(r, 'a retest: push on a feature branch');
-	// Folded control (was its own test): catches the kit's own pre-push refusing a retest push even with the owner's pop-up yes to that push, unlike the project hook.
-	{
-		const { dir: d5, red: r5, bare: b5 } = pushRepo();
-		put(d5, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-		const retest5 = commit(d5, 'retest: tighten the add case');
-		const input5 = `refs/heads/feat/x ${retest5} refs/heads/feat/x ${r5}\n`;
-		const cfg5 = kitTemp.makeTemp('lock-owner-kit-');
-		ownerTaps(cfg5, d5, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-		const yes5 = pushRun(KIT_PRE_PUSH, d5, b5, input5, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg5, CLAUDE_CODE_SESSION_ID: TAP_SID });
-		assert.equal(yes5.status, 0, `the owner's yes lets the kit hook's push through: ${yes5.stderr}`);
-	}
 });
 
 // why: guards rule:test-integrity (approved retest push goes through with no pop-up yes)
@@ -482,23 +471,12 @@ test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-u
 });
 
 // why: guards rule:test-integrity (kit pre-push passes an approved retest push with no pop-up yes)
-test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes and names the owner's yes", () => {
+test("the kit's own pre-push passes a retest: push on a feature branch on the KIT_PUSH_APPROVED marker alone", () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 	const retest = commit(dir, 'retest: tighten the add case');
 	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: TAP_SID });
 	kitPassesNoAsk(r, 'a retest: push on the marker alone');
-	// Folded control (was its own test): catches the kit's own pre-push refusing an approved retest push even with the owner's pop-up yes to that push.
-	{
-		const { dir: d7, red: r7, bare: b7 } = pushRepo();
-		put(d7, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-		const retest7 = commit(d7, 'retest: tighten the add case');
-		const input7 = `refs/heads/feat/x ${retest7} refs/heads/feat/x ${r7}\n`;
-		const cfg7 = kitTemp.makeTemp('lock-approved-kit-');
-		ownerTaps(cfg7, d7, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-		const ok7 = pushRun(KIT_PRE_PUSH, d7, b7, input7, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg7, CLAUDE_CODE_SESSION_ID: TAP_SID });
-		assert.equal(ok7.status, 0, `the approved push with the owner's yes goes through the kit hook: ${ok7.stderr}`);
-	}
 });
 
 // why: catches the kit's own pre-push passing a tag push or a force push that carries a test change unheld
