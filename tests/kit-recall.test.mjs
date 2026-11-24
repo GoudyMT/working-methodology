@@ -382,6 +382,36 @@ test('a PR that moves the ruler it is graded on fails, and no marker passes it (
   const edited = checkGate(gateFacts({ was: { brief: 1, keys: 2, baseline: null, edited: true } }));
   assert.equal(edited.ok, false);
   assert.match(edited.detail, /changes the ruler/);
+  // The owner's plan yes (2026-11-24 19:40Z): a PR that changes only the test set passes when both sides reach the new
+  // set's top score, the control scores 0 and two blind scorers read it. No rule text beside it, no edit at one version.
+  const SET = ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md', 'docs/evals/behaviour-scenarios.json', 'scripts/recall-behave.mjs', 'docs/evals/results/recall-scores.md'];
+  const lines = (m, b, c, bm = 16, bb = 16, bc = 0) => ['scorers: 2', 'worse: none', `control: ${c}`, `gate: a median ${m} baseline ${b} brief v2 keys v13`, `behaviour: a median ${bm} baseline ${bb} suite v3 control ${bc}`, 'behaviour worse: none'];
+  const set = (over = {}) => checkGate({ changed: SET, added: lines(29, 29, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 2, bar: 12, count: 16 }, was: { brief: 2, keys: 12 }, ...over });
+  assert.equal(set().ok, true, set().detail);
+  for (const [what, over, why] of [
+    ['a release under the top', { added: lines(29, 28, 0) }, /baseline 28 is under/],
+    ['a candidate under the top, over 14', { added: lines(28, 29, 0) }, /median 28 is under/],
+    ['a control over 0', { added: lines(29, 29, 1) }, /control 1/],
+    ['a behaviour release under the top', { added: lines(29, 29, 0, 16, 15) }, /behaviour baseline 15 is under/],
+    ['a behaviour control over 0', { added: lines(29, 29, 0, 16, 16, 1) }, /behaviour control 1/],
+    ['one scorer', { added: lines(29, 29, 0).map((l) => l.replace('scorers: 2', 'scorers: 1')) }, /two blind scorers/],
+    ['rule text beside the set', { changed: [...SET, 'rules/core.md'] }, /changes the ruler/],
+    ['kit.mjs beside the set', { changed: [...SET, 'scripts/kit.mjs'] }, /changes the ruler/],
+    ['an edit at the same version', { was: { brief: 2, keys: 12, edited: true } }, /changes the ruler/],
+    ['a set moved back a version', { was: { brief: 2, keys: 14 } }, /changes the ruler/],
+    ['a suite moved back a version', { behaviour: { suite: 3, base: 4, bar: 12, count: 16 } }, /changes the behaviour suite/],
+    ['a set of fewer questions than the floor', { count: 10, added: lines(10, 10, 0) }, /under the floor of 14/],
+    ['no behaviour line', { added: lines(29, 29, 0).slice(0, 4) }, /records no behaviour line/],
+    ['no floor to judge by', { floor: undefined }, /changes the ruler/],
+  ]) {
+    const x = set(over);
+    assert.equal(x.ok, false, what);
+    assert.match(x.detail, why, what);
+  }
+  // The floor is the whole set on every PR, so 14 of a bigger set is not a pass.
+  const grown = checkGate({ changed: ['rules/core.md'], added: lines(14, 14, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 3, bar: 12, count: 16 }, was: { brief: 2, keys: 13 } });
+  assert.equal(grown.ok, false);
+  assert.match(grown.detail, /under the floor of 29/);
   // The first ruler has no version to move from.
   assert.equal(checkGate(gateFacts({ was: { brief: null, keys: null, baseline: null } })).ok, true);
 });
@@ -1327,6 +1357,9 @@ test('recall-score (K198): two scorers are averaged with no rounding up, against
   const all = sum(Array(5).fill(clean));
   assert.equal(all.candMedian, 14);
   assert.equal(all.pass, true);
+  // The floor is the whole set: 14 of 16 does not pass.
+  const bigger = scoreSets(fiveEach(Array(5).fill([[15, 16], [15, 16]]), Array(5).fill([[15, 16], [15, 16]])), 16);
+  assert.equal(summarize(bigger.sets, bigger.map, 16, { when: sameDay(bigger.map) }).pass, false);
   // Three runs where one scorer took a point: those runs are 13.5, so the median is 13.5, under 14.
   const half = sum([clean, split, split, split, clean]);
   assert.equal(half.candMedian, 13.5);
