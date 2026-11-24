@@ -51,7 +51,8 @@ function parseArgs(argv) {
   return { label, release: path.resolve(release), probe: path.resolve(probe) };
 }
 
-// The probe login is read, never written. A login with no expiry cannot be told from a lapsed one, so both stop the run.
+// The probe login is read, never written. Each arm's own copy renews an expired access token from the refresh token, so a
+// login without one is the fault: its access token lapses partway through a run and nothing can renew it.
 function probeLoginFault(probe) {
   let text;
   try {
@@ -59,13 +60,13 @@ function probeLoginFault(probe) {
   } catch (e) {
     return e.code === 'ENOENT' ? 'no probe login file' : 'the probe login cannot be read';
   }
-  let expiresAt;
+  let refreshToken;
   try {
-    expiresAt = JSON.parse(text)?.claudeAiOauth?.expiresAt;
+    refreshToken = JSON.parse(text)?.claudeAiOauth?.refreshToken;
   } catch {
     return 'the probe login cannot be read';
   }
-  return typeof expiresAt === 'number' && expiresAt > Date.now() ? null : 'the probe login is expired or has no expiry';
+  return typeof refreshToken === 'string' && refreshToken !== '' ? null : 'the probe login has no refresh token';
 }
 
 function recallScript(kit) {
