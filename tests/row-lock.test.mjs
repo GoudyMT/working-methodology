@@ -83,6 +83,25 @@ test('a row added after --lock-rows is a fault that names the row and the closeo
 	assert.match(out(res), /closeout\.mjs defer "[^"]*K903/);
 });
 
+// why: catches a rows fault that leaves the build stuck, with no locked text to restore (S11F2)
+test('a rows fault prints the locked Rows line and the check passes once that line is restored', () => {
+	const plan = planFile(planText());
+	const locked = check([plan, '--lock-rows']);
+	assert.equal(locked.status, 0, out(locked));
+	const added = '- **Rows (3 placed, cap 15):** K901, K902, K903';
+	fs.writeFileSync(plan, planText({ rows: added }));
+	const res = check([plan]);
+	assert.equal(res.status, 1, out(res));
+	assert.match(out(res), CHANGED);
+	assert.ok(out(res).includes(ROWS), `the fault prints the locked Rows line text:\n${out(res)}`);
+	assert.match(out(res), /restore/i, 'the fault says to restore the locked line after deferring the new row');
+	// Restoring the plan's Rows line is the whole way out: no hand edit of the locks file.
+	fs.writeFileSync(plan, planText());
+	const again = check([plan]);
+	assert.equal(again.status, 0, out(again));
+	assert.doesNotMatch(out(again), /fault:/);
+});
+
 // why: catches a row taken out or reworded after the lock is a fault too (K372 S2)
 test('a row taken out or reworded after the lock is a fault too', () => {
 	for (const rows of ['- **Rows (1 placed, cap 15):** K901', '- **Rows (2 placed, cap 15):** K901, K902 (reworded)']) {
