@@ -1117,12 +1117,17 @@ test('recall gate: a graded file named in another case or with a tab still needs
 // version and pass bar, to its baseline, and to a control under that baseline; the suite cannot be removed to skip it.
 // why: guards rule:instruments-and-evals
 test('recall gate (T10): a rule change needs a behaviour line on the current suite, at its bar and baseline', () => {
-  const suite = JSON.stringify({ version: 2, pass: 10, scenarios: [] });
+  const suite = JSON.stringify({ version: 2, pass: 10, scenarios: Array.from({ length: 14 }, (_, i) => ({ id: String(i + 1) })) });
   const line = 'gate: a median 12 baseline 9 brief v1 keys v4 control 0';
   const run = (behave) => { const r = gateRepo({ suite }); r.record(behave ? `${line}\n${behave}` : line); return r.gate(); };
   assert.match(run(null).stdout, /records no behaviour line/);
   const pass = gateRepo({ suite });
   pass.record(`${PASS_GATE}\nbehaviour: a median 14 baseline 11 suite v2 control 3\nbehaviour worse: none`);
+  const empty = gateRepo({ suite: JSON.stringify({ version: 2, pass: 10, scenarios: [] }) });
+  empty.record(`${PASS_GATE}
+behaviour: a median 14 baseline 11 suite v2 control 3
+behaviour worse: none`);
+  assert.match(empty.gate().stdout, /0 scenarios/, 'an empty suite is no top score');
   assert.equal(pass.gate().status, 0, pass.gate().stdout);
   const under = run('behaviour: a median 9 baseline 8 suite v2 control 3');
   assert.equal(under.status, 1);
