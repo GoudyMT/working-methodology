@@ -20,7 +20,6 @@
         "tests/kit-push-secrets.test.mjs::a push whose commit adds a literal AWS-shaped key in a test file is blocked with \"Push blocked: a secret-shaped\"",
         "tests/kit-push-secrets.test.mjs::a push whose test builds the value from joined parts at run time passes the scan",
         "tests/kit-push-secrets.test.mjs::bypass: a key added in one commit and taken out in the next is still blocked, since every pushed commit is read",
-        "tests/kit-push-secrets.test.mjs::repeat: the same push twice is blocked the same way",
         "tests/kit-push-secrets.test.mjs::fail-closed: a missing secret-shapes.mjs blocks the push and is logged on stderr",
         "tests/kit-push-secrets.test.mjs::write-time twin: a commit staging a file that holds a whole AWS-shaped key is refused by the pre-commit hook with \"Commit blocked: a secret-shaped\", and a value joined at run time passes"
       ]
@@ -545,7 +544,7 @@
   ],
   "verification": [
     "Each unit's new tests failed on the code before them and pass now.",
-    "test-integrity passes the whole branch and lists 36 retest commits for the merge yes.",
+    "test-integrity passes the whole branch and lists 38 retest commits for the merge yes.",
     "CI runs the full suite on this branch; no full-suite run was made on the PC."
   ],
   "decisions": [

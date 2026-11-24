@@ -58,3 +58,4 @@
 {"text":"1.51.4 build: the approve-worktree pause-ask test title still says it names CLAUDE_CODE_SESSION_ID when unset; it now asserts only the resume step; rename it, and decide if the ask should name the variable","at":"2026-11-24T16:35:21.248Z"}
 {"text":"1.51.4 build: install user from the kit source took about 20 s, and recall-arms tests hit their 20 s timeout locally; cause not proven, the 233 worktrees under .claude are a guess","at":"2026-11-24T16:35:21.794Z"}
 {"text":"1.51.4 build: the kit pre-push prints fatal Not a valid object name lines for remote shas the clone lacks; read them quietly","at":"2026-11-24T16:35:22.344Z"}
+{"text":"1.51.4 build: ci-fix.mjs list reads the cancelled PR body run of a commit instead of the red CI run, so it shows one unparsed pr-body item and none of the real failures","at":"2026-11-24T18:26:57.825Z"}
