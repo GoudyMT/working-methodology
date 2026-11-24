@@ -41,7 +41,7 @@ const GH_READ_GROUPS = new Set(['search', 'status', 'browse', 'completion', 'hel
 const GH_READ_SUBS = new Set(['view', 'list', 'status', 'checks', 'diff', 'watch', 'download']);
 
 const { plainText, joinContinuations, tokenize, canonical } = require('./guard-read.cjs');
-const { home, ownerYes, askText, yesText, neverText, heldText } = require('./owner-yes.cjs');
+const { home, ownerYes, askText, yesText, neverText, heldText, parseAct, recordYes, logOpen } = require('./owner-yes.cjs');
 
 // A program name without a Windows launch extension: docker.exe -> docker, twine.cmd -> twine.
 const base = (name) => name.replace(/\.(exe|cmd|bat|com|ps1)$/, '');
@@ -505,7 +505,63 @@ const MARKERS = 'a command that clears the AI shell\'s markers';
 // Accepting a changed host file or folder list is how the owner lifts a hold the kit set on it: a tool that ran the
 // install with that flag would lift its own hold (the plan check's P1, the 1.29.0 sweep).
 const ACCEPTS = 'a kit install that accepts a changed file, which only the owner does';
-const BYPASS = new Set(['git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS, ACCEPTS]);
+// A yes record is the owner's own terminal act (K367): a shell or terminal-tool command that runs the writer is never a tool's.
+const RECORD_WRITE = 'a command that runs the yes-record writer owner-yes.cjs --record';
+const SHELLS = ['Bash', 'PowerShell', 'Monitor', 'mcp__terminal__run_in_terminal'];
+// A command that may write a record: the writer named (or globbed) with --record, or the record's own shape (an act, an
+// owner/repo target, a 40-hex head) handed to any program, in the writer's order or with a #N or @tag target in any order.
+const ACT_WORD = '(?:merge|squash|rebase|tag|release|delete|force)';
+const REPO_WORD = '[\\w.-]+\\/[\\w.-]+';
+// Each text is also read with backslashes, backticks and carets removed inside words and in the shell's plain form, so
+// an escaped spelling reads as the plain words.
+const variantCache = new Map();
+function variants(t, tool) {
+	const s = String(t);
+	const key = `${tool}\n${s}`;
+	if (variantCache.has(key)) return variantCache.get(key);
+	const strip = (x) => x.replace(/[\\`^]/g, '');
+	const out = [s, strip(s)];
+	try { const p = plainText(s, tool); out.push(p, strip(p)); } catch { /* the text as written is read all the same */ }
+	variantCache.clear();
+	variantCache.set(key, out);
+	return out;
+}
+const writesRecord = (t, tool) => variants(t, tool).some((v) => writesRecordOne(v));
+const writesRecordOne = (t) => {
+	const s = String(t).replace(/['"]/g, '');
+	if (/--record/i.test(s) && (/owner-yes/i.test(s) || /owner[-_\w.]*[*?[]|[*?[][\w.*?[\]-]*\.cjs/i.test(s))) return true;
+	if (new RegExp(`(^|[\\s;|&(])${ACT_WORD}\\s+${REPO_WORD}(?:[#@]\\S*)?\\s+[0-9a-f]{40}(?![0-9a-f])`, 'i').test(s)) return true;
+	return new RegExp(`(^|[\\s;|&(])${ACT_WORD}(?=[\\s;|&)]|$)`, 'i').test(s) && new RegExp(`(^|[\\s;|&(=])${REPO_WORD}[#@]\\S+`).test(s) && /(^|[^0-9a-f])[0-9a-f]{40}(?![0-9a-f])/i.test(s);
+};
+// Any merge in a command, read by the tokenizer in every segment: gh or gh.exe with global options before pr merge, the
+// REST merge endpoint, and the GraphQL merge mutations (\u escapes decoded). Each needs the single-command head pin.
+const mergeIn = (t, tool) => variants(t, tool).some((v) => mergeOne(v, 0));
+function mergeOne(text, depth) {
+	const decoded = String(text).replace(/\\u([0-9a-fA-F]{4})/g, (m, h) => String.fromCharCode(parseInt(h, 16)));
+	if (/(^|[^\w.-])gh(\.exe)?($|[^\w.-])/i.test(decoded) && /mergepullrequest|enablepullrequestautomerge|enqueuepullrequest/i.test(decoded)) return true;
+	// A backtick span is a command the shell runs first, wherever it sits (as findOutward reads it).
+	if (depth < MAX_DEPTH) for (const m of decoded.matchAll(/`([^`]+)`/g)) if (mergeOne(m[1], depth + 1)) return true;
+	for (const all of tokenize(joinContinuations(decoded))) {
+		const segment = all.filter((word) => !word.redirect);
+		const words = segment.map((word) => word.value.toLowerCase());
+		for (let i = 0; i < segment.length; i++) {
+			if (!['gh', 'gh.exe'].includes(programName(segment[i].value))) continue;
+			// Any gh segment holding pr and a later merge word is a merge, whatever options sit between.
+			const pr = words.indexOf('pr', i + 1);
+			if (pr > 0 && words.indexOf('merge', pr + 1) > 0) return true;
+			const named = [];
+			for (let k = i + 1; k < words.length && named.length < 2; k++) {
+				if (words[k].startsWith('-')) { if (GH_VALUE_OPTIONS.has(words[k])) k++; continue; }
+				named.push(k);
+			}
+			if (named.length === 2 && words[named[0]] === 'pr' && words[named[1]] === 'merge') return true;
+			if (named.length && words[named[0]] === 'api' && words.slice(named[0] + 1).some((w) => /\/merge\b/.test(w))) return true;
+		}
+		if (depth < MAX_DEPTH) for (const word of all) if (word.quoted && mergeOne(word.value, depth + 1)) return true;
+	}
+	return false;
+}
+const BYPASS = new Set([RECORD_WRITE,'git with its hooks skipped', 'git with its hooks moved', 'a write to main that runs no pre-push hook', MARKERS, ACCEPTS]);
 // A command the guard cannot read is held, not called an outward act, and no yes runs it: the yes could not be matched
 // to what would run (C14).
 const HELD = new Set(['a command too long to read', 'the guard could not read this command']);
@@ -748,8 +804,11 @@ function check(input) {
 	let reason = '';
 	let prNote = '';
 	let verdict = 'deny';
+	let viaRecord = false;
+	let mergeUnbound = false;
 	try {
 		if (!input || typeof input !== 'object') throw new Error('no input');
+		if (['Bash', 'PowerShell'].includes(input.tool_name) && (!input.tool_input || typeof input.tool_input !== 'object')) throw new Error('no tool input');
 		reason = decide(input);
 		const all = [];
 		collectStrings(input.tool_input, all, 0);
@@ -760,6 +819,7 @@ function check(input) {
 		if (!reason && canon !== text) reason = findOutward(canon, 0) || findOutward(plainText(canon, input.tool_name), 0);
 		const bypass = bypassIn(text) || (canon !== text && bypassIn(canon)) || (canon !== text && markersCleared(canon.replace(/[\\`^'"]/g, '')) && !markerOnlyNamed(canon) ? MARKERS : '');
 		if (bypass) reason = bypass;
+		else if (SHELLS.includes(input.tool_name) && (writesRecord(text, input.tool_name) || writesRecord(canon, input.tool_name))) reason = RECORD_WRITE;
 		else if (reason && (hookFreeMainWrite(text) || hookFreeMainWrite(canon) || pushOutsideProject(text, input))) reason = 'a write to main that runs no pre-push hook';
 		// A push or a PR is where a PR body goes out: name the skill that writes and audits it.
 		const command = String((input.tool_input && input.tool_input.command) ?? '');
@@ -773,15 +833,24 @@ function check(input) {
 			if (fault) return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: heldText(fault) } };
 		}
 		if (reason === 'gh pr create' && boundedPr(input)) reason = '';
-		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id && ownerYes(input)) verdict = 'allow';
-	} catch {
-		// A guard that cannot read the command refuses rather than lets it through.
+		if (reason && !BYPASS.has(reason) && !HELD.has(reason) && !input.agent_id) {
+			// K367 (U26): a merge is one plain gh pr merge pinned to a full head sha, with no --admin, whichever way the yes
+			// came; a yes record or a release record is read beside the pop-up yes.
+			const p = reason === 'gh pr merge' || reason === 'gh release create' ? parseAct(command) : null;
+			const pinned = p && p.kind === 'merge' && /^[0-9a-f]{40}$/.test(p.head) && !p.admin;
+			if ((reason === 'gh pr merge' || mergeIn(text, input.tool_name) || mergeIn(canon, input.tool_name)) && !(reason === 'gh pr merge' && pinned)) mergeUnbound = true;
+			else if (p && recordYes(p, input.tool_use_id, Date.now(), input.cwd)) { verdict = 'allow'; viaRecord = true; }
+			else if (ownerYes(input)) verdict = 'allow';
+		}
+	} catch (err) {
+		// A guard that cannot read the command refuses rather than lets it through, and logs why.
 		reason = 'the guard could not read this command';
+		logOpen(input && typeof input === 'object' ? input.cwd : '', 'guard-outward', err && err.message ? err.message : err);
 	}
 	if (!reason) return prNote ? { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: prNote } } : null;
 	let command = '';
 	try { command = String((input.tool_input && input.tool_input.command) ?? ''); } catch { /* no command */ }
-	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)`;
+	const what = reason === 'git push' ? pushLimit(command) : `${reason} is an outward act (rule:outward-acts)${mergeUnbound ? '; a merge is covered by a yes only as one plain gh pr merge <n> with --match-head-commit <the full head sha> and no --admin' : ''}`;
 	// The pre-push hook lets an AI push outside the bound only with its marker set: the one act to quote names it, in
 	// the shell that runs it, so one pop-up covers it (C7). A push to main is for a new repo's first push only.
 	const plain = reason === 'git push' && /^git push [A-Za-z0-9 ._/:+=-]+$/.test(command.trim());
@@ -793,8 +862,11 @@ function check(input) {
 		? neverText("a write to main, master or the default branch that runs no pre-push hook; main takes a PR, and a tool pushes there only as a new repo's first push, by git push. Open a PR instead")
 		: reason === MARKERS
 		? neverText("clearing the AI shell's markers, or setting the owner's push marker KIT_OWNER_PUSH, is a gate bypass; the sweep approvals and install take a shell with no markers for the owner's own terminal, and the pre-push hook lets the owner's push marker past its bound. Run the command with the markers in place and no owner marker; anything else is the owner's own, in their own terminal")
+		: reason === RECORD_WRITE
+		? neverText('running the yes-record writer owner-yes.cjs --record; the owner writes a yes record by typing a name at their own terminal, never through a tool')
 		: BYPASS.has(reason)
 		? neverText(`${reason === 'git with its hooks skipped' ? 'skipping the git hooks' : 'moving the git hooks path'} is a gate bypass; it switches off the checks the owner's yes relies on. Fix what the hook reports; a skip is the owner's own, in their own terminal`)
+		: verdict === 'allow' && viaRecord ? `Owner's yes given by a yes record from the owner's terminal, for this exact act and head, once: ${what}.`
 		: verdict === 'allow' ? yesText(what) : askText(what, input, act, lead);
 	const output = { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: verdict, permissionDecisionReason: text } };
 	// The reason is shown to the user; added context is what reaches Claude.
