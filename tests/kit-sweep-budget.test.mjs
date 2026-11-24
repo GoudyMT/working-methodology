@@ -921,10 +921,10 @@ test('ceilings set from the budgets keep the whole-sweep trip, however many role
 });
 
 // why: guards rule:sweep-auto-approval
-test('the one guard process runs the call-cap hook on every tool an agent calls, and never for the main session', () => {
+test('the one guard process runs the call-cap hook on every tool an agent calls, and for the main session too, for the context watch', () => {
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Read', 'Grep', 'Bash', 'Agent']) assert.ok(routes(tool, { agent_id: 'a1' }).includes('call-cap.cjs'), tool);
-  assert.ok(!routes('Read').includes('call-cap.cjs'), 'the main session');
+  assert.ok(routes('Read').includes('call-cap.cjs'), 'the main session reaches call-cap for the context watch');
 });
 
 // why: guards rule:sweep-auto-approval
