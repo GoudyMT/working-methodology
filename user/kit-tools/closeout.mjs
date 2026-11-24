@@ -258,10 +258,10 @@ function cifixProblems(root, { rel, lines }, head, end) {
 			// accepted act for the item, and no other line uses the grant (F6, U22 ruling 1).
 			const grant = typeof l.grant === 'string' ? l.grant.trim() : '';
 			const acts = attempt2Acts(String(l.key));
-			if (grant === '') problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 with no grant: the grant is the id of Max's accepted pop-up quoting the item`);
+			if (grant === '') problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 with no grant: the grant is the id of the owner's accepted pop-up quoting the item`);
 			else if (!proofOk(l, acts, grant)) problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 whose proof does not match: it needs the grant ${grant} as its id and an act quoting ${l.key}`);
 			else if (lines.some((o, k) => k !== i && o && o.grant === grant)) problems.push(`cifix: ${rel} line ${i + 1} reuses grant ${grant}: a pop-up yes is spent once`);
-			else if (!liveProof(root, l, acts, grant)) problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 whose proof does not match Max's accepted Yes at proof.session, grant ${grant}, ${l.key}`);
+			else if (!liveProof(root, l, acts, grant)) problems.push(`cifix: ${rel} line ${i + 1} is attempt 2 whose proof does not match the owner's accepted Yes at proof.session, grant ${grant}, ${l.key}`);
 		} else if (l.attempt !== 1) problems.push(`cifix: ${rel} line ${i + 1} has attempt ${JSON.stringify(l.attempt)}: 1, or 2 with a grant`);
 	});
 	if (head === null) return problems;
@@ -304,7 +304,7 @@ function cifixProblems(root, { rel, lines }, head, end) {
 		// A CI fix commit is fix(ci): or retest(ci): (also with !, and the fixup!, squash! and amend! forms): any other commit
 		// that touches a file the newest run's diagnoses name is no CI fix, so it pairs with no line and is a fault.
 		if (!/^((fixup|squash|amend)! )?(fix|retest)\(ci\)!?:/.test(subject)) {
-			// An owner-yes line (key gate:...) is no diagnosis: it names the gate file Max allowed, not a red item's file.
+			// An owner-yes line (key gate:...) is no diagnosis: it names the gate file the owner allowed, not a red item's file.
 			const diagnosed = new Map();
 			for (const { line, no } of group) if (!String(line.key).startsWith('gate:')) for (const f of Array.isArray(line.files) ? line.files : []) diagnosed.set(f, no);
 			for (const f of files) if (diagnosed.has(f)) problems.push(`cifix: commit ${sha.slice(0, 12)} changes ${f}, which the newest run's cifix line ${diagnosed.get(f)} names, as "${subject}": a CI fix is a fix(ci): or retest(ci): commit`);
@@ -441,7 +441,7 @@ function gateProblems(root, base, end, lines) {
 			if (l.proof.act !== full && (l.proof.file !== f || !inHistory(root, l.proof.sha))) return false;
 			return liveProof(root, l, acts, grant);
 		});
-		const GRANT_NEED = (text) => `(a cifix line {key: "gate:${f}:${text}", grant: the id of Max's accepted pop-up quoting ci-fix gate-yes ${f}:${text}, with its proof, used by no other line})`;
+		const GRANT_NEED = (text) => `(a cifix line {key: "gate:${f}:${text}", grant: the id of the owner's accepted pop-up quoting ci-fix gate-yes ${f}:${text}, with its proof, used by no other line})`;
 		// First pair each new gate line with its base line by key. A gate file holds every unpaired line, removed or new, as the
 		// hook's gateChange does (K399 U22 ruling 27.05Z), whether or not the other side changed.
 		const strict = GATE_FILE.test(f);

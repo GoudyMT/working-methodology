@@ -11,8 +11,8 @@
 //   (b) with a sweep recorded, an edit adding test( or // planted: is refused unless a ticketed tester (a row of this
 //       session with a real ticket, role tester, at or after the sweep); a hand edit to docs/builds/<version>.json is refused
 //   (c) a cap raised, a floor lowered, a cap or floor line removed or added in a gate file is held: an Edit or Write gets
-//       the "Owner's yes needed" hold (owner-yes.cjs askText), lifted by Max's accepted pop-up quoting the edit, and closeout
-//       then needs the line's gate: owner-yes record (ci-fix.mjs gate-yes); a shell write is held for Max alone. A Write
+//       the "Owner's yes needed" hold (owner-yes.cjs askText), lifted by the owner's accepted pop-up quoting the edit, and closeout
+//       then needs the line's gate: owner-yes record (ci-fix.mjs gate-yes); a shell write is held for the owner alone. A Write
 //       that creates a gate file is held; an Edit to a gate file whose old text does not match it is held (numbers unchecked)
 //   (d) an edit to the files of an item red a second time is refused, with an owner-ask row in the open log; the item
 //       leaves (a)'s count
@@ -628,7 +628,7 @@ function heldText(info) {
 }
 
 // An edit's gate hold asks the owner's yes for that edit's code (guard.cjs lifts it on an accepted pop-up quoting it); a
-// shell write has no such code, so its hold is Max's alone.
+// shell write has no such code, so its hold is the owner's alone.
 // The Edit or Write hold is owner-yes.cjs's askText, as test-scope's hold in guard.cjs is: the quote form for the lead, the
 // hand-back note for a subagent.
 function gateText(rel, change, input) {

@@ -29,7 +29,7 @@ const isTest = (f) => TEST_FILE.test(f.toLowerCase());
 const isCi = (f) => CI_FILE.test(f.toLowerCase());
 const words = (s) => String(s ?? '').trim().split(/\s+/).filter(Boolean).length;
 
-// Max's latest accepted pop-up that quotes one of the acts: through owner-yes.cjs's reader only (exact act span,
+// The owner's latest accepted pop-up that quotes one of the acts: through owner-yes.cjs's reader only (exact act span,
 // one act per question, exact Yes, latest answer wins, a plain-UUID session), fresh, and spent once (no cifix line holds the
 // id yet). Null when there is none; else { id, act, at }, the grant, the act it quoted and the answer time (the line's proof).
 function acceptedYes(root, acts, lines) {
@@ -199,7 +199,7 @@ function cmdDiagnose(d, root, argv) {
 	const attempt = earlier.length + 1;
 	const grant = typeof flags.grant === 'string' ? flags.grant.trim() : '';
 	if (attempt === 2 && !grant) return refuse(root, 'diagnose', `${item.key} was diagnosed in an earlier run: attempt 2 needs --grant <id> (the owner's yes)`);
-	// The grant is the id of Max's accepted pop-up quoting this item's key; a made-up id is no yes (F6). Its proof is written with it.
+	// The grant is the id of the owner's accepted pop-up quoting this item's key; a made-up id is no yes (F6). Its proof is written with it.
 	let ok = null;
 	if (attempt === 2) {
 		ok = acceptedYes(root, attempt2Acts(item.key), cf.lines);
@@ -220,7 +220,7 @@ function changedFiles(root) {
 	return [...new Set([...a.stdout.split('\n'), ...b.stdout.split('\n')].map((x) => x.trim()).filter(Boolean).map(normFile))];
 }
 
-// Writes the gate's owner-yes line for one gate-line change, only with Max's accepted pop-up quoting that line; else refuses
+// Writes the gate's owner-yes line for one gate-line change, only with the owner's accepted pop-up quoting that line; else refuses
 // and logs (F5). The line's key is gate:<file>:<trimmed new line>, its grant the pop-up's id.
 function cmdGateYes(d, root, argv) {
 	const file = normFile(argv[0] || '');

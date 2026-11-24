@@ -311,7 +311,7 @@ export function loosened(kind, was, now) {
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 /**
- * Max's latest answer to a pop-up that quotes one of the acts, read only through owner-yes.cjs's reader (exact act span, one
+ * The owner's latest answer to a pop-up that quotes one of the acts, read only through owner-yes.cjs's reader (exact act span, one
  * act per question, exact Yes, latest answer wins). The session is sid (CLAUDE_CODE_SESSION_ID when not given) and must be a
  * plain UUID.
  *
