@@ -77,6 +77,8 @@ jobs:
       # the files install copies starts from node's own folder, where Windows cannot find a git.exe or gh.exe the agent
       # left in a project. No list of sites it lets through.
       - name: Spawn check
+        id: spawn
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           S="$RUNNER_TEMP/base/scripts/spawn-check.mjs"; [ -f "$S" ] || { echo "the base has no spawn-check.mjs: this PR's copy runs"; S=scripts/spawn-check.mjs; }
@@ -214,6 +216,8 @@ jobs:
           git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       - name: Test check
+        id: check
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -238,10 +242,41 @@ jobs:
         if: needs.test-check.result != 'success'
         run: exit 1
 
+  # K367: every commit of a PR is read against its own parent, so a test cannot be weakened past a push that no longer asks.
+  # Like the test check it runs the base commit's copy (git objects only, no replace ref), so a PR cannot change the check
+  # that grades it. The owner adds "test-integrity" to the main ruleset's required checks. A PR from before the script
+  # reached the base runs its own copy once (the same bootstrap as the test check).
+  test-integrity:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      - name: Test integrity, the base commit's copy
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts | tar -x -C "$B"
+          G="$RUNNER_TEMP/base"; [ -f "$G/scripts/test-integrity.mjs" ] || { echo "the base has no test-integrity script: this PR's copy runs"; G=.; }
+          node "$G/scripts/test-integrity.mjs" "$BASE_SHA" --retests "$RUNNER_TEMP/retests.json"
+
   # On a push to main, the parts of the coverage map from the unit runners, joined into the whole map (map-merge.mjs)
   # that the next PR selects by and that sizes the jobs.
   map-merge:
-    needs: [unit-tests]
+    needs: [unit-tests, lanes]
     if: github.event_name != 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
@@ -259,9 +294,19 @@ jobs:
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           RUN_ID: ${{ github.run_id }}
+          UNIT_N: ${{ needs.lanes.outputs.unit_n }}
         run: |
           gh run download "$RUN_ID" --repo "$REPO" --pattern 'test-map-part-*' --dir "$RUNNER_TEMP/parts"
           mapfile -t parts < <(find "$RUNNER_TEMP/parts" -name '.map-part-*.json' | sort)
+          # F2 (1.51.4): the join runs only when every part of the unit-tests matrix is here; a missing part fails here, named.
+          [[ "$UNIT_N" =~ ^[0-9]+$ ]] || { echo "the unit runner count is not an integer" >&2; exit 1; }
+          if [ "${#parts[@]}" -ne "$UNIT_N" ]; then
+            for i in $(seq 0 $((UNIT_N - 1))); do
+              [ -n "$(find "$RUNNER_TEMP/parts" -name ".map-part-$i.json")" ] || echo "missing map part: shard $i" >&2
+            done
+            echo "found ${#parts[@]} map parts of $UNIT_N: not joining a partial map" >&2
+            exit 1
+          fi
           node scripts/map-merge.mjs "${parts[@]}"
 
       - name: Keep the coverage map
@@ -326,7 +371,8 @@ jobs:
           git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
 
       - name: Test check, Windows part
-        if: github.event_name == 'pull_request' && matrix.part == 0
+        id: winpart
+        if: ${{ !cancelled() && github.event_name == 'pull_request' && matrix.part == 0 }}
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -582,35 +628,27 @@ jobs:
       - name: Flips within the budget (report only)
         run: node scripts/flip-plan.mjs --base ${{ github.event.pull_request.base.sha }} --budget 150 || echo "flip-plan exit $? is report only, so this job still passes"
 
-  # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
-  # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
-  kit-tests:
-    # Every other job of this run is in needs, except minimal-code, which the time budget skips by name.
-    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all]
-    if: always()
+  # K373 (1.51.4, CIFP): the merge gate's content checks, in a job with no needs, so one fault does not hide the next: every
+  # step runs (!cancelled()), and the last step writes the ids of the base-copy steps that failed as this job's output.
+  # kit-tests needs it and prints them in one report. Each check runs the base commit's copy on a PR, the PR's own on main.
+  static:
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    # actions: read lets the time budget list this run's jobs.
     permissions:
       contents: read
-      actions: read
+    outputs:
+      base_faults: ${{ steps.faults.outputs.base_faults }}
     steps:
-      - name: Every test job passed
-        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped') || (needs.map-merge.result != 'success' && needs.map-merge.result != 'skipped')
-        run: exit 1
-
-      # Skipped only when the lanes job found no install or guard change; one that ran must pass.
-      - name: The install check passed or was not owed
-        if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')
-        run: exit 1
 
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: ${{ !cancelled() }}
         with:
           fetch-depth: 0
           fetch-tags: true
           persist-credentials: false
 
       - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        if: ${{ !cancelled() }}
         with:
           node-version: 22
           package-manager-cache: false
@@ -621,7 +659,7 @@ jobs:
       # links, the build) read the PR's content with its own tools; a change to those is in the diff, as the workflow is,
       # and the ruleset that stops a PR changing the workflow is the owner's (K31).
       - name: The base commit's scripts
-        if: github.event_name == 'pull_request'
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         shell: bash
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -636,7 +674,8 @@ jobs:
       # The local hooks check names at commit and push; a commit made elsewhere (the web, a cloud session) skips
       # them, so the PR's branch and every commit on it are checked here too.
       - name: Branch and commit names
-        if: github.event_name == 'pull_request'
+        id: names
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         shell: bash
         env:
           HEAD_REF: ${{ github.head_ref }}
@@ -666,7 +705,8 @@ jobs:
       # The pre-commit secret check runs only on the owner's machine; this scans every line and file the PR adds with
       # the same patterns, and never prints a value.
       - name: Secret scan
-        if: github.event_name == 'pull_request'
+        id: secret
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
@@ -676,7 +716,8 @@ jobs:
 
       # T15 D5: a PR that moves VERSION carries its build record, whole, and the changelog entry it writes.
       - name: Build record
-        if: github.event_name == 'pull_request'
+        id: record
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
@@ -691,6 +732,8 @@ jobs:
       # runs none of the PR's code (on a push to main, each runs its own copy). The test check, which must run the PR's
       # tests, stays in its own job: a results file from that job could be forged by those tests, a limit the owner named.
       - name: Scrub
+        id: scrub
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           K="$RUNNER_TEMP/base/scripts/kit.mjs"; grep -qs KIT_CHECK_ROOT "$K" || { echo "the base has no kit.mjs that reads another tree: this PR's copy runs"; K=scripts/kit.mjs; }
@@ -698,6 +741,8 @@ jobs:
 
       # One name for each thing the guards and rules talk about (T16a): a banned variant fails here.
       - name: Word check
+        id: words
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           W="$RUNNER_TEMP/base/scripts/word-check.mjs"; [ -f "$W" ] || { echo "the base has no word-check.mjs: this PR's copy runs"; W=scripts/word-check.mjs; }
@@ -705,6 +750,8 @@ jobs:
 
       # Every part the map names exists, every link joins known parts, every "done" has evidence.
       - name: Project map
+        id: pmap
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           P="$RUNNER_TEMP/base/project/.claude/project-map.mjs"; [ -f "$P" ] || { echo "the base has no project-map.mjs: this PR's copy runs"; P=project/.claude/project-map.mjs; }
@@ -712,6 +759,8 @@ jobs:
 
       # T8: which rule each guard, script, test and workflow names; the rules diet reads it, so a stale map fails here.
       - name: Rule map is fresh
+        id: rmap
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           M="$RUNNER_TEMP/base/scripts/rule-map.mjs"; [ -f "$M" ] || { echo "the base has no rule-map.mjs: this PR's copy runs"; M=scripts/rule-map.mjs; }
@@ -719,6 +768,8 @@ jobs:
 
       # No symlink or junction in the repo points outside it. The scan only reports, so the count decides here.
       - name: Link scan
+        id: links
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           L="$RUNNER_TEMP/base/project/.claude/link-scan.cjs"; [ -f "$L" ] || { echo "the base has no link-scan.cjs: this PR's copy runs"; L=project/.claude/link-scan.cjs; }
@@ -728,6 +779,8 @@ jobs:
 
       # The built copies (AGENTS.md, the project rule files) must match their sources.
       - name: Build is fresh
+        id: fresh
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           K="$RUNNER_TEMP/base/scripts/kit.mjs"; grep -qs KIT_CHECK_ROOT "$K" || { echo "the base has no kit.mjs that reads another tree: this PR's copy runs"; K=scripts/kit.mjs; }
@@ -737,6 +790,7 @@ jobs:
       # N11: every workflow is linted, its expressions and its shell steps. The release file is pinned by its sha256, so
       # a replaced download fails here before it runs.
       - name: Workflow lint
+        if: ${{ !cancelled() }}
         shell: bash
         run: |
           curl -sSfL -o "$RUNNER_TEMP/actionlint.tgz" https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
@@ -747,7 +801,8 @@ jobs:
       # Rule text is graded by the recall test, which needs a signed-in session and is run by hand; a PR that
       # changes the rules, the keys, the brief or the harness must record a median no lower than the released baseline or the keys' pass bar.
       - name: Rule changes carry a passing recall score
-        if: github.event_name == 'pull_request'
+        id: recall
+        if: ${{ !cancelled() && github.event_name == 'pull_request' }}
         shell: bash
         env:
           PR_BASE: origin/${{ github.base_ref }}
@@ -758,12 +813,107 @@ jobs:
           git show "$PR_BASE:scripts/recall.mjs" > scripts/recall-gate-base.mjs
           node scripts/recall-gate-base.mjs gate "$PR_BASE" "$PR_HEAD"
 
+      # K373: the base-copy steps of this job that failed, as one output: kit-tests names them in its report.
+      - name: Base-copy faults
+        id: faults
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          faults=""
+          if [ "${{ steps.names.outcome == 'failure' }}" = "true" ]; then faults="$faults names"; fi
+          if [ "${{ steps.secret.outcome == 'failure' }}" = "true" ]; then faults="$faults secret"; fi
+          if [ "${{ steps.record.outcome == 'failure' }}" = "true" ]; then faults="$faults record"; fi
+          if [ "${{ steps.scrub.outcome == 'failure' }}" = "true" ]; then faults="$faults scrub"; fi
+          if [ "${{ steps.words.outcome == 'failure' }}" = "true" ]; then faults="$faults words"; fi
+          if [ "${{ steps.pmap.outcome == 'failure' }}" = "true" ]; then faults="$faults pmap"; fi
+          if [ "${{ steps.rmap.outcome == 'failure' }}" = "true" ]; then faults="$faults rmap"; fi
+          if [ "${{ steps.links.outcome == 'failure' }}" = "true" ]; then faults="$faults links"; fi
+          if [ "${{ steps.fresh.outcome == 'failure' }}" = "true" ]; then faults="$faults fresh"; fi
+          if [ "${{ steps.recall.outcome == 'failure' }}" = "true" ]; then faults="$faults recall"; fi
+          echo "base_faults=${faults# }" >> "$GITHUB_OUTPUT"
+
+  # The required check. It runs even when a job it needs fails, and fails then: a job skipped because a job it needs
+  # failed counts as passed for a required check. A slow lane skipped for having no test passes; one that ran must pass.
+  # K373: its last step is the one report of every base-copy fault in this run, here and in static.
+  kit-tests:
+    # Every other job of this run is in needs, except minimal-code, which the time budget skips by name.
+    needs: [unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all, test-integrity, static]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    # actions: read lets the time budget list this run's jobs.
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Every test job passed
+        if: needs.unit-tests.result != 'success' || needs.windows-tests.result != 'success' || needs.lanes.result != 'success' || (needs.slow-tests.result != 'success' && needs.slow-tests.result != 'skipped') || (needs.map-merge.result != 'success' && needs.map-merge.result != 'skipped') || needs.static.result != 'success' || (needs.test-check.result != 'success' && needs.test-check.result != 'skipped')
+        run: exit 1
+
+      # Skipped on a push to main (it judges pull requests); on a PR it must pass.
+      - name: Test integrity passed or was not owed
+        if: needs.test-integrity.result != 'success' && needs.test-integrity.result != 'skipped'
+        run: exit 1
+
+      # Skipped only when the lanes job found no install or guard change; one that ran must pass.
+      - name: The install check passed or was not owed
+        if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')
+        run: exit 1
+
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          persist-credentials: false
+
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          package-manager-cache: false
+
+      # K128 (build 17): the time budget reads the base commit's ci-budget.mjs, unpacked before any step of the PR's code runs.
+      - name: The base commit's scripts
+        if: github.event_name == 'pull_request'
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          # A replace ref would hand the PR's own blob back as the base's (the build 17 sweep).
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          # Git for Windows' tar reads "D:" in a Windows path as a host (PR 53), so it gets the path in its own form.
+          B="$RUNNER_TEMP/base"; command -v cygpath > /dev/null && B="$(cygpath -u "$B")"
+          mkdir -p "$B"
+          git archive "$BASE_SHA" scripts project tests user | tar -x -C "$B"
+
+      # K380 (1.51.4): a run started again never counts as green. The first attempt's jobs are read with this job's own
+      # token; a second attempt passes only when no failed job of the first failed a step, and attempt 3 or more fails.
+      - name: Attempt check
+        id: attempt
+        if: ${{ !cancelled() }}
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RUN_ID: ${{ github.run_id }}
+        run: |
+          set -o pipefail
+          J="$RUNNER_TEMP/attempt-jobs.json"
+          rm -f "$J"
+          if [ "${GITHUB_RUN_ATTEMPT:-1}" -gt 1 ] 2> /dev/null; then
+            gh api --paginate "repos/$REPO/actions/runs/$RUN_ID/attempts/1/jobs?per_page=100" | jq -s '{jobs: [.[].jobs[]]}' > "$J" || rm -f "$J"
+          fi
+          A="scripts/ci-attempt.mjs"
+          if [ "${{ github.event_name }}" = "pull_request" ] && [ -f "$RUNNER_TEMP/base/scripts/ci-attempt.mjs" ]; then A="$RUNNER_TEMP/base/scripts/ci-attempt.mjs"; fi
+          node "$A" "$J"
+
       # CI-C: the merge path's jobs are timed here. K401 (the owner's yes, 2026-11-23): a job over 180 s is reported with
       # its slowest tests, never failed; on a main push the 2 main runs before this one are read too, and a job over on all
       # 3 is named as a trend for a list row. A failed, timed-out or unfinished job still fails. The list is the run's own
       # jobs, every one but this job and the --skip jobs (minimal-code, report only), fetched whole: the pages are merged
       # into one {jobs:[...]} answer. A failed fetch fails the step; an unreadable answer fails the check.
       - name: Time budget of the run's jobs
+        id: budget
+        if: ${{ !cancelled() }}
         shell: bash
         env:
           GH_TOKEN: ${{ github.token }}
@@ -792,4 +942,20 @@ jobs:
               echo "::warning::the earlier main runs could not be read: no trend this run"
             fi
           fi
-          node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs "$RUNNER_TEMP/jobs.json" --self kit-tests --skip minimal-code "${history[@]}"
+          node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs "$RUNNER_TEMP/jobs.json" --self "${{ github.job }}" --skip minimal-code "${history[@]}"
+
+      # K373: one block for every base-copy step that failed in this run, static's (its output) and this job's own.
+      - name: Base-copy report
+        if: ${{ always() }}
+        shell: bash
+        env:
+          STATIC_FAULTS: ${{ needs.static.outputs.base_faults }}
+        run: |
+          faults=()
+          for f in $STATIC_FAULTS; do faults+=("static: $f"); done
+          if [ "${{ steps.budget.outcome == 'failure' }}" = "true" ]; then faults+=("kit-tests: budget"); fi
+          if [ "${{ steps.attempt.outcome == 'failure' }}" = "true" ]; then faults+=("kit-tests: attempt"); fi
+          echo "Base-copy report"
+          if [ "${#faults[@]}" -eq 0 ]; then echo "no base-copy faults"; exit 0; fi
+          for f in "${faults[@]}"; do echo "  $f failed"; done
+          echo "Each fault above is judged by main's copy: plan one lands-first patch to main holding all of them, then rerun this PR."
