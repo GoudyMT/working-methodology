@@ -15,7 +15,7 @@ const RUNNER = fileURLToPath(new URL('../scripts/recall-arms.mjs', import.meta.u
 const KIT_SOURCE = path.resolve(path.dirname(RUNNER), '..');
 const LOGIN_PHRASE = 'run claude, then /login, with CLAUDE_CONFIG_DIR set to';
 const HOUR = 3600 * 1000;
-const login = (expiresAt) => JSON.stringify({ claudeAiOauth: { expiresAt } });
+const login = (expiresAt) => JSON.stringify({ claudeAiOauth: { expiresAt, refreshToken: 'fixture-refresh' } });
 const QUIET = [{ cpu: 10, gpu: 10 }, { cpu: 12, gpu: 11 }, { cpu: 9, gpu: 10 }];
 const LABEL = () => `arms${Date.now().toString(36)}${Math.random().toString(36).slice(2, 6)}`;
 const out = (r) => `${r.stdout ?? ''}${r.stderr ?? ''}`;
@@ -105,6 +105,7 @@ test('three load samples with CPU over 40% or GPU at 50% or more hold the run, e
 	assert.match(out(cpuHot), /45/, 'the held run does not name the CPU reading');
 	assert.match(out(cpuHot), /40/, 'the held run does not name the 40% rule');
 	assert.deepEqual(armsStarted(ctx), [], 'a held run started an arm');
+	assert.match(cpuHot.stderr, /run it again once the build's lanes have stopped: node .*recall-arms\.mjs/, `the held run prints no retry line\n${out(cpuHot)}`);
 
 	const gpuHot = runArms(ctx, { samples: [QUIET[0], QUIET[1], { cpu: 10, gpu: 50 }] });
 	assert.equal(gpuHot.status, 3, `GPU 50 in one sample: exit 3 expected\n${out(gpuHot)}`);
@@ -161,11 +162,11 @@ test("each arm's folder gets a fresh copy of the probe login before it starts, a
 	assert.equal(fs.statSync(src).mtimeMs, mtimeBefore, 'the probe login source was touched');
 });
 
-// why: catches a missing or expired probe login stops before any arm starts, naming the /login step (K376 S3)
-test('a missing or expired probe login stops before any arm starts, naming the /login step', () => {
+// why: catches a missing probe login or one with no refresh token stops before any arm starts, naming the /login step (K376 S3)
+test('a missing probe login or one with no refresh token stops before any arm starts, naming the /login step', () => {
 	const cases = [
 		{ what: 'no login file', text: null, named: true },
-		{ what: 'a login past its expiry', text: login(Date.now() - 1000), named: true },
+		{ what: 'a login with no refresh token', text: JSON.stringify({ claudeAiOauth: { expiresAt: Date.now() + HOUR } }), named: true, says: /no refresh token/ },
 		{ what: 'an unreadable login', text: '{not json', named: false },
 		{ what: 'a login with no expiry', text: JSON.stringify({ claudeAiOauth: {} }), named: false },
 	];
@@ -180,6 +181,7 @@ test('a missing or expired probe login stops before any arm starts, naming the /
 			const shown = out(res).includes(ctx.probe) || out(res).includes(ctx.probe.split(path.sep).join('/'));
 			assert.ok(shown, `${c.what}: the probe folder is not named\n${out(res)}`);
 		}
+		if (c.says) assert.match(out(res), c.says, `${c.what}: the refusal does not say why\n${out(res)}`);
 	}
 });
 
