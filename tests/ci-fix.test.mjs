@@ -230,7 +230,7 @@ test('`ci-fix.mjs list` prints the red run\'s failing items, numbered, with the 
 	for (const it of ITEMS) {
 		assert.ok(r.stdout.includes(it.key), `the list names ${it.key}`);
 		assert.ok(r.stdout.includes(it.message), `the list shows the log line of ${it.key}`);
-		assert.match(r.stdout, new RegExp(`^\\s*${it.n}\\b.*${it.key.replace(/[()]/g, '\\$&')}`, 'm'), `item ${it.n} is numbered with its key on one line`);
+		assert.match(r.stdout, new RegExp(`^\\s*${it.n}\\b.*${it.key.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'm'), `item ${it.n} is numbered with its key on one line`);
 	}
 });
 
