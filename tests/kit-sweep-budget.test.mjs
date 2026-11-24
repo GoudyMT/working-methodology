@@ -634,31 +634,33 @@ test('under token ceilings a sweep 40% over its budget does not pause: the bound
 test('the drift signals pause a sweep, each by name', () => {
   const over = driftSweep([[[10000, 0, 0, 0], ...Array(5).fill([0, 60000, 0, 0])], usual(), usual(), usual(), usual()]);
   assert.match(over.o.stdout, /paused: .*ceiling did not hold[^\n]*310,000 against 200,000/, '310,000 is past 200,000 plus one 60,000 call');
+  // A drift signal is a logged warning, shown in the outcome's report, and it pauses nothing.
+  const warned = (spec, why) => { const out = driftSweep(spec).o.stdout; assert.match(out, /Warning, no pause: /); assert.match(out, why); assert.doesNotMatch(out, /paused/); };
   // A role the hook stopped: its refusal is in the transcript, and the hand-back is the call after it.
   const atCeiling = () => [[10000, 0, 0, 0], ...Array(4).fill([0, 28000, 0, 0]), { refused: 'Token ceiling reached (122,000 of 200,000): one more call would pass it.' }, [0, 60000, 0, 0]];
   // One call that would double a role's spend is no stop when the role finished without one.
   assert.doesNotMatch(driftSweep(Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 120000, 0, 0]])).o.stdout, /stopped at their token ceiling/);
   const stopped = [atCeiling(), atCeiling(), usual(), usual(), usual()];
-  assert.match(driftSweep(stopped).o.stdout, /paused: .*2 of 5 roles stopped at their token ceiling/);
+  warned(stopped, /2 of 5 roles stopped at their token ceiling/);
   assert.doesNotMatch(driftSweep([stopped[0], usual(), usual(), usual(), usual()]).o.stdout, /paused/, 'one of five is no drift');
   const start = Array(5).fill(0).map(() => [[11500, 0, 0, 0], ...Array(5).fill([0, 28000, 0, 0])]);
-  assert.match(driftSweep(start).o.stdout, /paused: .*the starting context .*15% over its median of 10,000/);
+  warned(start, /the starting context .*15% over its median of 10,000/);
   const late = { u: [0, 0, 30000, 0], gap: 6 * 60 * 1000 };
   const rewrite = [[[10000, 0, 0, 0], [0, 28000, 0, 0], late], [[10000, 0, 0, 0], late], usual(), usual(), usual()];
-  assert.match(driftSweep(rewrite).o.stdout, /paused: .*2 cache re-writes after the first call/);
+  warned(rewrite, /2 cache re-writes after the first call/);
   // The build 11 sweep: a call soon after the last that reads back less is a context the model trimmed, not an
   // expired cache: the cache lives 5 minutes.
   const soon = { u: [0, 0, 30000, 0], gap: 4 * 60 * 1000 };
   assert.doesNotMatch(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], soon], [[10000, 0, 0, 0], soon], usual(), usual(), usual()]).o.stdout, /cache re-writes/);
   // After the gap, a miss that still read back just over half the context is one too (the sweep's case: 51.5%).
   const half = { u: [0, 15000, 14000, 0], gap: 6 * 60 * 1000 };
-  assert.match(driftSweep([[[10000, 0, 0, 0], [0, 28000, 0, 0], half], [[10000, 0, 0, 0], [0, 28000, 0, 0], half], usual(), usual(), usual()]).o.stdout, /paused: .*2 cache re-writes/);
+  warned([[[10000, 0, 0, 0], [0, 28000, 0, 0], half], [[10000, 0, 0, 0], [0, 28000, 0, 0], half], usual(), usual(), usual()], /2 cache re-writes/);
   // Build 11: a call that reads the whole cache and writes a large batch of new results (a dozen reads at once) is no
   // expired cache. Every role of the 1.36.1 sweep had one such call, and the sweep paused on 7 re-writes that were none.
   const batch = () => [[2, 0, 13600, 323], [2, 13600, 22659, 828], [2, 36259, 2506, 674], ...Array(3).fill([0, 40000, 0, 0])];
   assert.doesNotMatch(driftSweep([batch(), batch(), usual(), usual(), usual()]).o.stdout, /cache re-writes/);
   const heavy = Array(5).fill(0).map(() => [[10000, 0, 0, 0], [0, 60000, 0, 0], [0, 60000, 0, 0]]);
-  assert.match(driftSweep(heavy).o.stdout, /paused: .*content per call .*over its p95 of 33,333/);
+  warned(heavy, /content per call .*over its p95 of 33,333/);
 });
 
 // T6 (build 11): the finding counts were typed by the lead. The reports are now in a checked shape, so the outcome
@@ -973,13 +975,17 @@ test('the model check reads what the decision cleared, in both directions', () =
   fs.writeFileSync(r.f, JSON.stringify(edited));
   const ids = cheapRoles(5);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 0 ? 'claude-sonnet-5-5' : roleModel(c.roles[i]), u: [0, 100, 0, 0] }]])));
-  assert.match(logOutcome(r, ids, cfg).stdout, /ran on claude-sonnet-5-5; the contract named claude-opus-5-5/, 'an edit after approval hides nothing');
+  const edited1 = logOutcome(r, ids, cfg).stdout;
+  assert.match(edited1, /rerun .+ on claude-opus-5-5: it ran on claude-sonnet-5-5, not the model the contract named/, 'an edit after approval hides nothing');
+  assert.doesNotMatch(edited1, /paused/, 'the lead reruns it; no pause');
   const named = featureContract();
   named.roles[3].model = 'claude-sonnet-5-5';
   const s = approveRun(named);
   const ids2 = cheapRoles(5);
   const cfg2 = transcripts(Object.fromEntries(ids2.map((id) => [id, [[0, 100, 0, 0]]])));
-  assert.match(logOutcome(s, ids2, cfg2).stdout, /ran on claude-opus-5-5; the contract named claude-sonnet-5-5/, 'a role on a higher model than named stops too');
+  const higher = logOutcome(s, ids2, cfg2).stdout;
+  assert.match(higher, /rerun .+ on claude-sonnet-5-5: it ran on claude-opus-5-5, not the model the contract named/, 'a role on a higher model than named is rerun');
+  assert.doesNotMatch(higher, /paused/, 'the lead reruns it; no pause');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -1055,7 +1061,9 @@ test('a model outside the reviewer model rule asks the owner, and an unknown mod
   const r = approveRun(featureContract());
   const ids = cheapRoles(5);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i ? 'claude-opus-5-5' : 'claude-haiku-5-5', u: [0, 100, 0, 0] }]])));
-  assert.match(logOutcome(r, ids, cfg).stdout, /paused[\s\S]*ran on claude-haiku-5-5/);
+  const ran = logOutcome(r, ids, cfg).stdout;
+  assert.match(ran, /rerun .+ on claude-opus-5-5: it ran on claude-haiku-5-5/);
+  assert.doesNotMatch(ran, /paused/, 'the lead reruns it; no pause');
 });
 
 // why: guards rule:sweep-auto-approval
@@ -1464,7 +1472,10 @@ test('an out-of-trial model cleared by the owner still pauses at the outcome', (
   assert.equal(approveIn(r.dir, [r.f, '--owner-yes', 'yes go']).status, 0);
   const ids = cheapRoles(3);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 1 ? 'claude-haiku-5-5' : 'claude-opus-5-5', u: [0, 100, 0, 0] }]])));
-  assert.match(logOutcome(r, ids, cfg).stdout, /paused[\s\S]*ran on claude-haiku-5-5/);
+  const out = logOutcome(r, ids, cfg);
+  assert.equal(out.status, 0, out.stdout);
+  assert.doesNotMatch(out.stdout, /paused/, 'the model the owner cleared is the one it ran on: no pause');
+  assert.doesNotMatch(out.stdout, /it ran on claude-haiku-5-5/, 'and no rerun names it');
 });
 
 // why: guards rule:sweep-tiers
