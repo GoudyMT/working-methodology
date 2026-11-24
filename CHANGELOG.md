@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.51.4 - 2026-11-24
+
+A hook that crashes answers by its tier, the lead works from a checked state record, a red CI run is cleared only through ci-fix, feature pushes no longer ask while CI guards each test, and only a broken safety net pauses a sweep.
+
+### Added
+- `plan-check --lock-rows` locks the plan's Rows line when the build starts; a row added, removed or reworded later is a fault naming the `closeout.mjs defer` command.
+- `lead-state.mjs write` builds the lead's state record from the plan, locks, flow log, checklist and git, and `check` rebuilds it, refusing a hand edit and naming a stale field.
+- The state record is written at each checklist read and each context crossing, and a session's first prompt shows a phase card with the next step and the check verdict.
+- With a state record in the repo, a spawn is held until this session passes `lead-state check`; a compact drops the pass and shows the card again.
+- Every hook has a tier in holds.json (security, high or small), and one helper, `hook-error.cjs`, acts on a crash by it: a deny for high and security, a logged pass for small.
+- `recall-arms.mjs` runs the score gate's candidate and release arms side by side, each in its own config folder with a fresh copy of the probe login, and holds under the load rule.
+- `approve.mjs --summary` counts clean sweeps in a row, and 5 prints "proven"; a pause, a hand-made pause line or a broken chain resets the run.
+- `side-job.mjs` starts a gate, study, trial or check in its own detached session and folder, so a build never waits behind it; status and stop report on it.
+- `ci-audit.mjs` prints waiting, setup and running time per job at p50 and p95, the time to the required check, retried runs and the cause of each red.
+- Once a sweep is recorded, a review or check spawn is refused with the defer command; a test or fix spawn goes through only for an unused listed finding.
+- `ci-wait` writes the CI state file, and `ci-fix.mjs` lists a red run's failing items, takes one diagnosis each and logs each fix; closeout checks the fix lines against the runs.
+- The `ci-fix.cjs` hook holds edits on a red run until each item is diagnosed, holds a loosened gate line for the owner's yes, and fences the lead's edits after the sweep, Bash writes included.
+
+### Changed
+- Only a broken safety net pauses a sweep: a ceiling that did not hold, a meter that let calls through or an unheld call cap; the other trips log a warning, and no trial review is due.
+- A feature-branch push no longer asks for a test change; CI's `test-integrity` check reads every commit against its parent and fails a weakened test outside a `retest:` commit.
+- The team rule and skill say a feature-branch push never asks and a retest commit is judged in CI, while main, tags, force and deletes keep the owner's yes.
+- The team build skill and its templates carry the new steps: lock the Rows line, run the state check, follow a hook error by tier, clear a red through ci-fix, start side jobs apart.
+
+### Fixed
+- CI's base-copy steps all run when one fails, and a Base-copy report step names every failed one in one block, with the lands-first patch to main.
+- A user hook that throws inside the guard process answers by its tier; a missing helper blocks the call with its own log row.
+- The canary's inner hooks and the plugin's role hooks obey their tier when they crash, on every event.
+- edit-fence, clean-tree and kit-gate, which run as their own process, obey their tier on a crash, even one before the input is read.
+- The hold check reads a project guard in `project/.claude` where it lives, and still fails a hold whose file is in neither folder.
+- `--resume` and `--owner-yes` find the owner's pop-up answer with no session id in the shell, reading only this repo's own session records by exact key, and one Yes answers one ask.
+- owner-proof reads a 98 KB command once for all its readings and in under half its time limit under the map run, and holds a command it cannot finish reading.
+- A CI run started again never counts as green: `ci-attempt.mjs` fails attempt 2 or later after a failed step, naming the first attempt's failed job.
+- Install no longer names a format example file as an unfilled slot: the project map example holds a sample name.
+- The release check reads a GitHub reply over 1 MB and names one too large to read; the v1.51.3 record's limits line matches its published notes.
+
+### Security
+- The kit source's pre-push reads every pushed commit for a secret-shaped value, and a pre-commit hook refuses one at write time; a value joined from parts at run time passes.
+- A yes record typed at the owner's terminal lets the one merge it names through, bound to its repo and head, spent once; a pop-up merge yes must name its head.
+
 ## 1.51.3 - 2026-11-23
 
 A job or test over its time limit is reported, not failed, and a job over on 3 main runs in a row is named as a trend; the Windows tests run over 2 runners.

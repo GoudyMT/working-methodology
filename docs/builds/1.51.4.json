@@ -1,0 +1,570 @@
+{
+  "version": "1.51.4",
+  "date": "2026-11-24",
+  "level": "patch",
+  "area": "Kit tooling",
+  "title": "fix: hook tiers, lead state, ci-fix and open feature pushes",
+  "headline": "A hook that crashes answers by its tier, the lead works from a checked state record, a red CI run is cleared only through ci-fix, feature pushes no longer ask while CI guards each test, and only a broken safety net pauses a sweep.",
+  "alignment": "v1.51.4 is the patch planned after v1.51.3: the 15 rows of the 11-22 triage and the 11-23 checks, built as 28 units and 7 retests.",
+  "items": [
+    {
+      "id": "U1",
+      "kind": "security",
+      "reach": "kit",
+      "text": "The kit source's pre-push reads every pushed commit for a secret-shaped value, and a pre-commit hook refuses one at write time; a value joined from parts at run time passes.",
+      "evidence": ".githooks/pre-push, .githooks/pre-commit, project/.claude/secret-shapes.mjs",
+      "where": "A kit source push holding a key in a test",
+      "before": "Only the test-change hold read it",
+      "after": "Refused by the secret scan",
+      "tests": [
+        "tests/kit-push-secrets.test.mjs::a push whose commit adds a literal AWS-shaped key in a test file is blocked with \"Push blocked: a secret-shaped\"",
+        "tests/kit-push-secrets.test.mjs::a push whose test builds the value from joined parts at run time passes the scan",
+        "tests/kit-push-secrets.test.mjs::bypass: a key added in one commit and taken out in the next is still blocked, since every pushed commit is read",
+        "tests/kit-push-secrets.test.mjs::repeat: the same push twice is blocked the same way",
+        "tests/kit-push-secrets.test.mjs::fail-closed: a missing secret-shapes.mjs blocks the push and is logged on stderr",
+        "tests/kit-push-secrets.test.mjs::write-time twin: a commit staging a file that holds a whole AWS-shaped key is refused by the pre-commit hook with \"Commit blocked: a secret-shaped\", and a value joined at run time passes"
+      ]
+    },
+    {
+      "id": "U2",
+      "kind": "added",
+      "reach": "projects",
+      "text": "`plan-check --lock-rows` locks the plan's Rows line when the build starts; a row added, removed or reworded later is a fault naming the `closeout.mjs defer` command.",
+      "evidence": "user/kit-tools/plan-check.mjs",
+      "tests": [
+        "tests/row-lock.test.mjs::plan-check --lock-rows writes the sha of the plan's Rows line to the locks file under \"rows\"",
+        "tests/row-lock.test.mjs::a row added after --lock-rows is a fault that names the row and the closeout.mjs defer command",
+        "tests/row-lock.test.mjs::a row taken out or reworded after the lock is a fault too",
+        "tests/row-lock.test.mjs::a plan with no rows lock checks as before",
+        "tests/row-lock.test.mjs::flow-check's start prints the rows fault, since it reads the lock faults"
+      ]
+    },
+    {
+      "id": "U3",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "CI's base-copy steps all run when one fails, and a Base-copy report step names every failed one in one block, with the lands-first patch to main.",
+      "evidence": ".github/workflows/ci.yml",
+      "where": "A PR with two base-copy faults",
+      "before": "CI showed the first; the second came a run later",
+      "after": "One report names both",
+      "tests": [
+        "tests/base-report.test.mjs::every step that runs a base copy in unit-tests, test-check, windows-tests and kit-tests runs with if !cancelled(), so one fault does not hide the next",
+        "tests/base-report.test.mjs::kit-tests ends with a Base-copy report step that always runs and names every failed base-copy step in one block",
+        "tests/base-report.test.mjs::the report names the lands-first path: one patch to main holding every fault in the block",
+        "tests/base-report.test.mjs::the static job holds the content checks with no needs and every step if !cancelled(), and the required rollup needs it"
+      ]
+    },
+    {
+      "id": "U4",
+      "kind": "added",
+      "reach": "projects",
+      "text": "`lead-state.mjs write` builds the lead's state record from the plan, locks, flow log, checklist and git, and `check` rebuilds it, refusing a hand edit and naming a stale field.",
+      "evidence": "user/kit-tools/lead-state.mjs",
+      "tests": [
+        "tests/lead-state.test.mjs::write builds the record from the plan, its locks, the flow log, the lead checklist, the closeout file and git, with no typed field",
+        "tests/lead-state.test.mjs::check rebuilds the record from the live sources and prints same or CHANGED per field and one VERDICT line",
+        "tests/lead-state.test.mjs::a unit merged since write gives VERDICT stale and exit 1",
+        "tests/lead-state.test.mjs::the record names owed steps: undone checklist items, open questions and hook errors with no report",
+        "tests/lead-state.test.mjs::bypass: a record edited by hand fails its own hash and is refused",
+        "tests/lead-state.test.mjs::repeat: write twice on the same state gives the same bytes",
+        "tests/lead-state.test.mjs::fail-closed: a missing or unreadable source gives VERDICT full-read and exit 1, logged"
+      ]
+    },
+    {
+      "id": "U5",
+      "kind": "added",
+      "reach": "projects",
+      "text": "The state record is written at each checklist read and each context crossing, and a session's first prompt shows a phase card with the next step and the check verdict.",
+      "evidence": "user/kit-tools/flow-check.mjs, user/kit-hooks/kit-gate.cjs, user/kit-hooks/call-cap.cjs",
+      "tests": [
+        "tests/phase-card.test.mjs::flow-check checklist writes the lead state record after each read",
+        "tests/phase-card.test.mjs::a session's first prompt with a record in the repo prints the phase card: phase, next step and the check VERDICT",
+        "tests/phase-card.test.mjs::a later prompt in the same session prints no card",
+        "tests/phase-card.test.mjs::with no record no card is printed",
+        "tests/phase-card.test.mjs::bypass: a new session id after a resume or compact shows the card again",
+        "tests/phase-card.test.mjs::repeat: two sessions on the same record get the same card",
+        "tests/phase-card.test.mjs::fail-open: an unreadable record prints \"lead state unreadable: run lead-state check\" and is logged",
+        "tests/phase-card.test.mjs::context watch: the lead's context passing the threshold writes the record once per crossing and prints one line \"context at N: state record written\"",
+        "tests/phase-card.test.mjs::the record written at the threshold lists the open warm agents",
+        "tests/phase-card.test.mjs::fail-open: an unreadable transcript lets the call through (small tier) and is logged"
+      ]
+    },
+    {
+      "id": "U6",
+      "kind": "added",
+      "reach": "projects",
+      "text": "With a state record in the repo, a spawn is held until this session passes `lead-state check`; a compact drops the pass and shows the card again.",
+      "evidence": "user/kit-hooks/agent-model.cjs, user/kit-hooks/holds.json",
+      "where": "A fresh lead after a compact",
+      "before": "Spawned from memory of the build",
+      "after": "Held until the state check passes",
+      "tests": [
+        "tests/lead-state-gate.test.mjs::an Agent spawn is refused while a record exists and this session has no passing lead-state check, printing the check command",
+        "tests/lead-state-gate.test.mjs::after a passing check in this session the spawn goes through",
+        "tests/lead-state-gate.test.mjs::a stale VERDICT keeps the refusal",
+        "tests/lead-state-gate.test.mjs::with no record nothing changes",
+        "tests/lead-state-gate.test.mjs::holds.json sets the lead-state hold to enforce with tier high (Max 03:16Z), and a test fails if it reads otherwise",
+        "tests/lead-state-gate.test.mjs::bypass: a Task spawn and a general agent are held the same",
+        "tests/lead-state-gate.test.mjs::repeat: the same spawn twice gives the same verdict",
+        "tests/lead-state-gate.test.mjs::fail-closed: an unreadable record or a hook error blocks with \"hook error: lead review\", logged",
+        "tests/lead-state-gate.test.mjs::a compact after the last pass drops this session's pass, so the next spawn is refused until a fresh check passes",
+        "tests/lead-state-gate.test.mjs::after a compact the phase card shows again"
+      ]
+    },
+    {
+      "id": "U7",
+      "kind": "added",
+      "reach": "projects",
+      "text": "Every hook has a tier in holds.json (security, high or small), and one helper, `hook-error.cjs`, acts on a crash by it: a deny for high and security, a logged pass for small.",
+      "evidence": "user/kit-hooks/hook-error.cjs, user/kit-hooks/holds.json, user/kit-hooks/hold-mode.cjs, user/kit-hooks/handoff-gate.cjs",
+      "where": "A hook that crashes",
+      "before": "Most failed open, silently",
+      "after": "Its tier decides, and one log row says so",
+      "tests": [
+        "tests/hook-tiers.test.mjs::tier(id) reads security, high or small from holds.json",
+        "tests/hook-tiers.test.mjs::an unknown id or a missing tier reads as high",
+        "tests/hook-tiers.test.mjs::every hook the kit installs (kit-hooks/*.cjs and guard.cjs's PROJECT and USER lists) has a tier entry, so a new hook with none fails",
+        "tests/hook-tiers.test.mjs::onError under high or security returns a deny \"hook error: lead review: <hook>\" and logs one JSON line",
+        "tests/hook-tiers.test.mjs::onError under small returns nothing (the call goes through) and logs one JSON line with hook, error and time",
+        "tests/hook-tiers.test.mjs::bypass: a tier in another case or with spaces reads as high",
+        "tests/hook-tiers.test.mjs::repeat: the same id gives the same tier",
+        "tests/hook-tiers.test.mjs::fail-closed: an unreadable holds.json reads every tier as high, logged"
+      ]
+    },
+    {
+      "id": "U8",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "A user hook that throws inside the guard process answers by its tier; a missing helper blocks the call with its own log row.",
+      "evidence": "project/.claude/guard.cjs",
+      "tests": [
+        "tests/guard-hook-error.test.mjs::a user hook that throws under tier high blocks the call with \"hook error: lead review\"",
+        "tests/guard-hook-error.test.mjs::a user hook that throws under tier small lets the call through and writes one hook-error line",
+        "tests/guard-hook-error.test.mjs::a project guard that throws still holds with \"could not run\" (security tier, unchanged)",
+        "tests/guard-hook-error.test.mjs::bypass: an old-shape hook that crashes in its child process obeys its tier the same",
+        "tests/guard-hook-error.test.mjs::repeat: the same crash twice gives the same answer",
+        "tests/guard-hook-error.test.mjs::fail-closed: a missing hook-error.cjs blocks the call, logged"
+      ]
+    },
+    {
+      "id": "U9",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "The canary's inner hooks and the plugin's role hooks obey their tier when they crash, on every event.",
+      "evidence": "user/kit-hooks/canary.cjs, user/kit-tools/plugin-launch.cjs",
+      "tests": [
+        "tests/role-hook-error.test.mjs::handoff-gate throwing inside the canary obeys handoff-gate's tier",
+        "tests/role-hook-error.test.mjs::record-counts throwing obeys its own tier",
+        "tests/role-hook-error.test.mjs::a plugin role hook that crashes (exit not 0 or 2) obeys its tier",
+        "tests/role-hook-error.test.mjs::bypass: a canary crash on the Stop event obeys the tier the same",
+        "tests/role-hook-error.test.mjs::repeat: the same crash twice gives the same answer",
+        "tests/role-hook-error.test.mjs::fail-closed: an unreadable tier list reads as high and blocks, logged"
+      ]
+    },
+    {
+      "id": "U10",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "edit-fence, clean-tree and kit-gate, which run as their own process, obey their tier on a crash, even one before the input is read.",
+      "evidence": "user/kit-hooks/edit-fence.cjs, user/kit-hooks/clean-tree.cjs, user/kit-hooks/kit-gate.cjs",
+      "tests": [
+        "tests/own-hook-error.test.mjs::edit-fence crashing under tier high exits 2 with \"hook error: lead review\"",
+        "tests/own-hook-error.test.mjs::clean-tree crashing under tier high exits 2 the same way",
+        "tests/own-hook-error.test.mjs::kit-gate crashing under tier small lets the prompt through and logs",
+        "tests/own-hook-error.test.mjs::bypass: a crash on unreadable stdin, before the input is parsed, obeys the tier",
+        "tests/own-hook-error.test.mjs::repeat: the same crash twice gives the same answer",
+        "tests/own-hook-error.test.mjs::fail-closed: a missing hook-error.cjs exits 2, logged"
+      ]
+    },
+    {
+      "id": "U28",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "The hold check reads a project guard in `project/.claude` where it lives, and still fails a hold whose file is in neither folder.",
+      "evidence": "user/kit-tools/hold-check.mjs",
+      "tests": [
+        "tests/hold-check-project.test.mjs::a hold whose hook file is a project guard in project/.claude passes the hold check",
+        "tests/hold-check-project.test.mjs::a hold whose hook file is in neither user/kit-hooks nor project/.claude still fails, naming both folders"
+      ]
+    },
+    {
+      "id": "U11",
+      "kind": "added",
+      "reach": "kit",
+      "text": "`recall-arms.mjs` runs the score gate's candidate and release arms side by side, each in its own config folder with a fresh copy of the probe login, and holds under the load rule.",
+      "evidence": "scripts/recall-arms.mjs",
+      "tests": [
+        "tests/recall-arms.test.mjs::three load samples with CPU over 40% or GPU at 50% or more hold the run, exit 3, naming the reading",
+        "tests/recall-arms.test.mjs::under the line, the candidate and release arms start side by side, each with its own config folder",
+        "tests/recall-arms.test.mjs::each arm's folder gets a fresh copy of the probe login before it starts, and the source is never written",
+        "tests/recall-arms.test.mjs::a missing or expired probe login stops before any arm starts, naming the /login step",
+        "tests/recall-arms.test.mjs::arm runs are named cand-* and base-* with When: times on the same day, as recall-score reads them",
+        "tests/recall-arms.test.mjs::one arm failing stops the other and reports both"
+      ]
+    },
+    {
+      "id": "U13",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "Only a broken safety net pauses a sweep: a ceiling that did not hold, a meter that let calls through or an unheld call cap; the other trips log a warning, and no trial review is due.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "where": "A sweep with a share or drift trip",
+      "before": "Paused until the owner resumed it",
+      "after": "A warning in the summary and report",
+      "tests": [
+        "tests/sweep-trips.test.mjs::a ceiling that did not hold, a meter that let calls through unread, or a call cap no hook held still pauses",
+        "tests/sweep-trips.test.mjs::a stopped share over a third, repeated findings, start drift, content per call, cache re-writes and sweep dollars over the p95 log a warning and do not pause",
+        "tests/sweep-trips.test.mjs::no trial review is due after any number of auto-approvals, and the approver prints one state line, auto-approval on or off",
+        "tests/sweep-trips.test.mjs::a warning shows in --summary and in the sweep report",
+        "tests/sweep-trips.test.mjs::a reviewer on another model than the contract named is the lead's to rerun, not a pause",
+        "tests/sweep-trips.test.mjs::bypass: a log line changed by hand still pauses",
+        "tests/sweep-trips.test.mjs::repeat: the same outcome twice gives the same pauses and warnings",
+        "tests/sweep-trips.test.mjs::fail-closed: an outcome the script cannot read pauses, logged",
+        "tests/sweep-trips.test.mjs::the next ask while paused writes its triage with the way forward: resume with a Yes in the pop-up"
+      ]
+    },
+    {
+      "id": "U14",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "`--resume` and `--owner-yes` find the owner's pop-up answer with no session id in the shell, reading only this repo's own session records by exact key, and one Yes answers one ask.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs, project/.claude/owner-yes.cjs, user/kit-tools/owner-yes.cjs",
+      "tests": [
+        "tests/sweep-resume.test.mjs::--resume with no session id finds the accepted pop-up for this pause among this repo's sessions, and not another repo's",
+        "tests/sweep-resume.test.mjs::--owner-yes with no session id finds the Yes for this ask's code, and a Yes to an earlier ask cannot clear a later one",
+        "tests/sweep-resume.test.mjs::a Yes for another pause's code is refused, and this pause's own Yes is read in the same session",
+        "tests/sweep-resume.test.mjs::bypass: a Yes from a session of another repo is refused, however its folder is spelled",
+        "tests/sweep-resume.test.mjs::repeat: one Yes answers one pause, and a second use of it is refused",
+        "tests/sweep-resume.test.mjs::fail-closed: no readable session record refuses, names the pop-up step, logged",
+        "tests/sweep-resume.test.mjs::an installed approve.mjs lists and reads session records under the installed home, not CLAUDE_CONFIG_DIR",
+        "tests/sweep-resume.test.mjs::a later No in a record under another worktree of this repo, or a folder above it, stops --resume",
+        "tests/sweep-resume.test.mjs::fail-closed: a worktree list or a record folder that cannot be read refuses --resume and --owner-yes, logged",
+        "tests/sweep-resume.test.mjs::a Yes counts only from a record under this repo's own folder key, with or without a session id set",
+        "tests/sweep-resume.test.mjs::fail-closed: a session record in scope that exists but cannot be read refuses --resume and --owner-yes, logged",
+        "tests/sweep-resume.test.mjs::a Yes above the repo counts only if the own-key record parses to an accepted Yes with the same pop-up id",
+        "tests/sweep-resume.test.mjs::a Yes that sits only under the filesystem root's folder key is not the own key, with and without a session id",
+        "tests/sweep-resume.test.mjs::a log with an unreadable line still pauses: the owner's Yes resumes once, and a second use is refused",
+        "tests/sweep-resume.test.mjs::a Yes stamped before the guard-log row for the broken line does not resume; a Yes after the row does, once",
+        "tests/owner-yes-exact.test.mjs::sessionLatest and sessionAnswers with keys read only the given folder key, and faults gets each read error but ENOENT"
+      ]
+    },
+    {
+      "id": "U15",
+      "kind": "added",
+      "reach": "projects",
+      "text": "`approve.mjs --summary` counts clean sweeps in a row, and 5 prints \"proven\"; a pause, a hand-made pause line or a broken chain resets the run.",
+      "evidence": "user/skills/pre-pr-sweep/approve.mjs",
+      "tests": [
+        "tests/sweep-proven.test.mjs::--summary prints the run of sweeps with no pause and no reviewer stopped under 80% of its ceiling",
+        "tests/sweep-proven.test.mjs::5 clean sweeps in a row prints \"proven: 5 clean sweeps in a row\"",
+        "tests/sweep-proven.test.mjs::a pause resets the run to 0",
+        "tests/sweep-proven.test.mjs::a warning alone does not reset the run",
+        "tests/sweep-proven.test.mjs::bypass: a pause logged by hand between two clean sweeps still resets the run",
+        "tests/sweep-proven.test.mjs::bypass: a pause line deleted by hand breaks the chain and ends the run at that line, so nothing is proven across it",
+        "tests/sweep-proven.test.mjs::bypass: a dollars decision line with a broken link leaves the unit unknown, so a stopped role with no unit of its own is not clean",
+        "tests/sweep-proven.test.mjs::repeat: the same log read twice gives the same count",
+        "tests/sweep-proven.test.mjs::fail-closed: a log line the summary cannot read ends the run at 0, logged"
+      ]
+    },
+    {
+      "id": "U16",
+      "kind": "added",
+      "reach": "projects",
+      "text": "`side-job.mjs` starts a gate, study, trial or check in its own detached session and folder, so a build never waits behind it; status and stop report on it.",
+      "evidence": "user/kit-tools/side-job.mjs",
+      "tests": [
+        "tests/side-job.test.mjs::start launches the job in its own session, detached, and returns at once, printing its id and log path",
+        "tests/side-job.test.mjs::a kind outside gate, study, trial and check is refused, naming the four",
+        "tests/side-job.test.mjs::the job runs in its own folder, never the build's worktree",
+        "tests/side-job.test.mjs::status prints running, done with its exit code, or failed with the log's last line",
+        "tests/side-job.test.mjs::stop ends the job and logs it",
+        "tests/side-job.test.mjs::a second start of the same kind while one runs is refused, naming the running id"
+      ]
+    },
+    {
+      "id": "U17",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "owner-proof reads a 98 KB command once for all its readings and in under half its time limit under the map run, and holds a command it cannot finish reading.",
+      "evidence": "project/.claude/owner-proof.cjs",
+      "tests": [
+        "tests/owner-proof-long.test.mjs::with the coverage-map environment set as test-run --map sets it, the 98 KB command through owner-proof alone takes under half the 8 s limit",
+        "tests/owner-proof-long.test.mjs::the verdicts for the long command and for the guard's existing cases are unchanged",
+        "tests/owner-proof-long.test.mjs::bypass: the same command split across a pipe and a here-doc stays under half the limit too",
+        "tests/owner-proof-long.test.mjs::repeat: three runs in a row each stay under half the limit",
+        "tests/owner-proof-long.test.mjs::fail-closed: a command the guard cannot finish reading in time still holds the call, logged"
+      ]
+    },
+    {
+      "id": "U18",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "A CI run started again never counts as green: `ci-attempt.mjs` fails attempt 2 or later after a failed step, naming the first attempt's failed job.",
+      "evidence": "scripts/ci-attempt.mjs, .github/workflows/ci.yml",
+      "tests": [
+        "tests/ci-attempt.test.mjs::a first attempt (GITHUB_RUN_ATTEMPT=1) exits 0 and prints nothing",
+        "tests/ci-attempt.test.mjs::GITHUB_RUN_ATTEMPT=2 exits 1 and prints the first attempt's failed job from the jobs JSON it is given",
+        "tests/ci-attempt.test.mjs::the kit-tests step runs the base commit's copy on a PR, and its own on main",
+        "tests/ci-attempt.test.mjs::bypass: an attempt number with spaces or a leading zero above 1 still fails",
+        "tests/ci-attempt.test.mjs::repeat: the same attempt and JSON give the same answer",
+        "tests/ci-attempt.test.mjs::fail-closed: an unreadable jobs JSON on attempt 2 or more fails, logged",
+        "tests/ci-attempt.test.mjs::attempt 2 after a first-attempt job with no failed step exits 0 and logs the retry, and after a failed step still exits 1"
+      ]
+    },
+    {
+      "id": "U19",
+      "kind": "added",
+      "reach": "kit",
+      "text": "`ci-audit.mjs` prints waiting, setup and running time per job at p50 and p95, the time to the required check, retried runs and the cause of each red.",
+      "evidence": "scripts/ci-audit.mjs",
+      "tests": [
+        "tests/ci-audit.test.mjs::fixture jobs give waiting, setup and running at p50 and p95 per job",
+        "tests/ci-audit.test.mjs::the time to the required check runs from run start to kit-tests done",
+        "tests/ci-audit.test.mjs::a run with attempt above 1 is listed",
+        "tests/ci-audit.test.mjs::a job with no steps or no start time is counted as not measured, never as 0",
+        "tests/ci-audit.test.mjs::fixture red runs give the right cause class and the minutes from red to the next push"
+      ]
+    },
+    {
+      "id": "U20",
+      "kind": "added",
+      "reach": "projects",
+      "text": "Once a sweep is recorded, a review or check spawn is refused with the defer command; a test or fix spawn goes through only for an unused listed finding.",
+      "evidence": "user/kit-hooks/agent-model.cjs, user/kit-hooks/holds.json",
+      "where": "A new review after the sweep",
+      "before": "Started freely",
+      "after": "Refused; the find goes to the next list",
+      "tests": [
+        "tests/sweep-lock.test.mjs::with a sweep recorded for the branch, a reviewer, checker or review-pass spawn is refused, printing the defer command",
+        "tests/sweep-lock.test.mjs::a general agent briefed to review or check is refused the same way",
+        "tests/sweep-lock.test.mjs::a tester or builder whose brief names an unused listed finding goes through; one with no finding, or a used one, is refused",
+        "tests/sweep-lock.test.mjs::every refusal writes one log line (role, unit, reason)",
+        "tests/sweep-lock.test.mjs::with no sweep recorded nothing changes",
+        "tests/sweep-lock.test.mjs::holds.json sets the hold to enforce with tier high, and a test fails if it reads otherwise",
+        "tests/sweep-lock.test.mjs::fail-closed: an unreadable sweep record or a hook error blocks with \"hook error: lead review\", logged",
+        "tests/sweep-lock.test.mjs::bypass: a review or check role named only in the brief text, in another case, or on a Task spawn is refused the same",
+        "tests/sweep-lock.test.mjs::repeat: the same refused spawn twice gives the same refusal and one log line each"
+      ]
+    },
+    {
+      "id": "U21",
+      "kind": "added",
+      "reach": "projects",
+      "text": "`ci-wait` writes the CI state file, and `ci-fix.mjs` lists a red run's failing items, takes one diagnosis each and logs each fix; closeout checks the fix lines against the runs.",
+      "evidence": "user/kit-tools/ci-fix.mjs, project/.claude/ci-wait.mjs, project/.claude/ci-digest.mjs, user/kit-tools/closeout.mjs",
+      "where": "A red CI run",
+      "before": "Fixed by any edit",
+      "after": "Cleared only through ci-fix, item by item",
+      "tests": [
+        "tests/ci-fix.test.mjs::ci-wait writes `<git common>/kit-ci-state.json` {sha, run, verdict, failed[{key, kind}], at} when a run ends",
+        "tests/ci-fix.test.mjs::`ci-fix.mjs list` prints the red run's failing items, numbered, with the log line for each",
+        "tests/ci-fix.test.mjs::`diagnose` refuses an item not in the run's failed list",
+        "tests/ci-fix.test.mjs::`--cause code` refuses a test file; `pin` allows only that test's own file; `env` only CI or setup files",
+        "tests/ci-fix.test.mjs::a fix of under 6 words is refused; each line goes to `docs/builds/<version>.cifix.jsonl`",
+        "tests/ci-fix.test.mjs::a second diagnose on an item diagnosed in an earlier run is refused unless a grant id is given",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a cifix line with a bad cause, short fix, attempt 2 without a grant, or a fix commit outside its diagnosis's files",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a gate-file number that rises on a cap line or falls on a floor line against the base with no owner-yes record",
+        "tests/ci-fix.test.mjs::digest: the fixture logs give the expected items (TAP, temp growth, fast cap, crash, CRLF, grouped check, rollup dropped)",
+        "tests/ci-fix.test.mjs::digest: a failed job with no known shape gives an unparsed item, never none, and jobs covered counts it",
+        "tests/ci-fix.test.mjs::ci-wait reports the first red job before the run ends with settled: false, and --settle writes the full list",
+        "tests/ci-fix.test.mjs::bypass: a --files entry naming a test file through ./, a backslash or another case is still refused under --cause code",
+        "tests/ci-fix.test.mjs::repeat: list twice on the same state prints the same numbered items",
+        "tests/ci-fix.test.mjs::fail-closed: an unreadable kit-ci-state.json makes diagnose refuse with exit 1, logged",
+        "tests/ci-fix.test.mjs::closeout.mjs check in a project with no VERSION prints \"no build record: nothing to close out\", exits 0 and logs nothing",
+        "tests/ci-fix.test.mjs::closeout.mjs defer in a project with no VERSION writes its line to docs/builds/next.jsonl and prints \"written, carry on\", never a stack trace",
+        "tests/ci-fix.test.mjs::digest kinds: the fixture items are each given fixable, diagnose or escalate as the fixed lists say",
+        "tests/ci-fix.test.mjs::ci-fix.mjs fix touches only the fixable items and logs one cifix line for each",
+        "tests/ci-fix.test.mjs::closeout.mjs check counts a gate: grant only when it is the id of one accepted pop-up quoting the gate-yes act, used by no other line",
+        "tests/ci-fix.test.mjs::closeout.mjs check keeps the earlier diagnoses when a gate: line follows them, so a chore: commit on a diagnosed file still fails",
+        "tests/ci-fix.test.mjs::ci-digest gateLine reads a line with both a cap word and a floor word (no Math call) as mixed",
+        "tests/ci-fix.test.mjs::ci-digest gateLine does not read a comment mark inside a quoted string as a comment, and keeps the raw line when quotes are unclear",
+        "tests/ci-fix.test.mjs::ci-fix.mjs gate-yes takes the bare-line act only when the state is red and for the current head; the full act always works",
+        "tests/ci-fix.test.mjs::ci-digest gateLine does not read a // inside a regex literal as a comment, so a cap after it is still read in full",
+        "tests/ci-fix.test.mjs::closeout.mjs check refuses a gate: grant whose id differs from the accepted pop-up quoting the right act",
+        "tests/ci-fix.test.mjs::ci-fix.mjs gate-yes refuses the bare-line act when the state is for HEAD but its verdict is not red",
+        "tests/ci-fix.test.mjs::ci-digest gateLine keeps the raw line, comment numbers included, when a block comment precedes an unclosed quote",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a cap line whose count of numbers changed against its base line",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a gate file whose base gate line is gone and a new gate line with an unknown key appears",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a removed base gate line and an added gate line with no owner-yes line for them, even when every base line stays",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds a rewritten timeout: line and a removed one whose test stays, and lets a removed one go with its test",
+        "tests/ci-fix.test.mjs::closeout.mjs check in CI mode reads the proof in an attempt-2 or gate owner-yes line, and refuses a proof that does not match its line",
+        "tests/ci-fix.test.mjs::ci-fix.mjs diagnose attempt 2 and gate-yes write the pop-up proof (session, id, act, at) into the cifix line",
+        "tests/ci-fix.test.mjs::ci-fix.mjs with no arguments lists gate-yes <file> <line> in its usage",
+        "tests/ci-fix.test.mjs::closeout.mjs check re-reads the pop-up from the session the proof names, fails an unreadable or mistimed proof outside Actions, and passes it on consistency in Actions",
+        "tests/ci-fix.test.mjs::closeout.mjs check accepts a bare-line gate proof only when proof.file is the line's file",
+        "tests/ci-fix.test.mjs::closeout.mjs check accepts a bare-line gate proof only when its sha is an ancestor of HEAD",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a proof whose live-read answer is a Yes to another act than the proof names",
+        "tests/ci-fix.test.mjs::closeout.mjs check with GITHUB_ACTIONS=true still reads a readable session record and fails a proof whose pop-up was answered No",
+        "tests/ci-fix.test.mjs::closeout.mjs check fails a proof when a newer No to the same act is in the current session's record",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds a lost timeout: line when its test is renamed or skipped or the line sat outside any test, and passes a deleted test",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds a renamed test whose timeout: line is removed in the same change that deletes an unrelated test",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds a timeout: line lost when its test is renamed to the name of another test, where only the count of tests can hold it",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds a lost timeout: line when its test name still appears as test.todo, test .skip or a name on the next line",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds a lost timeout: line when its kept test has an escaped quote in its name",
+        "tests/ci-fix.test.mjs::ci-fix.mjs gate-yes writes proof.file and proof.sha for a bare-line act",
+        "tests/ci-fix.test.mjs::closeout.mjs check holds two removed timeout: lines when only one test is deleted, and passes one removed with its test",
+        "tests/ci-fix.test.mjs::closeout.mjs check allows a lost timeout: line only when the test that held it is gone from the new text"
+      ]
+    },
+    {
+      "id": "U22",
+      "kind": "added",
+      "reach": "projects",
+      "text": "The `ci-fix.cjs` hook holds edits on a red run until each item is diagnosed, holds a loosened gate line for the owner's yes, and fences the lead's edits after the sweep, Bash writes included.",
+      "evidence": "user/kit-hooks/ci-fix.cjs, project/.claude/guard.cjs, user/kit-hooks/holds.json",
+      "tests": [
+        "tests/ci-fix-hook.test.mjs::an edit is refused while a failing item has no diagnosis, and once all are diagnosed only a named file is taken",
+        "tests/ci-fix-hook.test.mjs::with a sweep recorded, an edit adding a test( or // planted: tag is refused and a hand edit to the build record is refused",
+        "tests/ci-fix-hook.test.mjs::a cap raised, a floor lowered or a timeout raised in a gate file is held for Max; the loosening-free edits go through",
+        "tests/ci-fix-hook.test.mjs::an edit to the files of an item red a second time is refused and logged as an owner-ask; the other item carries on",
+        "tests/ci-fix-hook.test.mjs::Bash write forms (sed -i, > and >>, tee, git apply, git checkout --, node -e writeFile) get the same refusal as an edit",
+        "tests/ci-fix-hook.test.mjs::after the sweep the lead's source or test edit is refused unless a diagnosis names the file",
+        "tests/ci-fix-hook.test.mjs::gh unreachable reads as CI unknown: the edit goes through, one log line, and every gh call names -R o/r",
+        "tests/ci-fix-hook.test.mjs::fail-closed: a hook error blocks with \"hook error: lead review\", logged, with ci-fix enforce at tier high in holds.json",
+        "tests/ci-fix-hook.test.mjs::bypass: a ./ path, a backslash path or another case is held the same as the plain path",
+        "tests/ci-fix-hook.test.mjs::repeat: the same refused edit twice gives the same refusal",
+        "tests/ci-fix-hook.test.mjs::the hook holds a rewritten timeout: line and a removed one whose test stays, and allows a removed one that goes with its test",
+        "tests/ci-fix-hook.test.mjs::the hook holds two removed timeout: lines when only one test is deleted, and allows one removed with its test",
+        "tests/ci-fix-hook.test.mjs::the hook allows a lost timeout: line only when the test that held it is gone from the new text",
+        "tests/ci-fix-hook.test.mjs::the hook holds a timeout: rewrite even when the same edit deletes another test",
+        "tests/ci-fix-hook.test.mjs::the hook holds a lost timeout: line when its test is renamed or skipped or the line sat outside any test, and allows a deleted test",
+        "tests/ci-fix-hook.test.mjs::the hook holds a renamed test whose timeout: line is removed in the same edit that deletes an unrelated test",
+        "tests/ci-fix-hook.test.mjs::the hook holds a timeout: line lost when its test is renamed to the name of another test, where only the count of tests can hold it",
+        "tests/ci-fix-hook.test.mjs::the hook holds a lost timeout: line when its test name still appears as test.todo, test .skip or a name on the next line",
+        "tests/ci-fix-hook.test.mjs::the hook holds a lost timeout: line when its kept test has an escaped quote in its name",
+        "tests/ci-fix-hook.test.mjs::the (c) owner-yes hold for a gate edit says how to ask: the quote form for the lead and the hand-back note for a subagent",
+        "tests/ci-fix-hook.test.mjs::an interpreter call carrying a write is held as an unclear write under a red run and allowed in a clear repo"
+      ]
+    },
+    {
+      "id": "U23",
+      "kind": "fixed",
+      "reach": "projects",
+      "text": "Install no longer names a format example file as an unfilled slot: the project map example holds a sample name.",
+      "evidence": "project/.claude/kit/project-map-example.json",
+      "tests": [
+        "tests/slot-examples.test.mjs::install project on a fresh project prints no unfilled-slot line naming a file whose name holds -example",
+        "tests/slot-examples.test.mjs::every shipped file whose name holds -example holds no slot from the slots.mjs list"
+      ]
+    },
+    {
+      "id": "U24",
+      "kind": "fixed",
+      "reach": "kit",
+      "text": "The release check reads a GitHub reply over 1 MB and names one too large to read; the v1.51.3 record's limits line matches its published notes.",
+      "evidence": "project/.claude/release-check.mjs, docs/builds/1.51.3.json, docs/builds/1.51.2.json",
+      "tests": [
+        "tests/release-check-buffer.test.mjs::a fixture gh reply over 1 MB still finds the present tag, so the tag and copy steps pass",
+        "tests/release-check-buffer.test.mjs::a reply too large even for the raised buffer is named too large, never as MISSING",
+        "tests/release-check-buffer.test.mjs::the notes from docs/builds/1.51.3.json no longer say a renamed job starts its trend afresh",
+        "tests/release-check-buffer.test.mjs::the notes step passes on a record and body that match, and a body that differs is still MISSING"
+      ]
+    },
+    {
+      "id": "U25",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "A feature-branch push no longer asks for a test change; CI's `test-integrity` check reads every commit against its parent and fails a weakened test outside a `retest:` commit.",
+      "evidence": "scripts/test-integrity.mjs, .github/workflows/ci.yml, .githooks/pre-push, project/.githooks/pre-push, project/.claude/test-push-scan.mjs, project/.claude/pr-body-audit.mjs",
+      "where": "A feature push that changes a test",
+      "before": "Held for the owner at push",
+      "after": "Pushed; CI judges each commit and lists retests",
+      "tests": [
+        "tests/test-integrity.test.mjs::a feature-branch push that edits, deletes or retests a test passes both pre-push hooks with no ask",
+        "tests/test-integrity.test.mjs::a main, tag, force or delete push with a test change is refused under the project hook own reason",
+        "tests/test-integrity.test.mjs::test-integrity fails a commit that changes or deletes a line of a test its parent holds, outside a retest: commit",
+        "tests/test-integrity.test.mjs::test-integrity passes a pure addition only inside a new test( block and fails one inside an old test",
+        "tests/test-integrity.test.mjs::test-integrity passes a retest: commit and lists it in retests.json and the step summary, and fails one that touches source",
+        "tests/test-integrity.test.mjs::ci.yml runs the base commit copy of test-integrity, never the PR copy, in its own job",
+        "tests/test-integrity.test.mjs::the PR body check fails a body that leaves out a retest: commit of the PR and passes one that lists it",
+        "tests/test-integrity.test.mjs::test-integrity still fails a test change hidden by a merge, a rename, a case change, a binary file or a replace ref",
+        "tests/test-integrity.test.mjs::test-integrity gives the same verdict, findings and retests list on the same range run twice",
+        "tests/test-integrity.test.mjs::test-integrity exits 2 and says why when the base is unreadable, the clone is shallow or git cannot run",
+        "tests/test-lock.test.mjs::the kit's own pre-push holds a main push with a test change and the owner's pop-up yes to that push lifts the hold"
+      ]
+    },
+    {
+      "id": "U26",
+      "kind": "security",
+      "reach": "projects",
+      "text": "A yes record typed at the owner's terminal lets the one merge it names through, bound to its repo and head, spent once; a pop-up merge yes must name its head.",
+      "evidence": "project/.claude/owner-yes.cjs, project/.claude/guard-outward.cjs",
+      "tests": [
+        "tests/owner-yes-record.test.mjs::a yes record from the owner terminal lets the one merge it names through, and a merge with no record stays held",
+        "tests/owner-yes-record.test.mjs::the writer refuses unless a name is typed at the terminal, so an agent shell cannot write a record",
+        "tests/owner-yes-record.test.mjs::a merge with a record needs --match-head-commit equal to the record head, and --admin is refused",
+        "tests/owner-yes-record.test.mjs::a record is spent once: its wx marker under kit-yes-spent makes a second use refuse",
+        "tests/owner-yes-record.test.mjs::a record older than FRESH_MS is refused, and a fresh one beside it is not",
+        "tests/owner-yes-record.test.mjs::a pop-up yes still needs one act per question and the exact Yes label",
+        "tests/owner-yes-record.test.mjs::a record for another act, target, repo or head is refused, and the matching one is not",
+        "tests/owner-yes-record.test.mjs::the same act after the spend is refused the same way twice",
+        "tests/owner-yes-record.test.mjs::an unreadable record refuses the merge and one row is logged in the git common kit-guard-open.log",
+        "tests/owner-yes-record.test.mjs::a merge anywhere in a command needs the single-command head pin: a chained merge is held, the pinned merge alone with its record passes",
+        "tests/owner-yes-record.test.mjs::an option given twice, -R twice or -R with --repo, is no act and a record does not match it",
+        "tests/owner-yes-record.test.mjs::a record-approved merge refuses -b, -t, -F and -A, so the parsed act is none and the merge stays held",
+        "tests/owner-yes-record.test.mjs::a record-approved merge refuses --auto, --disable-auto and --delete-branch, and --admin stays refused",
+        "tests/owner-yes-record.test.mjs::a release record is honoured only when origin names the same owner/repo as -R",
+        "tests/owner-yes-record.test.mjs::a shell or terminal command that may write a record is held without the literal words",
+        "tests/owner-yes-record.test.mjs::every spelling of a merge needs the head pin: gh.exe, global options before pr merge, and GraphQL merge mutations",
+        "tests/owner-yes-record.test.mjs::a command that runs the writer through backslashes, carets or backticks inside words is held like the plain words",
+        "tests/owner-yes-record.test.mjs::a merge word anywhere in the call needs the head pin: options between pr and merge, backtick spans and escaped spellings",
+        "tests/owner-yes-record.test.mjs::a release record needs origin raw url on github.com over https or ssh with exactly the -R owner/repo",
+        "tests/owner-yes-record.test.mjs::a command carrying a delete or force record shape with a plain owner/repo target is held",
+        "tests/owner-yes-record.test.mjs::a merge spelled gh.exe and chained after another act needs the head pin",
+        "tests/guards-hold.test.mjs::a pop-up merge yes quoting gh pr merge 9 --squash with no head pin does not lift the hold, and a pinned one does"
+      ]
+    },
+    {
+      "id": "U27",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "The team rule and skill say a feature-branch push never asks and a retest commit is judged in CI, while main, tags, force and deletes keep the owner's yes.",
+      "evidence": "rules/agent-teams.md, project/standards/agent-teams.md, user/skills/agent-team-build/SKILL.md",
+      "tests": [
+        "tests/push-text.test.mjs::both agent-teams files say a retest commit is checked by test-integrity and listed for the merge yes, never held at push",
+        "tests/push-text.test.mjs::SKILL.md says a feature-branch push never asks, and main, tags, force and deletes still need the owner pop-up or yes record"
+      ]
+    },
+    {
+      "id": "U12",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "The team build skill and its templates carry the new steps: lock the Rows line, run the state check, follow a hook error by tier, clear a red through ci-fix, start side jobs apart.",
+      "evidence": "user/skills/agent-team-build/SKILL.md, user/skills/agent-team-build/templates/tester-brief.md, user/skills/agent-team-build/templates/batch-plan.md",
+      "tests": [
+        "tests/skill-steps.test.mjs::the Rows line is locked at kickoff with --lock-rows and a later find goes out with closeout.mjs defer",
+        "tests/skill-steps.test.mjs::a base-copy report fault goes into one lands-first patch to main, planned when the report first shows it",
+        "tests/skill-steps.test.mjs::a fresh lead runs lead-state check, a hook error follows its tier, and a high-tier block is triaged, fixed and investigated",
+        "tests/skill-steps.test.mjs::the tester brief joins a secret-shaped test value from parts at run time, never written whole",
+        "tests/skill-steps.test.mjs::a gate, study, trial or check asked for in a build thread starts with side-job.mjs start and the lead keeps building"
+      ]
+    }
+  ],
+  "verification": [
+    "Each unit's new tests failed on the code before them and pass now.",
+    "test-integrity passes the whole branch and lists 7 retest commits for the merge yes.",
+    "CI runs the full suite on this branch; no full-suite run was made on the PC."
+  ],
+  "decisions": [
+    {
+      "decision": "A finish line for the ci-fix review loop",
+      "why": "After 15 narrowing review rounds, only a high or critical finding or a bypass by ordinary edits lands here; the rest go to the next list. The owner's pick (2026-11-24)."
+    },
+    {
+      "decision": "A ci-fix grant carries its pop-up proof",
+      "why": "CI cannot read the pop-up, so the fix line carries the proof, checked for consistency in CI and read live where the session is readable. The owner's pick (2026-11-24)."
+    },
+    {
+      "decision": "Feature pushes stop asking",
+      "why": "CI now judges every commit against its parent, so the push hold moved to a check that cannot be skipped; main, tags, force and deletes keep the yes."
+    }
+  ],
+  "upgrading": "Run install user, then install project: the new tools `lead-state.mjs`, `side-job.mjs` and `ci-fix.mjs`, the hooks `hook-error.cjs` and `ci-fix.cjs` with the tiers in holds.json, and the changed sweep approver, plan-check, guards and pre-push hook come with them.",
+  "limits": "The ci-fix hold stops slips, not forgery by someone with the user's own file access; review findings past the finish line are rows on the next list. The pre-commit secret scan runs in the kit source only.",
+  "tests": {
+    "before": 1986,
+    "after": 2243,
+    "flips": "declared tests at main and on this branch; the PR run gives the final count"
+  }
+}
