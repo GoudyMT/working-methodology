@@ -176,7 +176,7 @@ function start(args) {
 		// A random name and an exclusive mkdir: only kit-temp.cjs calls mkdtemp, and a job's folder outlives any test run root.
 		if (!folder) {
 			folder = madeFolder = path.join(os.tmpdir(), `side-job-${crypto.randomBytes(6).toString('hex')}`);
-			fs.mkdirSync(folder);
+			fs.mkdirSync(folder, { mode: 0o700 });
 		}
 		const refuse = (msg) => {
 			if (madeFolder) { try { fs.rmdirSync(madeFolder); } catch { /* not empty or gone */ } }

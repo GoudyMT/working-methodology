@@ -238,14 +238,14 @@ async function main(argv) {
   fs.mkdirSync(kitProbes, { recursive: true });
   // A random name and an exclusive mkdir (only kit-temp.cjs calls mkdtemp); the arms' folders sit under kit-probes.
   const root = path.join(kitProbes, `arms-${randomBytes(6).toString('hex')}`);
-  fs.mkdirSync(root);
+  fs.mkdirSync(root, { mode: 0o700 });
   const arms = [
     { name: `cand-${args.label}-${n}`, script: candScript, kit: KIT, configDir: path.join(root, 'cand') },
     { name: `base-${args.label}-${n}`, script: baseScript, kit: args.release, configDir: path.join(root, 'base') },
   ];
   try {
     for (const arm of arms) {
-      fs.mkdirSync(arm.configDir);
+      fs.mkdirSync(arm.configDir, { mode: 0o700 });
       fs.copyFileSync(path.join(args.probe, LOGIN_FILE), path.join(arm.configDir, LOGIN_FILE));
       // The arm's user layer comes from its own kit, stamped as the CLI stamps it (a release, or an unreleased build in
       // this throwaway folder), so recall.mjs's checkUserLayer accepts it: a stamp with no release flag is refused.
