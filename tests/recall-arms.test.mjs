@@ -168,6 +168,7 @@ test("each arm's folder gets a fresh copy of the probe login before it starts, a
 });
 
 // why: catches a missing probe login or one with no refresh token stops before any arm starts, naming the /login step (K376 S3)
+// renamed from: a missing or expired probe login stops before any arm starts, naming the /login step
 test('a missing probe login or one with no refresh token stops before any arm starts, naming the /login step', () => {
 	const cases = [
 		{ what: 'no login file', text: null, named: true },

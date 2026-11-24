@@ -126,6 +126,7 @@ test('with a sweep recorded for the branch, a reviewer, checker or review-pass s
 });
 
 // why: catches a general agent briefed to review or check is refused the same way (K399 S1)
+// renamed from: a general agent briefed to review or check is refused the same way
 test('a general agent briefed to review or check is refused the same way, and any other general agent is refused by default', () => {
 	const dir = repo();
 	const [rev, chk, testRev] = run(dir, [{ input: general('reviewer') }, { input: general('the checker for U20') }, { input: general('test-reviewer of the sweep fixes') }]);

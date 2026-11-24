@@ -921,6 +921,7 @@ test('ceilings set from the budgets keep the whole-sweep trip, however many role
 });
 
 // why: guards rule:sweep-auto-approval
+// renamed from: the one guard process runs the call-cap hook on every tool an agent calls, and never for the main session
 test('the one guard process runs the call-cap hook on every tool an agent calls, and for the main session too, for the context watch', () => {
   const { routes } = require(path.resolve('project/.claude/guard.cjs'));
   for (const tool of ['Read', 'Grep', 'Bash', 'Agent']) assert.ok(routes(tool, { agent_id: 'a1' }).includes('call-cap.cjs'), tool);
@@ -1464,6 +1465,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
 });
 
 // why: guards rule:sweep-auto-approval
+// renamed from: an out-of-trial model cleared by the owner still pauses at the outcome
 test('an out-of-trial model cleared by the owner does not pause at the outcome and names no rerun', () => {
   const c = askContract();
   c.roles[1].model = 'claude-haiku-5-5';

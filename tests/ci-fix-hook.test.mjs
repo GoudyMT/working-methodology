@@ -266,6 +266,7 @@ test('with a sweep recorded, an edit adding a test( or // planted: tag is refuse
 });
 
 // why: catches a gate-file number raised on a cap line or lowered on a floor line held for the owner, with the other numbers free (K399 S3)
+// renamed from: a cap raised, a floor lowered or a timeout raised in a gate file is held for Max; the loosening-free edits go through
 test('a cap raised, a floor lowered or a timeout raised in a gate file is held for the owner; the loosening-free edits go through', () => {
 	const root = mkRepo({ state: 'none' });
 	const cap = check(root, ...editOf(root, 'scripts/test-run.mjs', 'FAST_CAP_MS = 30000', 'FAST_CAP_MS = 60000'));

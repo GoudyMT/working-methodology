@@ -314,6 +314,7 @@ test('an installed approve.mjs reads the owner\'s taps only from the folder it w
 // passed clean, then every 20; any other pause (a drift trip) puts it back to 10.
 // why: guards rule:sweep-auto-approval
 // planted: {"file":"user/skills/pre-pr-sweep/approve.mjs","was":"const reviewEvery = clean >= 2 ? TRIAL_EVERY_EARNED : TRIAL_EVERY;","to":"const reviewEvery = TRIAL_EVERY;"}
+// renamed from: the trial review widens from every 10 approvals to every 20 after two clean reviews, and a drift pause resets it
 test('no count of approvals makes a trial review due, and a drift signal is a logged warning that pauses nothing', () => {
   const r = approveRun(featureContract());
   outcome(r);
@@ -364,6 +365,7 @@ test('a log line written by hand, or a raised cap, never clears the way', () => 
 });
 
 // why: guards rule:sweep-auto-approval
+// renamed from: the trial needs each outcome, rejects bad numbers, and pauses on repeats, an escape and every 10 approvals
 test('the trial needs each outcome, rejects bad numbers, warns on repeats, passes at every 10 approvals, and pauses on an escape', () => {
   const r = approveRun(featureContract());
   assert.match(approveIn(r.dir, [r.f]).stdout, /outcome/i, 'the last sweep\'s outcome comes first');

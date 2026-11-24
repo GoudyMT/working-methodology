@@ -185,6 +185,7 @@ test('with no record nothing changes', () => {
 });
 
 // why: catches holds.json sets the lead-state hold to enforce with tier high (owner 03:16Z), and a test fails if it reads otherwise (K374 S5)
+// renamed from: holds.json sets the lead-state hold to enforce with tier high (Max 03:16Z), and a test fails if it reads otherwise
 test('holds.json sets the lead-state hold to enforce with tier high (owner 03:16Z), and a test fails if it reads otherwise', () => {
 	const hold = JSON.parse(fs.readFileSync(HOLDS, 'utf8')).holds.find((h) => h.id === 'lead-state');
 	assert.ok(hold, 'holds.json has a hold with id lead-state');
