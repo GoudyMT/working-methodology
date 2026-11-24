@@ -81,6 +81,9 @@ test('a row added after --lock-rows is a fault that names the row and the closeo
 	assert.equal(res.status, 1, out(res));
 	assert.match(out(res), CHANGED);
 	assert.match(out(res), /closeout\.mjs defer "[^"]*K903/);
+	const defer = out(res).split('\n').find((l) => /closeout\.mjs defer/.test(l)) || '';
+	assert.match(defer, /K903/, 'the printed defer command names the added row id');
+	assert.ok(!defer.includes('Rows (3 placed'), `the defer command never carries the raw Rows line:\n${defer}`);
 });
 
 // why: catches a rows fault that leaves the build stuck, with no locked text to restore (S11F2)
