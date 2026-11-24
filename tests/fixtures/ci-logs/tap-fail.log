@@ -12,7 +12,7 @@
 2026-11-23T14:50:04.4000001Z not ok 2 - fast cap names the slow test
 2026-11-23T14:50:04.4000002Z   ---
 2026-11-23T14:50:04.4000003Z   duration_ms: 12.3
-2026-11-23T14:50:04.4000004Z   location: 'file:///home/runner/work/kit/kit/tests/fast-cap.test.mjs:39:1'
+2026-11-23T14:50:04.4000004Z   location: 'file:///__w/kit/kit/tests/fast-cap.test.mjs:39:1'
 2026-11-23T14:50:04.4000005Z   failureType: 'testCodeFailure'
 2026-11-23T14:50:04.4000006Z   error: 'the report names the test'
 2026-11-23T14:50:04.4000007Z   code: 'ERR_ASSERTION'
@@ -20,13 +20,13 @@
 2026-11-23T14:50:04.4000009Z   actual: 3
 2026-11-23T14:50:04.4000010Z   operator: 'strictEqual'
 2026-11-23T14:50:04.4000011Z   stack: |-
-2026-11-23T14:50:04.4000012Z     TestContext.<anonymous> (file:///home/runner/work/kit/kit/tests/fast-cap.test.mjs:41:10)
+2026-11-23T14:50:04.4000012Z     TestContext.<anonymous> (file:///__w/kit/kit/tests/fast-cap.test.mjs:41:10)
 2026-11-23T14:50:04.4000013Z   ...
 2026-11-23T14:50:05.5000000Z # Subtest: a temp folder is removed at the end
 2026-11-23T14:50:05.5000001Z not ok 3 - a temp folder is removed at the end
 2026-11-23T14:50:05.5000002Z   ---
 2026-11-23T14:50:05.5000003Z   duration_ms: 8.9
-2026-11-23T14:50:05.5000004Z   location: 'file:///home/runner/work/kit/kit/tests/kit-temp.test.mjs:218:1'
+2026-11-23T14:50:05.5000004Z   location: 'file:///__w/kit/kit/tests/kit-temp.test.mjs:218:1'
 2026-11-23T14:50:05.5000005Z   failureType: 'testCodeFailure'
 2026-11-23T14:50:05.5000006Z   error: 'the folder is still there'
 2026-11-23T14:50:05.5000007Z   code: 'ERR_ASSERTION'
