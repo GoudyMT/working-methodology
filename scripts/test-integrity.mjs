@@ -23,6 +23,12 @@ const isTest = (rel) => {
 	return parts.slice(0, -1).some((d) => TEST_DIRS.has(d)) || /\.(test|spec)\./.test(parts[parts.length - 1]);
 };
 const RETEST = /^retest(\([^)]*\))?!?:/;
+const isRunner = (f) => f === 'scripts/test-run.mjs' || f.startsWith('.github/workflows/');
+// Control characters out of anything printed; in a step-summary line, a subject sits in a code span with backticks,
+// angle brackets and ampersands taken out, so no HTML comment or tag can hide the lines after it.
+const clean = (s) => String(s).replace(/[\u0000-\u001f\u007f]/g, '');
+const span = (s) => `\`${clean(s).replace(/[`<>&]/g, '')}\``;
+const label = (r) => `${r.kind}: ${r.sha.slice(0, SHORT)} ${span(r.subject)}`;
 const SHORT = 7;
 const EMPTY_TREE = '4b825dc642cb6eb9a060e54bf8d69288fbee4904';
 const REMEDY = 'If the change is meant: reword the commit to retest: (a retest: commit holds test files only), then force-push the feature branch after the owner\'s yes. CI lists every retest: commit for the owner\'s merge yes.';
@@ -60,13 +66,37 @@ function git(args) {
 	return r.stdout;
 }
 
-// Where a test( call that opens at line i of a file closes: {line, col} of its closing bracket, or null when it never
-// closes, or when anything but a semicolon or a comment follows the close on that line. Strings, template literals (with
-// their ${} parts) and comments are read, so one that opens in this call cannot carry the close into later lines.
+// A slash starts a regex literal after an operator, an opening bracket, a comma or a keyword such as return, not after a
+// value. regexEnd is the index of the closing slash on the same line, or -1 when the literal does not close there.
+const REGEX_BEFORE = /(^|[(,=:[!&|?{};+*%<>~^\-]|\b(return|typeof|case|do|else|in|of|void|throw|yield|await|delete|new|instanceof))\s*$/;
+function regexStart(before) { return REGEX_BEFORE.test(before); }
+function regexEnd(l, k) {
+	let cls = false;
+	for (let m = k + 1; m < l.length; m++) {
+		const c = l[m];
+		if (c === "\\") { m++; continue; }
+		if (cls) { if (c === "]") cls = false; continue; }
+		if (c === "[") cls = true;
+		else if (c === "/") return m;
+	}
+	return -1;
+}
+// The text from one {line, col} to another (to exclusive), lines joined with a newline.
+function textBetween(lines, from, to) {
+	if (from[0] === to[0]) return lines[from[0]].slice(from[1], to[1]);
+	let out = lines[from[0]].slice(from[1]);
+	for (let j = from[0] + 1; j < to[0]; j++) out += `\n${lines[j]}`;
+	return `${out}\n${lines[to[0]].slice(0, to[1])}`;
+}
+// Where a test( call that opens at line i of a file closes: {line, col} of its closing bracket, the top-level commas
+// {line, col} between its arguments, or null when it never closes, or when anything but a semicolon or a comment follows
+// the close on that line. Strings, template literals (with their ${} parts), comments and regex literals are read, so
+// one that opens in this call cannot carry the close into later lines.
 function closeOf(lines, i) {
 	let depth = 0;
 	let mode = "n";
 	const tmpl = [];
+	const commas = [];
 	for (let j = i; j < lines.length; j++) {
 		const l = lines[j];
 		for (let k = 0; k < l.length; k++) {
@@ -86,12 +116,14 @@ function closeOf(lines, i) {
 				continue;
 			}
 			if (ch === "`") { mode = "t"; continue; }
+			if (ch === "/" && regexStart(l.slice(0, k)) && regexEnd(l, k) > k) { k = regexEnd(l, k); continue; }
 			if (ch === "(" || ch === "{" || ch === "[") depth++;
+			else if (ch === ",") { if (depth === 1) commas.push({ line: j, col: k }); }
 			else if (ch === ")" || ch === "}" || ch === "]") {
 				if (ch === "}" && tmpl.length && depth - 1 === tmpl[tmpl.length - 1]) { tmpl.pop(); depth--; mode = "t"; continue; }
 				depth--;
 				if (depth < 0) return null;
-				if (depth === 0) return /^\s*;?\s*(\/\/.*)?$/.test(l.slice(k + 1)) ? { line: j, col: k } : null;
+				if (depth === 0) return /^\s*;?\s*(\/\/.*)?$/.test(l.slice(k + 1)) ? { line: j, col: k, commas } : null;
 			}
 		}
 	}
@@ -107,7 +139,7 @@ function blocks(lines) {
 		if (!close) continue;
 		let start = i;
 		while (start > 0 && /^\/\//.test(lines[start - 1])) start--;
-		out.push({ start, at: i, end: close.line, header: lines[i].trim() });
+		out.push({ start, at: i, end: close.line, header: lines[i].trim(), close: close.col, commas: close.commas });
 	}
 	return out;
 }
@@ -128,11 +160,25 @@ const text = (rev, p) => {
 	return r.stdout;
 };
 
+// A fresh block's arguments are read as a whole: a string literal name, then an optional flat object literal, then a
+// function literal. Anything else (a comma expression, a call, a bare name) runs code at load time, so it is no block.
+const STR_LIT = /^(?:'(?:[^'\\\n]|\\.)*'|"(?:[^"\\\n]|\\.)*"|`(?:[^`\\$\n]|\\.|\$(?!\{))*`)$/;
+const OBJ_LIT = /^\{[^{}]*\}$/;
+const FN_LIT = /^(?:async\s+)?(?:function\b|(?:\([^()]*\)|[A-Za-z_$][\w$]*)\s*=>)/;
+function freshShape(lines, b) {
+	const from = [[b.at, 5], ...b.commas.map((c) => [c.line, c.col + 1])];
+	const to = [...b.commas.map((c) => [c.line, c.col]), [b.end, b.close]];
+	const args = to.map((t, n) => textBetween(lines, from[n], t).trim());
+	if (args.length === 2) return STR_LIT.test(args[0]) && FN_LIT.test(args[1]);
+	if (args.length === 3) return STR_LIT.test(args[0]) && OBJ_LIT.test(args[1]) && FN_LIT.test(args[2]);
+	return false;
+}
+
 // Why a commit's change to one test path is not a pure addition, or null. parents is empty for a root commit.
 function judgePath(c, parents, p) {
 	const merge = parents.length > 1;
 	const range = merge ? ['--cc', c] : parents.length ? [parents[0], c] : ['--root', c];
-	const patch = git(['diff-tree', '-p', '-U0', '--no-renames', '--no-commit-id', '-r', ...range, '--', `:(top,literal)${p}`]);
+	const patch = git(['diff-tree', '-p', '-U0', '--no-renames', '--text', '--no-commit-id', '-r', ...range, '--', `:(top,literal)${p}`]);
 	if (!/^diff /m.test(patch)) return 'its change cannot be read';
 	if (/^deleted file mode/m.test(patch)) return 'the test file is deleted or moved';
 	if (/^new file mode/m.test(patch)) return null;
@@ -158,7 +204,9 @@ function judgePath(c, parents, p) {
 	const known = new Set(parents.flatMap((q) => text(q, p).split('\n').map((x) => x.trim())));
 	// A new block is a complete top-level test( call the parent lacks, and every line of it is an added line.
 	const addedSet = new Set(added);
-	const fresh = blocks(lines).filter((b) => !known.has(b.header) && Array.from({ length: b.end - b.at + 1 }, (_, d) => b.at + d + 1).every((n) => addedSet.has(n)));
+	// A block inside another test( block's lines (an old test's body) is no fresh block, whatever its own lines look like.
+	const all = blocks(lines);
+	const fresh = all.filter((b) => !known.has(b.header) && Array.from({ length: b.end - b.at + 1 }, (_, d) => b.at + d + 1).every((n) => addedSet.has(n)) && freshShape(lines, b) && !all.some((o) => o !== b && o.at < b.at && b.end <= o.end));
 	for (const n of added) {
 		const line = lines[n - 1] === undefined ? '' : lines[n - 1];
 		if (line.trim() === '' || /^\s*\/\//.test(line)) continue;
@@ -187,9 +235,11 @@ function run(base, retestsFile) {
 		if (RETEST.test(subject)) {
 			const stray = files.filter((f) => !isTest(f));
 			for (const f of stray) findings.push(`${short} ${f}: a retest: commit may touch test files only`);
-			if (!stray.length) retests.push({ sha: c, subject, files });
+			if (!stray.length) retests.push({ sha: c, subject, files, kind: 'retest' });
 			continue;
 		}
+		// The test runner and the CI wiring decide which tests run, so a commit that edits them is listed for the merge yes.
+		if (files.some(isRunner)) retests.push({ sha: c, subject, files, kind: 'runner' });
 		const judged = new Set();
 		for (const f of files.filter(isTest)) {
 			const why = judgePath(c, parents, f);
@@ -223,7 +273,7 @@ function run(base, retestsFile) {
 	}
 	// The whole branch against its base: a test path the base holds and HEAD differs on must be named by a retest: commit
 	// or be a permitted pure addition. This sees what no single commit's diff shows (a merge that takes its own side).
-	const named = new Set(retests.flatMap((t) => t.files));
+	const named = new Set(retests.filter((t) => t.kind === 'retest').flatMap((t) => t.files));
 	const head = git(['rev-parse', 'HEAD']).trim();
 	for (const f of git(['diff-tree', '-r', '-z', '--no-renames', '--name-only', baseSha, 'HEAD']).split('\0').filter(Boolean).sort()) {
 		if (!isTest(f) || named.has(f) || !holds(baseSha, f)) continue;
@@ -243,10 +293,10 @@ try {
 	const { findings, retests } = run(base, file);
 	if (file) fs.writeFileSync(file, `${JSON.stringify(retests, null, 2)}\n`);
 	const summary = process.env.GITHUB_STEP_SUMMARY;
-	if (summary && retests.length) fs.appendFileSync(summary, `${retests.map((r) => `retest: ${r.sha.slice(0, SHORT)} ${r.subject}`).join('\n')}\n`);
-	for (const r of retests) console.log(`retest: ${r.sha.slice(0, SHORT)} ${r.subject}`);
+	if (summary && retests.length) fs.appendFileSync(summary, `${retests.map((r) => label(r)).join('\n')}\n`);
+	for (const r of retests) console.log(label(r));
 	if (findings.length) {
-		for (const f of findings) console.log(`FAIL  ${f}`);
+		for (const f of findings) console.log(`FAIL  ${clean(f)}`);
 		console.log(`test-integrity: ${findings.length} finding(s). ${REMEDY}`);
 		process.exitCode = 1;
 	} else console.log('test-integrity: passed');
