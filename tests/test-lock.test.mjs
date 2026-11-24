@@ -501,6 +501,39 @@ test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with 
 	}
 });
 
+// why: catches the kit's own pre-push passing a tag push or a force push that carries a test change unheld
+test("the kit's own pre-push holds a tag push and a non-fast-forward push that carry a test change, each with its hold message", () => {
+	// Tag: the pushed tag carries a test edit, and the remote has no such tag.
+	{
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'fix: tighten the add case');
+		const tag = pushRun(KIT_PRE_PUSH, dir, bare, `refs/tags/v1 ${edit} refs/tags/v1 ${ZERO}\n`);
+		assert.notEqual(tag.status, 0, `the kit hook held the tag push: ${tag.stderr}`);
+		assert.match(tag.stderr, /holds a test change/);
+		assert.match(tag.stderr, OWNER_YES);
+		assert.ok(tag.stderr.includes('tests/add.test.mjs'), `the held test path is named: ${tag.stderr}`);
+		// Control: the same commit on a feature branch passes, so the hold above comes from the tag.
+		const feat = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		kitPassesNoAsk(feat, 'the same commit pushed to a feature branch');
+	}
+	// Force: the remote's feature branch holds a commit the pushed one does not contain.
+	{
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 9;\n' });
+		const remoteTip = commit(dir, 'feat: remote work');
+		git(dir, ['push', '-q', 'origin', `${remoteTip}:refs/heads/feat/x`]);
+		git(dir, ['checkout', '-q', '-b', 'feat/y', red]);
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'fix: tighten the add case');
+		const force = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${remoteTip}\n`);
+		assert.notEqual(force.status, 0, `the kit hook held the force push: ${force.stderr}`);
+		assert.match(force.stderr, /holds a test change/);
+		assert.match(force.stderr, OWNER_YES);
+		assert.ok(force.stderr.includes('tests/add.test.mjs'), `the held test path is named: ${force.stderr}`);
+	}
+});
+
 // why: guards rule:test-integrity (builder brief keeps the test-first line)
 test('the builder brief drops the test-first line and says the tester red commit is never edited', () => {
 	const body = fs.readFileSync(BRIEF, 'utf8');
