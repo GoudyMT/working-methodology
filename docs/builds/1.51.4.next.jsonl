@@ -1,0 +1,18 @@
+{"text":"1.51.4 build: U9 S4 handoff-gate half and R2 pin flips (see R2 spec ruling)","at":"2026-11-24T09:58:01.113Z"}
+{"text":"1.51.4 build: protecting kit-lead-state-ok from a direct write (U6 security review finding 1; guard files are outside U6)","at":"2026-11-24T09:58:01.149Z"}
+{"text":"1.51.4 build: sweep-guard and call-cap and agent-model swallowing their own crash (lane E check F2)","at":"2026-11-24T09:58:01.196Z"}
+{"text":"1.51.4 build: holding a SendMessage to a standing checker or reviewer after the sweep (lane D check E1)","at":"2026-11-24T09:58:01.244Z"}
+{"text":"1.51.4 build: the sweep lock scope: a spawn with no role word passes with no ticket (lane D check E2)","at":"2026-11-24T09:58:01.288Z"}
+{"text":"1.51.4 build: the sweep lock edges: a detached HEAD passes, a plain-text checker word is refused, an unreadable record blocks spawns repo-wide (lane D check E4)","at":"2026-11-24T09:58:01.337Z"}
+{"text":"1.51.4 build: raising the watcher toast when the ci-fix hook logs a red-twice owner-ask (U22 (d); the hook writes the row only)","at":"2026-11-24T09:58:01.382Z"}
+{"text":"1.51.4 build: the build record command printing the retest list (U25 S6 second half, F8; scripts/build-record.mjs not in U25 Files)","at":"2026-11-24T09:58:01.430Z"}
+{"text":"1.51.4 build: shipping test-integrity in the project CI template, then relaxing the project pre-push hook for feature branches (U25 option A)","at":"2026-11-24T09:58:01.477Z"}
+{"text":"1.51.4 build: two pre-existing project pre-push holes found by review (unchanged from v1.51.3): a malformed ref line is filtered instead of refused, and the retest push yes is not bound to the held list","at":"2026-11-24T09:58:01.512Z"}
+{"text":"1.51.4 build: ci-fix hook timeout rewrite branch has no isolating test (a rewrite that also deletes a test)","at":"2026-11-24T09:58:01.555Z"}
+{"text":"1.51.4 build: test-integrity passes a new test block that calls process.exit(0) and stops older tests","at":"2026-11-24T09:58:01.612Z"}
+{"text":"1.51.4 build: six sweep test titles still say pause after R1 (kit-sweep-budget 634, 1053, 1467; kit-sweep-outcome 595; kit-sweep 317, 366); replaces the five-title defer","at":"2026-11-24T09:58:01.664Z"}
+{"text":"1.51.4 build: guards-outside test at line 353 (a remote that cannot be asked may have any branch as its default) fails on lane L 9ced0646 and lane H 99f5b181 alike: git now names remote-bogus as not a git command and the push check reads that as unreadable history; likely pre-existing and git-version dependent; confirm on base in CI","at":"2026-11-24T09:58:01.710Z"}
+{"text":"1.51.4 build: U22 round 14: closeout revokedNow reads only proof.act, so a newer No to the sibling act form (bare line or full act) does not revoke; pass every accepted act form","at":"2026-11-24T09:58:01.761Z"}
+{"text":"1.51.4 build: ci-fix literalsIn pairs quotes per line, so a quote in a same-line comment can hide a test-name literal; read literals on comment-masked code","at":"2026-11-24T09:58:01.806Z"}
+{"text":"1.51.4 build: U22 round 17 (review of 75707343, MEDIUM x4, past the finish line): keep the raw quoted check beside the unescaped literal set; scan literals from every quote position or on comment- and regex-masked code; unescape the skip-form name in startsOf; in ci-fix.cjs and closeout.mjs","at":"2026-11-24T09:58:01.854Z"}
+{"text":"1.51.4 build: U14: an unreadable-line pause matches its guard row by cause text (line number); a break repaired and broken again at the same line reuses the old row and its time; bind the row to the broken line hash (security review of 61720f99, MEDIUM, under the finish line)","at":"2026-11-24T09:58:01.888Z"}
