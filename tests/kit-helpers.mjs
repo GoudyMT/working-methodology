@@ -353,6 +353,8 @@ export function ownerTaps(cfg, dir, act, { answer = 'Yes', labels = ['Yes', 'No'
   ].map((l) => JSON.stringify(l)).join('\n') + '\n');
 }
 export const tapEnv = (cfg) => ({ CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID, CLAUDECODE: '1' });
+// The ask code approve.mjs printed for each contract, read from that run's own output (a second run to read it would log another ask).
+const askedCodes = new Map();
 export function asOwner(dir, args, env) {
   const owner = !('CLAUDECODE' in env) && !('AI_AGENT' in env) && !('CLAUDE_CODE_SESSION_ID' in env);
   const yes = owner && args.includes('--owner-yes') && filledWords(args[args.indexOf('--owner-yes') + 1]);
@@ -364,7 +366,9 @@ export function asOwner(dir, args, env) {
     const f = path.resolve(dir, args[0]);
     const ask = log.map((l) => JSON.parse(l)).filter((e) => e.kind === 'decision' && path.resolve(e.contract) === f).pop();
     if (!ask) return null;
-    act = `sweep yes ${String(ask.hash).slice(0, 6)}`;
+    const code = askedCodes.get(`${dir}|${f}`);
+    if (!code) return null;
+    act = `sweep yes ${code}`;
   } else {
     const i = log.map((l) => JSON.parse(l).kind).lastIndexOf('pause');
     if (i < 0) return null;
@@ -384,7 +388,10 @@ export const approveIn = (dir, args, env = {}) => {
   // A crashed reviewer was started by the guard too.
   const crashed = args.includes('--retry') && args[args.indexOf('--crashed') + 1];
   if (crashed && env.CLAUDE_CONFIG_DIR) startedByBrief(dir, env.CLAUDE_CONFIG_DIR, crashed);
-  return spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
+  const ran = spawnSync('node', [APPROVE, ...args], { encoding: 'utf8', cwd: dir, env: { PATH: process.env.PATH, ...env } });
+  const printed = /`sweep yes ([0-9a-f]{6})`/.exec(ran.stdout || '');
+  if (printed && args.length && !String(args[0]).startsWith('-')) askedCodes.set(`${dir}|${path.resolve(dir, args[0])}`, printed[1]);
+  return ran;
 };
 // What a lead does: each reviewer's brief carries "Sweep: <hash> role <n>" for the contract cleared last, n in the
 // order --agents lists them. A brief that already names a sweep is left as the test wrote it.
