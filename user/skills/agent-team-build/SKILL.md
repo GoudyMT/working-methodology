@@ -149,7 +149,7 @@ The build lead runs the batch as the overwatch lead. It is the build lead, not a
 A fresh lead (a new session, or a lead after a compaction) runs `lead-state check` before taking a phase. Its run, in order:
 
 1. **Plan and split.** Write the plan from the template, run plan-check and plan-graph on it, and build the lanes from plan-graph's output: units that touch one file share a lane. At kickoff, lock the Rows line with `plan-check.mjs <plan.md> --lock-rows`; a later find goes out with `closeout.mjs defer "<text>"`, and the locked Rows line does not change.
-2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. Right after a tester's or writer's spawn, the lead writes that agent's unit list file (`kit-unit-files.txt`) at the git path, `git rev-parse --git-path kit-unit-files.txt`, not in the worktree (see "Lead lessons from this patch"), so the files it may touch are fixed before its first edit.
+2. **Start the teams.** Start the builders and the tester for the lanes the split gives, each with its brief. The lead writes a tester's or writer's unit list file (`kit-unit-files.txt`) with `unit-lock.mjs --tester --files <test files>` run inside that agent's worktree, so it lands at that worktree's git path (`git -C <worktree> rev-parse --git-path kit-unit-files.txt`), not in the worktree (see "Lead lessons from this patch"). For a spawn into a worktree that already exists, write it before the spawn, since the hook holds the spawn without it; for a spawn that makes its own isolated worktree, write it right after the spawn, before the agent's first edit, which edit-fence holds until the list is there.
 3. **Answer lane questions.** Each question from a lane gets one answer, written in that lane's log.
 4. **Log every step.** Write each step as a JSON line (unit, step, at, by), and read the checklist after each merge: `node {{CLAUDE_HOME}}/kit-tools/flow-check.mjs checklist <log.jsonl> --plan <plan.md>`. After the tester's red commit, the lead locks the unit's row with `node {{CLAUDE_HOME}}/kit-tools/plan-check.mjs <plan.md> --lock <unit>`; the count gate then checks the commit's new tests against that row with `node {{CLAUDE_HOME}}/kit-tools/unit-check.mjs <base>..<head> --plan <plan.md> --unit <id>`.
 5. **Spin down the teams.** Stop each agent once its lane hands back, and leave none running. The lead adds an `agent` key (the agent id it got back) to the role line of every hand-back record it saves.
@@ -191,8 +191,9 @@ Each lesson below came from a real run. Follow it as written.
 - High: the lead reviews the error; if it cannot, pause and tell the owner.
 - Small: log it and report it.
 - A high-tier block: the lead triages it and states its scope; fixes it as well as it can at that point so the build
-  keeps going; and opens a separate investigation with `side-job.mjs start` that finds the root cause and corrects it,
-  so the block does not recur.
+  keeps going; and opens a separate investigation as a `study` job with `side-job.mjs start` that finds the root cause and corrects
+  it, so the block does not recur. One job of a kind runs at a time: while a study runs, the investigation waits for
+  it or the lead stops it. The job runs under the same user hooks, so a block in a user-level hook may need the owner.
 
 **How many at once, and the log.**
 - Lead practice, not checked by code: up to 3 test reviewers and 2 checkers run at once. Start one more only when over 2 units wait for that role. The lane caps above are lead practice too.
