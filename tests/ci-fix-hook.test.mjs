@@ -334,6 +334,18 @@ test('a cap raised, a floor lowered or a timeout raised in a gate file is held f
 	assert.ok(deny(guardCall(home, swRoot, 'Edit', swIn, { transcript_path: swT, session_id: '7b3e4f50-6c7d-4e8f-8091-b22334455667' })), 'the gate edit by the lead after a sweep with no diagnosis stays held');
 });
 
+// why: catches a decoy test line with the old timeout pairing first so a raised timeout line gets through unheld
+test('an edit that keeps the old timeout line and adds a second line with a higher timeout is held for the owner', () => {
+	const root = mkRepo({ state: 'none' });
+	const base = "test('slow', { timeout: 1000 }, async () => {";
+	write(root, 'tests/x.test.mjs', `${base}\n});\n`);
+	const decoy = check(root, ...editOf(root, 'tests/x.test.mjs', base, `${base}\n});\ntest('slow', { timeout: 60000 }, async () => {`));
+	assert.ok(deny(decoy), 'a raised timeout line behind a decoy of the old line is held');
+	assert.ok(why(decoy).startsWith("Owner's yes needed: "), `the hold is the owner-yes hold: ${why(decoy)}`);
+	// control: the plain raise of the one line is held the same way
+	assert.ok(deny(check(root, ...editOf(root, 'tests/x.test.mjs', '{ timeout: 1000 }', '{ timeout: 60000 }'))), 'the plain raise is held');
+});
+
 // why: catches a second red on an item held for Max, its owner-ask logged, while another diagnosed item's file is still taken (K399 S4)
 test('an edit to the files of an item red a second time is refused and logged as an owner-ask; the other item carries on', () => {
 	// ITEM_A was diagnosed in run 100 and is red again in run 200; ITEM_B is diagnosed in run 200 and names src/b.mjs
