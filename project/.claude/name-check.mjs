@@ -125,7 +125,7 @@ function repo(name) {
 }
 
 const [mode, arg] = process.argv.slice(2);
-// A PR title is the squash subject that lands on main: a retest commit waits on the owner's yes, so never a title.
+// A PR title is the squash subject that lands on main: a retest commit is judged in CI and listed for the owner's merge yes, so never a title.
 const titleFaults = (text) => [...message(text), ...(/^retest\b/.test(text) ? ['a PR title is the squash subject on main: use feat, fix or test, never retest'] : [])];
 const faults = mode === 'ident' ? ident() : mode === 'message' ? message(fs.readFileSync(arg, 'utf8')) : mode === 'branch' ? branch(arg || '') : mode === 'title' ? titleFaults(arg || '') : mode === 'repo' ? repo(arg || '') : null;
 if (!faults) {
