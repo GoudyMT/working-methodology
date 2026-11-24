@@ -1670,7 +1670,8 @@ test('the edit fence refuses a tester edit when the hook throws after reading it
   const dir = gitTree();
   const out = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'tester', tool_name: 'Edit', tool_input: { file_path: 5 } });
   assert.equal(out.status, 2, out.stderr);
-  // A builder whose edit hook throws keeps the fail-open pass-through it has today.
+  // A builder whose edit hook throws is refused too: edit-fence answers a crash by its tier (K375).
   const builder = runHook('user/kit-hooks/edit-fence.cjs', { cwd: dir, agent_type: 'builder', tool_name: 'Edit', tool_input: { file_path: 5 } });
-  assert.equal(builder.status, 0, builder.stderr);
+  assert.equal(builder.status, 2, builder.stderr);
+  assert.match(builder.stderr, /hook error/);
 });

@@ -53,7 +53,7 @@ fs.writeFileSync(CHILD_FILE, CHILD);
 // A temp folder that is a git repo, so the fail-closed log has a git common dir to land in.
 function repoDir() {
 	const dir = kitTemp.makeTemp('repo-');
-	spawnSync('git', ['init', '-q'], { cwd: dir });
+	spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: dir });
 	fs.mkdirSync(path.join(dir, '.claude'));
 	fs.writeFileSync(path.join(dir, '.claude', 'settings.json'), '{\n  "permissions": {}\n}\n');
 	return dir;

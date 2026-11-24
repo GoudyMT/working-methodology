@@ -35,7 +35,7 @@ const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { retu
 // TEMP, TMP and TMPDIR point at ctx.tmp, so a job with no --folder makes its throwaway folder there.
 function setup() {
 	const repo = scratch();
-	spawnSync('git', ['init', '-q'], { cwd: repo });
+	spawnSync('git', ['init', '-q', '-b', 'main'], { cwd: repo });
 	const stub = path.join(scratch(), 'stub.mjs');
 	fs.writeFileSync(stub, STUB);
 	const brief = path.join(repo, 'brief.md');

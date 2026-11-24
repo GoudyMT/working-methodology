@@ -27,7 +27,7 @@ const merged = (unit) => [
 function fixture({ withRecord = true, window = 400000 } = {}) {
 	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-card-'));
 	const git = (...a) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.com', ...a], { cwd: root, encoding: 'utf8' });
-	git('init', '-q');
+	git('init', '-q', '-b', 'main');
 	const dir = path.join(root, 'plans', 'p');
 	fs.mkdirSync(dir, { recursive: true });
 	fs.mkdirSync(path.join(root, '.kit'), { recursive: true });
