@@ -129,8 +129,88 @@ function fenceFault(command, tool) {
 	return '';
 }
 
+// The lead's context watch (K374 S5). The lead's own calls have no agent_id; they read the context their transcript holds
+// and, once it passes the line, write the lead state record once and say so in one line. The line is the lower of 350,000
+// and 75 percent of the compact window in force; the local settings file beats the project's, as use-check reads them.
+const WATCH_CAP = 350000;
+const WATCH_SHARE = 0.75;
+const LEAD_STATE = path.join(__dirname, '..', 'kit-tools', 'lead-state.mjs');
+
+// The context a lead's transcript holds: the last call's input, cache read and cache creation tokens.
+function leadTokens(file) {
+	let last = null;
+	for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
+		if (!line.trim()) continue;
+		let m;
+		try { m = JSON.parse(line).message; } catch { continue; }
+		if (m && m.role === 'assistant' && m.usage) last = m.usage;
+	}
+	return last ? ['input_tokens', 'cache_read_input_tokens', 'cache_creation_input_tokens'].reduce((t, k) => t + (Number(last[k]) || 0), 0) : 0;
+}
+
+// The top-level autoCompactWindow of the nearest .claude settings above the folder, local file first; null when none sets it.
+function windowOf(cwd) {
+	for (let dir = path.resolve(cwd); ; dir = path.dirname(dir)) {
+		for (const name of ['settings.local.json', 'settings.json']) {
+			let s;
+			try { s = JSON.parse(fs.readFileSync(path.join(dir, '.claude', name), 'utf8')); } catch { continue; }
+			if (s && Number.isInteger(s.autoCompactWindow)) return s.autoCompactWindow;
+		}
+		if (path.dirname(dir) === dir) return null;
+	}
+}
+
+// The plan of the repo's newest plans/<folder>/lead-state.json, as the record names it; null when there is none.
+function recordPlan(cwd) {
+	const g = require('child_process').spawnSync('git', ['-C', cwd, '-c', 'core.fsmonitor=false', 'rev-parse', '--show-toplevel'], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath) });
+	if (g.status !== 0) return null;
+	const top = g.stdout.trim();
+	let best = null;
+	let names = [];
+	try { names = fs.readdirSync(path.join(top, 'plans')); } catch { return null; }
+	for (const n of names) {
+		const file = path.join(top, 'plans', n, 'lead-state.json');
+		let mtime;
+		try { mtime = fs.statSync(file).mtimeMs; } catch { continue; }
+		if (!best || mtime > best.mtime) best = { file, mtime };
+	}
+	if (!best) return null;
+	const rec = JSON.parse(fs.readFileSync(best.file, 'utf8'));
+	return typeof rec.plan === 'string' ? path.join(top, rec.plan) : null;
+}
+
+// One watch answer per lead call: nothing under the line (which re-arms the crossing), nothing once this crossing is written,
+// else the record is written and one note line names the context. The marker is per session id, in the temp folder.
+function watch(input) {
+	if (!input.transcript_path) return;
+	const cwd = String(input.cwd || process.cwd());
+	const tokens = leadTokens(String(input.transcript_path));
+	const window = windowOf(cwd);
+	const line = window === null ? WATCH_CAP : Math.min(WATCH_CAP, Math.floor(WATCH_SHARE * window));
+	const sid = String(input.session_id || '').replace(/[^\w.-]/g, '_');
+	if (!sid) return;
+	const dir = path.join(os.tmpdir(), 'kit-context-watch');
+	const marker = path.join(dir, sid);
+	if (tokens < line) {
+		fs.rmSync(marker, { force: true });
+		return;
+	}
+	if (fs.existsSync(marker)) return;
+	fs.mkdirSync(dir, { recursive: true });
+	fs.writeFileSync(marker, '');
+	const plan = recordPlan(cwd);
+	if (!plan) return;
+	const r = require('child_process').spawnSync(process.execPath, [LEAD_STATE, 'write', plan, '--transcript', String(input.transcript_path)], { encoding: 'utf8', timeout: 60000, windowsHide: true });
+	if (r.status !== 0) {
+		logOpen(input, `lead state write failed at ${tokens} tokens (exit ${r.status})`);
+		return;
+	}
+	return { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `context at ${tokens.toLocaleString('en-US')}: state record written` } };
+}
+
 function check(input) {
-	if (!input.agent_id || input.tool_name === 'SubagentHandback') return;
+	if (!input.agent_id) return watch(input);
+	if (input.tool_name === 'SubagentHandback') return;
 	const t = input.tool_input || {};
 	const type = String(input.agent_type || '');
 	const shell = input.tool_name === 'Bash' || input.tool_name === 'PowerShell';
