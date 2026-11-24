@@ -512,8 +512,8 @@ test('bypass: a ./ path, a backslash path or another case is held the same as th
 	assert.ok(deny(check(root, 'Bash', { command: `echo x > ${elsewhere}/src/a.mjs` })), 'a write into another red repo is refused by that repo');
 	assert.ok(deny(check(root, 'Bash', { command: 'echo x > "$KIT_NO_SUCH_DIR/a.mjs"' })), 'a write to an unresolvable target is refused');
 	assert.ok(!deny(check(root, 'Bash', { command: 'echo x > out.log' })), 'an untracked write in the call repo goes through');
-	// A backslash is a path separator only on Windows; on Linux it is part of one file name outside the repo.
-	const spellings = [`${root}/./src/b.mjs`, `${root}/SRC/B.MJS`, `${root}/src/../src/b.mjs`, ...(process.platform === 'win32' ? [`${root}\\src\\b.mjs`] : [])];
+	// A backslash is a path separator, and another case the same file, only on Windows; on Linux each names another file.
+	const spellings = [`${root}/./src/b.mjs`, `${root}/src/../src/b.mjs`, ...(process.platform === 'win32' ? [`${root}\\src\\b.mjs`, `${root}/SRC/B.MJS`] : [])];
 	for (const file_path of spellings) {
 		assert.ok(deny(check(root, 'Edit', { file_path, old_string: 'x', new_string: 'y' })), `${file_path} is held the same as the plain path`);
 	}

@@ -113,7 +113,7 @@ test('a project guard that throws still holds with "could not run" (security tie
 	assert.doesNotMatch(out.permissionDecisionReason || '', /hook error: lead review/, 'the project hold keeps its own words');
 	assert.ok(fs.existsSync(path.join(USER_SRC, 'holds.json')), 'holds.json names every hook tier');
 	const holds = JSON.parse(fs.readFileSync(path.join(USER_SRC, 'holds.json'), 'utf8')).holds;
-	for (const id of ['owner-proof', 'task-gate', 'guard-outward', 'guard-delete']) assert.equal(holds.find((h) => h.id === id).tier, 'security', `${id} stays security`);
+	for (const id of ['owner-proof', 'task-gate', 'guard-outward', 'guard-delete']) assert.equal((holds.find((h) => h.id === id) || {}).tier, 'security', `${id} stays security`);
 });
 
 // why: catches bypass: an old-shape hook that crashes in its child process obeys its tier the same (K375 S1)
