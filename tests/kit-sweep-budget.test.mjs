@@ -1464,7 +1464,7 @@ test('with no project settings the notice says the cap has no hook; a hook in th
 });
 
 // why: guards rule:sweep-auto-approval
-test('an out-of-trial model cleared by the owner still pauses at the outcome', () => {
+test('an out-of-trial model cleared by the owner does not pause at the outcome and names no rerun', () => {
   const c = askContract();
   c.roles[1].model = 'claude-haiku-5-5';
   const r = approveRun(c);
