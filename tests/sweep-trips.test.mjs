@@ -132,7 +132,7 @@ test('bypass: a log line changed by hand still pauses', () => {
     else lines.splice(0, 1);
     assert.notEqual(lines.join('\n'), read(file).trim(), `the ${how} changed the log`);
     fs.writeFileSync(file, `${lines.join('\n')}\n`);
-    assert.match(approveIn(r.dir, ['--summary']).stdout, /^auto-approval: off \(the log was changed by hand at line \d+\)$/m, how);
+    assert.match(approveIn(r.dir, ['--summary']).stdout, /^auto-approval: off \(the log was changed by hand at line \d+\)$/m, how); // pin: 2 the summary tells the owner auto-approval is off
     nextBranch(r.dir);
     assert.match(approveIn(r.dir, [r.f]).stdout, /ASK THE OWNER[\s\S]*changed by hand/, `${how}: the next sweep goes to the owner`);
   }

@@ -115,7 +115,7 @@ test('fail-closed: a missing secret-shapes.mjs blocks the push and is logged on 
 	assert.equal(record(work, FILE, CLEAN, none).status, 0, 'the setup commit did not land');
 	const r = push(work, kitCopy(['secret-shapes.mjs']));
 	assert.notEqual(r.status, 0, `a push with no scan script went through: ${r.out}`);
-	assert.match(r.err, /the secret scan \(project\/\.claude\/secret-shapes\.mjs\) is missing; reinstall the kit\./);
+	assert.match(r.err, /the secret scan \(project\/\.claude\/secret-shapes\.mjs\) is missing; reinstall the kit\./); // pin: 2 the refused push says what to do
 });
 
 // why: catches write-time twin: a commit staging a file that holds a whole AWS-shaped key is refused by the pre-commit hook with "Commit blocked: a secret-shaped", and a value joined at run time passes (K371 CIFP)

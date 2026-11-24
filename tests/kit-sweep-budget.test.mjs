@@ -977,7 +977,7 @@ test('the model check reads what the decision cleared, in both directions', () =
   const ids = cheapRoles(5);
   const cfg = transcripts(Object.fromEntries(ids.map((id, i) => [id, [{ model: i === 0 ? 'claude-sonnet-5-5' : roleModel(c.roles[i]), u: [0, 100, 0, 0] }]])));
   const edited1 = logOutcome(r, ids, cfg).stdout;
-  assert.match(edited1, /rerun .+ on claude-opus-5-5: it ran on claude-sonnet-5-5, not the model the contract named/, 'an edit after approval hides nothing');
+  assert.match(edited1, /rerun .+ on claude-opus-5-5: it ran on claude-sonnet-5-5, not the model the contract named/, 'an edit after approval hides nothing'); // pin: 2 the rerun order
   assert.doesNotMatch(edited1, /paused/, 'the lead reruns it; no pause');
   const named = featureContract();
   named.roles[3].model = 'claude-sonnet-5-5';
@@ -985,7 +985,7 @@ test('the model check reads what the decision cleared, in both directions', () =
   const ids2 = cheapRoles(5);
   const cfg2 = transcripts(Object.fromEntries(ids2.map((id) => [id, [[0, 100, 0, 0]]])));
   const higher = logOutcome(s, ids2, cfg2).stdout;
-  assert.match(higher, /rerun .+ on claude-sonnet-5-5: it ran on claude-opus-5-5, not the model the contract named/, 'a role on a higher model than named is rerun');
+  assert.match(higher, /rerun .+ on claude-sonnet-5-5: it ran on claude-opus-5-5, not the model the contract named/, 'a role on a higher model than named is rerun'); // pin: 2 the rerun order
   assert.doesNotMatch(higher, /paused/, 'the lead reruns it; no pause');
 });
 

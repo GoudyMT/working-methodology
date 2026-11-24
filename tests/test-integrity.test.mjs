@@ -372,7 +372,7 @@ test('ci.yml runs the base commit copy of test-integrity, never the PR copy, in 
 	const kNext = kRest.search(/^ {2}[A-Za-z0-9_-]+:\s*$/m);
 	const kit = kNext < 0 ? kRest : kRest.slice(0, kNext);
 	assert.match(kit, /^ {4}needs: \[[^\]]*\btest-integrity\b[^\]]*\]/m, 'kit-tests needs test-integrity');
-	assert.match(kit, /needs\.test-integrity\.result != 'success' && needs\.test-integrity\.result != 'skipped'/, 'its gate fails on any result but success or skipped');
+	assert.match(kit, /needs\.test-integrity\.result != 'success' && needs\.test-integrity\.result != 'skipped'/, 'its gate fails on any result but success or skipped'); // pin: 1 GitHub reads the expression
 	// Every use of the script, in any spelling, sits under the base unpack.
 	const uses = ci.split('\n').filter((l) => l.includes('test-integrity.mjs') && !/^\s*#/.test(l));
 	assert.ok(uses.length > 0, 'ci.yml uses the script');
@@ -607,7 +607,7 @@ test('test-integrity still fails a test change hidden by a merge, a rename, a ca
 		git(dir, ['commit', '-q', '-m', 'fix: make the odd case pass']);
 		const r = integrity(dir, base);
 		assert.equal(r.code, 1, `odd path names: ${r.out}`);
-		for (const p of paths) assert.ok(r.out.includes(`${p}: a line of the test is changed or removed`), `${p} is judged by its lines like any test: ${r.out}`);
+		for (const p of paths) assert.ok(r.out.includes(`${p}: a line of the test is changed or removed`), `${p} is judged by its lines like any test: ${r.out}`); // pin: 1 the step summary is read for the merge yes
 	}
 	// A merge whose result lacks a test file the base holds fails as a deletion even when neither in-range parent holds it:
 	// the branch was cut before the file existed, the base (main) added it, and the merge of main drops it.

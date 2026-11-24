@@ -280,7 +280,7 @@ test('a refused resume says when no session id is set, or when no transcript of 
   const cfg = makeTemp('cfg-');
   const none = approveIn(r.dir, ['--resume'], { CLAUDE_CODE_SESSION_ID: '', CLAUDE_CONFIG_DIR: cfg });
   assert.equal(none.status, 1);
-  assert.match(none.stdout, /No pop-up was read: no session record of this repository can be read/);
+  assert.match(none.stdout, /No pop-up was read: no session record of this repository can be read/); // pin: 2 the resume refusal
   const elsewhere = approveIn(r.dir, ['--resume'], tapEnv(cfg));
   assert.equal(elsewhere.status, 1);
   assert.ok(elsewhere.stdout.includes(TAP_SID), 'the refusal does not name the session it looked for');

@@ -236,7 +236,7 @@ test('fail-closed: an unreadable tier list reads as high and blocks, logged', ()
 	fs.writeFileSync(path.join(noHelper.repo, '.git', 'kit-canary-blocked'), 'in the way');
 	const stop = canary(noHelper, { hook_event_name: 'SubagentStop', agent_type: 'builder', agent_id: 'a1', last_assistant_message: 'a report with no phrase' });
 	assert.equal(stop.status, 2, `a crash with no helper blocks the stop: exit ${stop.status}, stderr ${stop.stderr}`);
-	assert.match(stop.stderr, /hook error: lead review: hook-error\.cjs is missing/);
+	assert.match(stop.stderr, /hook error: lead review: hook-error\.cjs is missing/); // pin: 2 the lead's stop
 	assert.equal(errorRows(noHelper.repo).length, 1, JSON.stringify(rowsOf(noHelper.repo)));
 });
 

@@ -58,7 +58,7 @@ test('SKILL.md says a feature-branch push never asks, and main, tags, force and 
 	const w = s.slice(start, after < 0 ? s.length : m.index + after);
 	assert.match(w, /\bmain\b[\s\S]{0,40}\btags?\b[\s\S]{0,40}\bforce\b[\s\S]{0,40}\bdeletes?\b/i, 'the same sentence names main, tags, force and deletes');
 	assert.match(w, /(?:owner|user|Max)(?:'s)?[\s\S]{0,60}(?:pop-?up|yes)/i, 'the same sentence says those need the owner pop-up or yes');
-	assert.match(w, /(?:still|only)[\s\S]{0,200}(?:pop-?up|yes)|(?:pop-?up|yes)[\s\S]{0,200}(?:still|only)/i, 'the yes is still needed there');
+	assert.match(w, /(?:still|only)[\s\S]{0,200}(?:pop-?up|yes)|(?:pop-?up|yes)[\s\S]{0,200}(?:still|only)/i, 'the yes is still needed there'); // pin: 4 the owner locked the push words
 });
 
 // why: catches a project reader told a retest is never held at push when the project pre-push hook still holds it (S15F1)
@@ -69,7 +69,7 @@ test('both agent-teams files scope "never held at push" to the kit repo and say 
 	};
 	for (const [name, text] of Object.entries(files)) {
 		assert.ok(text.length > 0, `${name} has the locked-test paragraph`);
-		assert.match(text, /kit repo[\s\S]{0,120}(?:never|not)[\s\S]{0,20}held[\s\S]{0,10}at (?:the )?push|(?:never|not)[\s\S]{0,20}held[\s\S]{0,10}at (?:the )?push[\s\S]{0,60}kit repo/i, `${name}: never held at push is scoped to the kit repo`);
+		assert.match(text, /kit repo[\s\S]{0,120}(?:never|not)[\s\S]{0,20}held[\s\S]{0,10}at (?:the )?push|(?:never|not)[\s\S]{0,20}held[\s\S]{0,10}at (?:the )?push[\s\S]{0,60}kit repo/i, `${name}: never held at push is scoped to the kit repo`); // pin: 4 the owner locked the push words
 		assert.match(text, /project'?s?[\s\S]{0,40}pre-push hook[\s\S]{0,80}(?:still )?(?:holds?|pauses?)[\s\S]{0,80}retest/i, `${name}: a project pre-push hook still holds a retest push`);
 		assert.match(text, /until[\s\S]{0,80}test-integrity[\s\S]{0,80}project CI template/i, `${name}: until test-integrity is in the project CI template`);
 	}

@@ -597,7 +597,7 @@ test('a reviewer that ran on another model than its role names pauses for the ow
   const cfg = transcripts({ m1: [[1, 1, 1, 1]], m2: [[1, 1, 1, 1]], m3: [[1, 1, 1, 1]], m4: [{ model: 'claude-haiku-4-5', u: [1, 1, 1, 1] }], m5: [[1, 1, 1, 1]] });
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'm1,m2,m3,m4,m5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /rerun .+ on \S+: it ran on claude-haiku-4-5, not the model the contract named/);
+  assert.match(o.stdout, /rerun .+ on \S+: it ran on claude-haiku-4-5, not the model the contract named/); // pin: 2 the rerun order
   assert.doesNotMatch(o.stdout, /paused/, 'the lead reruns it; no pause');
 });
 

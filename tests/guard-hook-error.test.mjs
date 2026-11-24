@@ -109,7 +109,7 @@ test('a project guard that throws still holds with "could not run" (security tie
 	const s = setup({ guards: { 'guard-delete.cjs': "exports.check = () => { throw new Error('project guard boom'); };\n" } });
 	const out = s.call('Bash', { command: 'git status' });
 	assert.equal(out.permissionDecision, 'deny', JSON.stringify(out));
-	assert.match(out.permissionDecisionReason || '', /the kit guard guard-delete\.cjs could not run \(project guard boom\)/);
+	assert.match(out.permissionDecisionReason || '', /the kit guard guard-delete\.cjs could not run \(project guard boom\)/); // pin: 2 the lead's stop
 	assert.doesNotMatch(out.permissionDecisionReason || '', /hook error: lead review/, 'the project hold keeps its own words');
 	const holds = JSON.parse(fs.readFileSync(path.join(USER_SRC, 'holds.json'), 'utf8')).holds;
 	for (const id of ['owner-proof', 'task-gate', 'guard-outward', 'guard-delete']) assert.equal(holds.find((h) => h.id === id).tier, 'security', `${id} stays security`);

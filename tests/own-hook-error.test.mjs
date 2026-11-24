@@ -177,7 +177,7 @@ test('fail-closed: a missing hook-error.cjs exits 2, logged', () => {
 		const s = setup({ spawnStub: true, drop: ['hook-error.cjs'] });
 		const r = runHook(s, file, call(s));
 		assert.equal(r.status, 2, `${file}: no helper blocks: exit ${r.status}, stderr ${r.stderr}`);
-		assert.match(r.stderr, /hook error: lead review: hook-error\.cjs is missing/, file);
+		assert.match(r.stderr, /hook error: lead review: hook-error\.cjs is missing/, file); // pin: 2 the lead's stop
 		const rows = errorRows(s.repo);
 		assert.equal(rows.length, 1, `${file}: logged once: ${JSON.stringify(rowsOf(s.repo))}`);
 		assert.equal(rows[0].id, 'hook-error', file);

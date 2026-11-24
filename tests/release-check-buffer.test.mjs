@@ -132,7 +132,7 @@ test('a reply too large even for the raised buffer is named too large, never as 
 		{ audit: () => [], state: () => ({ status: 0, stdout: 'PASS state' }), log: (l) => lines.push(l) },
 	));
 	const out = lines.join('\n');
-	assert.match(out, /the GitHub reply was too large to read/, out);
+	assert.match(out, /the GitHub reply was too large to read/, out); // pin: 2 the check says why it cannot read
 	assert.doesNotMatch(out, /no tag v1\.1\.0 on GitHub/, out);
 	assert.doesNotMatch(out, /PASS tag v1\.1\.0 on the merge/, out);
 });
@@ -154,6 +154,6 @@ test('the notes step passes on a record and body that match, and a body that dif
 		releaseCheck({ tag: 'v1.51.3', pr: 5, repo: 'o/r', project: s.project, copy: REPO }, deps(lines));
 		return lines.join('\n');
 	});
-	assert.match(check(live), /PASS release title and notes from the build record/, 'a matching body');
-	assert.match(check(live.replace(LIVE, 'Limits differ.')), /MISSING release title and notes from the build record: the live notes are not the ones the build record writes/);
+	assert.match(check(live), /PASS release title and notes from the build record/, 'a matching body'); // pin: 1 the release-step check reads it
+	assert.match(check(live.replace(LIVE, 'Limits differ.')), /MISSING release title and notes from the build record: the live notes are not the ones the build record writes/); // pin: 1 the release-step check reads it
 });

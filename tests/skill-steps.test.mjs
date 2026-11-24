@@ -46,9 +46,9 @@ test('a fresh lead runs lead-state check, a hook error follows its tier, and a h
 	assert.match(s, /small[\s\S]{0,80}log[\s\S]{0,40}report/i, 'small tier: log and report');
 	assert.match(s, /triage[\s\S]{0,200}scope/i, 'at a high-tier block the lead triages and states the scope');
 	assert.match(s, /fix[\s\S]{0,200}keeps? going/i, 'the fix keeps the build going');
-	assert.match(s, /side-job(?:\.mjs)?\s+start[\s\S]{0,300}root cause|root cause[\s\S]{0,300}side-job(?:\.mjs)?\s+start/i, 'a separate side-job.mjs start investigation finds the root cause');
+	assert.match(s, /side-job(?:\.mjs)?\s+start[\s\S]{0,300}root cause|root cause[\s\S]{0,300}side-job(?:\.mjs)?\s+start/i, 'a separate side-job.mjs start investigation finds the root cause'); // pin: 4 owner-locked skill step
 	// F1
-	assert.match(s, /unit list file[\s\S]{0,200}git path|git path[\s\S]{0,200}unit list file/i, 'F1: the unit list file is at the git path');
+	assert.match(s, /unit list file[\s\S]{0,200}git path|git path[\s\S]{0,200}unit list file/i, 'F1: the unit list file is at the git path'); // pin: 4 owner-locked skill step
 	assert.match(s, /unit list file[\s\S]{0,300}not in the worktree/i, 'F1: not in the worktree');
 	// F2
 	assert.match(s, /round cap[\s\S]{0,200}Plan:[\s\S]{0,80}Unit:/i, 'F2: the round cap counts only briefs with a Plan: line and a Unit: id');
@@ -77,6 +77,6 @@ test('the tester brief joins a secret-shaped test value from parts at run time, 
 test('a gate, study, trial or check asked for in a build thread starts with side-job.mjs start and the lead keeps building', () => {
 	const s = SKILL();
 	assert.match(s, /gate[\s\S]{0,40}study[\s\S]{0,40}trial[\s\S]{0,40}check/i, 'names gate, study, trial or check');
-	assert.match(s, /thread[\s\S]{0,400}side-job(?:\.mjs)?\s+start|side-job(?:\.mjs)?\s+start[\s\S]{0,400}thread/i, 'a job asked for in the thread starts with side-job.mjs start');
+	assert.match(s, /thread[\s\S]{0,400}side-job(?:\.mjs)?\s+start|side-job(?:\.mjs)?\s+start[\s\S]{0,400}thread/i, 'a job asked for in the thread starts with side-job.mjs start'); // pin: 4 owner-locked skill step
 	assert.match(s, /lead keeps building|keeps? building/i, 'the lead keeps building');
 });

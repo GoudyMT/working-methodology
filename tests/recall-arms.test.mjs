@@ -110,7 +110,7 @@ test('three load samples with CPU over 40% or GPU at 50% or more hold the run, e
 	assert.match(out(cpuHot), /45/, 'the held run does not name the CPU reading');
 	assert.match(out(cpuHot), /40/, 'the held run does not name the 40% rule');
 	assert.deepEqual(armsStarted(ctx), [], 'a held run started an arm');
-	assert.match(cpuHot.stderr, /run it again once the build's lanes have stopped: node .*recall-arms\.mjs/, `the held run prints no retry line\n${out(cpuHot)}`);
+	assert.match(cpuHot.stderr, /run it again once the build's lanes have stopped: node .*recall-arms\.mjs/, `the held run prints no retry line\n${out(cpuHot)}`); // pin: 2 the held run says how to retry
 
 	const gpuHot = runArms(ctx, { samples: [QUIET[0], QUIET[1], { cpu: 10, gpu: 50 }] });
 	assert.equal(gpuHot.status, 3, `GPU 50 in one sample: exit 3 expected\n${out(gpuHot)}`);
