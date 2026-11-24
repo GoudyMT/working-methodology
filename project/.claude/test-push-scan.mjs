@@ -1,4 +1,6 @@
-// The test-change hold of both pre-push hooks (rule:test-integrity). The hook passes the remote's URL; git gives the
+// The test-change hold of both pre-push hooks (rule:test-integrity). The kit's own hook runs it with --protected (K367):
+// then it reads only a push to main or the default branch, a tag or a force, since CI's test-integrity judges a feature-branch
+// push. The project hook runs it with no flag, a full scan of every push. The hook passes the remote's URL; git gives the
 // refs on stdin as "lref lsha rref rsha". The remote's default branch and branch tips are asked of the remote here,
 // with the same reads the hook makes. Either read holds a push: each pushed commit (A), and the net change each pushed
 // ref makes (B). Exit 0: nothing held. Exit 10: a test change or a retest: subject, named on stdout. Exit 2: a read
@@ -144,6 +146,17 @@ function judgeCommit(c, held, defTip) {
 	}
 }
 
+// --protected: only a push the owner holds for a test change is read (K367).
+const PROTECTED_ONLY = process.argv.includes('--protected');
+function protectedRef(rref, rsha, lsha, def) {
+	// A remote with branches whose default cannot be read could be pushing to its default branch: protected.
+	if (def === null || !rref.startsWith('refs/heads/')) return true;
+	const branch = rref.slice('refs/heads/'.length);
+	if (branch === 'main' || branch === 'master' || branch === def) return true;
+	if (ZERO.test(rsha)) return false;
+	return !local(rsha) || gitRun(['merge-base', '--is-ancestor', rsha, lsha]).status !== 0;
+}
+
 function run(url, refs) {
 	const held = [];
 	if (git(['rev-parse', '--is-shallow-repository']).trim() !== 'false') throw new Shallow();
@@ -154,6 +167,9 @@ function run(url, refs) {
 	const defTip = def && heads.has(`refs/heads/${def}`) && local(heads.get(`refs/heads/${def}`)) ? heads.get(`refs/heads/${def}`) : null;
 	for (const [, lsha, rref, rsha] of refs) {
 		if (ZERO.test(lsha)) continue;
+		// K367: a feature-branch push that only adds to the branch is no hold; CI's test-integrity judges it. A tag, main or
+		// the default branch, and a force (or a remote value not fetched, which cannot be told) stay held.
+		if (PROTECTED_ONLY && heads.size > 0 && !protectedRef(rref, rsha, lsha, def)) continue;
 		// The remote's value must be a commit here, or the net change of the ref cannot be read: a force push nobody fetched.
 		if (!ZERO.test(rsha) && !local(rsha)) throw new Unfetched(`Push blocked: the remote's ${rref} is at ${rsha}, which this repo has not fetched: fetch first, then push again.`);
 		const not = ZERO.test(rsha) ? below : [...below, rsha];
