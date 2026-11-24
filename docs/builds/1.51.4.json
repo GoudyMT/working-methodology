@@ -290,7 +290,6 @@
         "tests/owner-proof-long.test.mjs::with the coverage-map environment set as test-run --map sets it, the 98 KB command through owner-proof alone takes under half the 8 s limit",
         "tests/owner-proof-long.test.mjs::the verdicts for the long command and for the guard's existing cases are unchanged",
         "tests/owner-proof-long.test.mjs::bypass: the same command split across a pipe and a here-doc stays under half the limit too",
-        "tests/owner-proof-long.test.mjs::repeat: three runs in a row each stay under half the limit",
         "tests/owner-proof-long.test.mjs::fail-closed: a command the guard cannot finish reading in time still holds the call, logged"
       ]
     },
@@ -546,7 +545,7 @@
   ],
   "verification": [
     "Each unit's new tests failed on the code before them and pass now.",
-    "test-integrity passes the whole branch and lists 35 retest commits for the merge yes.",
+    "test-integrity passes the whole branch and lists 36 retest commits for the merge yes.",
     "CI runs the full suite on this branch; no full-suite run was made on the PC."
   ],
   "decisions": [
