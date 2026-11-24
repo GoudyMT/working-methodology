@@ -43,7 +43,7 @@
     }
   ],
   "upgrading": "Run install project to take the report-only budget step in the CI templates; the kit's own CI changes need nothing.",
-  "limits": "The trend reads only the 2 main runs before this one, so a job renamed by the Windows split starts its trend afresh. Projects get no trend line in CI yet; their lane report keeps its own 3-run check.",
+  "limits": "The trend reads only the 2 main runs before this one, matching a job by its name without its matrix leg. Projects get no trend line in CI yet; their lane report keeps its own 3-run check.",
   "sweep": {
     "tier": "Feature (security-sensitive)",
     "commit": "b72b1a4c049ad7e472b457c775f76d3fb25d9855",
