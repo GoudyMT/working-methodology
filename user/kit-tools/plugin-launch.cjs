@@ -137,6 +137,12 @@ const roleOf = (input) => { const m = /^kit:([\w-]+)$/.exec(String(input.agent_t
  * Run the hooks roles.json gives the call's role for this event, each as its own process, as Claude Code would run
  * them from the role file. Returns a PreToolUse deny, { stop: reason } for a held stop, or null.
  */
+// A role hook's crash or timeout is that hook's error: hook-error.cjs answers by the hook's tier (null for small, a deny or a
+// held stop for high). A missing helper throws here, as the rest of the launcher does.
+function hookError(root, id, error, where) {
+	return require(path.join(root, 'kit-hooks', 'hook-error.cjs')).onError(id, error, where);
+}
+
 function roleHooks(input, event, root = ROOT) {
 	const role = roleOf(input);
 	const own = role ? readRoles(root)[role] : null;
@@ -147,6 +153,12 @@ function roleHooks(input, event, root = ROOT) {
 		if (!/^[\w.-]+\.cjs$/.test(file)) continue;
 		const r = spawnSync(process.execPath, [path.join(root, 'kit-hooks', file)], { input: JSON.stringify(input), cwd: SAFE_CWD, encoding: 'utf8', timeout: 5000, env: childEnv(root) });
 		const why = String(r.stderr || '').trim() || `${file} held this.`;
+		if (r.error || r.signal || (r.status !== 0 && r.status !== 2)) {
+			const cause = r.error ? r.error.message : r.signal ? `killed by ${r.signal}` : `exit ${r.status}`;
+			const held = hookError(root, file.replace(/\.cjs$/, ''), new Error(cause), input.cwd || process.cwd());
+			if (!held) continue;
+			return event === 'PreToolUse' ? held : { stop: held.hookSpecificOutput.permissionDecisionReason };
+		}
 		if (event === 'PreToolUse') {
 			if (r.status === 2) return deny(why);
 			let o = null;

@@ -1,15 +1,11 @@
 // The agent canary (rule:agent-canary). Each kit agent opens every message to whoever started it with a phrase that
 // lives only on the last line of the project's "Rules every brief carries" block, which the agent must open with
-// Read. Role files and preloaded skills are injected automatically, so the phrase never goes there.
-//
+// Read. Role files and preloaded skills never carry it.
 // Two jobs, by event:
-// - Stop (SubagentStop for an agent): the agent's last message must open with the phrase. A miss blocks the stop
-//   once with close-out steps that never name the phrase; the stop after the canary's own block goes through.
-//   Every result is logged to <git common dir>/kit-canary.log, one JSON line each, for the run record.
-// - PreToolUse on Agent, Task and SendMessage (the leak guard): a brief or message that carries the phrase is
-//   denied and logged, so no tasker can hand an agent the phrase it is meant to find by reading.
-// A project with no phrase line has the check off. Anything unexpected lets the call through: the checker and the
-// lead's review still stand behind it.
+// - Stop (SubagentStop): the last message must open with the phrase. A miss blocks the stop once with close-out steps
+//   that never name the phrase; the stop after that goes through. Each result is one line in <git common dir>/kit-canary.log.
+// - PreToolUse on Agent, Task and SendMessage (the leak guard): a brief or message that carries the phrase is denied and logged.
+// A project with no phrase line has the check off. A hook that throws answers by its tier (hook-error.cjs).
 const fs = require('fs');
 const path = require('path');
 const safeSpawn = require('./safe-spawn.cjs');
@@ -17,27 +13,19 @@ const { recordCounts } = require('./record-counts.cjs');
 
 // git from node's own folder, never the project.
 const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
-// One spelling for comparing: lower case letters and digits in any script, every run of anything else as one space. Markdown
-// around the phrase and hyphens inside it then compare the same; the space padding
-// keeps a word boundary on both sides.
+// One spelling for comparing: lower case letters and digits, other runs as one space.
 const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 
-// The phrase lives in the file the agent is sent to: the one the rule index names for rule:agent-team-adapter
-// (a project may fill its adapter in its own module), else the kit's agent-teams module. It is read from the main
-// checkout, so an agent in a worktree (where the notes may be untracked) finds it, unless a sweep recorded its base copy.
+// The phrase is in the file the rule index names for rule:agent-team-adapter, else standards/agent-teams.md, read from the main checkout.
 function findPhrase(cwd) {
 	const common = git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir');
 	if (common.status !== 0) return null;
 	const commonDir = common.stdout.trim();
 	const root = path.dirname(commonDir);
-	// During a sweep, a reviewer's brief sends it to the base copy of the rules that approve.mjs wrote, so a
-	// branch cannot swap the phrase its own reviewers are checked against. That copy is read while HEAD is the commit
-	// it was written for.
+	// In a sweep the base copy approve.mjs wrote is read (while HEAD is its commit), so a branch cannot swap the phrase.
 	try {
 		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
 		const head = git(cwd, 'rev-parse', 'HEAD');
-		// The phrase approve.mjs recorded is used, not a copy read again, so a copy rewritten after the approval cannot
-		// swap it.
 		if (rec && typeof rec.phrase === 'string' && words(rec.phrase).trim() && head.status === 0 && rec.head === head.stdout.trim()) return { phrase: rec.phrase, commonDir };
 		if (rec && typeof rec.file === 'string' && head.status === 0 && rec.head === head.stdout.trim()) {
 			const m = fs.readFileSync(rec.file, 'utf8').match(/^\s*Confirmation phrase: .* with: (.+?)\s*$/m);
@@ -68,12 +56,8 @@ const CLOSE_OUT = [
 	'3. Then stop. The one who started you saves the hand-off and starts a fresh agent from your note.',
 ].join('\n');
 
-// The agent's final report. A text reply arrives as last_assistant_message. Where the agent hands its report back
-// through a tool call instead (the desktop app's hand-back tool), the stop event carries no text, so the report is
-// read from the end of the agent's own transcript, within its latest turn only: walking back past tool results and
-// thinking-only entries, the first assistant entry with content decides. Its hand-back message is the report; else
-// its text, when it calls no tool (text before a tool call is narration). A message to another agent is never the
-// report. Null when there is no report to read (logged "unchecked").
+// The final report: last_assistant_message, else (a tool hand-back has no text) the end of the agent's transcript, latest
+// turn only: the first assistant entry with content decides; its hand-back message, else its text if it calls no tool.
 function finalReport(input) {
 	if (typeof input.last_assistant_message === 'string' && input.last_assistant_message.trim()) return input.last_assistant_message;
 	let lines;
@@ -98,14 +82,16 @@ function finalReport(input) {
 	return null;
 }
 
-// What a reviewer's report lacks against the shape its brief gives: a "ROLE:" line, one line per finding in five
-// fields (severity | CONFIRMED or PLAUSIBLE | claim | file:line | evidence) or "No findings", and a "Not checked:" line.
+// What a reviewer's report lacks: a "ROLE:" line, finding lines of five fields (severity | CONFIRMED or PLAUSIBLE |
+// claim | file:line | evidence) or "No findings", and a "Not checked:" line.
 const SEVERITY_ROW = /^\s*(critical|high|medium|low)\s*\|/i;
 // A report with a RECORD: block meets the same shape in JSON (record-counts.cjs): see recordCounts there.
-function reportFaults(report) {
+function countRecord(report, where) {
+	try { return { record: recordCounts(report) }; } catch (e) { return { failed: true, held: fail('record-counts', e, where) }; }
+}
+function reportFaults(report, record) {
 	const lines = String(report).split(/\r?\n/);
 	const faults = [];
-	const record = recordCounts(report);
 	if (!record && !lines.some((l) => /^\s*ROLE:\s*\S/.test(l))) faults.push('a "ROLE: <your role>" line');
 	const rows = lines.filter((l) => SEVERITY_ROW.test(l));
 	if (!record && !rows.length && !lines.some((l) => /^\s*No findings\b/i.test(l))) faults.push('one line per finding, or "No findings"');
@@ -119,26 +105,22 @@ function reportFaults(report) {
 // Kit roles that report up and task no one; an orchestrator and the main session are taskers.
 const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer', 'tester', 'test-reviewer', 'researcher', 'drafter', 'writer'];
 
-// One event's answer: { out } for a tool call to refuse, { code: 2 } for a stop to hold. The dispatcher (guard.cjs)
-// calls it for tool calls; Claude Code runs this file itself for the stop events.
+// One event's answer: { out } refuses a tool call (guard.cjs calls it), { code: 2 } holds a stop (Claude Code runs this file).
 function run(input) {
 	const cwd = input.cwd || process.cwd();
 	const found = findPhrase(cwd);
 	if (!found) return {};
 	const phrase = words(found.phrase);
 
-	const who = { role: input.agent_type || 'unknown', agent: input.agent_id || '', session: input.session_id || '' };
+	const who = { role: input.agent_type || 'unknown', agent: String(input.agent_id || ''), session: input.session_id || '' };
 	const key = (who.agent || `${who.session}-${who.role}`).replace(/[^\w.-]/g, '_');
-	// The canary's own block leaves a mark, so the report after it is told apart from a first one (a stop another hook
-	// blocked looks the same; stop_hook_active alone cannot tell them apart).
+	// The canary's own block leaves a mark, so the report after it is told apart from a first one.
 	const mark = path.join(found.commonDir, 'kit-canary-blocked', key);
-	// A hand-back checked at its call leaves a seen mark, so the stops after it (one more if another hook blocks the
-	// first) add nothing to the log.
+	// A hand-back checked at its call leaves a seen mark, so the stops after it add nothing to the log.
 	const seen = path.join(found.commonDir, 'kit-canary-seen', key);
 	const touch = (f) => { fs.mkdirSync(path.dirname(f), { recursive: true }); fs.writeFileSync(f, ''); };
 
-	// The desktop app's hand-back. Checked here, at the call, because the stop
-	// event fires before the hand-back reaches the agent's transcript.
+	// The desktop app's hand-back, checked at the call: the stop fires before it reaches the transcript.
 	if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') {
 		const report = String((input.tool_input || {}).message || '');
 		if (fs.existsSync(mark)) {
@@ -148,17 +130,18 @@ function run(input) {
 			return {};
 		}
 		const opens = words(report).startsWith(phrase);
-		// A reviewer's report is what the findings ledger is read from, so its shape is checked here too, once: a second
-		// try goes through, logged, so a role never loops on its report.
+		// A reviewer's report feeds the findings ledger, so its shape is checked once; a second try goes through, logged.
 		if (opens && input.agent_type === 'reviewer') {
+			const counted = countRecord(report, cwd);
+			if (counted.failed) return counted.held ? { out: counted.held } : {};
 			const shaped = path.join(found.commonDir, 'kit-canary-shape', key);
 			if (fs.existsSync(shaped)) {
 				fs.rmSync(shaped, { force: true });
-				log(found.commonDir, { ...who, result: reportFaults(report).length ? 'shape-after-miss' : 'hit' });
+				log(found.commonDir, { ...who, result: reportFaults(report, counted.record).length ? 'shape-after-miss' : 'hit' });
 				touch(seen);
 				return {};
 			}
-			const faults = reportFaults(report);
+			const faults = reportFaults(report, counted.record);
 			if (faults.length) {
 				log(found.commonDir, { ...who, result: 'shape-miss' });
 				touch(shaped);
@@ -200,23 +183,40 @@ function run(input) {
 	return { code: 2 };
 }
 
-// A tool call's answer for the dispatcher: a refusal, or null. Anything unexpected lets the call through.
-const check = (input) => { try { return run(input).out || null; } catch { return null; } };
+// A throw answers by its tier (hook-error.cjs, loaded here); without it: a deny and one row, from an fs-only walk.
+const fail = (id, e, cwd) => {
+	let h = null;
+	try { h = require('./hook-error.cjs'); } catch { /* missing: denied below */ }
+	if (h) return h.onError(id, e, cwd || process.cwd());
+	try {
+		let d = path.resolve(cwd || process.cwd()), g;
+		while (!fs.existsSync(g = path.join(d, '.git')) && path.dirname(d) !== d) d = path.dirname(d);
+		if (fs.statSync(g).isFile()) { const x = path.resolve(d, /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(g, 'utf8'))[1].trim()); try { g = path.resolve(x, fs.readFileSync(path.join(x, 'commondir'), 'utf8').trim()); } catch { g = x; } }
+		fs.appendFileSync(path.join(g, 'kit-guard-open.log'), JSON.stringify({ kind: 'hook-error', id: 'hook-error', hook: 'canary.cjs', error: 'hook-error.cjs is missing', at: new Date().toISOString() }) + '\n');
+	} catch { /* the deny stands without its row */ }
+	return { hookSpecificOutput: { hookEventName: 'PreToolUse', permissionDecision: 'deny', permissionDecisionReason: 'hook error: lead review: hook-error.cjs is missing' } };
+};
+const check = (input) => { try { return run(input).out || null; } catch (e) { return fail('canary', e, input && input.cwd); } };
 
 if (require.main === module) {
 	try {
 		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
+		const pre = input.hook_event_name === 'PreToolUse';
 		// The hand-back gate follows its hold's mode; one deny carries both reasons.
 		let gate = null;
-		if (input.hook_event_name === 'PreToolUse' && input.tool_name === 'SubagentHandback') { try { gate = require('./handoff-gate.cjs').run(input); } catch { /* a log never blocks */ } }
-		// Canary's own decision fails open; the gate's deny still prints.
+		if (pre && input.tool_name === 'SubagentHandback') { try { gate = require('./handoff-gate.cjs').run(input); } catch (e) { gate = fail('handoff-gate', e, input.cwd); } }
+		let held = null;
 		let r = {};
-		try { r = run(input); } catch { /* fails open */ }
-		const denies = [gate, r.out].filter(Boolean);
+		try { r = run(input); } catch (e) { held = fail('canary', e, input.cwd); }
+		const denies = [gate, r.out, pre ? held : null].filter(Boolean);
 		if (denies.length) process.stdout.write(JSON.stringify({ hookSpecificOutput: { ...denies[0].hookSpecificOutput, permissionDecisionReason: denies.map((o) => o.hookSpecificOutput.permissionDecisionReason).join(' ') } }));
 		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
 		process.exitCode = r.code || 0;
-	} catch { process.exitCode = 0; }
+		if (held && !pre) { process.stderr.write(`${held.hookSpecificOutput.permissionDecisionReason}\n`); process.exitCode = 2; }
+	} catch (e) {
+		const held = fail('canary', e);
+		if (held) { process.stderr.write(`${held.hookSpecificOutput.permissionDecisionReason}\n`); process.exitCode = 2; }
+	}
 }
 
 module.exports = { check };
