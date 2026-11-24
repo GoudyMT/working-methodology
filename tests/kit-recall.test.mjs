@@ -311,7 +311,8 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   const atBar = gate(14);
   assert.equal(atBar.status, 1, atBar.stdout + atBar.stderr);
   assert.doesNotMatch(atBar.stdout, /pass bar/);
-  assert.match(atBar.stdout, /a new test set: the release's baseline 1 is under/);
+  // The fixture's keys have no rows, so the declared count is not believed.
+  assert.match(atBar.stdout, /rows/);
 });
 
 // why: guards rule:instruments-and-evals
@@ -385,8 +386,8 @@ test('a PR that moves the ruler it is graded on fails, and no marker passes it (
   // The owner's plan yes (2026-11-24 19:40Z): a PR that changes only the test set passes when both sides reach the new
   // set's top score, the control scores 0 and two blind scorers read it. No rule text beside it, no edit at one version.
   const SET = ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md', 'docs/evals/behaviour-scenarios.json', 'scripts/recall-behave.mjs', 'docs/evals/results/recall-scores.md'];
-  const lines = (m, b, c, bm = 16, bb = 16, bc = 0) => ['scorers: 2', 'worse: none', `control: ${c}`, `gate: a median ${m} baseline ${b} brief v2 keys v13`, `behaviour: a median ${bm} baseline ${bb} suite v3 control ${bc}`, 'behaviour worse: none'];
-  const set = (over = {}) => checkGate({ changed: SET, added: lines(29, 29, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 2, bar: 12, count: 16 }, was: { brief: 2, keys: 12 }, ...over });
+  const lines = (m, b, c, bm = 16, bb = 16, bc = 0) => ['scorers: 2', 'worse: none', `control: ${c}`, `gate: a median ${m} baseline ${b} brief v2 keys v13`, `behaviour: a median ${bm} baseline ${bb} suite v3 control ${bc}`, 'behaviour worse: none', `release median: ${b}`];
+  const set = (over = {}) => checkGate({ changed: SET, added: lines(29, 29, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 2, baseCount: 14, bar: 12, count: 16 }, was: { brief: 2, keys: 12, count: 14 }, ...over });
   assert.equal(set().ok, true, set().detail);
   for (const [what, over, why] of [
     ['a release under the top', { added: lines(29, 28, 0) }, /baseline 28 is under/],
@@ -402,6 +403,13 @@ test('a PR that moves the ruler it is graded on fails, and no marker passes it (
     ['a suite moved back a version', { behaviour: { suite: 3, base: 4, bar: 12, count: 16 } }, /changes the behaviour suite/],
     ['a set of fewer questions than the floor', { count: 10, bar: 5, added: lines(10, 10, 0) }, /never shrinks under it/],
     ['no behaviour line', { added: lines(29, 29, 0).slice(0, 4) }, /records no behaviour line/],
+    ['a release half a point under, rounded up', { added: lines(29, 29, 0).map((l) => l.replace('release median: 29', 'release median: 28.5')) }, /release median 28.5/],
+    ['no exact release median', { added: lines(29, 29, 0).slice(0, 6) }, /release median is not recorded/],
+    ['fewer questions than the base', { was: { brief: 2, keys: 12, count: 30 } }, /never shrinks under the base's 30/],
+    ['fewer scenarios than the base', { behaviour: { suite: 3, base: 2, baseCount: 17, bar: 12, count: 16 } }, /never shrinks under the base's 17/],
+    ['a lower pass bar than the base', { was: { brief: 2, keys: 12, count: 14, bar: 20 } }, /pass bar/],
+    ['a suite with no scenario count', { behaviour: { suite: 3, base: 2, baseCount: 14, bar: 12, count: 0 } }, /0 scenarios/],
+    ['keys whose rows do not match their count', { rowsOk: false }, /rows/],
     ['no floor to judge by', { floor: undefined }, /changes the ruler/],
   ]) {
     const x = set(over);
