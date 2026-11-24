@@ -52,11 +52,14 @@ function repo({ sweep = 'recorded', findings = [finding('F1', 'high'), finding('
 	fs.mkdirSync(path.join(dir, 'docs', 'builds'), { recursive: true });
 	if (closeout) fs.writeFileSync(path.join(dir, 'docs', 'builds', `${VERSION}.closeout.json`), closeoutJson(findings));
 	fs.writeFileSync(git(dir, ['rev-parse', '--path-format=absolute', '--git-path', 'kit-unit-files.txt']), 'tests/sweep-lock.test.mjs\n');
-	const decision = (branch) => ({ kind: 'decision', contract: CONTRACT, branch, head: git(dir, ['rev-parse', 'HEAD']), time: new Date().toISOString() });
+	// The decision's head is HEAD, except for another branch's sweep: its head is a commit HEAD does not hold (S2F4 locks a branch
+	// that holds the swept commit, so only a decision at an unrelated commit leaves this branch alone).
+	const decision = (branch, head = git(dir, ['rev-parse', 'HEAD'])) => ({ kind: 'decision', contract: CONTRACT, branch, head, time: new Date().toISOString() });
 	const outcome = (extra = {}) => ({ kind: 'outcome', contract: CONTRACT, findings: 2, real: 2, duplicates: 0, tokens: 100, budget: 1000, ...extra });
 	const lines = {
 		recorded: [decision('main'), outcome()],
-		'other-branch': [decision('feature/other'), outcome()],
+		'other-branch': [decision('feature/other', git(dir, ['commit-tree', 'HEAD^{tree}', '-m', 'elsewhere'])), outcome()],
+		'ancestor-branch': [decision('feature/other'), outcome()],
 		'none-ran': [decision('main'), outcome({ noneRan: true })],
 		'decision-only': [decision('main')],
 		none: [],
@@ -123,23 +126,27 @@ test('with a sweep recorded for the branch, a reviewer, checker or review-pass s
 });
 
 // why: catches a general agent briefed to review or check is refused the same way (K399 S1)
-test('a general agent briefed to review or check is refused the same way', () => {
+test('a general agent briefed to review or check is refused the same way, and any other general agent is refused by default', () => {
 	const dir = repo();
 	const [rev, chk, testRev] = run(dir, [{ input: general('reviewer') }, { input: general('the checker for U20') }, { input: general('test-reviewer of the sweep fixes') }]);
 	for (const [name, d] of [['reviewer', rev], ['checker', chk], ['test-reviewer', testRev]]) {
 		assert.ok(denied(d), `a general agent briefed as ${name} is refused after the sweep, got ${JSON.stringify(d)}`);
 		assert.match(reason(d), DEFER);
 	}
-	// F4 (A7): a scanner, researcher, drafter or orchestrator that mentions a checker is not read as a checker.
+	// F4 (A7): a scanner, researcher, drafter or orchestrator that mentions a checker is not read as a checker, but after the sweep
+	// every spawn that is not a tester, builder, writer or implementer with a ticket is refused by default (S2F1).
 	const roles = ['scanner for the checker claims', 'researcher of the reviewer rules', 'drafter of the checker brief', 'orchestrator of the reviewer batch'];
 	const others = run(dir, roles.map((r) => ({ input: general(r) })));
-	others.forEach((d, i) => assert.equal(d, null, `"Role: ${roles[i]}" is not a review role and passes, got ${JSON.stringify(d)}`));
+	others.forEach((d, i) => {
+		assert.ok(denied(d), `"Role: ${roles[i]}" is no build role, so it is refused after the sweep, got ${JSON.stringify(d)}`);
+		assert.doesNotMatch(reason(d), DEFER, `"Role: ${roles[i]}" is refused by default, not read as a review role`);
+	});
 });
 
 // why: catches a tester or builder whose brief names an unused listed finding goes through; one with no finding, or a used one, is refused (K399 S2)
 test('a tester or builder whose brief names an unused listed finding goes through; one with no finding, or a used one, is refused', () => {
 	const dir = repo({ findings: [finding('F1', 'high'), finding('F2', 'medium'), finding('F3', 'critical')] });
-	const [wrongId, tester, builder, again, noTicket, unlisted, noneOk] = run(dir, [
+	const [wrongId, tester, builder, again, noTicket, unlisted, noneOk, testerTwice, builderTwice, noneTwice, noneUpper] = run(dir, [
 		// F2 (L2): a Ticket: line matches only the id right after "Ticket:", not an id in its free text.
 		{ input: ticketed('F9 see F1') },
 		{ input: ticketed('F1') },
@@ -147,19 +154,32 @@ test('a tester or builder whose brief names an unused listed finding goes throug
 		{ input: ticketed('F1', 'builder') },
 		{ input: { subagent_type: 'tester', prompt: 'Role: tester\nWrite the tests.' } },
 		{ input: ticketed('F9') },
-		// F3 (A4): "Ticket: none" passes while a medium or low finding is listed.
-		{ input: ticketed('none') },
+		// F3 (A4): "Ticket: none <id>" passes while the id names a listed medium or low finding (S2F3: a bare "Ticket: none" does not).
+		{ input: ticketed('none F2') },
+		// S2F2: a ticket is used once per role, so a second tester or builder naming F1 is refused, and "none F2" is used once too.
+		{ input: ticketed('F1') },
+		{ input: ticketed('F1', 'builder') },
+		{ input: ticketed('none F2') },
+		// S9F4: the word none in upper case reads the same, so the finding named after it is still used up.
+		{ input: ticketed('NONE F2', 'builder') },
 	]);
 	assert.ok(denied(wrongId), `"Ticket: F9 see F1" names F9, which is not listed, so it is refused, got ${JSON.stringify(wrongId)}`);
 	assert.equal(tester, null, `a tester naming the unused listed F1 goes through, got ${JSON.stringify(tester)}`);
 	assert.equal(builder, null, `a builder naming the unused F3 goes through, got ${JSON.stringify(builder)}`);
-	assert.ok(denied(again), `F1 is used, so a second spawn naming it is refused, got ${JSON.stringify(again)}`);
+	assert.equal(again, null, `the builder for F1 goes through after its tester (one tester and one builder per ticket), got ${JSON.stringify(again)}`);
+	assert.ok(denied(testerTwice), `F1 is used by a tester, so a second tester naming it is refused, got ${JSON.stringify(testerTwice)}`);
+	assert.ok(denied(builderTwice), `F1 is used by a builder, so a second builder naming it is refused, got ${JSON.stringify(builderTwice)}`);
+	assert.ok(denied(noneTwice), `"Ticket: none F2" is used once per role, got ${JSON.stringify(noneTwice)}`);
+	assert.equal(noneUpper, null, `"Ticket: NONE F2" reads as none for a builder, the first of its role, got ${JSON.stringify(noneUpper)}`);
 	assert.ok(denied(noTicket), `a tester with no Ticket: line is refused, got ${JSON.stringify(noTicket)}`);
 	assert.ok(denied(unlisted), `a tester naming an id the sweep did not list is refused, got ${JSON.stringify(unlisted)}`);
-	assert.equal(noneOk, null, `"Ticket: none" passes while a medium finding is listed, got ${JSON.stringify(noneOk)}`);
+	assert.equal(noneOk, null, `"Ticket: none F2" passes while F2 is a listed medium finding, got ${JSON.stringify(noneOk)}`);
 	// Refusal rows carry a reason; the allowed-spawn rows are the ones without.
 	const allowed = readRows(modelLog(dir)).filter((r) => r.reason === undefined).map((r) => JSON.stringify(r));
-	assert.equal(allowed.filter((r) => /\bF1\b/.test(r)).length, 1, `exactly one allowed-spawn row names F1, got ${allowed}`);
+	assert.equal(allowed.filter((r) => /\bF1\b/.test(r)).length, 2, `exactly two allowed-spawn rows name F1 (its tester and its builder), got ${allowed}`);
+	const noneRows = readRows(modelLog(dir)).filter((r) => r.reason === undefined && r.ticket === 'F2');
+	assert.equal(noneRows.length, 2, `the none rows are one tester and one builder, got ${JSON.stringify(noneRows)}`);
+	assert.ok(noneRows.every((r) => r.noTicket === true), `each none row in the log carries noTicket: true, got ${JSON.stringify(noneRows)}`);
 	assert.equal(allowed.filter((r) => /\bF3\b/.test(r)).length, 1, `exactly one allowed-spawn row names F3, got ${allowed}`);
 	assert.equal(allowed.filter((r) => /\bF9\b/.test(r)).length, 0, 'a refused id leaves no allowed-spawn row');
 	const high = repo({ findings: [finding('F1', 'high')] });
@@ -178,8 +198,8 @@ test('a tester or builder whose brief names an unused listed finding goes throug
 	const none = repo();
 	git(none, ['add', '-A']);
 	git(none, ['commit', '-q', '-m', 'closeout']);
-	assert.equal(one(none, ticketed('none', 'builder')), null, '"Ticket: none" passes for a builder');
-	const noneTester = one(none, ticketed('none'));
+	assert.equal(one(none, ticketed('none F2', 'builder')), null, '"Ticket: none F2" passes for a builder');
+	const noneTester = one(none, ticketed('none F2'));
 	assert.ok(denied(noneTester), `"Ticket: none" is refused for a tester, got ${JSON.stringify(noneTester)}`);
 	// U20-1: a ticketed spawn that a later gate refuses (here the list gate: no kit-unit-files.txt) uses up no finding, so the retry goes through
 	const retry = repo();
@@ -191,6 +211,16 @@ test('a tester or builder whose brief names an unused listed finding goes throug
 	fs.writeFileSync(listFile, 'tests/sweep-lock.test.mjs\n');
 	const retried = one(retry, ticketed('F1'));
 	assert.equal(retried, null, `once the list exists the retry goes through, not "already named", got ${JSON.stringify(retried)}`);
+	// S9F4: a use row older than the sweep's decision does not use the ticket; a row after it does.
+	const aged = repo();
+	fs.writeFileSync(modelLog(aged), `${JSON.stringify({ at: '2020-01-01T00:00:00.000Z', hook: 'agent-model', mode: 'enforce', type: 'tester', role: 'tester', ticket: 'F1' })}\n`);
+	assert.equal(one(aged, ticketed('F1')), null, 'a tester row for F1 from before the decision does not use F1');
+	assert.ok(denied(one(aged, ticketed('F1'))), 'the row the first spawn wrote, after the decision, does use F1 for a tester');
+	// S9F4: a general agent briefed "Role: builder" is a build role and goes through with a listed ticket, once.
+	const generalBuilder = repo();
+	assert.equal(one(generalBuilder, general('builder', 'Ticket: F1')), null, 'a general agent with Role: builder and a listed Ticket: goes through');
+	assert.ok(denied(one(generalBuilder, general('builder', 'Ticket: F1'))), 'and a second one for the same ticket is refused');
+	assert.ok(denied(one(generalBuilder, general('builder'))), 'a general builder with no Ticket: line is refused');
 });
 
 // why: catches every refusal writes one log line (role, unit, reason) (K399 S3)
@@ -207,6 +237,17 @@ test('every refusal writes one log line (role, unit, reason)', () => {
 		assert.ok(Date.parse(r.at) > 0, 'at is a timestamp');
 		assert.ok(typeof r.reason === 'string' && r.reason.length > 0, 'reason is text');
 	}
+	// S9F4: under holds.json mode log the same spawn passes and its refusal row is still written.
+	const hookDir = kitTemp.makeTemp('sweep-lock-log-hooks-');
+	fs.cpSync(HOOK_DIR, hookDir, { recursive: true });
+	const holds = JSON.parse(fs.readFileSync(HOLDS, 'utf8'));
+	holds.holds.find((h) => h.id === 'sweep-lock').mode = 'log';
+	fs.writeFileSync(path.join(hookDir, 'holds.json'), JSON.stringify(holds));
+	const logged = repo();
+	assert.equal(run(logged, [{ input: checker('U20') }], hookDir, 'sess-43')[0], null, 'under log mode the checker spawn passes');
+	const loggedRows = lockRows(logged);
+	assert.equal(loggedRows.length, 1, `and one refusal row is still written, got ${JSON.stringify(loggedRows)}`);
+	assert.equal(loggedRows[0].mode, 'log');
 });
 
 // why: catches with no sweep recorded nothing changes (K399 S4)
@@ -222,6 +263,9 @@ test('with no sweep recorded nothing changes', () => {
 		assert.equal(lockRows(dir).length, 0, `${sweep}: no refusal row is written`);
 		assert.equal(readRows(openLog(dir)).length, 0, `${sweep}: no hook error row is written`);
 	}
+	// S2F4: a decision at a commit this branch holds locks it, whatever its branch name says.
+	const held = one(repo({ sweep: 'ancestor-branch' }), checker());
+	assert.ok(denied(held), `a decision on another branch at an ancestor of HEAD locks this branch, got ${JSON.stringify(held)}`);
 });
 
 // why: catches holds.json sets the hold to enforce with tier high, and a test fails if it reads otherwise (K399 S5)
