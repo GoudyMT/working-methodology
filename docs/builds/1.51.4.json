@@ -465,7 +465,7 @@
       "id": "U25",
       "kind": "changed",
       "reach": "kit",
-      "text": "The kit repo's feature-branch push no longer asks for a test change; CI's `test-integrity` check reads every commit against its parent and fails a weakened test outside a `retest:` commit. A project's pre-push hook still holds it until test-integrity ships in the project CI template.",
+      "text": "The kit repo's feature-branch push no longer asks for a test change; CI's `test-integrity` check fails a weakened test outside a `retest:` commit. A project's pre-push hook still holds one for now.",
       "evidence": "scripts/test-integrity.mjs, .github/workflows/ci.yml, .githooks/pre-push, project/.claude/test-push-scan.mjs, project/.claude/pr-body-audit.mjs",
       "where": "A kit repo feature push that changes a test",
       "before": "Held for the owner at push",
@@ -519,12 +519,11 @@
       "id": "U27",
       "kind": "changed",
       "reach": "projects",
-      "text": "The team rule and skill say a feature-branch push never asks in the kit repo, where a retest commit is judged in CI; a project's pre-push hook still holds a test change until test-integrity ships in the project CI template. Main, tags, force and deletes keep the owner's yes.",
+      "text": "The team rule and skill say a kit repo feature-branch push never asks and CI judges a retest commit; a project's pre-push hook still holds a test change. Main, tags, force and deletes keep the owner's yes.",
       "evidence": "rules/agent-teams.md, project/standards/agent-teams.md, user/skills/agent-team-build/SKILL.md",
       "tests": [
         "tests/push-text.test.mjs::both agent-teams files say a retest commit is checked by test-integrity and listed for the merge yes, never held at push",
-        "tests/push-text.test.mjs::SKILL.md says a feature-branch push never asks, and main, tags, force and deletes still need the owner pop-up or yes record",
-        "tests/push-text.test.mjs::both agent-teams files scope \"never held at push\" to the kit repo and say a project pre-push hook still holds a retest push"
+        "tests/push-text.test.mjs::SKILL.md says a feature-branch push never asks, and main, tags, force and deletes still need the owner pop-up or yes record"
       ]
     },
     {
@@ -544,7 +543,7 @@
   ],
   "verification": [
     "Each unit's new tests failed on the code before them and pass now.",
-    "test-integrity passes the whole branch and lists 7 retest commits for the merge yes.",
+    "test-integrity passes the whole branch and lists 24 retest commits for the merge yes.",
     "CI runs the full suite on this branch; no full-suite run was made on the PC."
   ],
   "decisions": [
@@ -567,5 +566,411 @@
     "before": 1986,
     "after": 2243,
     "flips": "declared tests at main and on this branch; the PR run gives the final count"
+  },
+  "sweep": {
+    "tier": "Feature (security-sensitive)",
+    "commit": "b14413d44832a5de7bfcf9a035149a92f9aa04da",
+    "dimensions": [
+      {
+        "name": "Privacy",
+        "result": "The owner's first name in hook, tool and record text found and replaced; test fixture strings go to the next list"
+      },
+      {
+        "name": "Supply chain",
+        "result": "Not touched: no dependency or action pin added"
+      },
+      {
+        "name": "Legal",
+        "result": "Not touched: no copied content"
+      },
+      {
+        "name": "Code security",
+        "result": "Six security roles: every finding above low fixed; crashes answer by tier, the sweep lock denies by default, ci-fix pairs gate lines as multisets, the CI scan reads each commit"
+      },
+      {
+        "name": "Gaps, scaling, test value",
+        "result": "Retests restore positive assertions and honest titles; post-sweep finds go to the next list"
+      },
+      {
+        "name": "Alignment",
+        "result": "YES"
+      }
+    ],
+    "findings": {
+      "critical": 0,
+      "high": 13,
+      "medium": 27,
+      "low": 25
+    },
+    "accepted": [],
+    "deferred": [
+      "low: S15F4 example describes old trial pauses (next patch, the owner's pick B)",
+      "low: S15F5 hook-error tier list omits the security tier (next patch, the owner's pick B)",
+      "low: S8F2 retest titles promise widening, reset and pause; bodies only assert absence (next patch, the owner's pick B)",
+      "low: S8F3 retests replaced distinct refusal texts with a shared weaker one (next patch, the owner's pick B)",
+      "low: S8F4 notEqual allow passes when the guard does not detect the act (next patch, the owner's pick B)",
+      "low: S9F5 holds.json test only re-reads JSON (next patch, the owner's pick B)",
+      "low: S9F6 unwritable-log fixture depends on chmod (next patch, the owner's pick B)",
+      "low: S7F4 tier() duplicate-entry rule untested (next patch, the owner's pick B)",
+      "low: S7F5 leadGate printed-command safety and edge branches untested (next patch, the owner's pick B)",
+      "low: S7F6 repeat tests are second proofs of stateless functions (next patch, the owner's pick B)",
+      "low: S12F6 folder guard protects only two folders (next patch, the owner's pick B)",
+      "low: S16F3 only a broken safety net pauses is overstated; other pause causes remain (next patch, the owner's pick B)",
+      "low: S16F5 High tier bullet says pause, the high-tier block bullet says keep building (next patch, the owner's pick B)",
+      "low: S11F6 laneOf splits only on comma and then (next patch, the owner's pick B)",
+      "low: S1F6 kit-gate (small) blocks every prompt when its helper is missing or tiers unreadable (next patch, the owner's pick B)",
+      "low: S5F2 release record matches its tag case-insensitively (next patch, the owner's pick B)",
+      "low: S5F3 an unheld call cap only prints when unbounded though the header says it pauses (next patch, the owner's pick B)",
+      "low: S5F4 a hand edit before the last resume sets no pause (pre-existing) (next patch, the owner's pick B)",
+      "low: S10F4 process.exit(0) inside a new block passes (already a defer row) (next patch, the owner's pick B)",
+      "low: S10F5 test name says both hooks pass but asserts project hook held; ci-budget pin lost job name (next patch, the owner's pick B)",
+      "low: S2F7 sweep lock reads findings from the working tree (next patch, the owner's pick B)",
+      "low: S4F6 PR body check accepts a hidden retest name (next patch, the owner's pick B)",
+      "low: S6F2 a failed job with no failed step counts as a lost runner; PR code can produce that (next patch, the owner's pick B)",
+      "low: S6F3 subjects and paths printed with control characters (next patch, the owner's pick B)",
+      "low: S6F4 ci-audit prints job and step names raw (next patch, the owner's pick B)"
+    ],
+    "fixes": [
+      {
+        "id": "fix-S11F1",
+        "finding": "S11F1",
+        "severity": "high",
+        "text": "each score gate arm installs its own kit's user layer before it starts",
+        "commit": "9fb5ae75",
+        "test": "tests/recall-arms.test.mjs::each arm's config folder holds a kit-install.json from its own kit before the recall script starts"
+      },
+      {
+        "id": "fix-S11F4",
+        "finding": "S11F4",
+        "severity": "medium",
+        "text": "the probe login gate checks for a refresh token, not access-token expiry",
+        "commit": "63aa2ce1",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S11F5",
+        "finding": "S11F5",
+        "severity": "medium",
+        "text": "the load hold prints the retry command and says when to run it",
+        "commit": "a39912f2",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S15F2",
+        "finding": "S15F2",
+        "severity": "medium",
+        "text": "name-check comments say a retest is judged in CI and listed for the merge yes",
+        "commit": "09c6b38c",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S15F3",
+        "finding": "S15F3",
+        "severity": "medium",
+        "text": "unit-check prints retest lines as listed for the merge yes",
+        "commit": "09c6b38c",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S12F3",
+        "finding": "S12F3",
+        "severity": "medium",
+        "text": "the skill writes the file list inside each worktree, before or right after the spawn",
+        "commit": "4fdbef94",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S12F4",
+        "finding": "S12F4",
+        "severity": "medium",
+        "text": "the skill names the study job kind for an investigation and what to do while one runs",
+        "commit": "4fdbef94",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S1F1",
+        "finding": "S1F1",
+        "severity": "high",
+        "text": "call-cap answers a crash by its tier, high outside the main session",
+        "commit": "98df04b7",
+        "test": "tests/guard-hook-error.test.mjs::call-cap crashing for an agent answers by its tier high, with one hook-error row",
+        "security": true
+      },
+      {
+        "id": "fix-S1F3",
+        "finding": "S1F3",
+        "severity": "high",
+        "text": "edit-fence, clean-tree and canary load their modules inside the try, so a load crash answers by the tier",
+        "commit": "98df04b7",
+        "test": "tests/own-hook-error.test.mjs::a crash at module load in edit-fence, clean-tree and canary blocks like any other crash",
+        "security": true
+      },
+      {
+        "id": "fix-S1F4",
+        "finding": "S1F4",
+        "severity": "medium",
+        "text": "a plugin stop with hook-error.cjs missing is denied with its own row",
+        "commit": "98df04b7",
+        "test": "tests/role-hook-error.test.mjs::a plugin stop with hook-error.cjs missing is denied with its own row",
+        "security": true
+      },
+      {
+        "id": "fix-S1F5",
+        "finding": "S1F5",
+        "severity": "medium",
+        "text": "a repeated Stop crash lets the stop through and logs the row",
+        "commit": "98df04b7",
+        "test": "tests/role-hook-error.test.mjs::a Stop crash with stop_hook_active true lets the stop through and logs the row",
+        "security": true
+      },
+      {
+        "id": "fix-S1F2",
+        "finding": "S1F2",
+        "severity": "high",
+        "text": "a crash in the spawn check answers by the tier of the hold whose gate threw",
+        "commit": "56ed7abf",
+        "test": "tests/lead-state-gate.test.mjs::a crash in the spawn check refuses a builder spawn with \"hook error: lead review\", logged",
+        "security": true
+      },
+      {
+        "id": "fix-S2F5",
+        "finding": "S2F5",
+        "severity": "medium",
+        "text": "the lead-state gate also holds a SendMessage",
+        "commit": "56ed7abf",
+        "test": "tests/lead-state-gate.test.mjs::a SendMessage is held for the lead-state check like a spawn, and goes through once this session has a pass",
+        "security": true
+      },
+      {
+        "id": "fix-S2F1",
+        "finding": "S2F1",
+        "severity": "high",
+        "text": "after a sweep a spawn is refused unless it is a ticketed build spawn",
+        "commit": "56ed7abf",
+        "test": "tests/sweep-lock.test.mjs::after the sweep a spawn that is not a build role with a valid ticket is refused by default",
+        "security": true
+      },
+      {
+        "id": "fix-S2F2",
+        "finding": "S2F2",
+        "severity": "high",
+        "text": "a ticket allows one test spawn and one fix spawn",
+        "commit": "56ed7abf",
+        "test": "tests/sweep-lock.test.mjs::one ticket allows one tester spawn and one builder spawn, and no second of either",
+        "security": true
+      },
+      {
+        "id": "fix-S2F3",
+        "finding": "S2F3",
+        "severity": "medium",
+        "text": "Ticket: none names a non-ticket finding, is used once, and never counts as a ticketed tester",
+        "commit": "9878b2cc",
+        "test": "tests/sweep-lock.test.mjs::\"Ticket: none\" with no named non-ticket finding is refused, while a named medium finding goes through once",
+        "security": true
+      },
+      {
+        "id": "fix-S2F4",
+        "finding": "S2F4",
+        "severity": "medium",
+        "text": "the sweep lock holds on a detached HEAD and on a branch at or past the swept head",
+        "commit": "56ed7abf",
+        "test": "tests/sweep-lock.test.mjs::a detached HEAD or a new branch at the swept commit keeps the sweep lock",
+        "security": true
+      },
+      {
+        "id": "fix-S2F6",
+        "finding": "S2F6",
+        "severity": "medium",
+        "text": "lead-state skips and counts non-row lines in the hook log",
+        "commit": "56ed7abf",
+        "test": "tests/lead-state.test.mjs::one non-JSON line in the hook log is skipped, so write and check still pass",
+        "security": true
+      },
+      {
+        "id": "fix-S12F2",
+        "finding": "S12F2",
+        "severity": "medium",
+        "text": "one lead-state pass file per session",
+        "commit": "56ed7abf",
+        "test": "tests/lead-state-gate.test.mjs::after a passing check in this session the spawn goes through",
+        "security": true
+      },
+      {
+        "id": "fix-S9F4",
+        "finding": "S9F4",
+        "severity": "medium",
+        "text": "sweep-lock tests hold the since filter, log mode, a general spawn in a build role and an upper-case Ticket: NONE",
+        "commit": "a0fa61d2",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S4F1",
+        "finding": "S4F1",
+        "severity": "high",
+        "text": "a fresh test( block passes only with literal arguments and outside an old block",
+        "commit": "7c8af83f",
+        "test": "tests/test-integrity.test.mjs::test-integrity fails a fresh test( block whose arguments are not a string, options and a function, or that sits in an old test",
+        "security": true
+      },
+      {
+        "id": "fix-S4F4",
+        "finding": "S4F4",
+        "severity": "medium",
+        "text": "the block reader reads regex literals",
+        "commit": "7c8af83f",
+        "test": "tests/test-integrity.test.mjs::test-integrity fails a process.exit line that a regex literal with a bracket hides inside a fresh test( block",
+        "security": true
+      },
+      {
+        "id": "fix-S4F5",
+        "finding": "S4F5",
+        "severity": "medium",
+        "text": "a commit to the test runner or CI wiring is listed for the merge yes",
+        "commit": "7c8af83f",
+        "test": "tests/test-integrity.test.mjs::test-integrity lists a commit that touches scripts/test-run.mjs or .github/workflows as kind runner, and does not fail it",
+        "security": true
+      },
+      {
+        "id": "fix-S6F1",
+        "finding": "S6F1",
+        "severity": "medium",
+        "text": "retest subjects print in a code span with markup and control characters removed",
+        "commit": "7c8af83f",
+        "test": "tests/test-integrity.test.mjs::test-integrity prints each retest subject in a code span with no angle brackets, ampersands or control characters",
+        "security": true
+      },
+      {
+        "id": "fix-S4F2",
+        "finding": "S4F2",
+        "severity": "high",
+        "text": "the CI secret scan reads each commit of the branch",
+        "commit": "5fe9cd01",
+        "test": "tests/kit-push-secrets.test.mjs::the CI branch scan reads each commit of base..HEAD, so a key added and then removed is still a hit",
+        "security": true
+      },
+      {
+        "id": "fix-S4F3",
+        "finding": "S4F3",
+        "severity": "medium",
+        "text": "every scan reads a file with a NUL byte as text",
+        "commit": "5fe9cd01",
+        "test": "tests/kit-push-secrets.test.mjs::a key in a file with a NUL byte is still a hit in the push scan and the CI branch scan",
+        "security": true
+      },
+      {
+        "id": "fix-S11F2",
+        "finding": "S11F2",
+        "severity": "high",
+        "text": "a rows fault prints the locked Rows line, and restoring it clears the fault",
+        "commit": "9b816db5",
+        "test": "tests/row-lock.test.mjs::a rows fault prints the locked Rows line and the check passes once that line is restored"
+      },
+      {
+        "id": "fix-S11F3",
+        "finding": "S11F3",
+        "severity": "medium",
+        "text": "the defer command names each added row id in double quotes, never the raw Rows line",
+        "commit": "9b816db5",
+        "test": "tests/row-lock.test.mjs::a row added after --lock-rows is a fault that names the row and the closeout.mjs defer command"
+      },
+      {
+        "id": "fix-S12F1",
+        "finding": "S12F1",
+        "severity": "high",
+        "text": "a side job records its supervisor's OS start time; a reused pid reads stale and stop never kills it",
+        "commit": "87689ac1",
+        "test": "tests/side-job.test.mjs::a job whose supervisor pid now belongs to another process reads as stale: its kind restarts and stop spares the process"
+      },
+      {
+        "id": "fix-S12F5",
+        "finding": "S12F5",
+        "severity": "medium",
+        "text": "on win32 the PATH search tries PATHEXT names in order, a name with its extension first",
+        "commit": "87689ac1",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S3F1",
+        "finding": "S3F1",
+        "severity": "high",
+        "text": "gate lines of a key pair as multisets, so a decoy of the old line cannot hide a raised number",
+        "commit": "267ae82b",
+        "test": "tests/ci-fix-hook.test.mjs::an edit that keeps the old timeout line and adds a second line with a higher timeout is held for the owner",
+        "security": true
+      },
+      {
+        "id": "fix-S13F1",
+        "finding": "S13F1",
+        "severity": "medium",
+        "text": "hook, tool and record text say the owner, not a first name (267ae82b, 794394de, ec10bf31, 19a07717)",
+        "commit": "267ae82b",
+        "test": "tests/ci-fix-hook.test.mjs::an edit to the files of an item red a second time is refused and logged as an owner-ask; the other item carries on"
+      },
+      {
+        "id": "fix-S9F1",
+        "finding": "S9F1",
+        "severity": "high",
+        "text": "a test pins the kit pre-push holding a tag push and a force push with a test change (green on the code: a coverage pin)",
+        "commit": "846ee52f",
+        "test": "tests/test-lock.test.mjs::the kit's own pre-push holds a tag push and a non-fast-forward push that carry a test change, each with its hold message"
+      },
+      {
+        "id": "fix-S10F1",
+        "finding": "S10F1",
+        "severity": "medium",
+        "text": "the kit-hook retest-push tests drop their dead owner-yes controls and are renamed",
+        "commit": "6c86397d",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S9F2",
+        "finding": "S9F2",
+        "severity": "medium",
+        "text": "retested test titles say what the hooks and the outcome really do",
+        "commit": "b4f87c5a",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S10F3",
+        "finding": "S10F3",
+        "severity": "medium",
+        "text": "a test change pushed to a develop default branch is held, so the default-branch term decides",
+        "commit": "d18b74e1",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S9F3",
+        "finding": "S9F3",
+        "severity": "medium",
+        "text": "retested pause tests assert the positive APPROVED and outcome lines",
+        "commit": "ec201aa4",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S15F1",
+        "finding": "S15F1",
+        "severity": "high",
+        "text": "never held at push is scoped to the kit repo; a project's pre-push hook still holds a retest push until test-integrity ships in the project CI template",
+        "commit": "f5d14af4",
+        "test": "tests/push-text.test.mjs::both agent-teams files scope \"never held at push\" to the kit repo and say a project pre-push hook still holds a retest push"
+      },
+      {
+        "id": "fix-S16F2",
+        "finding": "S16F2",
+        "severity": "medium",
+        "text": "U25 reach is kit and U27 scopes its push claim to the kit repo",
+        "commit": "ab9e4508",
+        "test": "no test: no real input"
+      },
+      {
+        "id": "fix-S5F1",
+        "finding": "S5F1",
+        "severity": "medium",
+        "text": "a reviewer on another model writes a warning row and the sweep is left out of the clean run",
+        "commit": "4c546ce4",
+        "test": "tests/sweep-proven.test.mjs::a reviewer on another or unread model writes a warning row and leaves the sweep out of the clean run",
+        "security": true
+      }
+    ]
   }
 }

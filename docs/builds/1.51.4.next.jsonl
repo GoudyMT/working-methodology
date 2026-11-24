@@ -16,3 +16,41 @@
 {"text":"1.51.4 build: ci-fix literalsIn pairs quotes per line, so a quote in a same-line comment can hide a test-name literal; read literals on comment-masked code","at":"2026-11-24T09:58:01.806Z"}
 {"text":"1.51.4 build: U22 round 17 (review of 75707343, MEDIUM x4, past the finish line): keep the raw quoted check beside the unescaped literal set; scan literals from every quote position or on comment- and regex-masked code; unescape the skip-form name in startsOf; in ci-fix.cjs and closeout.mjs","at":"2026-11-24T09:58:01.854Z"}
 {"text":"1.51.4 build: U14: an unreadable-line pause matches its guard row by cause text (line number); a break repaired and broken again at the same line reuses the old row and its time; bind the row to the broken line hash (security review of 61720f99, MEDIUM, under the finish line)","at":"2026-11-24T09:58:01.888Z"}
+{"text":"1.51.4 sweep low S15F4: example describes old trial pauses","at":"2026-11-24T13:18:14.632Z"}
+{"text":"1.51.4 sweep low S15F5: hook-error tier list omits the security tier","at":"2026-11-24T13:18:14.681Z"}
+{"text":"1.51.4 sweep low S8F2: retest titles promise widening, reset and pause; bodies only assert absence","at":"2026-11-24T13:18:14.714Z"}
+{"text":"1.51.4 sweep low S8F3: retests replaced distinct refusal texts with a shared weaker one","at":"2026-11-24T13:18:14.746Z"}
+{"text":"1.51.4 sweep low S8F4: notEqual allow passes when the guard does not detect the act","at":"2026-11-24T13:18:14.791Z"}
+{"text":"1.51.4 sweep low S9F5: holds.json test only re-reads JSON","at":"2026-11-24T13:18:14.837Z"}
+{"text":"1.51.4 sweep low S9F6: unwritable-log fixture depends on chmod","at":"2026-11-24T13:18:14.883Z"}
+{"text":"1.51.4 sweep low S7F4: tier() duplicate-entry rule untested","at":"2026-11-24T13:18:14.931Z"}
+{"text":"1.51.4 sweep low S7F5: leadGate printed-command safety and edge branches untested","at":"2026-11-24T13:18:14.963Z"}
+{"text":"1.51.4 sweep low S7F6: repeat tests are second proofs of stateless functions","at":"2026-11-24T13:18:15.021Z"}
+{"text":"1.51.4 sweep low S12F6: folder guard protects only two folders","at":"2026-11-24T13:18:15.072Z"}
+{"text":"1.51.4 sweep low S16F3: only a broken safety net pauses is overstated; other pause causes remain","at":"2026-11-24T13:18:15.118Z"}
+{"text":"1.51.4 sweep low S16F5: High tier bullet says pause, the high-tier block bullet says keep building","at":"2026-11-24T13:18:15.168Z"}
+{"text":"1.51.4 sweep low S11F6: laneOf splits only on comma and then","at":"2026-11-24T13:18:15.202Z"}
+{"text":"1.51.4 sweep low S1F6: kit-gate (small) blocks every prompt when its helper is missing or tiers unreadable","at":"2026-11-24T13:18:15.235Z"}
+{"text":"1.51.4 sweep low S5F2: release record matches its tag case-insensitively","at":"2026-11-24T13:18:15.268Z"}
+{"text":"1.51.4 sweep low S5F3: an unheld call cap only prints when unbounded though the header says it pauses","at":"2026-11-24T13:18:15.302Z"}
+{"text":"1.51.4 sweep low S5F4: a hand edit before the last resume sets no pause (pre-existing)","at":"2026-11-24T13:18:15.337Z"}
+{"text":"1.51.4 sweep low S10F4: process.exit(0) inside a new block passes (already a defer row)","at":"2026-11-24T13:18:15.370Z"}
+{"text":"1.51.4 sweep low S10F5: test name says both hooks pass but asserts project hook held; ci-budget pin lost job name","at":"2026-11-24T13:18:15.416Z"}
+{"text":"1.51.4 sweep low S2F7: sweep lock reads findings from the working tree","at":"2026-11-24T13:18:15.462Z"}
+{"text":"1.51.4 sweep low S4F6: PR body check accepts a hidden retest name","at":"2026-11-24T13:18:15.511Z"}
+{"text":"1.51.4 sweep low S6F2: a failed job with no failed step counts as a lost runner; PR code can produce that","at":"2026-11-24T13:18:15.557Z"}
+{"text":"1.51.4 sweep low S6F3: subjects and paths printed with control characters","at":"2026-11-24T13:18:15.604Z"}
+{"text":"1.51.4 sweep low S6F4: ci-audit prints job and step names raw","at":"2026-11-24T13:18:15.650Z"}
+{"text":"1.51.4 build: renaming five sweep test titles that still say pause after R1 (outcome :593, sweep :317 and :362, budget :634 and :1459); a rename needs a retest: commit and Max yes","at":"2026-11-24T13:18:15.682Z"}
+{"text":"1.51.4 build: agent-model idsOf reads S1F1 as S1F, so closeout ids S<role>F<n> of one role collide in ticketNamed and the sweep lock; compare exact trimmed ids (automated security review of 69569c97); the lead names exact ids meanwhile","at":"2026-11-24T13:18:15.715Z"}
+{"text":"1.51.4 build: clean-tree and edit-fence read stdin only after the safe-spawn require, so a load crash on a repeated Stop misses stop_hook_active and the row's repo; read stdin first (automated review of lane B 1a0211a7, MEDIUM, after the sweep)","at":"2026-11-24T13:18:15.763Z"}
+{"text":"1.51.4 build: plugin-launch roleHooks: with hook-error.cjs missing, a repeated Stop (stop_hook_active true) is still held; let the second stop through as canary and clean-tree do (automated review of lane B 1a0211a7, MEDIUM, after the sweep)","at":"2026-11-24T13:18:15.796Z"}
+{"text":"1.51.4 build: sweep lock headAncestor reads any merge-base failure as not an ancestor, so a swept head git no longer knows (after a rebase) lifts the lock; add approve.mjs's samePatches rule and treat only status 1 as no (automated review of lane A acf11ac0, MEDIUM, after the sweep)","at":"2026-11-24T13:18:15.839Z"}
+{"text":"1.51.4 build: ci-fix.cjs sweepOf matches the branch name only, unlike agent-model's sweep lock (a null branch or an ancestor head counts); share one sweep lookup (automated review of lane A acf11ac0, MEDIUM, after the sweep)","at":"2026-11-24T13:18:15.872Z"}
+{"text":"1.51.4 build: test-integrity fresh-block shape check is regex based (FN_LIT, OBJ_LIT, REGEX_BEFORE, hunk header reads): a crafted argument, object, slash or header can pass; use a real JS parser and read file status from diff-tree --raw -z (automated review of lane D 5765e954, 4 HIGH, after the sweep). Limit: a new test body can always change shared state for later tests, so the check stops slips, not a crafted test","at":"2026-11-24T13:18:15.917Z"}
+{"text":"1.51.4 build: test-integrity OBJ_LIT accepts an options object whose values run code at load time; accept literal values only (automated review of 502769ae, MEDIUM, after the sweep; same family as the regex-parser defer). SendMessage skipping the sweep lock is the lane D E1 row already listed","at":"2026-11-24T13:18:15.961Z"}
+{"text":"1.51.4 build: plan-check rows fault with a lost or mismatched <plan>.rows.txt sidecar prints restore-from-git and no defer lines; that path has no test (lane I builder doubt, after the sweep, low)","at":"2026-11-24T13:18:16.010Z"}
+{"text":"1.51.4 build: closeout.mjs gateProblems multiset pairing (S3F1 closeout half) has no test: removing its new-line hold keeps closeout.test.mjs green (lane C builder break check, after the sweep, medium)","at":"2026-11-24T13:18:16.042Z"}
+{"text":"1.51.4 build: ci-fix-hook red-twice test matches /the owner/ on its last clause only, so the first clause can name anyone; pin both clauses (lane C builder doubt, after the sweep, low)","at":"2026-11-24T13:18:16.075Z"}
+{"text":"1.51.4 build: test fixture strings and comments in tests still use the owner's first name (agent-model, closeout, kit-sweep tests); rename in a retest (S13F1 remainder, low)","at":"2026-11-24T13:18:16.109Z"}
+{"text":"1.51.4 build: S9F1's tag and force test partly duplicates test-integrity.test.mjs:136 legs; cut one at the next test-value pass (lane E tester, low)","at":"2026-11-24T13:18:16.142Z"}

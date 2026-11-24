@@ -20,8 +20,8 @@ A hook that crashes answers by its tier, the lead works from a checked state rec
 
 ### Changed
 - Only a broken safety net pauses a sweep: a ceiling that did not hold, a meter that let calls through or an unheld call cap; the other trips log a warning, and no trial review is due.
-- A feature-branch push no longer asks for a test change; CI's `test-integrity` check reads every commit against its parent and fails a weakened test outside a `retest:` commit.
-- The team rule and skill say a feature-branch push never asks and a retest commit is judged in CI, while main, tags, force and deletes keep the owner's yes.
+- The kit repo's feature-branch push no longer asks for a test change; CI's `test-integrity` check fails a weakened test outside a `retest:` commit. A project's pre-push hook still holds one for now.
+- The team rule and skill say a kit repo feature-branch push never asks and CI judges a retest commit; a project's pre-push hook still holds a test change. Main, tags, force and deletes keep the owner's yes.
 - The team build skill and its templates carry the new steps: lock the Rows line, run the state check, follow a hook error by tier, clear a red through ci-fix, start side jobs apart.
 
 ### Fixed
