@@ -8,8 +8,16 @@
 // A project with no phrase line has the check off. A hook that throws answers by its tier (hook-error.cjs).
 const fs = require('fs');
 const path = require('path');
-const safeSpawn = require('./safe-spawn.cjs');
-const { recordCounts } = require('./record-counts.cjs');
+// The kit modules load on the first run() (K375 S1F3), which every entry calls inside its try: a load crash answers by the tier.
+let safeSpawn = null;
+let recordCounts = null;
+function load() {
+	if (safeSpawn) return;
+	const spawnKit = require('./safe-spawn.cjs');
+	const counts = require('./record-counts.cjs');
+	recordCounts = counts.recordCounts;
+	safeSpawn = spawnKit;
+}
 
 // git from node's own folder, never the project.
 const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
@@ -107,6 +115,7 @@ const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer', 'tester', 
 
 // One event's answer: { out } refuses a tool call (guard.cjs calls it), { code: 2 } holds a stop (Claude Code runs this file).
 function run(input) {
+	load();
 	const cwd = input.cwd || process.cwd();
 	const found = findPhrase(cwd);
 	if (!found) return {};
@@ -202,6 +211,8 @@ if (require.main === module) {
 	try {
 		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 		const pre = input.hook_event_name === 'PreToolUse';
+		// A repeated stop (stop_hook_active) whose check crashes lets the stop through; the row is still written (K375 S1F5).
+		const stopRetry = !pre && input.stop_hook_active === true;
 		// The hand-back gate follows its hold's mode; one deny carries both reasons.
 		let gate = null;
 		if (pre && input.tool_name === 'SubagentHandback') { try { gate = require('./handoff-gate.cjs').run(input); } catch (e) { gate = fail('handoff-gate', e, input.cwd); } }
@@ -212,7 +223,7 @@ if (require.main === module) {
 		if (denies.length) process.stdout.write(JSON.stringify({ hookSpecificOutput: { ...denies[0].hookSpecificOutput, permissionDecisionReason: denies.map((o) => o.hookSpecificOutput.permissionDecisionReason).join(' ') } }));
 		if (r.code === 2) process.stderr.write(CLOSE_OUT + '\n');
 		process.exitCode = r.code || 0;
-		if (held && !pre) { process.stderr.write(`${held.hookSpecificOutput.permissionDecisionReason}\n`); process.exitCode = 2; }
+		if (held && !pre && !stopRetry) { process.stderr.write(`${held.hookSpecificOutput.permissionDecisionReason}\n`); process.exitCode = 2; }
 	} catch (e) {
 		const held = fail('canary', e);
 		if (held) { process.stderr.write(`${held.hookSpecificOutput.permissionDecisionReason}\n`); process.exitCode = 2; }

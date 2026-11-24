@@ -346,8 +346,18 @@ function logOpen(input, e) {
 		if (r.status === 0) fs.appendFileSync(path.join(r.stdout.trim(), 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'call-cap', agent: String(input.agent_id || ''), cause: String((e && e.code) || (e && e.message) || e).slice(0, 120) })}\n`);
 	} catch { /* nothing more to do */ }
 }
-// Anything unexpected lets the call through.
-const safeCheck = (input) => { try { return check(input) || null; } catch (e) { logOpen(input || {}, e); return null; } };
+// Anything unexpected lets the call through, except a crash on an agent's call: that one answers by the hook's tier
+// (high, so a deny) through hook-error.cjs (K375 S1F1). The main session's context watch is small, so its crash passes.
+// With the helper missing the agent's call is refused with its own row, as guard.cjs refuses a failed hook then.
+const safeCheck = (input) => {
+	try { return check(input) || null; } catch (e) {
+		if (!(input && input.agent_id)) { logOpen(input || {}, e); return null; }
+		try { return require('./hook-error.cjs').onError('call-cap', e, String(input.cwd || process.cwd())); } catch (helperError) {
+			logOpen(input, helperError);
+			return deny('hook error: lead review: hook-error.cjs is missing');
+		}
+	}
+};
 if (require.main === module) {
 	let out = null;
 	try { out = safeCheck(JSON.parse(fs.readFileSync(0, 'utf8') || '{}')); } catch { /* lets it through */ }

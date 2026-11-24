@@ -138,9 +138,36 @@ const roleOf = (input) => { const m = /^kit:([\w-]+)$/.exec(String(input.agent_t
  * them from the role file. Returns a PreToolUse deny, { stop: reason } for a held stop, or null.
  */
 // A role hook's crash or timeout is that hook's error: hook-error.cjs answers by the hook's tier (null for small, a deny or a
-// held stop for high). A missing helper throws here, as the rest of the launcher does.
+// held stop for high). A helper that will not load holds the call with its own row, as guard.cjs hookFailed does (S1F4).
 function hookError(root, id, error, where) {
-	return require(path.join(root, 'kit-hooks', 'hook-error.cjs')).onError(id, error, where);
+	let helper = null;
+	try { helper = require(path.join(root, 'kit-hooks', 'hook-error.cjs')); } catch (e) {
+		const cause = String((e && e.message) || e).split('\n')[0].slice(0, 120);
+		try {
+			const common = commonDirFs(where);
+			if (common) fs.appendFileSync(path.join(common, 'kit-guard-open.log'), `${JSON.stringify({ kind: 'hook-error', id: 'hook-error', hook: `${id}.cjs`, error: `hook-error.cjs did not load (${cause})`, at: new Date().toISOString() })}\n`);
+		} catch { /* the refusal stands without its row */ }
+		return deny('hook error: lead review: hook-error.cjs is missing');
+	}
+	return helper.onError(id, error, where);
+}
+
+// The git common dir of `where`, from fs reads only (no child process, as hook-error.cjs reads it); null when `where` is in no repo.
+function commonDirFs(from) {
+	let dir = path.resolve(String(from || process.cwd()));
+	for (;;) {
+		const dotGit = path.join(dir, '.git');
+		if (fs.existsSync(dotGit)) {
+			if (fs.statSync(dotGit).isDirectory()) return dotGit;
+			const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+			if (!m) return null;
+			const gitdir = path.resolve(dir, m[1].trim());
+			try { return path.resolve(gitdir, fs.readFileSync(path.join(gitdir, 'commondir'), 'utf8').trim()); } catch { return gitdir; }
+		}
+		const up = path.dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
 }
 
 function roleHooks(input, event, root = ROOT) {

@@ -6,13 +6,17 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const safeSpawn = require('./safe-spawn.cjs');
+// Loaded inside the try at the bottom (K375 S1F3): a load crash answers by the tier, not as a bare exit 1.
+let safeSpawn = null;
 
 // K375 (U10): a crash in this hook obeys its tier. hook-error.cjs decides (a deny under high, which a stop blocks too); with
 // the helper missing the call is refused and one row is written, found with fs reads only (no child process). `where` is
 // the call's cwd, set once the input is read; the process cwd stands in for an unread input.
 const HOOK = 'clean-tree';
 let where = process.cwd();
+// A stop that is already a retry (stop_hook_active) lets the stop through even when this hook crashes (K375 S1F5): the row
+// is still written, and a second block on every retry would trap the agent.
+let stopRetry = false;
 
 // The git common dir of `where`, from fs reads only: a folder's .git is the common dir; a "gitdir:" file names a worktree's
 // folder, whose commondir file names the common one. Null when `where` is in no repo.
@@ -82,6 +86,7 @@ function trees(cwd) {
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 	where = input.cwd || where;
+	stopRetry = input.hook_event_name !== 'PreToolUse' && input.stop_hook_active === true;
 	const cwd = input.cwd || process.cwd();
 	// Keyed by agent too: checkers started by one session share its session_id.
 	const key = `${input.session_id || 'none'}-${input.agent_id || 'main'}`.replace(/[^\w-]/g, '');
@@ -114,10 +119,11 @@ function main() {
 
 // A crash obeys the tier: under high a deny is exit 2 with its reason on stderr, a stop blocked once as the check does.
 try {
+	safeSpawn = require('./safe-spawn.cjs');
 	process.exitCode = main();
 } catch (error) {
 	const reason = failed(error);
-	if (reason) {
+	if (reason && !stopRetry) {
 		process.stderr.write(`${reason}\n`);
 		process.exitCode = 2;
 	} else {

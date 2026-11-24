@@ -6,8 +6,11 @@
 // and the checker and the lead's integration still review the unit.
 const fs = require('fs');
 const path = require('path');
-const safeSpawn = require('./safe-spawn.cjs');
-const { isTestFile, tests, whyFault } = require('./why-rule.cjs');
+// The two kit modules load inside the try at the bottom (K375 S1F3): a load crash answers by the tier, not as a bare exit 1.
+let safeSpawn = null;
+let isTestFile = null;
+let tests = null;
+let whyFault = null;
 
 // K375 (U10): a crash in this hook obeys its tier. hook-error.cjs decides (a deny under high); with the helper missing the
 // call is refused and one row is written, found with fs reads only (no child process, so a stubbed or planted git cannot
@@ -163,6 +166,8 @@ function main() {
 
 // A crash obeys the tier: under high a deny is exit 2 with its reason on stderr, so an unchecked edit never gets through.
 try {
+	({ isTestFile, tests, whyFault } = require('./why-rule.cjs'));
+	safeSpawn = require('./safe-spawn.cjs');
 	process.exitCode = main();
 } catch (error) {
 	const reason = failed(error);
