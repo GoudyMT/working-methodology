@@ -115,7 +115,7 @@ if (process.argv[2] === '--push') {
 			if (seen.has(c)) continue;
 			seen.add(c);
 			// Each commit against its first parent (a merge too), or against nothing for a first commit.
-			const patch = git('diff-tree', '-p', '-U0', '--no-color', '--root', '-m', '--first-parent', c);
+			const patch = git('diff-tree', '-p', '-U0', '--no-color', '--text', '--root', '-m', '--first-parent', c);
 			const names = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-m', '--first-parent', '--diff-filter=ACR', c).split('\n').filter(Boolean);
 			added += scan(patch, names, hits, ` (commit ${c.slice(0, 9)})`);
 			scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
@@ -126,7 +126,7 @@ if (process.argv[2] === '--push') {
 	// The lines and file names this commit stages, read as the push scan reads a commit. Only a kind and a file are printed.
 	const names = git('diff', '--cached', '--name-only', '--diff-filter=ACR').split('\n').filter(Boolean);
 	const hits = [];
-	const added = scan(git('diff', '--cached', '-U0', '--no-color'), names, hits, ' (staged)');
+	const added = scan(git('diff', '--cached', '-U0', '--no-color', '--text'), names, hits, ' (staged)');
 	report(hits, added);
 } else {
 	// The base reaches git only as a commit it resolved, so a value that reads as an option can never act as one.
@@ -137,10 +137,16 @@ if (process.argv[2] === '--push') {
 		console.log(`secret scan: base "${given}" is not a commit`);
 		process.exit(2);
 	}
-	// Added, copied and renamed: a file renamed to a secret name adds no line, so only the name check sees it.
-	const names = git('diff', '--name-only', '--diff-filter=ACR', `${base}...HEAD`).split('\n').filter(Boolean);
+	// Each commit of the branch against its first parent, as the push path reads it: a key added in one commit and removed
+	// in the next is in the first commit's lines, so the net diff's clean result cannot hide it.
 	const hits = [];
-	const added = scan(git('diff', `${base}...HEAD`, '-U0', '--no-color'), names, hits, '');
-	for (const c of git('rev-list', `${base}..HEAD`).split('\n').filter(Boolean)) scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
+	let added = 0;
+	for (const c of git('rev-list', '--reverse', `${base}..HEAD`).split('\n').filter(Boolean)) {
+		const patch = git('diff-tree', '-p', '-U0', '--no-color', '--text', '--root', '-m', '--first-parent', c);
+		// Added, copied and renamed: a file renamed to a secret name adds no line, so only the name check sees it.
+		const names = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-m', '--first-parent', '--diff-filter=ACR', c).split('\n').filter(Boolean);
+		added += scan(patch, names, hits, ` (commit ${c.slice(0, 9)})`);
+		scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
+	}
 	report(hits, added);
 }
