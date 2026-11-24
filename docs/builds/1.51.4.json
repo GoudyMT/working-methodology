@@ -104,7 +104,6 @@
         "tests/lead-state-gate.test.mjs::after a passing check in this session the spawn goes through",
         "tests/lead-state-gate.test.mjs::a stale VERDICT keeps the refusal",
         "tests/lead-state-gate.test.mjs::with no record nothing changes",
-        "tests/lead-state-gate.test.mjs::holds.json sets the lead-state hold to enforce with tier high (owner 03:16Z), and a test fails if it reads otherwise",
         "tests/lead-state-gate.test.mjs::bypass: a Task spawn and a general agent are held the same",
         "tests/lead-state-gate.test.mjs::repeat: the same spawn twice gives the same verdict",
         "tests/lead-state-gate.test.mjs::fail-closed: an unreadable record or a hook error blocks with \"hook error: lead review\", logged",
@@ -198,7 +197,6 @@
         "tests/recall-arms.test.mjs::three load samples with CPU over 40% or GPU at 50% or more hold the run, exit 3, naming the reading",
         "tests/recall-arms.test.mjs::under the line, the candidate and release arms start side by side, each with its own config folder",
         "tests/recall-arms.test.mjs::each arm's folder gets a fresh copy of the probe login before it starts, and the source is never written",
-        "tests/recall-arms.test.mjs::a missing or expired probe login stops before any arm starts, naming the /login step",
         "tests/recall-arms.test.mjs::arm runs are named cand-* and base-* with When: times on the same day, as recall-score reads them",
         "tests/recall-arms.test.mjs::one arm failing stops the other and reports both"
       ]
@@ -337,7 +335,6 @@
       "after": "Refused; the find goes to the next list",
       "tests": [
         "tests/sweep-lock.test.mjs::with a sweep recorded for the branch, a reviewer, checker or review-pass spawn is refused, printing the defer command",
-        "tests/sweep-lock.test.mjs::a general agent briefed to review or check is refused the same way",
         "tests/sweep-lock.test.mjs::a tester or builder whose brief names an unused listed finding goes through; one with no finding, or a used one, is refused",
         "tests/sweep-lock.test.mjs::every refusal writes one log line (role, unit, reason)",
         "tests/sweep-lock.test.mjs::with no sweep recorded nothing changes",
@@ -416,7 +413,6 @@
       "tests": [
         "tests/ci-fix-hook.test.mjs::an edit is refused while a failing item has no diagnosis, and once all are diagnosed only a named file is taken",
         "tests/ci-fix-hook.test.mjs::with a sweep recorded, an edit adding a test( or // planted: tag is refused and a hand edit to the build record is refused",
-        "tests/ci-fix-hook.test.mjs::a cap raised, a floor lowered or a timeout raised in a gate file is held for the owner; the loosening-free edits go through",
         "tests/ci-fix-hook.test.mjs::an edit to the files of an item red a second time is refused and logged as an owner-ask; the other item carries on",
         "tests/ci-fix-hook.test.mjs::Bash write forms (sed -i, > and >>, tee, git apply, git checkout --, node -e writeFile) get the same refusal as an edit",
         "tests/ci-fix-hook.test.mjs::after the sweep the lead's source or test edit is refused unless a diagnosis names the file",
@@ -543,7 +539,7 @@
   ],
   "verification": [
     "Each unit's new tests failed on the code before them and pass now.",
-    "test-integrity passes the whole branch and lists 26 retest commits for the merge yes.",
+    "test-integrity passes the whole branch and lists 33 retest commits for the merge yes.",
     "CI runs the full suite on this branch; no full-suite run was made on the PC."
   ],
   "decisions": [
@@ -645,7 +641,8 @@
         "severity": "medium",
         "text": "the probe login gate checks for a refresh token, not access-token expiry",
         "commit": "63aa2ce1",
-        "test": "no test: no real input"
+        "test": "tests/recall-arms.test.mjs::a missing probe login or one with no refresh token stops before any arm starts, naming the /login step",
+        "reason": "the build unit U11 test, renamed when the login gate moved to the refresh token"
       },
       {
         "id": "fix-S11F5",
@@ -801,7 +798,8 @@
         "severity": "medium",
         "text": "sweep-lock tests hold the since filter, log mode, a general spawn in a build role and an upper-case Ticket: NONE",
         "commit": "a0fa61d2",
-        "test": "no test: no real input"
+        "test": "tests/sweep-lock.test.mjs::a general agent briefed to review or check is refused the same way, and any other general agent is refused by default",
+        "reason": "the build unit U20 test, renamed when it gained the default refusal"
       },
       {
         "id": "fix-S4F1",
@@ -871,7 +869,8 @@
         "severity": "medium",
         "text": "the defer command names each added row id in double quotes, never the raw Rows line",
         "commit": "9b816db5",
-        "test": "tests/row-lock.test.mjs::a row added after --lock-rows is a fault that names the row and the closeout.mjs defer command"
+        "test": "tests/row-lock.test.mjs::a row added after --lock-rows is a fault that names the row and the closeout.mjs defer command",
+        "reason": "the build unit U2 defer test, retested to name each added row id"
       },
       {
         "id": "fix-S12F1",
@@ -904,7 +903,8 @@
         "severity": "medium",
         "text": "hook, tool and record text say the owner, not a first name (267ae82b, 794394de, ec10bf31, 19a07717)",
         "commit": "267ae82b",
-        "test": "tests/ci-fix-hook.test.mjs::an edit to the files of an item red a second time is refused and logged as an owner-ask; the other item carries on"
+        "test": "tests/ci-fix-hook.test.mjs::a cap raised, a floor lowered or a timeout raised in a gate file is held for the owner; the loosening-free edits go through",
+        "reason": "the test was renamed to say the owner; its body is the build unit U22 test"
       },
       {
         "id": "fix-S9F1",
@@ -970,6 +970,15 @@
         "commit": "4c546ce4",
         "test": "tests/sweep-proven.test.mjs::a reviewer on another or unread model writes a warning row and leaves the sweep out of the clean run",
         "security": true
+      },
+      {
+        "id": "fix-S13F1b",
+        "finding": "S13F1",
+        "severity": "medium",
+        "text": "the lead-state hold test title names the owner, not a first name",
+        "commit": "ec10bf31",
+        "test": "tests/lead-state-gate.test.mjs::holds.json sets the lead-state hold to enforce with tier high (owner 03:16Z), and a test fails if it reads otherwise",
+        "reason": "the test was renamed to say the owner; its body is the build unit U6 test"
       }
     ]
   }
