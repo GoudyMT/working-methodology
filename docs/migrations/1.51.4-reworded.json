@@ -1,0 +1,9 @@
+{
+  "lines": [
+    {
+      "before": "**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.",
+      "after": "**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names; no verdict line, or a check that can't run, means the full reading, without asking (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.",
+      "why": "A session whose start check cannot run stopped to ask instead of reading the plan files. The start line now says no verdict line, or a check that cannot run, means the full reading, without asking."
+    }
+  ]
+}
