@@ -568,6 +568,7 @@ function sweepGate(cwd, input, type, prompt, pending) {
 		const session = String(input.session_id || '');
 		let why = null;
 		let ticket = null;
+		let noTicket = false;
 		if (role === null) {
 			why = `a ${type || 'general'} spawn is refused after the sweep: only a tester, builder, writer or implementer with a Ticket: line naming a listed finding may start`;
 		} else if (role.kind === 'review') {
@@ -578,6 +579,7 @@ function sweepGate(cwd, input, type, prompt, pending) {
 			if (named === null) {
 				why = `a ${role.role} spawn after the sweep needs a Ticket: line naming an unused listed finding`;
 			} else if (/^none\b/i.test(named)) {
+				noTicket = true;
 				ticket = idsOf(named.replace(/^none\b/i, ''))[0] || null;
 				const finding = ticket === null ? undefined : findings.find((f) => canonId(f.id) === ticket);
 				if (finding === undefined) why = 'Ticket: none needs the id of a listed finding that is not a ticket, such as Ticket: none F2';
@@ -589,7 +591,8 @@ function sweepGate(cwd, input, type, prompt, pending) {
 			if (why === null && usedTickets(common, sweep.since).has(`${ticket}|${role.role}`)) why = `finding ${ticket} is already named by a ${role.role} spawn after the sweep`;
 		}
 		if (why === null) {
-			pending.row = () => logRow(cwd, { type, role: role.role, unit, session, ticket }, hold);
+			// A Ticket: none spawn is marked, so ci-fix.cjs never reads it as a ticketed tester that may add a test.
+			pending.row = () => logRow(cwd, { type, role: role.role, unit, session, ticket, ...(noTicket ? { noTicket: true } : {}) }, hold);
 			return null;
 		}
 		logRow(cwd, { type, role: role === null ? null : role.role, unit, session, reason: why }, hold);

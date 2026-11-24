@@ -278,7 +278,7 @@ function ticketed(common, input, since) {
 	if (text === null) return false;
 	return text.split('\n').filter((l) => l.trim() !== '').map((l) => JSON.parse(l))
 		.some((r) => r && r.session === input.session_id && typeof r.ticket === 'string' && r.ticket !== '' && r.ticket !== 'none'
-			&& r.role === 'tester' && r.reason === undefined && Date.parse(String(r.at)) >= since);
+			&& r.noTicket !== true && r.role === 'tester' && r.reason === undefined && Date.parse(String(r.at)) >= since);
 }
 
 // The repo state of one repo for this call, read once.
