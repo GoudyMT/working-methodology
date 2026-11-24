@@ -248,15 +248,29 @@ test('a tag, PR, flag or repo that is not plain is refused before any call', () 
 });
 
 // K66: a fake clock and a fake GitHub that answers each poll in turn.
+// A run-list call moves to the next answer; a job read (run view --json jobs) answers from the step the last run-list
+// call gave, with no failure while the run is open, and does not move the fake on.
 function polls(answers) {
 	let i = 0;
 	let now = 0;
+	let cur = answers[0];
 	const lines = [];
+	const jobsOf = (id) => {
+		const r = cur.find((x) => String(x.databaseId) === id);
+		const done = Boolean(r) && r.status === 'completed';
+		return { jobs: r ? [{ databaseId: 1, name: r.name, status: done ? 'completed' : 'in_progress', conclusion: done ? r.conclusion : '' }] : [] };
+	};
 	return {
 		lines,
 		at: () => now,
 		deps: {
-			gh: () => ({ status: 0, stdout: JSON.stringify(answers[Math.min(i++, answers.length - 1)]) }),
+			gh: (args) => {
+				if (args[0] === 'run' && args[1] === 'view') {
+					return { status: 0, stdout: args.includes('--json') ? JSON.stringify(jobsOf(String(args[2]))) : '' };
+				}
+				cur = answers[Math.min(i++, answers.length - 1)];
+				return { status: 0, stdout: JSON.stringify(cur) };
+			},
 			sleep: (ms) => { now += ms; },
 			now: () => now,
 			log: (l) => lines.push(`${now} ${l}`),
