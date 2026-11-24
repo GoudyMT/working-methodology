@@ -31,9 +31,11 @@ const unit = (id, tests, files = '`src/a.mjs`', title = 'K368: the plan gives ea
 	Id: id, Title: title, Files: files, Tests: tests.join('<br>'),
 	Done: 'x', Risk: 'low', Category: 'logic', Tester: '', Runs: 'parallel', Built: 'builder',
 });
-// A plan text: a title, the Units table with the given rows, and a Collision list.
+// A plan text: a title, a Lanes table that puts every unit in lane A (a brief with no lane is a fault), the Units table
+// with the given rows, and a Collision list.
 const planText = (rows) => [
-	'# Batch plan - x', '', '## Units', '',
+	'# Batch plan - x', '', '## Lanes', '', '| Lane | Units, in order |', '|---|---|', `| A | ${rows.map((r) => r.Id).join(', ')} |`, '',
+	'## Units', '',
 	`| ${COLS.map((c) => c.head).join(' | ')} |`,
 	`|${COLS.map(() => '---').join('|')}|`,
 	...rows.map((r) => `| ${COLS.map((c) => r[c.key]).join(' | ')} |`),
@@ -146,6 +148,7 @@ test('plan-check --brief prints Plan, Unit id, Role, Worktree and Lane lines and
 		assert.match(field(res.stdout, 'Role') ?? '', new RegExp(role), `${role}: a Role: line:\n${res.stdout}`);
 		assert.match(field(res.stdout, 'Worktree') ?? '', /\S/, `${role}: a Worktree: line:\n${res.stdout}`);
 		assert.match(field(res.stdout, 'Lane') ?? '', /\S/, `${role}: a Lane: line:\n${res.stdout}`);
+		assert.equal((field(res.stdout, 'Lane') ?? '').trim().replace(/[*_`]/g, ''), 'A', `${role}: the Lane: line names the fixture's lane:\n${res.stdout}`);
 		const lock = res.stdout.match(/node\s+(\S*unit-lock\.mjs)/);
 		assert.ok(lock, `${role}: the brief names unit-lock.mjs:\n${res.stdout}`);
 		assert.equal(path.resolve(lock[1]), path.join(path.dirname(PLAN_CHECK), 'unit-lock.mjs'), `${role}: the lock path is built from plan-check's own folder, not repo-relative:\n${res.stdout}`);
