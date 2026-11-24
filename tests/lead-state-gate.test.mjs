@@ -53,7 +53,7 @@ function fixture({ withRecord = true } = {}) {
 	git(root, ['add', '-A']);
 	git(root, ['commit', '-q', '-m', 'init']);
 	const common = git(root, ['rev-parse', '--path-format=absolute', '--git-common-dir']);
-	const fx = { root, dir, plan, flow: path.join(dir, 'flow.jsonl'), record: path.join(dir, 'lead-state.json'), common, pass: path.join(common, PASS_FILE), transcript: path.join(root, 't.jsonl'), open: path.join(common, 'kit-guard-open.log') };
+	const fx = { root, dir, plan, flow: path.join(dir, 'flow.jsonl'), record: path.join(dir, 'lead-state.json'), common, pass: (session = 's1') => path.join(common, PASS_FILE, session.replace(/[^\w.-]/g, '_')), transcript: path.join(root, 't.jsonl'), open: path.join(common, 'kit-guard-open.log') };
 	fs.writeFileSync(fx.transcript, jsonl([{ type: 'user', timestamp: new Date().toISOString(), message: { role: 'user', content: 'go' } }]));
 	if (withRecord) {
 		const w = spawnSync(process.execPath, [TOOL, 'write', plan], { cwd: root, encoding: 'utf8' });
@@ -67,7 +67,7 @@ function check(fx, session) {
 	const r = spawnSync(process.execPath, [TOOL, 'check', fx.plan, '--session', session], { cwd: fx.root, encoding: 'utf8' });
 	return { code: r.status, out: `${r.stdout || ''}${r.stderr || ''}` };
 }
-const readPass = (fx) => JSON.parse(fs.readFileSync(fx.pass, 'utf8'));
+const readPass = (fx, session = 's1') => JSON.parse(fs.readFileSync(fx.pass(session), 'utf8'));
 
 // Runs the real agent-model.cjs once per input, in order, from the repo; one decision per input, null when it lets the call through.
 function hook(fx, inputs, hookDir = HOOK_DIR) {
@@ -164,7 +164,7 @@ test('a stale VERDICT keeps the refusal', () => {
 	const c = check(fx, 's1');
 	assert.match(c.out, /VERDICT: stale/, `the record is stale: ${c.out}`);
 	assert.notEqual(c.code, 0);
-	assert.equal(fs.existsSync(fx.pass), false, 'a check that is not ok writes no pass');
+	assert.equal(fs.existsSync(fx.pass('s1')), false, 'a check that is not ok writes no pass');
 	const [spawn] = hook(fx, [agent('s1')]);
 	assert.ok(denied(spawn), `the refusal stays, got ${JSON.stringify(spawn)}`);
 });
@@ -176,7 +176,7 @@ test('with no record nothing changes', () => {
 	assert.equal(agentSpawn, null, `no record, no hold, got ${JSON.stringify(agentSpawn)}`);
 	assert.equal(taskSpawn, null);
 	assert.equal(readRows(fx.open).length, 0, 'no log row');
-	assert.equal(fs.existsSync(fx.pass), false);
+	assert.equal(fs.existsSync(fx.pass('s1')), false);
 	// Control: the same repo once it holds a record refuses the same spawn, so the silence above is the missing record's doing.
 	const w = spawnSync(process.execPath, [TOOL, 'write', fx.plan], { cwd: fx.root, encoding: 'utf8' });
 	assert.equal(w.status, 0, `lead-state write: ${w.stdout}${w.stderr}`);
@@ -249,7 +249,7 @@ test('a compact after the last pass drops this session\'s pass, so the next spaw
 	const [after] = hook(fx, [agent('s1')]);
 	assert.ok(denied(after), `a compact after the pass refuses the spawn, got ${JSON.stringify(after)}`);
 	assert.match(reason(after), CHECK_CMD('s1'));
-	assert.equal(fs.existsSync(fx.pass), false, 'the pass is dropped');
+	assert.equal(fs.existsSync(fx.pass('s1')), false, 'the pass is dropped');
 	await later();
 	assert.equal(check(fx, 's1').code, 0);
 	const [fresh] = hook(fx, [agent('s1')]);
