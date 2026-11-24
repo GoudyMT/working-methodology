@@ -173,7 +173,11 @@ function start(args) {
 		const busy = jobsOf(common).find((j) => j.kind === args.kind && stateOf(j).state === 'running');
 		if (busy) return fail(`side-job start: a ${args.kind} job is already running: ${busy.id}`);
 		let madeFolder = null;
-		if (!folder) folder = madeFolder = fs.mkdtempSync(path.join(os.tmpdir(), 'side-job-'));
+		// A random name and an exclusive mkdir: only kit-temp.cjs calls mkdtemp, and a job's folder outlives any test run root.
+		if (!folder) {
+			folder = madeFolder = path.join(os.tmpdir(), `side-job-${crypto.randomBytes(6).toString('hex')}`);
+			fs.mkdirSync(folder);
+		}
 		const refuse = (msg) => {
 			if (madeFolder) { try { fs.rmdirSync(madeFolder); } catch { /* not empty or gone */ } }
 			return fail(msg);

@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { randomBytes } from 'node:crypto';
 import { install, releaseState } from './kit.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -235,7 +236,9 @@ async function main(argv) {
   const n = nextNumber(args.label, dirs);
   const kitProbes = path.join(os.homedir(), 'kit-probes');
   fs.mkdirSync(kitProbes, { recursive: true });
-  const root = fs.mkdtempSync(path.join(kitProbes, 'arms-'));
+  // A random name and an exclusive mkdir (only kit-temp.cjs calls mkdtemp); the arms' folders sit under kit-probes.
+  const root = path.join(kitProbes, `arms-${randomBytes(6).toString('hex')}`);
+  fs.mkdirSync(root);
   const arms = [
     { name: `cand-${args.label}-${n}`, script: candScript, kit: KIT, configDir: path.join(root, 'cand') },
     { name: `base-${args.label}-${n}`, script: baseScript, kit: args.release, configDir: path.join(root, 'base') },
