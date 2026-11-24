@@ -5,7 +5,7 @@
 //   project guards (this folder): owner-proof, task-gate, guard-outward, guard-delete. One missing or broken refuses
 //     the call, with the fix: they hold the owner's acts, so they fail closed.
 //   user-layer checks (the Claude folder's kit-hooks): call-cap, canary, sweep-guard, agent-model, test-scope, grounding. One missing is
-//     skipped: they are slip-catchers, and a broken user layer must never stop the session (teardown, "brick mode").
+//     skipped (teardown, "brick mode"); one that throws answers by its tier through hook-error.cjs (K375).
 // The answers are merged the way Claude Code merges several hooks: a refusal wins, then an ask, then an allow (only an
 // owner's pop-up yes allows); the added context of each is kept.
 // Usage: the launcher in the Claude config folder (kit-tools/kit-launch.cjs, V3 in 1.25.1) loads this file after it has
@@ -31,8 +31,8 @@ const PROJECT = [
 	['guard-delete.cjs', (t) => SHELLS.includes(t)],
 ];
 const USER = [
-	// Only an agent is held to a call cap; the main session pays nothing for it.
-	['call-cap.cjs', (t, input) => Boolean(input.agent_id)],
+	// An agent is held to its call cap; the main session's own calls run the context watch (K374 S5), which only writes a note.
+	['call-cap.cjs', () => true],
 	['canary.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	['sweep-guard.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	// E36 (build 24): follows its hold's mode (log or enforce); under log, a subagent whose model differs from its role file is written to the repo's log.
@@ -40,6 +40,9 @@ const USER = [
 	['agent-model.cjs', (t) => AGENTS.includes(t) || t === 'SendMessage'],
 	// K150 (build 20): a local test run reaches only the tests the branch changed, unless the owner's pop-up says yes.
 	['test-scope.cjs', (t) => SHELLS.includes(t)],
+	// K399 (U22): a red CI run holds the edits to its failing items' files, the test-adding and gate-loosening edits, and the
+	// lead's source edits after a sweep; a Bash write form gets the same rules.
+	['ci-fix.cjs', (t) => WRITES.includes(t) || SHELLS.includes(t)],
 	// E18 (build 20): a choice pop-up opens with a plain overview, never item codes alone.
 	['grounding.cjs', (t) => t === 'AskUserQuestion'],
 ];
@@ -51,6 +54,63 @@ const refuse = (reason) => ({ hookSpecificOutput: { hookEventName: 'PreToolUse',
 function userHooks() {
 	const home = INSTALLED_HOME.startsWith('{' + '{') ? process.env.KIT_CLAUDE_HOME || process.env.CLAUDE_CONFIG_DIR || path.join(require('os').homedir(), '.claude') : INSTALLED_HOME;
 	return path.join(home, 'kit-hooks');
+}
+
+// A user hook that fails answers through hook-error.cjs, so its tier decides: a deny for high or security, nothing for small,
+// and one row in the open log either way. A helper that will not load holds the call with its own row, so a missing helper
+// never lets a failed hook through.
+function hookFailed(file, err, cwd) {
+	const id = file.replace(/\.cjs$/, '');
+	try {
+		return require(path.join(userHooks(), 'hook-error.cjs')).onError(id, err, cwd);
+	} catch (e) {
+		logMissingHelper(cwd, String((e && e.message) || e).split('\n')[0].slice(0, 120));
+		return refuse('hook error: lead review: hook-error.cjs is missing');
+	}
+}
+
+// The git common dir of a folder, read from its .git with no child process: a git.exe planted in a project would run inside
+// a spawn on Windows. Walks up to the first .git: a folder is the common dir; a file "gitdir: <path>" names a worktree's
+// git folder, whose commondir file (when present) names the common dir. Null when the folder is in no repo.
+function gitCommonDir(cwd) {
+	if (typeof cwd !== 'string' || cwd === '' || !path.isAbsolute(cwd)) return null;
+	let dir = path.resolve(cwd);
+	for (;;) {
+		const dotGit = path.join(dir, '.git');
+		let st = null;
+		try { st = fs.statSync(dotGit); } catch { /* no .git here: go up */ }
+		if (st && st.isDirectory()) return dotGit;
+		if (st && st.isFile()) {
+			const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+			if (!m) return null;
+			const gitdir = path.resolve(dir, m[1].trim());
+			try { return path.resolve(gitdir, fs.readFileSync(path.join(gitdir, 'commondir'), 'utf8').trim()); } catch { return gitdir; }
+		}
+		const up = path.dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
+}
+
+// The helper's own row, written here because the helper is what would write it. Nothing is written outside a repo.
+function logMissingHelper(cwd, cause) {
+	try {
+		const common = gitCommonDir(cwd);
+		if (!common) return;
+		const row = { kind: 'hook-error', id: 'hook-error', hook: 'guard.cjs', error: `hook-error.cjs did not load (${cause})`, at: new Date().toISOString() };
+		fs.appendFileSync(path.join(common, 'kit-guard-open.log'), `${JSON.stringify(row)}\n`);
+	} catch {
+		/* the row did not write: the refusal still stands */
+	}
+}
+
+// A gate hold the hook marks "Owner's yes needed: " is lifted by the owner's accepted pop-up quoting this edit (owner-yes.cjs
+// ownerYes, the same read test-scope's hold uses); a subagent hands it back, so it is never lifted for one.
+function ownerYesHold(answer, input) {
+	const h = answer && answer.hookSpecificOutput;
+	if (!h || h.permissionDecision !== 'deny' || !/^Owner's yes needed: /.test(h.permissionDecisionReason || '')) return answer;
+	if (input.agent_id) return answer;
+	return require(path.join(__dirname, 'owner-yes.cjs')).ownerYes(input) ? null : answer;
 }
 
 // Every answer for this call, in order: [name, output or null].
@@ -118,7 +178,7 @@ function answers(input) {
 					const yes = require(path.join(__dirname, 'owner-yes.cjs'));
 					out.push([file, input.agent_id || !yes.ownerYes(input) ? refuse(yes.askText(a.kitWhat, input)) : null]);
 				}
-			} else if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, require(where).check(input)]);
+			} else if (/\bexports\.check\b|module\.exports\s*=\s*\{[^}]*\bcheck\b/.test(text)) out.push([file, file === 'ci-fix.cjs' ? ownerYesHold(require(where).check(input), input) : require(where).check(input)]);
 			else {
 				// The old-shape hooks share one budget well inside the launcher's 10 s, so a slow one is skipped rather than
 				// timing out the whole guard, which blocks the call (the 1.25.0 sweep, R4.2).
@@ -126,10 +186,14 @@ function answers(input) {
 				const skipped = { hookSpecificOutput: { hookEventName: 'PreToolUse', additionalContext: `Kit: the kit hook ${file} ran out of its time and did not finish; the owner runs install user to bring it up to date.` } };
 				if (left < 100) { out.push([file, skipped]); continue; }
 				const r = require('child_process').spawnSync(process.execPath, ['-e', text], { input: JSON.stringify(input), encoding: 'utf8', timeout: Math.min(2000, left) });
-				if (r.error || r.signal) { out.push([file, skipped]); continue; }
+				// A child that times out, is killed or exits non-zero is that hook's error, as a throw in its own code is.
+					if (r.error || r.signal || r.status !== 0) throw new Error(r.error ? r.error.message : r.signal ? `killed by ${r.signal}` : `exit ${r.status}: ${String(r.stderr || '').split('\n')[0]}`);
 				out.push([file, r.stdout && r.stdout.trim() ? JSON.parse(r.stdout) : null]);
 			}
-		} catch { /* a slip-catcher that fails lets the call through */ }
+		} catch (e) {
+				// A user hook that fails is that hook's error: its tier decides the answer, and the open log gets its row.
+				out.push([file, hookFailed(file, e, input.cwd)]);
+			}
 	}
 	return out;
 }

@@ -206,6 +206,7 @@
     "tests/launcher-verify.test.mjs",
     "tests/owner-grant.test.mjs",
     "tests/owner-proof.test.mjs",
+    "tests/push-text.test.mjs",
     "tests/recall-ci.test.mjs",
     "tests/release-verify.test.mjs",
     "tests/rule-map.test.mjs",
@@ -749,6 +750,7 @@
     "tests/guards-outside.test.mjs",
     "tests/kit-install.test.mjs",
     "tests/kit-plugin.test.mjs",
+    "tests/kit-push-secrets.test.mjs",
     "tests/kit-recall.test.mjs",
     "tests/kit-report.test.mjs",
     "tests/launcher-verify.test.mjs",
@@ -830,10 +832,12 @@
   "test-integrity": {
    "guards": [],
    "scripts": [
-    "project/.claude/test-push-scan.mjs"
+    "project/.claude/test-push-scan.mjs",
+    "scripts/test-integrity.mjs"
    ],
    "tests": [
     "tests/kit-recall.test.mjs",
+    "tests/test-integrity.test.mjs",
     "tests/test-lock.test.mjs",
     "tests/unit-check.test.mjs"
    ],

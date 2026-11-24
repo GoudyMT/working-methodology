@@ -11,6 +11,7 @@ import safeSpawn from './safe-spawn.cjs';
 //          against what the remote itself says it has (ls-remote), never the local remote-tracking refs, which a session
 //          can write (the 1.25.0 sweep: a decoy refs/remotes ref hid a secret); a remote that cannot be read means all
 //          of the branch's history is read.
+//        node .claude/secret-shapes.mjs --staged   (the pre-commit hook) - the lines and file names the commit stages.
 // git on the folder this runs in, from node's own folder (build 23). Not a read-only git: ls-remote asks the remote.
 const git = (...a) => safeSpawn.toolOut('git', ['-C', process.cwd(), ...safeSpawn.NO_FSMONITOR, ...safeSpawn.gitArgs(['-c', 'core.quotePath=false', ...a])], { encoding: 'utf8', maxBuffer: 64 * 1024 * 1024, timeout: 600000, env: safeSpawn.gitEnv() });
 const ZERO = /^0+$/;
@@ -114,12 +115,18 @@ if (process.argv[2] === '--push') {
 			if (seen.has(c)) continue;
 			seen.add(c);
 			// Each commit against its first parent (a merge too), or against nothing for a first commit.
-			const patch = git('diff-tree', '-p', '-U0', '--no-color', '--root', '-m', '--first-parent', c);
+			const patch = git('diff-tree', '-p', '-U0', '--no-color', '--text', '--root', '-m', '--first-parent', c);
 			const names = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-m', '--first-parent', '--diff-filter=ACR', c).split('\n').filter(Boolean);
 			added += scan(patch, names, hits, ` (commit ${c.slice(0, 9)})`);
 			scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
 		}
 	}
+	report(hits, added);
+} else if (process.argv[2] === '--staged') {
+	// The lines and file names this commit stages, read as the push scan reads a commit. Only a kind and a file are printed.
+	const names = git('diff', '--cached', '--name-only', '--diff-filter=ACR').split('\n').filter(Boolean);
+	const hits = [];
+	const added = scan(git('diff', '--cached', '-U0', '--no-color', '--text'), names, hits, ' (staged)');
 	report(hits, added);
 } else {
 	// The base reaches git only as a commit it resolved, so a value that reads as an option can never act as one.
@@ -130,10 +137,16 @@ if (process.argv[2] === '--push') {
 		console.log(`secret scan: base "${given}" is not a commit`);
 		process.exit(2);
 	}
-	// Added, copied and renamed: a file renamed to a secret name adds no line, so only the name check sees it.
-	const names = git('diff', '--name-only', '--diff-filter=ACR', `${base}...HEAD`).split('\n').filter(Boolean);
+	// Each commit of the branch against its first parent, as the push path reads it: a key added in one commit and removed
+	// in the next is in the first commit's lines, so the net diff's clean result cannot hide it.
 	const hits = [];
-	const added = scan(git('diff', `${base}...HEAD`, '-U0', '--no-color'), names, hits, '');
-	for (const c of git('rev-list', `${base}..HEAD`).split('\n').filter(Boolean)) scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
+	let added = 0;
+	for (const c of git('rev-list', '--reverse', `${base}..HEAD`).split('\n').filter(Boolean)) {
+		const patch = git('diff-tree', '-p', '-U0', '--no-color', '--text', '--root', '-m', '--first-parent', c);
+		// Added, copied and renamed: a file renamed to a secret name adds no line, so only the name check sees it.
+		const names = git('diff-tree', '--no-commit-id', '--name-only', '-r', '--root', '-m', '--first-parent', '--diff-filter=ACR', c).split('\n').filter(Boolean);
+		added += scan(patch, names, hits, ` (commit ${c.slice(0, 9)})`);
+		scanMessage(git('cat-file', 'commit', c), hits, ` (commit ${c.slice(0, 9)})`);
+	}
 	report(hits, added);
 }

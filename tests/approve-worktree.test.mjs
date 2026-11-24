@@ -53,7 +53,8 @@ test('the pause ask prints the session id the resume needs, and names CLAUDE_COD
   assert.ok(withId.stdout.includes(TAP_SID), `the resume line names no session id:\n${withId.stdout}`);
   const without = approveIn(wt, [f], {});
   assert.match(without.stdout, /ASK THE OWNER/);
-  assert.match(without.stdout, /CLAUDE_CODE_SESSION_ID/, `the unset case names nothing:\n${without.stdout}`);
+  // K377 U14: --resume finds the owner's pop-up answer with no session id in the shell, so the unset case still names the step.
+  assert.match(without.stdout, /--resume/, `the unset case names no resume step:\n${without.stdout}`);
   assert.ok(!without.stdout.includes(TAP_SID));
 });
 

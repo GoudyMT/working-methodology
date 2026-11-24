@@ -311,19 +311,22 @@ function pushGrant(ref, sessionId, kind = '', common = '', repo = process.cwd(),
 // The owner's latest Yes to one act in this session's own transcript, in this repo's folder of transcripts, after a
 // time: { at, tap } (tap names the answer, so one answer is used once), or null. For approve.mjs: an ask or a pause
 // prints the act ("sweep yes <code>"), the lead quotes it in a pop-up, and the owner's tap is the yes.
-function sessionYeses(sessionId, repo, { all = false } = {}) {
+// keys: precomputed folder keys read as given (lowercase, no walk above, no realpath of a built path); faults: an array that
+// receives each read error other than ENOENT. Without them the folder and each one above it are read, as before.
+function sessionYeses(sessionId, repo, { all = false, keys: given, faults } = {}) {
 	if (!/^[0-9a-f-]{36}$/i.test(String(sessionId || ''))) return [];
 	const root = path.join(home(), 'projects');
 	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
 	let real = repo;
 	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
-	const keys = above(real).map(key);
+	const keys = Array.isArray(given) ? given.map((k) => String(k).toLowerCase()) : above(real).map(key);
+	const fault = (e) => { if (Array.isArray(faults) && e && e.code !== 'ENOENT') faults.push(e.code || 'error'); };
 	let dirs = [];
-	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch { return []; }
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch (e) { fault(e); return []; }
 	const out = [];
 	for (const d of dirs) {
 		let lines;
-		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch { continue; }
+		try { lines = tailLines(path.join(root, d, `${sessionId}.jsonl`)); } catch (e) { fault(e); continue; }
 		out.push(...yeses(lines, { all }));
 	}
 	return out;
@@ -331,15 +334,15 @@ function sessionYeses(sessionId, repo, { all = false } = {}) {
 // Every answer the owner gave to one act after a time (with act null, to any pop-up), oldest first, a No included:
 // { at, yes, answer }. For the loop's plan shadow (T7 slice 2), which counts a plan the owner answered No to as a
 // disagreement, and (K210) reads what a No said to match it against the risks the verdict named.
-function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
-	return sessionYeses(sessionId, repo, { all: true }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes, answer: y.answer })).sort((a, b) => a.at - b.at);
+function sessionAnswers(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd(), keys, faults } = {}) {
+	return sessionYeses(sessionId, repo, { all: true, keys, faults }).filter((y) => y.at > since && (act === null || y.acts.includes(squash(act)))).map((y) => ({ at: y.at, yes: y.yes, answer: y.answer })).sort((a, b) => a.at - b.at);
 }
 // The owner's latest answer to one act after a time, as the guards read it: { at, yes, single, tap } or null. single is
 // whether the question quoted this act alone (the build 13 sweep: the loop took any Yes, the newest even after a No, and
 // a question quoting several acts as a Yes to each).
-function sessionLatest(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd() } = {}) {
+function sessionLatest(act, { since = 0, sessionId = process.env.CLAUDE_CODE_SESSION_ID, repo = process.cwd(), keys, faults } = {}) {
 	let best = null;
-	for (const y of sessionYeses(sessionId, repo, { all: true })) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, yes: y.yes, single: y.acts.length === 1, tap: `${sessionId}:${y.id}` };
+	for (const y of sessionYeses(sessionId, repo, { all: true, keys, faults })) if (y.at > since && y.acts.includes(squash(act)) && (!best || y.at >= best.at)) best = { at: y.at, yes: y.yes, single: y.acts.length === 1, tap: `${sessionId}:${y.id}` };
 	return best;
 }
 // Whether this session's transcript is longer than the part the readers read, so an old answer may be out of sight.
@@ -405,6 +408,163 @@ function pushCanary(ref, sessionId, repo = process.cwd()) {
 	}
 	return '';
 }
+// K367 (U26): the owner's yes record. The owner types a name in their own terminal and the writer leaves a JSON record
+// {act, target, head, at} under <home>/kit-yes-spent/records/<id>.json. The guard lets one act through for it, once,
+// while it is fresh, and only for the target and head it names. Honest limit: this stops slips and written-out
+// writes, not a forger with the same user's file access, the same limit as the pop-up yes above.
+// CLI: node owner-yes.cjs --record <merge|squash|release> <owner/repo>[#N|@tag] <head sha>
+// Only the acts guard-outward honours take a record. A tag, a delete or a force push keeps the pre-push hook's typed-name
+// path, so the writer refuses those before it reads the terminal.
+const crypto = require('crypto');
+const ACTS = ['merge', 'squash', 'release'];
+const FULL_SHA = /^[0-9a-f]{40}$/;
+const recordsDir = () => path.join(home(), 'kit-yes-spent', 'records');
+function recordOf(act, target, head, at) {
+	const record = { act, target, head, at };
+	const id = crypto.createHash('sha256').update(`${act}|${target}|${head}|${at}`).digest('hex').slice(0, 16);
+	return { id, record };
+}
+
+// git by its full path, found on an absolute PATH folder: never a bare name, which a project folder could shadow.
+function gitBin() {
+	const exe = process.platform === 'win32' ? 'git.exe' : 'git';
+	for (const d of String(process.env.PATH || '').split(path.delimiter)) {
+		if (!d || !path.isAbsolute(d)) continue;
+		const f = path.join(d, exe);
+		try { if (fs.statSync(f).isFile()) return f; } catch { /* not here */ }
+	}
+	return '';
+}
+function gitOut(cwd, args) {
+	const bin = gitBin();
+	if (!bin) return '';
+	const r = require('child_process').spawnSync(bin, ['-C', cwd, '-c', 'core.fsmonitor=false', ...args], { encoding: 'utf8', timeout: 3000, cwd: path.dirname(process.execPath), windowsHide: true });
+	return r.status === 0 ? String(r.stdout).trim() : '';
+}
+
+// One row {at, hook, cause} in <git common dir>/kit-guard-open.log; a log that cannot be written never lifts a refusal.
+function logOpen(cwd, hook, cause) {
+	try {
+		const common = gitOut(cwd || process.cwd(), ['rev-parse', '--path-format=absolute', '--git-common-dir']);
+		if (common) fs.appendFileSync(path.join(common, 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook, cause: String(cause).slice(0, 200) })}\n`);
+	} catch { /* the refusal stands without the row */ }
+}
+
+// The act a plain gh merge or release command is, for a record or a pop-up yes to bind: { kind, act, target, head,
+// admin }, or null when the command is anything but one simple gh command read whole. The text is a strict ASCII
+// allowlist split on ASCII space only (no quotes, shell signs, @, globs, ~, %, other spaces), an option never takes a
+// value that starts with -, and an option given twice or by two aliases is no act. The target names only an explicit -R
+// (no origin fallback). A release takes no notes, title or other free text.
+const ALIAS = { '--repo': '-R', '--squash': '-s', '--merge': '-m', '--rebase': '-r', '--delete-branch': '-d', '--body': '-b', '--subject': '-t', '--body-file': '-F', '--author-email': '-A', '--draft': '-d', '--prerelease': '-p' };
+function parseAct(command) {
+	const text = String(command ?? '');
+	if (!/^[A-Za-z0-9 ._\/:=#-]+$/.test(text.trim())) return null;
+	const w = text.trim().split(' ').filter(Boolean);
+	const merge = w[0] === 'gh' && w[1] === 'pr' && w[2] === 'merge';
+	const rel = w[0] === 'gh' && w[1] === 'release' && w[2] === 'create';
+	if (!merge && !rel) return null;
+	const valued = merge ? new Set(['-R', '--match-head-commit']) : new Set(['-R', '--target']);
+	const bools = merge ? new Set(['-s', '-m', '-r', '--admin'])
+		: new Set(['-d', '-p', '--latest', '--generate-notes', '--verify-tag']);
+	const opt = {};
+	const pos = [];
+	let admin = false;
+	for (let i = 3; i < w.length; i++) {
+		const eq = w[i].startsWith('--') ? w[i].indexOf('=') : -1;
+		const raw = eq > 0 ? w[i].slice(0, eq) : w[i];
+		if (!raw.startsWith('-')) { pos.push(raw); continue; }
+		const name = ALIAS[raw] || raw;
+		if (name === '--admin') { admin = true; continue; }
+		if (Object.prototype.hasOwnProperty.call(opt, name)) return null;
+		if (valued.has(name)) {
+			const v = eq > 0 ? w[i].slice(eq + 1) : w[++i];
+			if (!v || v.startsWith('-')) return null;
+			opt[name] = v;
+		} else if (bools.has(name) && eq < 0) opt[name] = true;
+		else return null;
+	}
+	const repo = opt['-R'] || '';
+	if (repo && !/^[\w.-]+\/[\w.-]+$/.test(repo)) return null;
+	if (pos.length !== 1) return null;
+	if (merge) {
+		if (!/^\d+$/.test(pos[0])) return null;
+		const kinds = ['-s', '-m', '-r'].filter((k) => opt[k]);
+		if (kinds.length > 1) return null;
+		const head = String(opt['--match-head-commit'] || '').toLowerCase();
+		return { kind: 'merge', act: opt['-s'] ? 'squash' : opt['-r'] ? 'rebase' : 'merge', target: repo ? repo + '#' + pos[0] : '', head, admin };
+	}
+	return { kind: 'release', act: 'release', target: repo ? repo + '@' + pos[0] : '', head: String(opt['--target'] || '').toLowerCase(), admin };
+}
+
+// A release also needs its tag absent from origin or already on the recorded head, looked up in the call's repo with
+// git by its full path. A lookup that fails is no answer, so the release is held.
+function tagFree(tag, head, cwd, repo = '') {
+	const bin = gitBin();
+	if (!bin || !cwd) return false;
+	// The record counts only for the repo origin's raw configured url (before any rewrite) names: github.com over https
+	// or ssh, its path exactly the -R owner/repo. A local path, a file url, another host or an unreadable url holds, and so
+	// does an origin with more than one raw url. A url rewrite in the repo's own config that redirects this lookup is a
+	// written-out change to that config, inside the F10 honest limit: this stops slips, not a forger with the same file access.
+	const urls = gitOut(cwd, ['config', '--get-all', 'remote.origin.url']).split('\n').filter(Boolean);
+	const m = urls.length === 1 ? /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([\w.-]+)\/([\w.-]+?)(?:\.git)?\/?$/i.exec(urls[0]) : null;
+	if (!m || `${m[1]}/${m[2]}`.toLowerCase() !== String(repo).toLowerCase()) return false;
+	const r = require('child_process').spawnSync(bin, ['-C', cwd, '-c', 'core.fsmonitor=false', '-c', 'protocol.ext.allow=never', 'ls-remote', '--tags', 'origin', tag], { encoding: 'utf8', timeout: 20000, cwd: path.dirname(process.execPath), windowsHide: true });
+	if (r.error || r.status !== 0) return false;
+	const refs = {};
+	for (const l of String(r.stdout).split('\n').filter(Boolean)) { const [sha, ref] = l.split('\t'); refs[ref] = String(sha).toLowerCase(); }
+	const on = refs['refs/tags/' + tag + '^{}'] || refs['refs/tags/' + tag];
+	return !on || on === head;
+}
+
+// Whether a fresh, unspent record names this act (parseAct's answer) exactly: { id, at } and the record is spent by a
+// wx create, or null. A record file that cannot be read, or a records folder that cannot be listed, throws: the act is
+// refused and logged by the caller, a good record beside the bad one or not.
+function recordYes(p, call, now = Date.now(), cwd = '') {
+	if (!p || !p.act || !p.target || !FULL_SHA.test(p.head) || p.admin || !call) return null;
+	const dir = recordsDir();
+	let names;
+	try { names = fs.readdirSync(dir); } catch (e) { if (e && e.code === 'ENOENT') return null; throw e; }
+	const fit = [];
+	for (const name of names.filter((n) => n.endsWith('.json'))) {
+		let r;
+		try { r = JSON.parse(fs.readFileSync(path.join(dir, name), 'utf8')); } catch (e) { throw new Error(`a yes record cannot be read: ${name}`); }
+		const ok = r && typeof r === 'object' && typeof r.act === 'string' && typeof r.target === 'string' && typeof r.head === 'string' && Number.isFinite(r.at) && recordOf(r.act, r.target, r.head, r.at).id + '.json' === name;
+		if (!ok) throw new Error(`a yes record is not one the writer made: ${name}`);
+		if (r.act === p.act && r.target.toLowerCase() === p.target.toLowerCase() && r.head.toLowerCase() === p.head && now - r.at >= 0 && now - r.at <= FRESH_MS) fit.push({ id: name.slice(0, -5), at: r.at });
+	}
+	if (fit.length && p.kind === 'release' && !tagFree(p.target.split('@').pop(), p.head, cwd, p.target.split('@')[0])) return null;
+	for (const f of fit.sort((a, b) => b.at - a.at || (a.id < b.id ? -1 : 1))) if (spend(f.id, call)) return f;
+	return null;
+}
+
+// The typed name, read from the terminal device and never from stdin: an agent's shell has piped stdin and no terminal.
+function typedAtTerminal(prompt) {
+	if (!require('tty').isatty(0)) throw new Error('no terminal: the owner types the name at their own terminal, and stdin here is not one');
+	let fd;
+	try { fd = fs.openSync(process.platform === 'win32' ? 'CONIN$' : '/dev/tty', 'r'); } catch { throw new Error('no terminal (tty) to read a typed name from'); }
+	process.stderr.write(prompt);
+	const one = Buffer.alloc(1);
+	let s = '';
+	try { while (s.length < 300 && fs.readSync(fd, one, 0, 1, null) === 1 && one[0] !== 10) s += String.fromCharCode(one[0]); } finally { fs.closeSync(fd); }
+	return s.replace(/\r$/, '');
+}
+function recordCli(args) {
+	for (const m of ['CLAUDECODE', 'AI_AGENT']) if (process.env[m]) throw new Error('the AI shell marker ' + m + ' is set here: this is an agent shell, and a yes record is written only from the owner own terminal');
+	const [act, target, head0] = args;
+	const head = String(head0 || '').toLowerCase();
+	if (['tag', 'delete', 'force'].includes(act)) throw new Error(`${act} is not a record act: a ${act} push keeps the pre-push hook's typed-name path (the hook asks for the ref's name); the writer takes ${ACTS.join(', ')} only`);
+	const shape = act === 'release' ? /^[\w.-]+\/[\w.-]+@\S+$/ : /^[\w.-]+\/[\w.-]+#\d+$/;
+	if (!ACTS.includes(act) || !shape.test(String(target)) || !FULL_SHA.test(head)) throw new Error(`usage: owner-yes.cjs --record <${ACTS.join('|')}> <owner/repo>[#N|@tag] <full head sha> (merge and squash name #N, release names @tag)`);
+	const want = `${act} ${target}`;
+	if (typedAtTerminal(`Yes record: type "${want}" (head ${head}) to say yes to it once: `) !== want) throw new Error('the name typed was not ' + want);
+	const { id, record } = recordOf(act, target, head, Date.now());
+	fs.mkdirSync(recordsDir(), { recursive: true });
+	fs.writeFileSync(path.join(recordsDir(), `${id}.json`), JSON.stringify(record), { flag: 'wx' });
+	process.stdout.write(`Yes recorded: ${id} (${want}, head ${head}, good for one hour, once)\n`);
+}
+if (require.main === module && process.argv[2] === '--record') {
+	try { recordCli(process.argv.slice(3)); } catch (e) { process.stderr.write(`Not recorded: ${e.message}\n`); process.exitCode = 1; }
+}
 if (require.main === module && process.argv[2] === '--push') {
 	const [ref, kind, common, remote, age] = process.argv.slice(3);
 	const ok = pushGrant(ref, process.env.CLAUDE_CODE_SESSION_ID, kind || '', common || '', process.cwd(), Date.now(), remote || '', Number(age) || FRESH_MS / 60000);
@@ -412,4 +572,4 @@ if (require.main === module && process.argv[2] === '--push') {
 	process.exitCode = ok ? 0 : 1;
 }
 
-module.exports = { YES_RECORD, yesCanary, home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS };
+module.exports = { YES_RECORD, yesCanary, home, ownerYes, actText, howToAsk, askText, yesText, neverText, heldText, pushGrant, grantsRef, sessionYes, sessionAnswers, sessionLatest, sessionCut, unquotedYes, sessionGap, tailLines, FRESH_MS, recordOf, parseAct, recordYes, logOpen };

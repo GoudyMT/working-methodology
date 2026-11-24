@@ -125,7 +125,7 @@ function runFiles(dir, files, ms) {
 	return { states, timedOut };
 }
 
-// Runs the rules over the commits, oldest first: fault lines (stderr), owner yes lines (stdout).
+// Runs the rules over the commits, oldest first: fault lines (stderr), retest lines for the merge yes (stdout).
 function check(repo, hashes, ms) {
 	const commits = hashes.map((h) => commitOf(repo, h));
 	const rangeTests = [...new Set(commits.flatMap((c) => c.tests))].sort();
@@ -150,7 +150,7 @@ function check(repo, hashes, ms) {
 	};
 	let window = []; // test commits since the last source commit: the red candidates
 	for (const c of commits) {
-		if (c.type === 'retest') notes.push(`owner yes needed: ${c.short} ${c.subject}`);
+		if (c.type === 'retest') notes.push(`retest, listed for the merge yes: ${c.short} ${c.subject}`);
 		if (c.cls === 'mixed') {
 			fault(c, MIXED);
 			window = [];

@@ -33,7 +33,9 @@ const kitTemp = createRequire(import.meta.url)('./kit-temp.cjs');
 
 const GREEN = ['success'];
 const BESIDE = path.dirname(process.execPath);
-const run = (cmd, args) => spawnSync(cmd, args, { cwd: BESIDE, encoding: 'utf8', timeout: 60000 });
+// gh's replies can pass 1 MB (build 24's API reply is 1.08 MB): gh gets 64 MB, and a reply over that is ENOBUFS.
+const GH_BUFFER = 64 * 1024 * 1024;
+const run = (cmd, args, maxBuffer = 1024 * 1024) => spawnSync(cmd, args, { cwd: BESIDE, encoding: 'utf8', timeout: 60000, maxBuffer });
 const json = (r) => { try { return r.status === 0 ? JSON.parse(r.stdout) : null; } catch { return null; } };
 // One line of plain text for the output: no control character or line break of any kind.
 const one = (s) => String(s ?? '').replace(/[\u0000-\u001f\u007f-\u009f\u2028\u2029]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -92,10 +94,18 @@ function recordComplete(dir, tag) {
  *     { ok, missing: [plain lines] }
  */
 export function releaseCheck({ tag, pr, project, repo, copy, installed, result, plugin }, deps = {}) {
-	const gh = deps.gh || ((args) => run('gh', args));
+	const gh = deps.gh || ((args) => run('gh', args, GH_BUFFER));
 	const g = deps.git || git;
 	const log = deps.log || ((l) => process.stdout.write(`${l}\n`));
 	const audit = deps.audit || auditNotes;
+	// S2: a reply over the buffer is named too large, by what was asked; its step fails, and never reads as missing.
+	const TOO_BIG = 'the GitHub reply was too large to read';
+	const big = new Set();
+	const fetch = (name, args) => {
+		const r = gh(args);
+		if (r && r.error && r.error.code === 'ENOBUFS') big.add(name);
+		return json(r);
+	};
 	// The build 23b sweep: a plugin built again from the release copy, into a folder of its own.
 	const buildPlugin = deps.buildPlugin || ((dir, out) => spawnSync(process.execPath, [path.join(dir, 'scripts', 'kit.mjs'), 'build', 'plugin', '--out', out], { cwd: dir, encoding: 'utf8', timeout: 120000 }));
 	const state = deps.state || ((dir) => (fs.existsSync(path.join(dir, '.claude', 'state.mjs')) ? spawnSync(process.execPath, [path.join(dir, '.claude', 'state.mjs'), 'check'], { cwd: dir, encoding: 'utf8', timeout: 60000 }) : null));
@@ -122,22 +132,22 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 	};
 	// A commit's sha and tree as GitHub holds it; a tag name resolves to its commit (an annotated tag is peeled).
 	const commitOf = (ref) => {
-		const c = json(gh(['api', `repos/${slug}/commits/${ref}`]));
+		const c = fetch(ref, ['api', `repos/${slug}/commits/${ref}`]);
 		return c && c.sha && c.commit && c.commit.tree ? { sha: c.sha, tree: c.commit.tree.sha } : null;
 	};
 
-	const p = json(gh(['pr', 'view', String(pr), '-R', slug, '--json', 'state,mergeCommit,baseRefName']));
+	const p = fetch('pr', ['pr', 'view', String(pr), '-R', slug, '--json', 'state,mergeCommit,baseRefName']);
 	const merge = p && p.state === 'MERGED' && p.mergeCommit && p.mergeCommit.oid;
-	step(`PR ${pr} merged`, !p ? `PR ${pr} could not be read from GitHub` : merge ? null : `PR ${pr} is not merged (${p.state})`);
+	step(`PR ${pr} merged`, !p ? (big.has('pr') ? TOO_BIG : `PR ${pr} could not be read from GitHub`) : merge ? null : `PR ${pr} is not merged (${p.state})`);
 
 	let ci = 'no merge commit to read';
 	if (merge) {
-		const runs = json(gh(['run', 'list', '-R', slug, '--commit', merge, '--json', 'name,status,conclusion,headBranch,event']));
+		const runs = fetch('runs', ['run', 'list', '-R', slug, '--commit', merge, '--json', 'name,status,conclusion,headBranch,event']);
 		// Main's own CI is the runs a push to the base branch started; a run started by hand or on a schedule is another
 		// workflow, and a PR run is the branch's.
 		const mine = (runs || []).filter((r) => r.headBranch === p.baseRefName && r.event === 'push');
 		const notGreen = mine.filter((r) => r.status === 'completed' && !GREEN.includes(r.conclusion));
-		if (!runs) ci = 'the runs could not be read from GitHub';
+		if (!runs) ci = big.has('runs') ? TOO_BIG : 'the runs could not be read from GitHub';
 		else if (!mine.length) ci = `no push run on ${p.baseRefName} for ${merge.slice(0, 12)}`;
 		else if (mine.some((r) => r.status !== 'completed')) ci = `still running: ${mine.filter((r) => r.status !== 'completed').map((r) => one(r.name)).join(', ')}`;
 		else if (notGreen.length) ci = `not green: ${notGreen.map((r) => `${one(r.name)} ${one(r.conclusion)}`).join(', ')}`;
@@ -147,17 +157,18 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 
 	let tagged = 'no merge commit to compare';
 	const atTag = commitOf(`refs/tags/${tag}`);
-	if (!atTag) tagged = `no tag ${tag} on GitHub`;
+	if (!atTag) tagged = big.has(`refs/tags/${tag}`) ? TOO_BIG : `no tag ${tag} on GitHub`;
 	else if (merge) {
 		const m = commitOf(merge);
 		// The tag may sit on the squash commit or a commit with the same files: the files are what ships.
-		tagged = m && m.tree === atTag.tree ? null : `tag ${tag} does not hold the merge commit's files (${atTag.sha.slice(0, 12)} against ${merge.slice(0, 12)})`;
+		if (!m && big.has(merge)) tagged = TOO_BIG;
+		else tagged = m && m.tree === atTag.tree ? null : `tag ${tag} does not hold the merge commit's files (${atTag.sha.slice(0, 12)} against ${merge.slice(0, 12)})`;
 	}
 	step(`tag ${tag} on the merge`, tagged);
 
-	const rel = json(gh(['release', 'view', tag, '-R', slug, '--json', 'tagName,name,isDraft,body']));
+	const rel = fetch('release', ['release', 'view', tag, '-R', slug, '--json', 'tagName,name,isDraft,body']);
 	let notes = null;
-	if (!rel) notes = `no published release notes for ${tag} (gh release view ${tag})`;
+	if (!rel) notes = big.has('release') ? TOO_BIG : `no published release notes for ${tag} (gh release view ${tag})`;
 	else if (rel.isDraft) notes = `the release notes for ${tag} are still a draft`;
 	else if (!String(rel.body || '').trim()) notes = `the release for ${tag} has no notes`;
 	else {
@@ -172,7 +183,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 		const want = (deps.notes || notesOf)(recRoot, ver, scriptRoot);
 		const title = `Methodology Kit v${ver}`;
 		const norm = (t) => String(t || '').replace(/\r\n/g, '\n').split('\n').map((l) => l.trimEnd()).join('\n').trim();
-		step('release title and notes from the build record', !rel ? 'no release to compare'
+		step('release title and notes from the build record', !rel ? (big.has('release') ? TOO_BIG : 'no release to compare')
 			: want === null ? `the build record's notes could not be written (node scripts/build-record.mjs notes docs/builds/${ver}.json)`
 				: rel.name !== title ? `the release title is "${one(rel.name)}", not "${title}"`
 					: norm(rel.body) !== norm(want) ? `the live notes are not the ones the build record writes: publish what node scripts/build-record.mjs release docs/builds/${ver}.json writes` : null);
@@ -186,7 +197,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 	if (copy) {
 		const head = g(copy, 'rev-parse', '--verify', '-q', 'HEAD').stdout.trim();
 		copyOnTag = Boolean(atTag && head === atTag.sha && !g(copy, 'status', '--porcelain').stdout.trim());
-		step(`release copy on ${tag}`, !atTag ? `no tag ${tag} on GitHub to compare` : head !== atTag.sha ? `the release copy is not on ${tag} (HEAD ${head.slice(0, 12) || 'unreadable'})` : null);
+		step(`release copy on ${tag}`, !atTag ? (big.has(`refs/tags/${tag}`) ? TOO_BIG : `no tag ${tag} on GitHub to compare`) : head !== atTag.sha ? `the release copy is not on ${tag} (HEAD ${head.slice(0, 12) || 'unreadable'})` : null);
 	}
 	if (installed) {
 		let v = null;
@@ -200,7 +211,7 @@ export function releaseCheck({ tag, pr, project, repo, copy, installed, result, 
 		try { rec = JSON.parse(fs.readFileSync(path.join(plugin, 'kit-build.json'), 'utf8')); } catch { /* named below */ }
 		step(`plugin build pinned to ${tag}`, !rec ? `${plugin} has no readable kit-build.json (node scripts/kit.mjs build plugin writes it)`
 			: rec.tag !== tag ? `the plugin build records ${one(rec.tag)}, not ${tag}`
-				: !atTag ? `no tag ${tag} on GitHub to compare`
+				: !atTag ? (big.has(`refs/tags/${tag}`) ? TOO_BIG : `no tag ${tag} on GitHub to compare`)
 					: rec.commit !== atTag.sha ? `the plugin build records commit ${one(rec.commit).slice(0, 12)}, not ${tag}'s ${atTag.sha.slice(0, 12)}: rebuild it from the release copy` : null);
 		// The build 23b sweep: the record is two fields; the files are held to a build of the release copy, manifest for
 		// manifest (the manifest hashes every file a hook loads).

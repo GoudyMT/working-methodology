@@ -307,11 +307,12 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   const between = gate(7);
   assert.equal(between.status, 1, between.stdout + between.stderr);
   assert.match(between.stdout, /pass bar of 9/);
-  // Over the head's bar, the PR still moved its ruler, and since K198 no marker passes that.
+  // Over the head's bar, the PR moved its test set, so the release must reach the new set's top score too.
   const atBar = gate(14);
   assert.equal(atBar.status, 1, atBar.stdout + atBar.stderr);
   assert.doesNotMatch(atBar.stdout, /pass bar/);
-  assert.match(atBar.stdout, /changes the ruler/);
+  // The fixture's keys have no rows, so the declared count is not believed.
+  assert.match(atBar.stdout, /rows/);
 });
 
 // why: guards rule:instruments-and-evals
@@ -382,6 +383,45 @@ test('a PR that moves the ruler it is graded on fails, and no marker passes it (
   const edited = checkGate(gateFacts({ was: { brief: 1, keys: 2, baseline: null, edited: true } }));
   assert.equal(edited.ok, false);
   assert.match(edited.detail, /changes the ruler/);
+  // The owner's plan yes (2026-11-24 19:40Z): a PR that changes only the test set passes when both sides reach the new
+  // set's top score, the control scores 0 and two blind scorers read it. No rule text beside it, no edit at one version.
+  const SET = ['docs/evals/recall-questions.md', 'docs/evals/recall-scorer-brief.md', 'docs/evals/behaviour-scenarios.json', 'scripts/recall-behave.mjs', 'docs/evals/results/recall-scores.md'];
+  const lines = (m, b, c, bm = 16, bb = 16, bc = 0) => ['scorers: 2', 'worse: none', `control: ${c}`, `gate: a median ${m} baseline ${b} brief v2 keys v13`, `behaviour: a median ${bm} baseline ${bb} suite v3 control ${bc}`, 'behaviour worse: none', `release median: ${b}`];
+  const set = (over = {}) => checkGate({ changed: SET, added: lines(29, 29, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 2, baseCount: 14, bar: 12, count: 16 }, was: { brief: 2, keys: 12, count: 14 }, ...over });
+  assert.equal(set().ok, true, set().detail);
+  // A no-kit session passes checks like "did not merge" by doing nothing: recorded controls are 5 to 8 of 14.
+  assert.equal(set({ added: lines(29, 29, 0, 16, 16, 9) }).ok, true, set({ added: lines(29, 29, 0, 16, 16, 9) }).detail);
+  for (const [what, over, why] of [
+    ['a release under the top', { added: lines(29, 28, 0) }, /baseline 28 is under/],
+    ['a candidate under the top, over 14', { added: lines(28, 29, 0) }, /median 28 is under/],
+    ['a control over 0', { added: lines(29, 29, 1) }, /control 1/],
+    ['a behaviour release under the top', { added: lines(29, 29, 0, 16, 15) }, /behaviour baseline 15 is under/],
+    ['a behaviour control over the highest recorded share', { added: lines(29, 29, 0, 16, 16, 10) }, /behaviour control 10/],
+    ['one scorer', { added: lines(29, 29, 0).map((l) => l.replace('scorers: 2', 'scorers: 1')) }, /two blind scorers/],
+    ['rule text beside the set', { changed: [...SET, 'rules/core.md'] }, /changes the ruler/],
+    ['kit.mjs beside the set', { changed: [...SET, 'scripts/kit.mjs'] }, /changes the ruler/],
+    ['an edit at the same version', { was: { brief: 2, keys: 12, edited: true } }, /changes the ruler/],
+    ['a set moved back a version', { was: { brief: 2, keys: 14 } }, /changes the ruler/],
+    ['a suite moved back a version', { behaviour: { suite: 3, base: 4, bar: 12, count: 16 } }, /changes the behaviour suite/],
+    ['a set of fewer questions than the floor', { count: 10, bar: 5, added: lines(10, 10, 0) }, /never shrinks under it/],
+    ['no behaviour line', { added: lines(29, 29, 0).slice(0, 4) }, /records no behaviour line/],
+    ['a release half a point under, rounded up', { added: lines(29, 29, 0).map((l) => l.replace('release median: 29', 'release median: 28.5')) }, /release median 28.5/],
+    ['no exact release median', { added: lines(29, 29, 0).slice(0, 6) }, /release median is not recorded/],
+    ['fewer questions than the base', { was: { brief: 2, keys: 12, count: 30 } }, /never shrinks under the base's 30/],
+    ['fewer scenarios than the base', { behaviour: { suite: 3, base: 2, baseCount: 17, bar: 12, count: 16 } }, /never shrinks under the base's 17/],
+    ['a lower pass bar than the base', { was: { brief: 2, keys: 12, count: 14, bar: 20 } }, /pass bar/],
+    ['a suite with no scenario count', { behaviour: { suite: 3, base: 2, baseCount: 14, bar: 12, count: 0 } }, /0 scenarios/],
+    ['keys whose rows do not match their count', { rowsOk: false }, /rows/],
+    ['no floor to judge by', { floor: undefined }, /changes the ruler/],
+  ]) {
+    const x = set(over);
+    assert.equal(x.ok, false, what);
+    assert.match(x.detail, why, what);
+  }
+  // The floor is the whole set on every PR, so 14 of a bigger set is not a pass.
+  const grown = checkGate({ changed: ['rules/core.md'], added: lines(14, 14, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 3, bar: 12, count: 16 }, was: { brief: 2, keys: 13 } });
+  assert.equal(grown.ok, false);
+  assert.match(grown.detail, /under the floor of 29/);
   // The first ruler has no version to move from.
   assert.equal(checkGate(gateFacts({ was: { brief: null, keys: null, baseline: null } })).ok, true);
 });
@@ -437,7 +477,7 @@ test('CI runs the suite on Linux and the Windows slice on Windows, and the requi
   for (const proof of ['guard-outward-check.cjs', 'guard-delete-check.cjs']) assert.ok(win.includes(`node project/.claude/${proof}`), proof);
   const gate = job('kit-tests');
   // E32: the lanes job and the slow lane join the gate; a slow lane skipped for having no test passes.
-  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all\]$/m); // pin: 1 (GitHub reads the needs line)
+  assert.match(gate, /^    needs: \[unit-tests, windows-tests, lanes, slow-tests, install-check, map-merge, test-check, test-check-all, test-integrity, static]$/m); // pin: 1 (GitHub reads the needs line)
   // T15 D1/D2: the install check, skipped only when the lanes job found no install or guard change.
   assert.ok(gate.includes("if: (needs.install-check.result != 'success' && needs.install-check.result != 'skipped') || (needs.install-check.result == 'skipped' && needs.lanes.outputs.install != 'false')")); // pin: 1
   assert.match(job('install-check'), /^    if: needs\.lanes\.outputs\.install == 'true'$[\s\S]*os: \[ubuntu-latest, windows-latest\][\s\S]*run: \|[\s\S]*node scripts\/ci-install-check\.mjs$/m);
@@ -498,7 +538,7 @@ test('CI runs the recall gate on the PR\'s real diff', async () => {
   // pin: 1 (GitHub runs these lines)
   assert.match(step, /^\s+git show "\$PR_BASE:scripts\/recall\.mjs" > scripts\/recall-gate-base\.mjs$/m);
   assert.match(step, /^\s+node scripts\/recall-gate-base\.mjs gate "\$PR_BASE" "\$PR_HEAD"$/m);
-  assert.match(step, /^\s+if: github\.event_name == 'pull_request'$/m);
+  assert.match(step, /^\s+if: \$\{\{ !cancelled\(\) && github\.event_name == 'pull_request' \}\}$/m);
   assert.match(step, /^\s+PR_BASE: origin\/\$\{\{ github\.base_ref \}\}$/m);
   // pin: 1 (GitHub reads this line)
   assert.match(step, /^\s+PR_HEAD: \$\{\{ github\.event\.pull_request\.head\.sha \}\}$/m);
@@ -889,7 +929,7 @@ test('recall checks the Claude folder a session will use, not one a variable poi
 
 // why: guards rule:instruments-and-evals
 test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async (t) => {
-  const { askAll, probePath } = await recallTools();
+  const { askAll, probePath, gateModel } = await recallTools();
   const said = t.mock.method(console, 'log', () => {});
   const dir = probePath(path.join(os.tmpdir(), 'osh'));
   const calls = [];
@@ -905,9 +945,17 @@ test('every recall session runs in the probe folder with the question as its inp
   // saved default or a new release never moves the ruler.
   assert.equal(calls[0].args[calls[0].args.indexOf('--model') + 1], 'claude-opus-5-5');
   assert.equal(calls[0].args[calls[0].args.indexOf('--effort') + 1], 'medium');
+  // K428: the gate's model is a setting, the pin unless KIT_GATE_MODEL names another allowed model; a typo never runs.
+  assert.equal(typeof gateModel, 'function', 'recall.mjs exports gateModel');
+  assert.equal(gateModel({}), 'claude-opus-5-5');
+  assert.equal(gateModel({ KIT_GATE_MODEL: 'claude-sonnet-5-5' }), 'claude-sonnet-5-5');
+  for (const odd of ['sonnet', 'claude-haiku-5-5', ' claude-sonnet-5-5', '']) assert.throws(() => gateModel({ KIT_GATE_MODEL: odd }), /KIT_GATE_MODEL/, JSON.stringify(odd));
+  const named = [];
+  askAll({ qs, projectDir: dir, model: 'claude-sonnet-5-5', run: (cmd, args) => { named.push(args[args.indexOf('--model') + 1]); return { status: 0, stdout: 'answer\n' }; } });
+  assert.deepEqual(named, ['claude-sonnet-5-5', 'claude-sonnet-5-5']);
   assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
   assert.ok(lines.includes('> answer'));
-  assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
+  assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)', '[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
   for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
     assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
   }
@@ -944,6 +992,12 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.deepEqual(forgot, [asks[0].opts.cwd], 'its guard record is forgotten');
   assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
   assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
+  // K428: the run's record names the model its sessions ran on, and every session of the run is on that one model.
+  calls.length = 0;
+  const sonnet = go({ label: 'recall-cand-12', env: { KIT_GATE_MODEL: 'claude-sonnet-5-5' } });
+  assert.match(read(sonnet), /^CLI: .*; model claude-sonnet-5-5, effort medium$/m);
+  const sonnetAsks = calls.filter((c) => c.cmd === 'claude' && c.args[0] === '-p');
+  assert.deepEqual([...new Set(sonnetAsks.map((c) => c.args[c.args.indexOf('--model') + 1]))], ['claude-sonnet-5-5']);
   // A saved label is never written over (the build 22 sweep), so the failing runs below take new labels.
   assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' }, label: 'recall-cand-10' }), /KIT_CLAUDE_HOME/);
   assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }), label: 'recall-cand-11' }), /no/);
@@ -1065,12 +1119,17 @@ test('recall gate: a graded file named in another case or with a tab still needs
 // version and pass bar, to its baseline, and to a control under that baseline; the suite cannot be removed to skip it.
 // why: guards rule:instruments-and-evals
 test('recall gate (T10): a rule change needs a behaviour line on the current suite, at its bar and baseline', () => {
-  const suite = JSON.stringify({ version: 2, pass: 10, scenarios: [] });
+  const suite = JSON.stringify({ version: 2, pass: 10, scenarios: Array.from({ length: 14 }, (_, i) => ({ id: String(i + 1) })) });
   const line = 'gate: a median 12 baseline 9 brief v1 keys v4 control 0';
   const run = (behave) => { const r = gateRepo({ suite }); r.record(behave ? `${line}\n${behave}` : line); return r.gate(); };
   assert.match(run(null).stdout, /records no behaviour line/);
   const pass = gateRepo({ suite });
   pass.record(`${PASS_GATE}\nbehaviour: a median 14 baseline 11 suite v2 control 3\nbehaviour worse: none`);
+  const empty = gateRepo({ suite: JSON.stringify({ version: 2, pass: 10, scenarios: [] }) });
+  empty.record(`${PASS_GATE}
+behaviour: a median 14 baseline 11 suite v2 control 3
+behaviour worse: none`);
+  assert.match(empty.gate().stdout, /0 scenarios/, 'an empty suite is no top score');
   assert.equal(pass.gate().status, 0, pass.gate().stdout);
   const under = run('behaviour: a median 9 baseline 8 suite v2 control 3');
   assert.equal(under.status, 1);
@@ -1313,6 +1372,9 @@ test('recall-score (K198): two scorers are averaged with no rounding up, against
   const all = sum(Array(5).fill(clean));
   assert.equal(all.candMedian, 14);
   assert.equal(all.pass, true);
+  // The floor is the whole set: 14 of 16 does not pass.
+  const bigger = scoreSets(fiveEach(Array(5).fill([[15, 16], [15, 16]]), Array(5).fill([[15, 16], [15, 16]])), 16);
+  assert.equal(summarize(bigger.sets, bigger.map, 16, { when: sameDay(bigger.map) }).pass, false);
   // Three runs where one scorer took a point: those runs are 13.5, so the median is 13.5, under 14.
   const half = sum([clean, split, split, split, clean]);
   assert.equal(half.candMedian, 13.5);

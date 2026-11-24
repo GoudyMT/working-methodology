@@ -1,0 +1,10 @@
+2026-11-23T14:54:01.1000000Z ##[group]Run node scripts/test-check.mjs origin/main
+2026-11-23T14:54:01.1000001Z shell: /usr/bin/bash -e {0}
+2026-11-23T14:54:01.1000002Z ##[endgroup]
+2026-11-23T14:54:02.2000000Z test check: tests/a.test.mjs::first new test: A7: a test added after the sweep: name it under its fix row
+2026-11-23T14:54:02.2000001Z test check: tests/a.test.mjs::second new test: A7: a test added after the sweep: name it under its fix row
+2026-11-23T14:54:02.2000002Z test check: tests/b.test.mjs::third new test: A7: a test added after the sweep: name it under its fix row
+2026-11-23T14:54:02.2000003Z test check: R3: A7: a medium fix adds a new test (tests/c.test.mjs::fourth): make it a row in an existing test, or give the fix a reason
+2026-11-23T14:54:02.2000004Z test check: R4: A7: a medium fix adds a new test (tests/c.test.mjs::fifth): make it a row in an existing test, or give the fix a reason
+2026-11-23T14:54:02.2000005Z test check: 5 finding(s)
+2026-11-23T14:54:02.2000006Z ##[error]Process completed with exit code 1.

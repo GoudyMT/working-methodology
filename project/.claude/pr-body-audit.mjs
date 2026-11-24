@@ -198,6 +198,21 @@ const visible = wordCount(visibleText(counted));
 row(`size: at most ${TOTAL_MAX} words in all`, total <= TOTAL_MAX, `${total} words`);
 row(`size: at most ${VISIBLE_MAX} words on screen`, visible <= VISIBLE_MAX, `${visible} words`);
 
+// K367: a retest: commit changes a test with no hold at push, so the owner sees each one here before the merge yes. In CI
+// (PR_BASE set) the retest: commits of base..HEAD are read from the checkout, replace objects off, and the body names each
+// by its short sha, as scripts/test-integrity.mjs lists it ("retest: <short sha> <subject>").
+// Only text the page shows counts: an HTML comment (closed or left open) names nothing. The same block is in
+// pr-body-audit-lean.mjs; keep the two alike.
+if (process.env.PR_BASE) {
+	const top = safeSpawn.gitRead(process.cwd(), ['rev-parse', '--show-toplevel'], { encoding: 'utf8' });
+	const log = safeSpawn.gitRead(top.status === 0 ? top.stdout.trim() : process.cwd(), ['--no-replace-objects', 'log', '--format=%H %s', 'HEAD', '--not', process.env.PR_BASE], { encoding: 'utf8' });
+	const retests = log.status === 0 ? log.stdout.split('\n').filter((l) => /^[0-9a-f]{40} retest(\([^)]*\))?!?:/.test(l)) : [];
+	const shown = body.replace(/<!--[\s\S]*?-->/g, '').replace(/<!--[\s\S]*$/, '');
+	const unnamed = retests.map((l) => l.slice(0, 7)).filter((s) => !shown.includes(`retest: ${s}`));
+	row('every retest: commit of the PR is named in the body', log.status === 0 && unnamed.length === 0,
+		log.status !== 0 ? 'the PR commits cannot be read' : unnamed.length ? `not named: ${unnamed.map((s) => `retest: ${s} <subject>`).join(', ')}` : `${retests.length} retest commit(s)`);
+}
+
 // The agents' confirmation phrase never goes out (rule:agent-canary).
 row('no confirmation phrase', !carriesPhrase(body), 'rule:agent-canary');
 

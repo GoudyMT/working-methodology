@@ -170,7 +170,7 @@ The guards and hooks under `.claude` run only inside Claude Code, so they hold C
 
 ## Session Workflow {#session-workflow}
 
-**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
+**Start:** `AGENTS.md` loads; run `node .claude/resume-packet.mjs check` and read what its verdict names; no verdict line, or a check that can't run, means the full reading, without asking (rule:post-compact-orientation). Why: fresh reads beat rebuilding context from memory. Every build thread then opens with the plain overview of the A/B/C shape. Why: the owner cannot pick from item codes without the context the session holds.
 
 **Work:** one issue at a time; context before options; scope loop-worthiness; **plan the whole cycle before branching** (every task, edge case, what is in and out) so work lands in one branch; with >2 units left, plan the rest as one batch (one-question investigators -> small probes -> one plan resolving cross-unit interactions -> one pass). Why: piecemeal planning splits a feature across PRs. **Audit a long branch against the objective:** commits grouped by what they buy the user, overhead named, the cumbersome fix cut.
 

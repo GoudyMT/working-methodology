@@ -153,7 +153,7 @@ test('a cancelled or skipped job is named, never passed silently', () => {
 	assert.match(o.stderr, /release/);
 });
 
-// why: catches a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list) (CI-C S4)
+// why: guards the owner's K401 yes of 2026-11-23: every job of the run is timed and reported, whatever its name (CI-C S4)
 test('a job renamed or added to the workflow is still measured (the list comes from the run, not a fixed list)', () => {
 	const r = run([job('unit-tests (1)', 30), job('brand-new-job-zz9', 200), job('another renamed job', 181)]);
 	assert.equal(r.status, 0, `${r.stdout}${r.stderr}`);
@@ -197,7 +197,7 @@ test('a job renamed or added to the workflow is still measured (the list comes f
 	const line = kit.split('\n').find((l) => l.includes('scripts/ci-budget.mjs'));
 	assert.ok(line, 'kit-tests never runs scripts/ci-budget.mjs');
 	assert.match(line, /--jobs \S+/);
-	assert.match(line, /--self kit-tests(\s|$)/);
+	assert.match(line, /--self "\$\{\{ github\.job \}\}"(\s|$)/);
 	assert.ok(
 		line.includes('node "$( [ -f "$RUNNER_TEMP/base/scripts/ci-budget.mjs" ] && echo "$RUNNER_TEMP/base/" )scripts/ci-budget.mjs" --jobs'),
 		`the step does not run the base copy when it exists, in one line: ${line}`,

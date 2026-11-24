@@ -783,13 +783,14 @@ test('the owner\'s latest answer counts, a yes is for a question quoting one act
 	popUp({ act, ask: `May I run \`git status\`? I will not run \`${act}\`.` });
 	assert.equal(withYes('Bash', { command: act }), 'deny', 'a question quoting two acts');
 	// A fork copies the transcript, tap and all, into a new session: the tap runs once, in one of them.
-	popUp({ act: 'gh pr merge 10 --squash' });
+	const merge10 = `gh pr merge 10 --squash --match-head-commit ${'a'.repeat(40)}`;
+	popUp({ act: merge10 });
 	const SID2 = '99999999-2222-3333-4444-555555555555';
 	const fork = path.join(path.dirname(TRANSCRIPT), `${SID2}.jsonl`);
 	fs.copyFileSync(TRANSCRIPT, fork);
-	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }), 'allow');
-	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }), 'allow', 'the same call, asked again by another guard');
-	assert.equal(withYes('Bash', { command: 'gh pr merge 10 --squash' }, { transcript_path: fork, session_id: SID2, tool_use_id: 'toolu_fork' }), 'deny', 'a forked session ran the tap again');
+	assert.equal(withYes('Bash', { command: merge10 }), 'allow');
+	assert.equal(withYes('Bash', { command: merge10 }), 'allow', 'the same call, asked again by another guard');
+	assert.equal(withYes('Bash', { command: merge10 }, { transcript_path: fork, session_id: SID2, tool_use_id: 'toolu_fork' }), 'deny', 'a forked session ran the tap again');
 	// The record of spent taps is the owner's like the transcripts: removed, a copied tap would run again.
 	const spent = path.join(cfg, 'kit-yes-spent').split(path.sep).join('/');
 	for (const c of [`rm -rf ${spent}`, `echo x > ${spent}/toolu_ask1`, `mv ${spent} /tmp/x`]) assert.equal(bash(c), 'deny', c);
@@ -799,7 +800,7 @@ test('the owner\'s latest answer counts, a yes is for a question quoting one act
 // only the first act run: the tap was spent by the pop-up's id, so the other three each took a pop-up of their own.
 // why: catches a pop-up with several answered Yes questions unlocking only its first quoted act
 test('one pop-up with several questions answered Yes lets each quoted act run once, and a No still holds its act', () => {
-	const acts = ['gh pr merge 21 --squash', 'gh pr merge 22 --squash', 'gh pr merge 23 --squash'];
+	const acts = ['gh pr merge 21 --squash', 'gh pr merge 22 --squash', 'gh pr merge 23 --squash'].map((a) => `${a} --match-head-commit ${'b'.repeat(40)}`);
 	const at = new Date(Date.now() - 60000).toISOString();
 	const questions = acts.map((act) => ({ question: `May I run \`${act}\`?`, header: 'Owner yes', multiSelect: false, options: [{ label: 'Yes', description: '' }, { label: 'No', description: '' }] }));
 	const answers = Object.fromEntries(questions.map((q, i) => [q.question, i === 2 ? 'No' : 'Yes']));
@@ -833,7 +834,7 @@ test('a yes answers one act: no ambiguous edit quote, the same shell, a branch n
 	const file = path.join(proj, '.claude', 'settings.json');
 	popUp({ act: `Edit ${file}: x => y => z` });
 	assert.equal(withYes('Edit', { file_path: file, old_string: 'x => y', new_string: 'z' }), 'deny', 'an edit quote with its own separator in it');
-	const act = 'gh pr merge 7 --squash';
+	const act = `gh pr merge 7 --squash --match-head-commit ${'c'.repeat(40)}`;
 	popUp({ act, tried: { tool: 'Bash', input: { command: act } } });
 	assert.equal(withYes('PowerShell', { command: act }), 'deny', 'a yes after a Bash call ran in PowerShell');
 	assert.equal(withYes('Bash', { command: act }), 'allow');
@@ -1524,7 +1525,7 @@ test('a fake remote-tracking ref does not end the first push gate', { windows: t
 // why: guards rule:outward-acts. K38 (flips the 1.28.0 measure run left alive in owner-yes.cjs): a transcript line with
 // no message (Claude Code writes such lines) is skipped, before the pop-up and after it, and the yes still counts.
 test('a yes is found past a transcript line with no message', () => {
-	const act = 'gh pr merge 7 --squash';
+	const act = `gh pr merge 7 --squash --match-head-commit ${'c'.repeat(40)}`;
 	popUp({ act });
 	const bare = JSON.stringify({ type: 'assistant', isSidechain: false }) + '\n';
 	fs.writeFileSync(TRANSCRIPT, bare + fs.readFileSync(TRANSCRIPT, 'utf8') + bare);
@@ -1915,4 +1916,15 @@ test('a brace group holding a literal {x} is expanded as bash does, so a guarded
 	for (const c of ['tee .clau{{x},de}/guard.cjs < x', 'cp guard.cjs .clau{{x},de}/', 'tee .claude/gu{ard,{x}}.cjs < x', 'tee {{x},.claude}/owner-proof.cjs < x', 'tee .clau{{{x}},de}/guard.cjs < x', 'tee .claude/settings{{x},.json} < x', 'tee {.,x}{claude,y}/guard.cjs < x', 'tee {.,x}{c,y}laude/settings.json < x', 'tee .claude/gu{a,x}{rd,y}.cjs < x', 'tee .c{l..l}{a,x}ude/guard.cjs < x', 'rm -rf {.,x}{claude,y}', 'tee .clau{{x},d{e,f}}/guard.cjs < x']) assert.notEqual(bash(c), 'allow', c);
 	// Literal braces and plain groups still read as before.
 	for (const c of ['echo {x}', 'ls src/{app,lib}', 'find . -name x -print', 'echo a{b,c}d', 'echo ${HOME}/x', 'cat src/{a,b}{1..2}.txt', 'cat .claude/{guard,owner-proof}.cjs']) assert.equal(bash(c), 'allow', c);
+});
+
+// why: catches a pop-up yes to a merge with no head pin lifting the hold, so an unpinned merge goes out on a tap
+test('a pop-up merge yes quoting gh pr merge 9 --squash with no head pin does not lift the hold, and a pinned one does', () => {
+	const act = 'gh pr merge 9 --squash';
+	popUp({ act });
+	assert.equal(withYes('Bash', { command: act }), 'deny', 'a fresh Yes to the unpinned merge lifts nothing');
+	// Control: the same yes to the merge pinned to a full head sha is honoured.
+	const pinned = `gh pr merge 9 --squash --match-head-commit ${'a'.repeat(40)}`;
+	popUp({ act: pinned });
+	assert.equal(withYes('Bash', { command: pinned }), 'allow', 'a fresh Yes to the pinned merge lifts the hold');
 });

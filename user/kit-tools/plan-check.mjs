@@ -4,14 +4,17 @@
 // Tests cells are not empty; the plan graph (project/.claude/plan-graph.mjs) names no fault; the test budget
 // (test-budget.mjs) holds; each spec rule has a test line "-> <id>"; guard rows hold (guard-rows.mjs).
 // --lock <unit> writes the row's sha256 to <plan>.locks.json when the plan checks clean; a later check refuses a changed row.
+// --lock-rows writes the sha256 of the plan's Rows line under "rows" in the same file, when the plan checks clean; a later
+// check refuses a Rows line that changed (a row added, taken out or reworded), since the build's row list is locked.
 // --records <folder> checks each .jsonl hand-back (handoff.mjs) against the plan by its role line's unit.
 // --whys prints each unit's test names and their why lines, derived from its Tests cell (K368); a why under six words is a
 // fault in the check. --brief <unit> --role tester|builder prints that unit's brief as markdown: its files, test names,
 // why lines and the lock commands, written from the row so they are never typed by hand.
-//   node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit>]
+//   node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit> | --lock-rows]
 //   node plan-check.mjs <plan.md> --whys
 //   node plan-check.mjs <plan.md> --brief <unit> --role tester|builder
-// Exit 0 clean, 1 faults on stdout (or an unknown unit or role on stderr), 2 unreadable input or bad usage (stderr).
+// Exit 0 clean, 1 faults on stdout (or an unknown unit or role, or a unit with no lane, on stderr), 2 unreadable input or bad
+// usage (stderr).
 import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
@@ -29,11 +32,11 @@ const TEST_FOLDER = /^tests\//;
 // A problem with an input the check cannot read. main() turns it into exit 2.
 class Unreadable extends Error {}
 
-// The Units table of a plan text: its header cells, its row cells and each row's text, or null when the plan has no
-// Units table. It ends at its first line that is not a row, as project/.claude/plan-graph.mjs reads it.
-function unitsTable(text) {
+// The table under a heading of a plan text: its header cells, its row cells and each row's text, or null when the plan has no
+// such heading. It ends at its first line that is not a row, as project/.claude/plan-graph.mjs reads it.
+function tableUnder(text, heading) {
 	const lines = text.replace(/\r\n/g, '\n').split('\n');
-	const at = lines.findIndex((l) => /^## Units\b/.test(l));
+	const at = lines.findIndex((l) => heading.test(l));
 	if (at < 0) return null;
 	let head = null;
 	const rows = [];
@@ -56,7 +59,48 @@ function unitsTable(text) {
 	return head ? { head, rows, raws } : null;
 }
 
+const unitsTable = (text) => tableUnder(text, /^## Units\b/);
+
+// The lane a unit runs in: the first word of the Lane cell of the Lanes row whose "Units, in order" cell names the unit
+// ("B (row lock)" gives B; "U1, then U2" names both). Null when no Lanes row names the unit, or the plan has no Lanes table.
+function laneOf(text, id) {
+	const table = tableUnder(text, /^## Lanes\b/);
+	if (table === null) return null;
+	const lane = table.head.findIndex((h) => h.startsWith('lane'));
+	const units = table.head.findIndex((h) => h.startsWith('units'));
+	if (lane < 0 || units < 0) return null;
+	const row = table.rows.find((r) => (r[units] || '').replace(/[*_`]/g, '').split(',').flatMap((p) => p.split(/\bthen\b/i)).map((s) => s.trim()).includes(id));
+	if (!row) return null;
+	return (row[lane] || '').replace(/[*_`]/g, '').trim().split(/\s+/)[0] || null;
+}
+
 const sha = (text) => crypto.createHash('sha256').update(text).digest('hex');
+
+// The plan's Rows line as its text without the line ending (CRLF safe), or null when the plan has none.
+function rowsLineOf(text) {
+	return text.split(/\r?\n/).find((l) => l.startsWith('- **Rows')) ?? null;
+}
+
+// The row ids a Rows line lists: the text after its colon, split at commas, with the markup taken out. Only plain ids
+// (letters and digits) count, so a defer command never carries anything a shell could read.
+function rowIdsOf(rowsLine) {
+	if (!rowsLine) return [];
+	const after = rowsLine.slice(rowsLine.indexOf(':') + 1);
+	return after.replace(/[*_`]/g, '').split(',').map((s) => s.trim()).filter((s) => /^[A-Za-z0-9]+$/.test(s));
+}
+
+// The locked Rows line text beside the locks file (<plan>.rows.txt), or null when it is missing or does not hash to the
+// locked sha. The locks file keeps only the sha, so the text lives in its own sidecar.
+function lockedRowsOf(plan, locks) {
+	if (!Object.prototype.hasOwnProperty.call(locks, 'rows')) return null;
+	let text;
+	try {
+		text = fs.readFileSync(`${plan}.rows.txt`, 'utf8');
+	} catch {
+		return null;
+	}
+	return sha(text) === locks.rows ? text : null;
+}
 
 // A Tests cell's lines, each one test: split at <br>, trimmed, no empty line.
 export const testLines = (cell) => String(cell || '').split(/<br\s*\/?>/i).map((l) => l.trim()).filter(Boolean);
@@ -113,10 +157,10 @@ function whysText(units) {
 }
 
 // --brief: one unit's brief for its tester or its builder, from its row. The test files are the Files cell's tests/ paths.
-function briefText(u, role, planPath) {
+function briefText(u, role, planPath, lane) {
 	const lockTool = path.join(import.meta.dirname, 'unit-lock.mjs').replace(/\\/g, '/');
 	const lock = /\s/.test(lockTool) ? `"${lockTool}"` : lockTool;
-	const lines = [`Plan: ${planPath}`, `Unit: ${u.id}`, `Role: ${role}`, 'Worktree: <absolute path of your own worktree>', 'Lane: <lane id>', ''];
+	const lines = [`Plan: ${planPath}`, `Unit: ${u.id}`, `Role: ${role}`, 'Worktree: <absolute path of your own worktree>', `Lane: ${lane}`, ''];
 	const files = filesOf(u.files);
 	const tests = files.filter((f) => TEST_FOLDER.test(f.replace(/\\/g, '/')));
 	const src = files.filter((f) => !TEST_FOLDER.test(f.replace(/\\/g, '/')));
@@ -237,12 +281,28 @@ function readLocks(file) {
 	return o;
 }
 
-// A locked unit whose row text no longer hashes to its lock is a fault; a locked unit with no row is one too.
-function lockFaults(locks, raw) {
-	return Object.entries(locks).flatMap(([id, hex]) => {
+// The locks file's key for the plan's Rows line (K372): the sha256 of that line, written by --lock-rows.
+const ROWS_KEY = 'rows';
+const CLOSEOUT_TOOL = path.join(import.meta.dirname, 'closeout.mjs').replace(/\\/g, '/');
+
+// A locked unit whose row text no longer hashes to its lock is a fault; a locked unit with no row is one too. A locked
+// Rows line that no longer hashes to its lock is a fault too: a new find goes to the next patch, not into this build.
+function lockFaults(locks, raw, rowsLine, lockedRows) {
+	const units = Object.entries(locks).filter(([id]) => id !== ROWS_KEY).flatMap(([id, hex]) => {
 		if (!raw.has(id)) return [`locked unit ${id} has no row in the Units table`];
 		return sha(raw.get(id)) === hex ? [] : [`unit ${id}: the locked row changed since --lock`];
 	});
+	if (!Object.prototype.hasOwnProperty.call(locks, ROWS_KEY) || (rowsLine !== null && sha(rowsLine) === locks[ROWS_KEY])) return units;
+	const restore = lockedRows === null
+		? 'restore the locked Rows line from git (its <plan>.rows.txt is missing or does not match the lock)'
+		: `restore this Rows line after deferring the new row: ${lockedRows}`;
+	const locked = rowIdsOf(lockedRows);
+	const added = lockedRows === null ? [] : rowIdsOf(rowsLine).filter((id) => !locked.includes(id));
+	return [
+		...units,
+		`the Rows line changed after the build started: a new find goes to the next patch; ${restore}`,
+		...added.map((id) => `the added row ${id} goes to the next patch: node ${CLOSEOUT_TOOL} defer "${id}"`),
+	];
 }
 
 // For unit-check's count gate: one unit's row of a plan. Its Files paths, its Tests line count, and whether its row
@@ -264,8 +324,10 @@ export function unitGate(plan, id) {
 // For flow-check's start: the plan's faults and its lock faults, as the check prints them. An unreadable plan or lock
 // file throws (a plain Error, or Unreadable's message) for the caller to name.
 export function planFaults(plan) {
-	const p = checkPlan(fs.readFileSync(plan, 'utf8'), mapOf(plan));
-	return [...p.faults, ...lockFaults(readLocks(`${plan}.locks.json`), p.raw)];
+	const text = fs.readFileSync(plan, 'utf8');
+	const p = checkPlan(text, mapOf(plan));
+	const locks = readLocks(`${plan}.locks.json`);
+	return [...p.faults, ...lockFaults(locks, p.raw, rowsLineOf(text), lockedRowsOf(plan, locks))];
 }
 
 // The role line of a hand-back: the first non-blank line after the last RECORD: line, as handoff.mjs reads it.
@@ -338,12 +400,15 @@ function parseArgs(argv) {
 	const pos = [];
 	const opt = {};
 	let whys = false;
+	let lockRows = false;
 	for (let i = 0; i < argv.length; i++) {
 		if (['--records', '--lock', '--brief', '--role'].includes(argv[i])) {
 			if (i + 1 >= argv.length) return null;
 			opt[argv[i].slice(2)] = argv[++i];
 		} else if (argv[i] === '--whys') {
 			whys = true;
+		} else if (argv[i] === '--lock-rows') {
+			lockRows = true;
 		} else if (argv[i].startsWith('--')) {
 			return null;
 		} else {
@@ -353,16 +418,18 @@ function parseArgs(argv) {
 	const brief = opt.brief ?? null;
 	const records = opt.records ?? null;
 	const lock = opt.lock ?? null;
-	// --whys and --brief print and stop: they take no --records or --lock, and --role goes with --brief only.
-	if (pos.length !== 1 || (whys && brief !== null) || ((whys || brief !== null) && (records !== null || lock !== null))) return null;
+	// --whys and --brief print and stop: they take no --records, --lock or --lock-rows, and --role goes with --brief only.
+	// --lock and --lock-rows each write the locks file, so they are not given together.
+	if (pos.length !== 1 || (whys && brief !== null) || ((whys || brief !== null) && (records !== null || lock !== null || lockRows))) return null;
+	if (lockRows && lock !== null) return null;
 	if ((opt.role !== undefined) !== (brief !== null)) return null;
-	return { plan: pos[0], records, lock, whys, brief, role: opt.role ?? null };
+	return { plan: pos[0], records, lock, lockRows, whys, brief, role: opt.role ?? null };
 }
 
 function main(argv) {
 	const args = parseArgs(argv);
 	if (!args) {
-		process.stderr.write('plan-check: usage: node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit>] | <plan.md> --whys | <plan.md> --brief <unit> --role tester|builder\n');
+		process.stderr.write('plan-check: usage: node plan-check.mjs <plan.md> [--records <folder>] [--lock <unit> | --lock-rows] | <plan.md> --whys | <plan.md> --brief <unit> --role tester|builder\n');
 		return 2;
 	}
 	try {
@@ -394,14 +461,28 @@ function main(argv) {
 				for (const f of shorts) process.stderr.write(`plan-check: fault: ${f}\n`);
 				return 1;
 			}
-			process.stdout.write(briefText(unit, args.role, args.plan));
+			const lane = laneOf(text, unit.id);
+			if (lane === null) {
+				process.stderr.write(`plan-check: fault: unit ${unit.id} is in no Lanes row's Units cell, so its brief has no lane\n`);
+				return 1;
+			}
+			process.stdout.write(briefText(unit, args.role, args.plan, lane));
 			return 0;
 		}
 		const plan = checkPlan(text, mapOf(args.plan));
 		const lockFile = `${args.plan}.locks.json`;
 		const locks = readLocks(lockFile);
 		const rec = args.records === null ? { found: [], warnings: [], read: 0 } : checkRecords(args.records, plan.ids);
-		const lines = [...plan.faults, ...lockFaults(locks, plan.raw), ...rec.found];
+		const rowsLine = rowsLineOf(text);
+		const lines = [...plan.faults, ...lockFaults(locks, plan.raw, rowsLine, lockedRowsOf(args.plan, locks)), ...rec.found];
+		if (args.lockRows && rowsLine === null) lines.push('the plan has no Rows line to lock');
+		if (args.lockRows && lines.length === 0) {
+			fs.writeFileSync(lockFile, `${JSON.stringify({ ...locks, [ROWS_KEY]: sha(rowsLine) }, null, 2)}\n`);
+				fs.writeFileSync(`${args.plan}.rows.txt`, rowsLine);
+			process.stdout.write(`locked: ${ROWS_KEY} in ${lockFile}\n`);
+		} else if (args.lockRows) {
+			process.stdout.write('not locked: rows, the plan has faults\n');
+		}
 		if (args.lock !== null) {
 			if (!plan.raw.has(args.lock)) throw new Unreadable(`--lock: the Units table has no row for unit ${args.lock}`);
 			if (lines.length === 0) {

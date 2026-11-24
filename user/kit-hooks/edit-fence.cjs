@@ -2,12 +2,55 @@
 // A builder works in its own git worktree; an edit outside it would land in someone else's checkout. When the
 // worktree has a unit file list (one path per line, relative to the worktree) at `git rev-parse --git-path
 // kit-unit-files.txt`, edits are also kept to that list. That path is inside the worktree's own git folder, so the
-// list is never committed and binds only its own worktree. Exit 2 blocks the tool call and tells the builder why; anything unexpected lets the call through, since
-// the fence is a guard, not the only check (the checker and the lead's integration still review the unit).
+// list is never committed and binds only its own worktree. Exit 2 blocks the tool call and tells the builder why; a crash in the fence answers by its tier (K375, below),
+// and the checker and the lead's integration still review the unit.
 const fs = require('fs');
 const path = require('path');
-const safeSpawn = require('./safe-spawn.cjs');
-const { isTestFile, tests, whyFault } = require('./why-rule.cjs');
+// The two kit modules load inside the try at the bottom (K375 S1F3): a load crash answers by the tier, not as a bare exit 1.
+let safeSpawn = null;
+let isTestFile = null;
+let tests = null;
+let whyFault = null;
+
+// K375 (U10): a crash in this hook obeys its tier. hook-error.cjs decides (a deny under high); with the helper missing the
+// call is refused and one row is written, found with fs reads only (no child process, so a stubbed or planted git cannot
+// stop the row). `where` is the call's cwd, set once the input is read; the process cwd stands in for an unread input.
+const HOOK = 'edit-fence';
+let where = process.cwd();
+
+// The git common dir of `where`, from fs reads only: a folder's .git is the common dir; a "gitdir:" file names a worktree's
+// folder, whose commondir file names the common one. Null when `where` is in no repo.
+function commonDirFs(from) {
+	let dir = path.resolve(String(from));
+	for (;;) {
+		const dotGit = path.join(dir, '.git');
+		if (fs.existsSync(dotGit)) {
+			if (fs.statSync(dotGit).isDirectory()) return dotGit;
+			const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(dotGit, 'utf8'));
+			if (!m) return null;
+			const gitdir = path.resolve(dir, m[1].trim());
+			try { return path.resolve(gitdir, fs.readFileSync(path.join(gitdir, 'commondir'), 'utf8').trim()); } catch { return gitdir; }
+		}
+		const up = path.dirname(dir);
+		if (up === dir) return null;
+		dir = up;
+	}
+}
+
+// The refusal for stderr when this hook's crash is a deny, or null when its tier lets the call through.
+function failed(error) {
+	let helper = null;
+	try { helper = require('./hook-error.cjs'); } catch { helper = null; }
+	if (helper) {
+		const answer = helper.onError(HOOK, error, where);
+		return answer ? answer.hookSpecificOutput.permissionDecisionReason : null;
+	}
+	try {
+		const dir = commonDirFs(where);
+		if (dir) fs.appendFileSync(path.join(dir, 'kit-guard-open.log'), `${JSON.stringify({ kind: 'hook-error', id: 'hook-error', hook: `${HOOK}.cjs`, error: `hook-error.cjs is missing: ${String((error && error.message) || error).split('\n')[0]}`, at: new Date().toISOString() })}\n`);
+	} catch { /* the refusal stands without its row */ }
+	return 'hook error: lead review: hook-error.cjs is missing';
+}
 
 // Roles whose edits need the lead's file list (their role bodies say so); a builder without one edits its worktree as before.
 // A plugin role is named kit:builder, so a role matches by its last name after a colon, as sweep-guard matches it.
@@ -76,7 +119,7 @@ function whyRefusal(tool, input, rel, abs, root) {
 
 function main() {
 	const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
-	agentType = input.agent_type || '';
+	where = input.cwd || where;
 	const file = input.tool_input && (input.tool_input.file_path || input.tool_input.notebook_path);
 	if (!file) return 0;
 	const cwd = input.cwd || process.cwd();
@@ -121,13 +164,15 @@ function main() {
 	return 0;
 }
 
-// A listed role whose check fails stops too: an unchecked tester or writer edit never gets through.
-let agentType = '';
+// A crash obeys the tier: under high a deny is exit 2 with its reason on stderr, so an unchecked edit never gets through.
 try {
+	({ isTestFile, tests, whyFault } = require('./why-rule.cjs'));
+	safeSpawn = require('./safe-spawn.cjs');
 	process.exitCode = main();
-} catch {
-	if (LISTED_ROLE.test(agentType)) {
-		process.stderr.write(`Blocked: ${agentType} edit could not be checked against its file list. Stop and report it.\n`);
+} catch (error) {
+	const reason = failed(error);
+	if (reason) {
+		process.stderr.write(`${reason}\n`);
 		process.exitCode = 2;
 	} else {
 		process.exitCode = 0;

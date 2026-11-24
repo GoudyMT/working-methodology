@@ -1,0 +1,14 @@
+2026-11-23T14:53:01.1000000Z ##[group]Run node scripts/test-run.mjs --shard 1/2
+2026-11-23T14:53:01.1000001Z shell: /usr/bin/bash -e {0}
+2026-11-23T14:53:01.1000002Z ##[endgroup]
+2026-11-23T14:53:02.2000000Z file:///__w/kit/kit/scripts/test-run.mjs:341
+2026-11-23T14:53:02.2000001Z 	const runRoot = sessionRoot();
+2026-11-23T14:53:02.2000002Z 	                ^
+2026-11-23T14:53:02.2000003Z
+2026-11-23T14:53:02.2000004Z TypeError: sessionRoot is not a function
+2026-11-23T14:53:02.2000005Z     at main (file:///__w/kit/kit/scripts/test-run.mjs:341:20)
+2026-11-23T14:53:02.2000006Z     at file:///__w/kit/kit/scripts/test-run.mjs:512:1
+2026-11-23T14:53:02.2000007Z     at ModuleJob.run (node:internal/modules/esm/module_job:195:25)
+2026-11-23T14:53:02.2000008Z
+2026-11-23T14:53:02.2000009Z Node.js v22.1.0
+2026-11-23T14:53:02.2000010Z ##[error]Process completed with exit code 1.

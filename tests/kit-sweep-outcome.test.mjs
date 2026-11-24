@@ -533,6 +533,7 @@ test('every ask and every pause writes a triage report beside the contract; an a
   const o = outcome(trip, String(Math.ceil(537500 * 1.3)));
   assert.match(o.stdout, /contract\.triage\.md/);
   assert.match(read(triage(trip.f)), /30% over the budget of 537500/);
+  assert.match(read(triage(trip.f)), /## Fix options/, 'a pause report lists its fix options');
   const esc = approveRun(featureContract());
   const e = approveIn(esc.dir, [esc.f, '--escape', 'a sync bug shipped']);
   assert.match(e.stdout, /contract\.triage\.md/);
@@ -542,9 +543,10 @@ test('every ask and every pause writes a triage report beside the contract; an a
   outcome(t);
   fs.rmSync(triage(t.f), { force: true });
   nextBranch(t.dir);
-  assert.match(approveIn(t.dir, [t.f]).stdout, /trial review due[\s\S]*contract\.triage\.md/);
-  assert.match(read(triage(t.f)), /trial review due/);
-  assert.match(read(triage(t.f)), /resumes with a Yes in the pop-up/, 'the fix options are the report\'s point');
+  const after = approveIn(t.dir, [t.f]);
+  assert.equal(after.status, 0, after.stdout);
+  assert.doesNotMatch(after.stdout, /trial review/, 'no trial review is due after any number of approvals');
+  assert.ok(!fs.existsSync(triage(t.f)), 'and so no report is written');
   // A tier that always asks still gets real numbers, and no absolute path or owner's words leak into the report.
   const fp = approveRun({ ...featureContract(), tier: 'first push' });
   const fpText = read(triage(fp.f));
@@ -595,7 +597,8 @@ test('a reviewer that ran on another model than its role names pauses for the ow
   const cfg = transcripts({ m1: [[1, 1, 1, 1]], m2: [[1, 1, 1, 1]], m3: [[1, 1, 1, 1]], m4: [{ model: 'claude-haiku-4-5', u: [1, 1, 1, 1] }], m5: [[1, 1, 1, 1]] });
   const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'm1,m2,m3,m4,m5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
   assert.equal(o.status, 0, o.stdout);
-  assert.match(o.stdout, /paused[\s\S]*ran on claude-haiku-4-5/);
+  assert.match(o.stdout, /rerun .+ on \S+: it ran on claude-haiku-4-5, not the model the contract named/); // pin: 2 the rerun order
+  assert.doesNotMatch(o.stdout, /paused/, 'the lead reruns it; no pause');
 });
 
 // why: guards rule:sweep-auto-approval

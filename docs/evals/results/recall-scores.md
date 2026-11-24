@@ -1275,3 +1275,42 @@ gate: b25-1.51.2 median 14 baseline 14 brief v2 keys v12
 behaviour: b25-1.51.2 median 14 baseline 14 suite v2 control 6
 behaviour worse: none
 scored: b9f65f1a271bac47bbcbc9fe9d227559c5ba4ac3
+
+## Recall v12 - 1.51.4, hook tiers, lead state, ci-fix and the new test set path (2026-11-24)
+
+Candidate: the branch at ab51083f in a clean clone. Baseline: the released 1.51.3, from a clean clone of its tag, run the same day with the candidate's scripts, each run in its own throwaway Claude folder in the cloud (21:31Z to 21:46Z, six at a time). Control: no kit. Recall ran on the pinned model and behaviour on `KIT_GATE_MODEL=claude-sonnet-5-5`; Max picked the pinned model for recall at 21:27Z, after a Sonnet run on the earlier head 03d259be missed it (candidate median 12.5, release 13; its behaviour passed 14 against 14).
+
+Scored under the fixed gate (K198): two fresh blind scorers read all eleven runs together, a run's score is their average with no rounding up, the floor is 14, and a question that sums lower than the release is asked again alone before it can count as worse.
+
+| Q | Candidate | Baseline | Control |
+|---|---|---|---|
+| 1 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 2 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 3 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 4 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 5 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 6 | 1, 1, 1, 1, 1 | 1, 0, 0, 1, 1 | 0 |
+| 7 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 8 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 9 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 10 | 1, 1, 1, 1, 1 | 0.5, 1, 1, 1, 1 | 0 |
+| 11 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 12 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 13 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| 14 | 1, 1, 1, 1, 1 | 1, 1, 1, 1, 1 | 0 |
+| Total | 14, 14, 14, 14, 14 | 13.5, 13, 13, 14, 14 | 0 |
+
+- **Scored: five-run median 14 of 14, same-day baseline 14 (the exact release median is 13.5), control 0.** No question sums lower than the release, so none was asked again. The lead copied these lines from the scoring output and did not re-read the two scorer files.
+- **Behaviour (suite v2, floor 14):** the branch 14, 14, 14, 13, 14; the released 1.51.3 runs 11, 12, 14, 13, 12 the same day; control 4. No scenario sums lower than the release. The line was recomputed from the saved runs and matches.
+- **Earlier runs, not counted:** a run on the owner's PC, set aside for its set-up, and Sonnet cloud runs on 1048d792 (behaviour 14, 12, 13, 13) and 03d259be, each before a later change.
+- **Added to the scorers' prompt:** one format line, one line per question and never a range, as the brief does not forbid ranges.
+
+scorers: 2
+worse: none
+control: 0
+gate: g1514c median 14 baseline 14 brief v2 keys v12
+release median: 13.5
+behaviour: g1514c median 14 baseline 12 suite v2 control 4
+behaviour model: claude-sonnet-5-5
+behaviour worse: none
+scored: ab51083f918d4dbf6bc9e3a332b923b3f02997cd

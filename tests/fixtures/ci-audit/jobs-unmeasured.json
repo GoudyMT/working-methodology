@@ -1,0 +1,14 @@
+{
+	"21": { "jobs": [
+		{ "name": "a", "status": "completed", "conclusion": "success", "created_at": "2026-01-01T00:00:00Z", "started_at": "2026-01-01T00:00:05Z", "completed_at": "2026-01-01T00:01:07Z", "steps": [
+			{ "name": "Set up job", "conclusion": "success", "started_at": "2026-01-01T00:00:05Z", "completed_at": "2026-01-01T00:00:07Z" },
+			{ "name": "Run a", "conclusion": "success", "started_at": "2026-01-01T00:00:07Z", "completed_at": "2026-01-01T00:01:07Z" } ] },
+		{ "name": "b", "status": "completed", "conclusion": "success", "created_at": "2026-01-01T00:00:00Z", "started_at": "2026-01-01T00:00:05Z", "completed_at": "2026-01-01T00:01:07Z", "steps": [
+			{ "name": "Set up job", "conclusion": "success", "started_at": "2026-01-01T00:00:05Z", "completed_at": "2026-01-01T00:00:07Z" },
+			{ "name": "Run b", "conclusion": "success", "started_at": "2026-01-01T00:00:07Z", "completed_at": "2026-01-01T00:01:07Z" } ] }
+	] },
+	"22": { "jobs": [
+		{ "name": "a", "status": "completed", "conclusion": "skipped", "created_at": "2026-01-01T01:00:00Z", "started_at": null, "completed_at": "2026-01-01T01:00:00Z", "steps": [] },
+		{ "name": "b", "status": "completed", "conclusion": "success", "created_at": "2026-01-01T01:00:00Z", "started_at": "2026-01-01T01:00:05Z", "completed_at": "2026-01-01T01:00:06Z", "steps": [] }
+	] }
+}

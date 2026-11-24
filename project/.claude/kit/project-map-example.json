@@ -1,5 +1,5 @@
 {
-  "project": "<Project name>",
+  "project": "Example project",
   "goal": "<One sentence: what the project does for whom.>",
   "successBar": [
     "<A checkable bar, from the spec or Success Charter>"

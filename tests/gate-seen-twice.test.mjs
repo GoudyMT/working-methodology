@@ -103,6 +103,24 @@ test('score holds back the gate lines until a lower question is asked again, the
   assert.match(twice.stdout, /^worse: 6$/m);
   assert.match(twice.stdout, /on two looks[\s\S]*fix the cause/);
   assert.doesNotMatch(twice.stdout, /owner/);
+  // K428: the model sealed with each run: a set on one model prints it beside the gate line, two models are refused.
+  const modelled = (name, of) => { const w = write(name, scoreSets(fiveEach(Array(5).fill(clean)))); const m = JSON.parse(read(w[2])); fs.writeFileSync(w[2], JSON.stringify({ ...m, model: Object.fromEntries(Object.keys(m.map).map((id, i) => [id, of(i)])) })); return spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...w, 'kit-x'], { encoding: 'utf8' }); };
+  const sonnet = modelled('sonnet', () => 'claude-sonnet-5-5');
+  assert.equal(sonnet.status, 0, sonnet.stdout + sonnet.stderr);
+  assert.match(sonnet.stdout, /^model: claude-sonnet-5-5\n[\s\S]*^gate: /m);
+  const mixed = modelled('mixed', (i) => (i ? 'claude-sonnet-5-5' : 'claude-opus-5-5'));
+  assert.notEqual(mixed.status, 0);
+  assert.match(mixed.stdout + mixed.stderr, /more than one model/);
+  const pinned = modelled('pinned', () => 'claude-opus-5-5');
+  assert.equal(pinned.status, 0, pinned.stdout + pinned.stderr);
+  assert.doesNotMatch(pinned.stdout, /^model:/m, 'the pin prints as before');
+  // The header's model is sealed by the blind step and stays out of what the scorer reads.
+  const { blind } = await import('../scripts/recall-score.mjs');
+  const run = path.join(dir, 'cand-x-2.md');
+  fs.writeFileSync(run, '# Recall run: cand-x-2\n\nWhen: 2026-11-20T15:00:00.000Z\nCLI: 2.1.0; model claude-sonnet-5-5, effort medium\n\n## 6. A question?\n\nKey: k\n\nAnswer:\n\n> a\n');
+  blind(path.join(dir, 'sealed'), [run], () => 0);
+  assert.deepEqual(JSON.parse(read(path.join(dir, 'sealed', 'sealed-map.json'))).model, { R01: 'claude-sonnet-5-5' });
+  assert.doesNotMatch(read(path.join(dir, 'sealed', 'scorer', 'R01.md')), /sonnet/);
 });
 
 // why: catches a second-look run, which asks one question alone, refused by the blind step

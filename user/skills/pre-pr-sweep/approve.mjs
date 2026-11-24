@@ -19,12 +19,13 @@
 //
 // What the contract says about itself is not taken on trust where the branch can show it: the diff against the base
 // sets the tier's floor, adds the dependency modifier and marks changed tests. The log lives in the repo's git folder
-// (never pushed, one per repo), each line chained to the one before, so a careless hand edit shows (a careful one does not; the owner reads the log at
-// each trial review). The script
-// pauses itself, and only the owner resumes it, by their Yes in Claude Code's choice pop-up, after: tokens a quarter or more
-// over budget, a third or more of the findings repeated between roles, a bug that escaped a sweep it passed, or
-// every 10 auto-approvals (the trial review; every 20 after two clean ones in a row). The next approval waits for the
-// last sweep's outcome. A mistake Claude can fix itself is not the owner's: it answers FIX THE CONTRACT, and the owner
+// (never pushed, one per repo), each line chained to the one before, so a careless hand edit shows (a careful one does not; the owner reads the log with --summary).
+// The script pauses itself, and only the owner resumes it, by their Yes in Claude Code's choice pop-up, after: tokens a
+// quarter or more over budget, a ceiling that did not hold, the call-cap meter letting calls through unread, a call cap
+// no hook held, a log changed by hand, a bug that escaped a sweep it passed, or a reviewer whose model cannot be read.
+// Drift (a stopped share over a third, repeated findings, start drift, content per call, cache re-writes, sweep dollars
+// over the p95) is a logged warning: it shows in --summary and in the outcome's report, and it does not pause. The next
+// approval waits for the last sweep's outcome. A mistake Claude can fix itself is not the owner's: it answers FIX THE CONTRACT, and the owner
 // reads a contract only once it is whole. Every ask and every pause writes <contract>.triage.md beside the contract: what tripped, the
 // numbers, the log lines and the fix options.
 //
@@ -55,7 +56,7 @@ const { price, dollars, reportDollars } = createRequire(import.meta.url)('../../
 
 const SELF = fileURLToPath(import.meta.url);
 // The owner's pop-up answers, read the way the guards read them (an exact copy the kit's build keeps in kit-tools).
-const { sessionYes, unquotedYes, sessionGap } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
+const { sessionYes, unquotedYes, sessionGap, sessionAnswers, sessionLatest, home: ownerHome } = createRequire(import.meta.url)('../../kit-tools/owner-yes.cjs');
 // git starts from node's own folder, never the repo, through the helper the PR audits use (build 23).
 const safeSpawn = createRequire(import.meta.url)('../../kit-tools/audits/safe-spawn.cjs');
 const toPosix = (p) => p.split(path.sep).join('/');
@@ -124,8 +125,6 @@ const STOPPED_SHARE = 1 / 3;
 const REWRITES_TRIP = 2;
 // The prompt cache lives 5 minutes; a shorter gap between two calls cannot have let it expire.
 const REWRITE_GAP_MS = 5 * 60 * 1000;
-const TRIAL_EVERY = 10;
-const TRIAL_EVERY_EARNED = 20;
 // Two questions sharing this much of their words are one question asked twice. Rewording beats a word count, so the
 // outcome's repeated-findings trip is the real backstop for clones.
 const CLONE = 0.5;
@@ -264,22 +263,17 @@ function state() {
 	let broken = -1;
 	log.forEach((e, i) => { if (e.prev !== (i ? sha(lines[i - 1]) : '')) broken = i; });
 	const lastResume = log.map((e, i) => (e.kind === 'resume' && i > broken ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
-	if (broken >= 0 && lastResume < 0) return { log, paused: `the log was changed by hand at line ${broken + 1}`, pausedAt: log[broken].time };
+	if (broken >= 0 && lastResume < 0) {
+		const cause = `the log was changed by hand at line ${broken + 1}`;
+		guardRow(cause);
+		// The pause point is the guard-log row written for this break at its first sighting: no log line's time counts,
+		// before the break or after it, so a Yes stamped before the row cannot resume the pause.
+		return { log, paused: cause, pausedAt: guardAt(cause) };
+	}
 	const lastPause = log.map((e, i) => (e.kind === 'pause' ? i : -1)).reduce((a, b) => Math.max(a, b), -1);
 	const paused = lastPause > lastResume ? log[lastPause].reason : null;
 	const pausedAt = paused ? log[lastPause].time : null;
-	const since = log.slice(lastResume + 1);
-	// Trust earned widens the review: after two trial reviews in a row the owner resumed with no other pause between,
-	// the next comes after TRIAL_EVERY_EARNED approvals. Any other pause (a drift trip, a hand-written line) resets it.
-	let clean = 0;
-	let pendingTrial = false;
-	log.forEach((e, i) => {
-		if (i <= broken) clean = 0;
-		else if (e.kind === 'pause') { if (String(e.reason).startsWith('trial review due')) pendingTrial = true; else { clean = 0; pendingTrial = false; } }
-		else if (e.kind === 'resume' && pendingTrial) { clean++; pendingTrial = false; }
-	});
-	const reviewEvery = clean >= 2 ? TRIAL_EVERY_EARNED : TRIAL_EVERY;
-	return { log, paused, pausedAt, reviewEvery, approvedSinceReview: since.filter((e) => e.kind === 'decision' && e.decision === 'approved').length };
+	return { log, paused, pausedAt };
 }
 
 // The lower of the branch's caps and the base's, so a branch cannot drop a limit the project set.
@@ -403,6 +397,24 @@ const isCleared = (log, i) => log[i].decision === 'approved' || log.some((y, j) 
 // A decision the owner's yes could not clear for an unreadable head gets one row in the kit's guard log, so the
 // refusal to clear it is visible. A decision with no owner yes has nothing to clear and gets no row.
 const GUARD_LOG = LOG && path.join(path.dirname(LOG), 'kit-guard-open.log');
+// One row in the kit's hook log for an outcome the approver could not read (K377 S5). A cause is written once: the same
+// cause read again by a later run adds no row.
+function guardRow(cause, extra = {}) {
+	if (!GUARD_LOG) return;
+	let known = false;
+	try { known = fs.readFileSync(GUARD_LOG, 'utf8').split('\n').some((l) => { try { const e = JSON.parse(l); return Boolean(e) && e.hook === 'approve' && e.cause === cause; } catch { return false; } }); } catch { /* no log yet */ }
+	if (!known) fs.appendFileSync(GUARD_LOG, JSON.stringify({ at: new Date().toISOString(), hook: 'approve', cause, ...extra }) + '\n');
+}
+// The time of the first guard-log row approve.mjs wrote for this cause, or undefined when there is none.
+function guardAt(cause) {
+	if (!GUARD_LOG) return undefined;
+	try {
+		for (const l of fs.readFileSync(GUARD_LOG, 'utf8').split('\n')) {
+			try { const e = JSON.parse(l); if (e && e.hook === 'approve' && e.cause === cause && typeof e.at === 'string' && Number.isFinite(Date.parse(e.at))) return e.at; } catch { /* not a row */ }
+		}
+	} catch { /* no log yet */ }
+	return undefined;
+}
 function logUnreadableHeads(log) {
 	if (!GUARD_LOG) return;
 	// One row per uncleared line ever: a row already written for this contract and hash is kept, not repeated by each run.
@@ -579,7 +591,7 @@ const openCarries = (log) => log.filter((e) => e.kind === 'outcome').reduce((t, 
 
 // What the owner reads at a stop: what tripped, the numbers, the log lines and the ways forward.
 const FIXES = [
-	[/paused|trial review due/, 'The owner reviews the log first (`approve.mjs --summary`), then resumes with a Yes in the pop-up; until then every sweep goes to the owner.'],
+	[/paused/,'The owner reviews the log first (`approve.mjs --summary`), then resumes with a Yes in the pop-up; until then every sweep goes to the owner.'],
 	[/not committed|no changes|cannot read the branch diff/, 'Commit the work and run approve.mjs from the branch\'s own checkout (pass `--base <ref>` if it cannot find the base).'],
 	[/needs \d+ \S+ role/, 'Add the missing floor role(s) and run approve.mjs again.'],
 	[/beyond the \S+ floor|agents, over/, 'Drop the extra roles, or split the change into smaller PRs.'],
@@ -696,11 +708,6 @@ function decide() {
 	const { open, reported, stuck } = openSweep(s.log);
 	if (stuck) why.push(`the last approved sweep was cut short (${rel(open.contract)}): ${starts(s.log, open.contract).started} of ${open.agents} reviewers started by the guard's count, and its spend is unmeasured; the owner's yes here closes it so`);
 	if (s.paused) why.unshift(`auto-approval is paused: ${s.paused}`);
-	else if (s.approvedSinceReview >= s.reviewEvery) {
-		const reason = `trial review due: ${s.reviewEvery} auto-approvals since the last review`;
-		write({ kind: 'pause', reason });
-		why.unshift(reason);
-	}
 	// Ahead of any pause: a yes here would open a second set of slots over a round whose spend was never read.
 	if (open && !reported && !stuck) fix.unshift(`log the outcome of the last approved sweep first (${rel(open.contract)}): --agents, or --none-ran if no reviewer started under it`);
 	const split = splitRoles(c.roles || [], facts);
@@ -729,7 +736,7 @@ function decide() {
 		console.log('ASK THE OWNER - this Swarm Contract is outside the approved rules (rule:sweep-auto-approval):');
 		for (const w of why) console.log(`    ${w}`);
 		if (spendLine) console.log(`    Spend: ${spendLine}`);
-		console.log(`    The owner answers in the pop-up: ${popUpHow(`sweep yes ${askCode(entry.hash)}`)}; after their Yes, log it with --owner-yes.`);
+		console.log(`    The owner answers in the pop-up: ${popUpHow(`sweep yes ${askCode(state().log, state().log.length - 1)}`)}; after their Yes, log it with --owner-yes.`);
 		const now = state();
 		if (now.paused) for (const l of resumeHelp(now)) console.log(l);
 		const f = triage(`${c.tier} sweep sent to the owner`, why, [
@@ -1032,11 +1039,22 @@ function openSweep(log) {
 // session's own transcript (in this repo's folder of them), is the proof: no code is typed and no message id copied,
 // so the typed codes of 1.23 are retired. A subagent's transcript is never read. Limits: the transcript is a file of
 // the same user, so a program set on forging can write it, as it can the log (its links are not keyed).
-const askCode = (hash) => String(hash || '').slice(0, 6);
+// The code covers the contract's hash and the ask's own question id: how many times that contract's sweep has been opened
+// or closed (a yes or an outcome) before the ask. It holds while the ask is open and changes once the sweep closes, so a
+// yes to an earlier ask clears no later one. It also covers the repo (its git common dir), so one contract asked in two repos has two codes.
+const askCode = (log, at) => {
+	const d = log[at] || {};
+	const repo = path.dirname(LOG);
+	const n = log.slice(0, at).filter((e) => e.contract === d.contract && (e.kind === 'owner-yes' || e.kind === 'outcome')).length;
+	return sha(`${d.hash}:${n}:${repo}`).slice(0, 6);
+};
 const pauseCode = (s) => { const lines = rawLines(); const i = s.log.map((e, k) => (e.kind === 'pause' ? k : -1)).reduce((a, b) => Math.max(a, b), -1); return i >= 0 ? sha(lines[i]).slice(0, 6) : ''; };
 const popUpHow = (act) => `ask with the AskUserQuestion pop-up, the question quoting \`${act}\`, one option labelled "Yes" and one starting "No"`;
 // One tap answers one ask or one pause.
-const tapUsed = (log, tap) => log.some((e) => e.tap === tap);
+// A tap is "<session>:<pop-up tool id>"; the id alone spends it, so the same pop-up read through another session record
+// is the same tap, and taps logged before this keep matching by their id.
+const tapId = (tap) => String(tap).slice(String(tap).indexOf(':') + 1);
+const tapUsed = (log, tap) => log.some((e) => e.tap && tapId(e.tap) === tapId(tap));
 // Why a Yes is missing: a Yes whose question names the act without backticks counts for nothing, and the refusal says
 // so, or the lead reads it as no answer and asks the owner the same wrong way again (build 11's resume).
 const unquotedNote = (act, since) => {
@@ -1055,9 +1073,79 @@ const repoRoots = () => {
 	return [...new Set([top, cd ? path.dirname(path.resolve(cd)) : top])];
 };
 const newest = (found) => found.filter(Boolean).sort((a, b) => b.at - a.at)[0] || null;
-const sessionYesAny = (act, opts = {}) => newest(repoRoots().map((repo) => sessionYes(act, { ...opts, repo })));
-const unquotedYesAny = (act, opts = {}) => newest(repoRoots().map((repo) => unquotedYes(act, { ...opts, repo })));
-const sessionGapAny = () => { const gaps = repoRoots().map((repo) => sessionGap({ repo })); return gaps.includes('') ? '' : gaps[0]; };
+// K377 S1: with no session id in the shell, the sessions read are the records kept in this repo's own folders (the
+// folder, and each folder above it, as owner-yes.cjs reads): never another repo's, and a folder that only starts with
+// this one's name is not this one's.
+const SESSION_ID = /^[0-9a-f-]{36}$/i;
+// wide: the folder scope owner-yes.cjs keys on (the folder and each one above it), read only to see an answer that revokes.
+// The folder keys of a repo root, lowercase: its own, and with wide each folder above it. The filesystem root's key is never
+// the repo's own, so it is left out unless wide (where it can only revoke).
+const folderKeys = (repo, wide = false) => {
+	const key = (p) => path.resolve(p).replace(/[^A-Za-z0-9]/g, '-').toLowerCase();
+	let real = repo;
+	try { real = fs.realpathSync.native(repo); } catch { /* as given */ }
+	const keys = [key(real)];
+	if (wide) for (let d = path.resolve(real); path.dirname(d) !== d;) { d = path.dirname(d); keys.push(key(d)); }
+	return keys.filter((k) => wide || k !== key(path.parse(path.resolve(real)).root));
+};
+const recordIds = (repo, wide = false) => {
+	const root = path.join(ownerHome(), 'projects');
+	const keys = folderKeys(repo, wide);
+	let dirs = [];
+	// A folder that is not there holds no record; any other read failure is a fault the caller refuses on (fail-closed).
+	try { dirs = fs.readdirSync(root).filter((d) => keys.includes(d.toLowerCase())); } catch (e) { if (e.code !== 'ENOENT') scopeFaults.push(`the session records folder cannot be read (${e.code || 'error'})`); return []; }
+	const ids = new Set();
+	for (const d of dirs) { try { for (const f of fs.readdirSync(path.join(root, d))) if (f.endsWith('.jsonl') && SESSION_ID.test(f.slice(0, -6))) ids.add(f.slice(0, -6)); } catch (e) { if (e.code !== 'ENOENT') scopeFaults.push(`a session record folder cannot be read (${e.code || 'error'})`); } }
+	return [...ids];
+};
+const scopeFaults = [];
+// Each (session, repo) pair to read: every session record under each repo root. The shell's session id does not narrow
+// this read; the own-key and session checks on the Yes (inOwnKey, sessionYesAny) decide who may supply it.
+const readers = () => repoRoots().flatMap((repo) => recordIds(repo).map((sessionId) => ({ repo, sessionId })));
+// The newest answer to the act across every record decides, and it must be a Yes to this act alone: a later No, or a
+// pop-up quoting several acts, takes the earlier Yes back. With a session id set, that session alone may supply the
+// Yes, but the newest answer of every record of this repo still decides.
+// A No revokes from any record in owner-yes.cjs's folder scope (the folders above each root, and every worktree of this
+// repo); a Yes is supplied only by a record under this checkout's or the main checkout's own key, and by the named session.
+// Fail-closed: a worktree list that fails, or a record folder in scope that cannot be read, refuses (scopeFaults). Limit,
+// stated: a No in the record of a worktree that has since been removed is out of reach, so it cannot revoke.
+const worktreeRoots = () => {
+	const w = git('worktree', 'list', '--porcelain');
+	if (w.status !== 0) { scopeFaults.push('git worktree list failed'); return []; }
+	return w.stdout.split('\n').filter((l) => l.startsWith('worktree ')).map((l) => l.slice(9).trim()).filter(Boolean);
+};
+// The Yes is bound to the folder it was read from: its pop-up must also stand in a record under one of this repo's own
+// keys (this checkout's or the main checkout's), whatever the session id, so a record above or beside the repo never counts.
+// The record is parsed by owner-yes.cjs's own reader (sessionLatest) with the own keys exactly (keys, no walk above, the
+// filesystem root's key never one of them): the entry must be an accepted Yes to this act with the same pop-up id.
+const inOwnKey = (act, l, faults) => {
+	const sid = l.tap.split(':')[0];
+	return repoRoots().some((repo) => {
+		const e = sessionLatest(act, { sessionId: sid, repo, keys: folderKeys(repo), faults });
+		return Boolean(e && e.yes && e.single && e.tap === l.tap);
+	});
+};
+const sessionYesAny = (act, opts = {}) => {
+	scopeFaults.length = 0;
+	const scope = [...new Set([...repoRoots(), ...worktreeRoots()])].flatMap((repo) => recordIds(repo, true).map((sessionId) => ({ repo, sessionId })));
+	if (scopeFaults.length) return null;
+	// Every record read reports its read errors (faults): the decision's own reads, not a separate probe.
+	const read = [];
+	const l = newest(scope.map((r) => sessionLatest(act, { ...opts, ...r, keys: folderKeys(r.repo, true), faults: read })));
+	const own = l && inOwnKey(act, l, read) && (!process.env.CLAUDE_CODE_SESSION_ID || l.tap.startsWith(`${process.env.CLAUDE_CODE_SESSION_ID}:`));
+	if (read.length) { scopeFaults.push(`a session record cannot be read (${read[0]})`); return null; }
+	return l && l.yes && l.single && own ? l : null;
+};
+const unquotedYesAny = (act, opts = {}) => newest(readers().map((r) => unquotedYes(act, { ...opts, ...r })));
+const sessionGapAny = () => {
+	if (!process.env.CLAUDE_CODE_SESSION_ID) return readers().length ? '' : 'no session record of this repository can be read';
+	const gaps = repoRoots().map((repo) => sessionGap({ repo })); return gaps.includes('') ? '' : gaps[0];
+};
+// Fail-closed (S4): with no accepted pop-up readable at all, the refusal is logged as one row {at, hook, cause} in the git
+// common folder's kit-guard-open.log, and the owner is told the pop-up step.
+const nothingReadable = () => !readers().some((r) => sessionAnswers(null, r).length);
+const logOpen = (cause) => { try { fs.appendFileSync(path.join(path.dirname(LOG), 'kit-guard-open.log'), JSON.stringify({ at: new Date().toISOString(), hook: 'approve.mjs', cause }) + '\n'); } catch { /* the refusal stands */ } };
+const refusedBlind = (what) => { if (scopeFaults.length) logOpen(`${what}: ${scopeFaults[0]}, so a taken-back Yes cannot be ruled out`); else if (nothingReadable()) logOpen(`${what}: no readable session record of this repository holds an accepted pop-up`); };
 
 // The owner said yes to a contract the script sent to them. Logged only for the contract and HEAD the script asked
 // about, so the reviewers' guard (sweep-guard) sees the owner's call and the order: script first, then the owner.
@@ -1082,9 +1170,9 @@ function ownerYes() {
 	// A yes on an older ask must not open a new set of starts over a sweep whose spend is still unread.
 	if (open && !reported && !stuck && open.contract !== contractFile) { console.log(`Log the outcome of the last approved sweep first (${rel(open.contract)}), then run approve.mjs on this contract again. Nothing logged.`); return 1; }
 	// The owner's tap on this ask's act, after the ask. Read before anything is written, so a refusal logs nothing.
-	const act = `sweep yes ${askCode(last.hash)}`;
+	const act = `sweep yes ${askCode(s.log, askedAt)}`;
 	const yes = sessionYesAny(act, { since: Date.parse(last.time) });
-	if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask.${unquotedNote(act, Date.parse(last.time))} ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
+	if (!yes) { refusedBlind('--owner-yes'); console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the ask.${unquotedNote(act, Date.parse(last.time))} ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)}; after their Yes, run this again. Nothing logged.`); return 1; }
 	if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered an ask; one answer is for one ask. Nothing logged.'); return 1; }
 	const proof = { proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() };
 	if (stuck) { const { started } = starts(s.log, open.contract); write({ kind: 'outcome', contract: open.contract, decisionAt: open.time, budget: open.budget, tokens: 0, findings: 0, real: 0, duplicates: 0, closedByOwner: true, started, ...(started ? {} : { noneRan: true }) }); }
@@ -1101,7 +1189,7 @@ function resumeHelp(s) {
 	// K357 S2: the resume reads the owner's Yes from the session that asked, so the line names that session's id. Unset,
 	// it names the variable and leaves the id to the one who runs it.
 	const sid = process.env.CLAUDE_CODE_SESSION_ID || '';
-	const resume = /^[0-9a-f-]{36}$/i.test(sid) ? `CLAUDE_CODE_SESSION_ID=${sid} node ${toPosix(SELF)} --resume` : `node ${toPosix(SELF)} --resume, with CLAUDE_CODE_SESSION_ID set to the id of the session that asked`;
+	const resume = /^[0-9a-f-]{36}$/i.test(sid) ? `CLAUDE_CODE_SESSION_ID=${sid} node ${toPosix(SELF)} --resume` : `node ${toPosix(SELF)} --resume (it reads this repo's own session records)`;
 	return [
 		`Auto-approval is paused since ${String(s.pausedAt || '').slice(0, 10) || 'an unknown date'}: ${s.paused}.`,
 		`    The owner reviews the log first (node ${toPosix(SELF)} --summary), then resumes in the pop-up:`,
@@ -1117,7 +1205,7 @@ function resumeHelp(s) {
 // Claude Code's meta file beside the transcript says a reviewer that finished, and its first line is no older than
 // the clearance. Anything else asks the owner, so a slip cannot count the wrong one; a hand-written transcript still
 // passes, as a forged log line does. An id in `crashed` may be unfinished: --retry reads what it spent all the same.
-const transcriptRoot = () => path.join(process.env.CLAUDE_CONFIG_DIR || path.join(os.homedir(), '.claude'), 'projects');
+const transcriptRoot = () => path.join(ownerHome(), 'projects');
 const folders = (d) => { try { return fs.readdirSync(d, { withFileTypes: true }).filter((e) => e.isDirectory()).map((e) => path.join(d, e.name)); } catch { return []; } };
 const briefText = (asked) => (asked ? (typeof asked.content === 'string' ? asked.content : Array.isArray(asked.content) ? asked.content.map((x) => (x && x.text) || '').join('\n') : '') : '');
 
@@ -1311,7 +1399,7 @@ function outcome() {
 	if (has('--tokens')) { console.log('--tokens is not taken: the script reads each role\'s spend from its own transcript. Pass --agents <id,...>, one agent id per role. Nothing logged.'); return 1; }
 	const s = state();
 	// The decision is found by the contract's path, so an edit after approval still finds it.
-	// An owner-decided sweep logs its outcome too, so the trial review sees every sweep.
+	// An owner-decided sweep logs its outcome too, so the log counts every sweep.
 	// A FIX THE CONTRACT line cleared nothing, so it never stands for the sweep that ran.
 	const last = s.log.filter((e) => e.kind === 'decision' && e.contract === contractFile && e.decision !== 'fix').pop();
 	if (!last) { console.log(`No decision for ${contractFile}; run approve.mjs on it first. Nothing logged.`); return 1; }
@@ -1388,7 +1476,7 @@ function outcome() {
 	if (read.bad) {
 		const why = [`the spend cannot be read, so it is not guessed: ${read.bad.join(', ')}`];
 		console.log('ASK THE OWNER - the spend cannot be read, so it is not guessed (rule:sweep-auto-approval):');
-		console.log(`    ${read.bad.join(', ')}${read.root ? ` under ${toPosix(read.root)}` : ''}. Check the agent ids, or set CLAUDE_CONFIG_DIR to the config folder the session ran in. Nothing logged. A sweep cut short: --outcome --cut-short.`);
+		console.log(`    ${read.bad.join(', ')}${read.root ? ` under ${toPosix(read.root)}` : ''}. Check the agent ids, or run it from the install home the session ran under (the folder owner-yes.cjs reads). Nothing logged. A sweep cut short: --outcome --cut-short.`);
 		console.log(`    Triage report for the owner: ${triage('a sweep outcome that cannot be measured', why, [`agents given: ${ids.join(', ')}`, `this round began at ${since}`])}`);
 		return 1;
 	}
@@ -1424,7 +1512,9 @@ function outcome() {
 	const alive = (clearAts.length ? retriesSince(s.log, contractFile, clearAts[0]) : []).filter((e) => { const c = read.roles.find((y) => y.agent === e.crashed); return c && c.lastWrite > Date.parse(e.time); }).map((e) => e.crashed);
 	for (const x of per) if (alive.includes(x.crashed)) x.crashedAlive = true;
 	write({ kind: 'outcome', contract: contractFile, decisionAt: decision.time, budget: decision.budget, ...nums, roles: per });
+	// Trips pause the sweep: a safety net broke. Warnings are logged and reported, and pause nothing (K377 S2).
 	const trips = [];
+	const warns = [];
 	// The baselines are the roles measured before this outcome. Without enough of them the old whole-sweep trip stays.
 	const past = measuredRoles(s.log);
 	// Bounded only when the decision's own ceilings came from that baseline: ceilings set from the budgets keep the
@@ -1445,7 +1535,7 @@ function outcome() {
 	// dollar watch the token ceiling claimed to be. A bigger change adds roles, so the bound grows with it in a line.
 	const pastDollars = s.log.filter((e) => e.kind === 'outcome' && Array.isArray(e.roles)).flatMap((e) => e.roles).filter((r) => r && r.split && Number(r.calls) > 0).slice(-CEILING_ROLES).map((r) => dollars(r.split, r.model));
 	const sweepDollars = per.reduce((t, x) => t + (Number(x.dollars) || 0), 0);
-	if (pastDollars.length >= CEILING_MIN && sweepDollars > nearestRank(pastDollars, CONTENT_PCT) * per.length) trips.push(`the sweep spent ${usd(sweepDollars)}, over ${per.length} roles x the p95 a past role spent (${usd(nearestRank(pastDollars, CONTENT_PCT))})`);
+	if (pastDollars.length >= CEILING_MIN && sweepDollars > nearestRank(pastDollars, CONTENT_PCT) * per.length) warns.push(`the sweep spent ${usd(sweepDollars)}, over ${per.length} roles x the p95 a past role spent (${usd(nearestRank(pastDollars, CONTENT_PCT))})`);
 	// K151 (build 20): the call-cap meter lets a call through when it cannot read the transcript, and logs why. Each such
 	// line for one of this sweep's reviewers keeps auto-approval paused and names the role: a silent meter is a gap.
 	let opens = [];
@@ -1464,26 +1554,41 @@ function outcome() {
 	}
 	if (bounded) {
 		const stopped = per.filter((x) => x.stopped).length;
-		if (stopped > STOPPED_SHARE * per.length) trips.push(`${stopped} of ${per.length} roles stopped at their ${inDollars ? 'dollar' : 'token'} ceiling (the work outgrew it)`);
+		if (stopped > STOPPED_SHARE * per.length) warns.push(`${stopped} of ${per.length} roles stopped at their ${inDollars ? 'dollar' : 'token'} ceiling (the work outgrew it)`);
 		const firsts = past.filter((r) => Number(r.firstCall) > 0).map((r) => Number(r.firstCall));
 		const start = median(per.map((x) => x.firstCall));
-		if (firsts.length >= CEILING_MIN && start > START_DRIFT * median(firsts)) trips.push(`the starting context (${n(start)}) is ${Math.round((start / median(firsts) - 1) * 100)}% over its median of ${n(median(firsts))} (rules or tools grew)`);
+		if (firsts.length >= CEILING_MIN && start > START_DRIFT * median(firsts)) warns.push(`the starting context (${n(start)}) is ${Math.round((start / median(firsts) - 1) * 100)}% over its median of ${n(median(firsts))} (rules or tools grew)`);
 		const content = median(per.map((x) => x.tokens / x.calls));
 		const p95 = nearestRank(past.map((r) => Number(r.tokens) / Number(r.calls)), CONTENT_PCT);
-		if (content > p95) trips.push(`content per call (${n(content)}) is over its p95 of ${n(p95)} (a new kind of work)`);
+		if (content > p95) warns.push(`content per call (${n(content)}) is over its p95 of ${n(p95)} (a new kind of work)`);
 		const rewrites = per.reduce((t, x) => t + (x.rewrites || 0), 0);
-		if (rewrites >= REWRITES_TRIP) trips.push(`${rewrites} cache re-writes after the first call (the cache expired between calls)`);
+		if (rewrites >= REWRITES_TRIP) warns.push(`${rewrites} cache re-writes after the first call (the cache expired between calls)`);
 	}
-	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) trips.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
-	// The reviewer model rule rests on the model a role names, so a reviewer on another one is the owner's.
+	if (nums.findings > 0 && nums.duplicates * 3 >= nums.findings) warns.push(`${nums.duplicates} of ${nums.findings} findings repeated between roles`);
+	// The reviewer model rule rests on the model a role names. A role that recorded no model cannot be read, so it
+	// pauses and is logged; a role on another model is the lead's to rerun: printed, never a pause (K377 S4).
+	// A mismatch is a warning row that keeps the sweep out of the clean run (S5F1); it is not a pause.
+	const mismatches = [];
 	per.forEach((x, i) => {
 		// The model the decision cleared, so an edit to the contract after it hides nothing.
 		const named = (decision.models || [])[i] ?? (roles[i] ? roleModel(roles[i]) : null);
-		if (named && (!x.model || !modelKey(x.model) || modelKey(named) !== modelKey(x.model))) trips.push(`${x.role} ran on ${x.model || 'no recorded model'}; the contract named ${named}`);
+		if (!named) return;
+		if (!x.model) {
+			trips.push(`${x.role} ran on no recorded model; the contract named ${named}`);
+			guardRow(`no recorded model for ${x.role} in sweep ${decision.hash}`);
+			return;
+		}
+		if (modelKey(named) !== modelKey(x.model)) {
+			console.log(`    rerun ${x.role} on ${named}: it ran on ${x.model}, not the model the contract named. The lead reruns it; this is no pause.`);
+			mismatches.push(`${x.role} ran on ${x.model}, not the model the contract named (${named}); the lead reruns it`);
+		}
 	});
 	for (const t of trips) write({ kind: 'pause', reason: t });
+	for (const w of warns) write({ kind: 'warning', contract: contractFile, hash: decision.hash, reason: w });
+	for (const m of mismatches) write({ kind: 'warning', contract: contractFile, hash: decision.hash, reason: m, mismatch: true });
 	for (const id of alive) console.log(`    ${id} wrote after its retry was logged: it was not dead, so its role had two reviewers. Its spend so far is counted.`);
 	console.log(trips.length ? `Outcome logged; auto-approval paused: ${trips.join('; ')}` : `Outcome logged: ${nums.tokens.toLocaleString('en-US')} processed tokens over ${per.length} role(s).`);
+	for (const w of warns) console.log(`    Warning, no pause: ${w}`);
 	if (trips.length) {
 		const f = triage('auto-approval paused after a sweep\'s outcome', trips, [
 			`tokens ${nums.tokens} of the budget ${decision.budget} (the trip is ${OVERRUN}x)`,
@@ -1493,6 +1598,50 @@ function outcome() {
 		console.log(`    Triage report for the owner: ${f}`);
 	}
 	return 0;
+}
+
+// K377 S1-S3: the run of clean sweeps at the end of the log. A sweep is clean when no pause came before the next sweep and
+// no reviewer stopped under 80% of its ceiling, read in the role's own ceiling unit (its row's, else the decision line's).
+// A pause resets the run whatever its chain link says, and so does a model-mismatch warning; other warnings, decisions and resumes do not; an outcome with no roles
+// (none ran) or closed by the owner is skipped; a line nobody can read ends the run and gets one row in the guard log.
+const PROVEN_RUN = 5;
+function cleanRun() {
+	let run = 0, unit = 'tokens';
+	const lines = rawLines();
+	lines.forEach((l, i) => {
+		let e;
+		try { e = JSON.parse(l); } catch { e = null; }
+		if (!e || typeof e !== 'object' || Array.isArray(e)) {
+			run = 0;
+			const cause = `log line ${i + 1} is unreadable: the clean-sweep count ends there`;
+			if (GUARD_LOG) {
+				let known = false;
+				try { known = fs.readFileSync(GUARD_LOG, 'utf8').split('\n').some((x) => { try { return JSON.parse(x).cause === cause; } catch { return false; } }); } catch { /* no log yet */ }
+				if (!known) { try { fs.appendFileSync(GUARD_LOG, JSON.stringify({ at: new Date().toISOString(), hook: 'approve.mjs', cause }) + '\n'); } catch { /* the count stands */ } }
+			}
+			return;
+		}
+		// A line whose chain link is wrong was changed by hand, or a line before it was removed: the run ends at that line,
+		// and a decision line that cannot be trusted leaves its ceiling unit unknown until the next intact decision line.
+		if (e.prev !== (i ? sha(lines[i - 1]) : '')) { run = 0; if (e.kind === 'decision') unit = 'unknown'; return; }
+		if (e.kind === 'decision') unit = e.ceilingUnit === 'dollars' ? 'dollars' : 'tokens';
+		else if (e.kind === 'pause') run = 0;
+		// A reviewer on another model than the contract named: its sweep is no clean sweep (S5F1).
+		else if (e.kind === 'warning' && e.mismatch) run = 0;
+		// A reviewer on another model than the contract named: its sweep is no clean sweep (S5F1).
+		else if (e.kind === 'outcome' && Array.isArray(e.roles) && e.roles.length && !e.noneRan && !e.closedByOwner) {
+			const low = e.roles.some((r) => {
+				if (!r || !r.stopped) return false;
+				// Under an unknown unit a role with no unit of its own cannot be read, so it is not clean.
+				if (!r.ceilingUnit && unit === 'unknown') return true;
+				const spent = (r.ceilingUnit || unit) === 'dollars' ? Number(r.dollars) : Number(r.tokens);
+				const ceiling = Number(r.ceiling);
+				return !(ceiling > 0 && spent * 5 >= ceiling * 4);
+			});
+			run = low ? 0 : run + 1;
+		}
+	});
+	return run;
 }
 
 function summary() {
@@ -1514,7 +1663,12 @@ function summary() {
 	}
 	const n = (x) => x.toLocaleString('en-US');
 	if (Object.keys(kinds).length) console.log(`spend by role kind (processed tokens): ${Object.entries(kinds).map(([k, v]) => `${k} x${v.n}: up to ${n(v.max)}${v.calls ? ` over ${v.calls} calls` : ''}`).join('; ')}`);
-	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; closed unmeasured by the owner: ${o.filter((e) => e.closedByOwner).length}; state: ${s.paused ? `paused (${s.paused})` : `running, ${s.approvedSinceReview} of ${s.reviewEvery} since the last review`}`);
+	console.log(`escapes: ${s.log.filter((e) => e.kind === 'escape').length}; closed unmeasured by the owner: ${o.filter((e) => e.closedByOwner).length}`);
+	console.log(`auto-approval: ${s.paused ? `off (${s.paused})` : 'on'}`);
+	const run = cleanRun();
+	console.log(`clean sweeps in a row: ${run}`);
+	if (run >= PROVEN_RUN) console.log(`proven: ${PROVEN_RUN} clean sweeps in a row`);
+	for (const e of s.log.filter((x) => x.kind === 'warning')) console.log(`warning ${path.basename(e.contract)} ${e.hash}: ${e.reason}`);
 	if (s.paused) console.log(resumeHelp(s)[2].trim());
 	return 0;
 }
@@ -1538,11 +1692,13 @@ function main() {
 		if (!s.paused) { console.log('Auto-approval is not paused; nothing to resume. Nothing logged.'); return 1; }
 		// The owner's tap on this pause's act, after the pause.
 		const act = `sweep resume ${pauseCode(s)}`;
-		const yes = sessionYesAny(act, { since: Date.parse(s.pausedAt || 0) });
-		if (!yes) { console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause.${unquotedNote(act, Date.parse(s.pausedAt || 0))} Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
+		// No recorded pause point: no Yes can be read against it, so nothing resumes (logged).
+		if (!Number.isFinite(Date.parse(s.pausedAt))) { logOpen('--resume: the pause has no recorded time'); console.log(`Refused: the pause has no recorded time, so no Yes can be read against it. Nothing logged. ${popUpHow(act)[0].toUpperCase()}${popUpHow(act).slice(1)} after the pause is logged again.`); return 1; }
+		const yes = sessionYesAny(act, { since: Date.parse(s.pausedAt) });
+		if (!yes) { refusedBlind('--resume'); console.log(`Refused: this session holds no Yes from the owner to \`${act}\` since the pause.${unquotedNote(act, Date.parse(s.pausedAt))} Only the owner resumes: ${popUpHow(act)}; after their Yes, run this again. Nothing logged.`); return 1; }
 		if (tapUsed(s.log, yes.tap)) { console.log('Refused: that Yes already answered; one answer is for one pause. Nothing logged.'); return 1; }
 		write({ kind: 'resume', proof: 'popup', tap: yes.tap, at: new Date(yes.at).toISOString() });
-		console.log(`Auto-approval resumed on the owner's Yes; the next review comes after ${state().reviewEvery} more.`);
+		console.log('Auto-approval resumed on the owner\'s Yes.');
 		return 0;
 	}
 	if (!contractFile) { console.log('Usage: node approve.mjs <contract.json> [--outcome ... | --escape "<note>"] [--base <ref>]'); return 2; }

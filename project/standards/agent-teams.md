@@ -52,7 +52,7 @@ The build lead of a batch is the overwatch lead: its run is in `agent-team-build
 
 The project's own filled "Rules every brief carries" block (rule:agent-team-adapter) adds the project's values and wins over the preloaded rules. Role-file hooks back the table (the builder's edit fence, the checker's clean-tree stop). Role files stay in the Claude folder's `agents/`: a project copy's hooks never run in `-p`. Only `Explore` (no hooks) installs per project (MC5).
 
-A builder never edits a locked test. A change to one after its red commit is a `retest` commit: the pre-push hook holds a push that carries one until the owner's yes, and a PR title is never `retest`.
+A builder never edits a locked test. A change to one after its red commit is a `retest` commit: it is checked by CI's test-integrity and listed for the merge yes, and a PR title is never `retest`. In the kit repo it is never held at push; a project's pre-push hook still holds a retest push until test-integrity ships in the project CI template.
 
 ### Agent Canary {#agent-canary}
 

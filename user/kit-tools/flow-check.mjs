@@ -11,6 +11,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { fileURLToPath } from 'node:url';
 import { check } from './handoff.mjs';
 import { checklist, InputError } from './checklist.mjs';
 
@@ -203,6 +204,14 @@ function hookLogOf(planFile, given) {
 	return fs.existsSync(file) ? readText(file) : null;
 }
 
+// The lead state record is rewritten after each read, so it is fresh after every merge. A failed write is named on stderr:
+// the old record then checks as stale, and the read's own exit code stands.
+const LEAD_STATE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'lead-state.mjs');
+function writeLeadState(planFile) {
+	const r = spawnSync(process.execPath, [LEAD_STATE, 'write', planFile], { encoding: 'utf8', timeout: 60000, windowsHide: true });
+	if (r.status !== 0) process.stderr.write(`flow-check: lead state record not written: ${`${r.stdout || ''}${r.stderr || ''}`.trim()}\n`);
+}
+
 // checklist <log.jsonl> --plan <plan.md> [--hooks <file>]: one line per plan unit on stdout (its last step, or not started), the flow
 // faults on stderr with exit 1. A log, plan or hook log that cannot be read, or a line that is not a step, exits 2.
 function checklistCmd(logFile, planFile, hooksFile) {
@@ -215,6 +224,7 @@ function checklistCmd(logFile, planFile, hooksFile) {
 		throw e;
 	}
 	for (const l of lines) process.stdout.write(`${l}\n`);
+	writeLeadState(planFile);
 	return faults.length ? fault(faults) : 0;
 }
 

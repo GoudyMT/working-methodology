@@ -42,6 +42,8 @@ stays refused, stop and report it.
 - **Tests to write, and the failure each must show:** <each test, its input, its expected output>
 - Write the tests, run them, and show each one red on an assertion, never on a syntax error, an import error or a
   crash. Never write product code. Never lower, skip or widen a test.
+- A secret-shaped test value (a key, token or password pattern) is joined from parts at run time, never written whole
+  in the file.
 
 ## Commands (exact)
 

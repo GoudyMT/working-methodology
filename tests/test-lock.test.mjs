@@ -98,6 +98,14 @@ function pushRun(hook, dir, bare, input, extra = {}) {
 }
 // Pattern for a refusal that names the retest commit (by subject or short sha) and asks for the owner's yes.
 const OWNER_YES = /owner'?s? yes/i;
+// The kit source's own hook (.githooks/pre-push) lets a feature-branch push with a test change through with no ask: CI's
+// test-integrity judges it. The project hook keeps its full scan, and main, tag and force pushes stay held by both.
+const isKit = (hook) => hook === KIT_PRE_PUSH;
+function kitPassesNoAsk(r, what) {
+	assert.equal(r.status, 0, `the kit hook let ${what} through with no ask: ${r.stderr}`);
+	assert.doesNotMatch(r.stderr, OWNER_YES);
+	assert.doesNotMatch(r.stderr, /holds a test change/);
+}
 
 // why: guards rule:agent-role-table (the lead's lock must hold the unit's source files, so the builder edits only those)
 test('unit-lock writes the source files it is given to the unit file list and prints them', () => {
@@ -384,12 +392,14 @@ test('the builder brief template does not tell the builder to write its own file
 });
 
 // why: guards rule:test-integrity (retest(scope): commit slips past the exact match)
-test('pre-push refuses a retest(scope): commit in both the kit and the project hook, naming its subject', () => {
+// renamed from: pre-push refuses a retest(scope): commit in both the kit and the project hook, naming its subject
+test('the project pre-push refuses a retest(scope): commit, naming its subject, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 		const retest = commit(dir, 'retest(lock): x');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'a retest(lock): push'); continue; }
 		assert.notEqual(r.status, 0, `${hook} refused: ${r.stderr}`);
 		assert.ok(r.stderr.includes('retest(lock): x'), `${hook} names the subject: ${r.stderr}`);
 	}
@@ -431,24 +441,13 @@ test('pre-push refuses a new branch with a retest: commit, refuses a key on a ne
 });
 
 // why: guards rule:test-integrity (kit pre-push passes a retest push with no owner yes)
-test("the kit's own pre-push refuses a retest: push with no owner's pop-up yes and names it", () => {
+// renamed from: the kit's own pre-push refuses a retest: push with no owner's pop-up yes and names it
+test("the kit's own pre-push passes a retest: push on a feature branch with no ask", () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 	const retest = commit(dir, 'retest: tighten the add case');
 	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`);
-	assert.notEqual(r.status, 0, `the kit hook refused: ${r.stderr}`);
-	assert.match(r.stderr, OWNER_YES);
-	// Folded control (was its own test): catches the kit's own pre-push refusing a retest push even with the owner's pop-up yes to that push, unlike the project hook.
-	{
-		const { dir: d5, red: r5, bare: b5 } = pushRepo();
-		put(d5, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-		const retest5 = commit(d5, 'retest: tighten the add case');
-		const input5 = `refs/heads/feat/x ${retest5} refs/heads/feat/x ${r5}\n`;
-		const cfg5 = kitTemp.makeTemp('lock-owner-kit-');
-		ownerTaps(cfg5, d5, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-		const yes5 = pushRun(KIT_PRE_PUSH, d5, b5, input5, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg5, CLAUDE_CODE_SESSION_ID: TAP_SID });
-		assert.equal(yes5.status, 0, `the owner's yes lets the kit hook's push through: ${yes5.stderr}`);
-	}
+	kitPassesNoAsk(r, 'a retest: push on a feature branch');
 });
 
 // why: guards rule:test-integrity (approved retest push goes through with no pop-up yes)
@@ -474,24 +473,45 @@ test('pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-u
 });
 
 // why: guards rule:test-integrity (kit pre-push passes an approved retest push with no pop-up yes)
-test("the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes and names the owner's yes", () => {
+// renamed from: the kit's own pre-push refuses a retest: push on KIT_PUSH_APPROVED=1 with no owner pop-up yes and names the owner's yes
+test("the kit's own pre-push passes a retest: push on a feature branch on the KIT_PUSH_APPROVED marker alone", () => {
 	const { dir, red, bare } = pushRepo();
 	put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 	const retest = commit(dir, 'retest: tighten the add case');
 	const r = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${retest} refs/heads/feat/x ${red}\n`, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: TAP_SID });
-	assert.notEqual(r.status, 0, `the kit hook refused on the marker alone: ${r.stderr}`);
-	assert.ok(r.stderr.includes('retest: tighten the add case') || r.stderr.includes(retest.slice(0, 7)), `the retest commit is named: ${r.stderr}`);
-	assert.match(r.stderr, OWNER_YES);
-	// Folded control (was its own test): catches the kit's own pre-push refusing an approved retest push even with the owner's pop-up yes to that push.
+	kitPassesNoAsk(r, 'a retest: push on the marker alone');
+});
+
+// why: catches the kit's own pre-push passing a tag push or a force push that carries a test change unheld
+test("the kit's own pre-push holds a tag push and a non-fast-forward push that carry a test change, each with its hold message", () => {
+	// Tag: the pushed tag carries a test edit, and the remote has no such tag.
 	{
-		const { dir: d7, red: r7, bare: b7 } = pushRepo();
-		put(d7, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
-		const retest7 = commit(d7, 'retest: tighten the add case');
-		const input7 = `refs/heads/feat/x ${retest7} refs/heads/feat/x ${r7}\n`;
-		const cfg7 = kitTemp.makeTemp('lock-approved-kit-');
-		ownerTaps(cfg7, d7, 'KIT_PUSH_APPROVED=1 git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
-		const ok7 = pushRun(KIT_PRE_PUSH, d7, b7, input7, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CONFIG_DIR: cfg7, CLAUDE_CODE_SESSION_ID: TAP_SID });
-		assert.equal(ok7.status, 0, `the approved push with the owner's yes goes through the kit hook: ${ok7.stderr}`);
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'fix: tighten the add case');
+		const tag = pushRun(KIT_PRE_PUSH, dir, bare, `refs/tags/v1 ${edit} refs/tags/v1 ${ZERO}\n`);
+		assert.notEqual(tag.status, 0, `the kit hook held the tag push: ${tag.stderr}`);
+		assert.match(tag.stderr, /holds a test change/);
+		assert.match(tag.stderr, OWNER_YES);
+		assert.ok(tag.stderr.includes('tests/add.test.mjs'), `the held test path is named: ${tag.stderr}`);
+		// Control: the same commit on a feature branch passes, so the hold above comes from the tag.
+		const feat = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		kitPassesNoAsk(feat, 'the same commit pushed to a feature branch');
+	}
+	// Force: the remote's feature branch holds a commit the pushed one does not contain.
+	{
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 9;\n' });
+		const remoteTip = commit(dir, 'feat: remote work');
+		git(dir, ['push', '-q', 'origin', `${remoteTip}:refs/heads/feat/x`]);
+		git(dir, ['checkout', '-q', '-b', 'feat/y', red]);
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'fix: tighten the add case');
+		const force = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${remoteTip}\n`);
+		assert.notEqual(force.status, 0, `the kit hook held the force push: ${force.stderr}`);
+		assert.match(force.stderr, /holds a test change/);
+		assert.match(force.stderr, OWNER_YES);
+		assert.ok(force.stderr.includes('tests/add.test.mjs'), `the held test path is named: ${force.stderr}`);
 	}
 });
 
@@ -503,13 +523,15 @@ test('the builder brief drops the test-first line and says the tester red commit
 });
 
 // why: catches a fix:, feat: or test: commit that edits an existing test file pushed with no owner yes, so a test changes unheld
-test('pre-push holds a fix:, feat: or test: commit that edits an existing test file, in both hooks', () => {
+// renamed from: pre-push holds a fix:, feat: or test: commit that edits an existing test file, in both hooks
+test('the project pre-push holds a fix:, feat: or test: commit that edits an existing test file, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		for (const subject of ['fix: tighten the add case', 'feat: tighten the add case', 'test: tighten the add case']) {
 			const { dir, red, bare } = pushRepo();
 			put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
 			const edit = commit(dir, subject);
 			const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+			if (isKit(hook)) { kitPassesNoAsk(r, `"${subject}" that edits tests/add.test.mjs`); continue; }
 			assert.notEqual(r.status, 0, `${hook} passed "${subject}" that edits tests/add.test.mjs: ${r.stderr}`);
 			assert.match(r.stderr, OWNER_YES, `${hook} asks for the owner's yes on "${subject}"`);
 		}
@@ -534,14 +556,18 @@ test('pre-push holds a fix:, feat: or test: commit that edits an existing test f
 });
 
 // why: catches a Retest: commit in capitals pushed unheld, since the subject match is case-sensitive and reads only the type
-test('pre-push holds a Retest: commit in any letter case, and passes Retesting: as a word that is no type', () => {
+// renamed from: pre-push holds a Retest: commit in any letter case, and passes Retesting: as a word that is no type
+test('the project pre-push holds a Retest: commit in any letter case, the kit hook passes it, and both pass Retesting: as a word that is no type', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 1;\n' });
 		const cap = commit(dir, 'Retest: tighten the add case');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${cap} refs/heads/feat/x ${red}\n`);
-		assert.notEqual(r.status, 0, `${hook} passed "Retest:": ${r.stderr}`);
-		assert.match(r.stderr, OWNER_YES);
+		if (isKit(hook)) kitPassesNoAsk(r, '"Retest:"');
+		else {
+			assert.notEqual(r.status, 0, `${hook} passed "Retest:": ${r.stderr}`);
+			assert.match(r.stderr, OWNER_YES);
+		}
 		// Folded control (was its own test): Retesting: is not the retest type, so it still passes.
 		const { dir: d2, red: r2, bare: b2 } = pushRepo();
 		put(d2, { 'src/add.js': 'export const add = (a, b) => a + b + 2;\n' });
@@ -553,7 +579,8 @@ test('pre-push holds a Retest: commit in any letter case, and passes Retesting: 
 });
 
 // why: catches a test file deleted, renamed, or edited at another path (.test.cjs, tests/sub/) pushed unheld, since the hold reads only the subject
-test('pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit of existing test files, in both hooks', () => {
+// renamed from: pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit of existing test files, in both hooks
+test('the project pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit of existing test files, and the kit hook passes them on a feature branch', () => {
 	const cases = [
 		{ subject: 'feat: drop the add tests', change: (d) => git(d, ['rm', '-q', 'tests/add.test.mjs']) },
 		{ subject: 'fix: rename the add tests', change: (d) => git(d, ['mv', 'tests/add.test.mjs', 'tests/sum.test.mjs']) },
@@ -572,6 +599,7 @@ test('pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit 
 			c.change(dir);
 			const edit = commit(dir, c.subject);
 			const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+			if (isKit(hook)) { kitPassesNoAsk(r, `"${c.subject}"`); continue; }
 			assert.notEqual(r.status, 0, `${hook} passed "${c.subject}": ${r.stderr}`);
 			assert.match(r.stderr, OWNER_YES);
 		}
@@ -579,7 +607,8 @@ test('pre-push holds a delete, a rename, a .test.cjs edit and a tests/sub/ edit 
 });
 
 // why: catches a git revert of a test change pushed unheld, since its subject starts with Revert and no hold reads it
-test('pre-push holds a git revert that carries a test change, in both hooks', () => {
+// renamed from: pre-push holds a git revert that carries a test change, in both hooks
+test('the project pre-push holds a git revert that carries a test change, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, bare } = pushRepo();
 		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
@@ -589,18 +618,21 @@ test('pre-push holds a git revert that carries a test change, in both hooks', ()
 		git(dir, ['revert', '--no-edit', edit]);
 		const revert = git(dir, ['rev-parse', 'HEAD']);
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${revert} refs/heads/feat/x ${ZERO}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'the revert'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed the revert: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
 });
 
 // why: catches a fixup! retest: commit pushed unheld, since its subject starts with fixup! and the retest type never matches
-test('pre-push holds a fixup! retest: commit, in both hooks', () => {
+// renamed from: pre-push holds a fixup! retest: commit, in both hooks
+test('the project pre-push holds a fixup! retest: commit, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 3;\n' });
 		const fix = commit(dir, 'fixup! retest: tighten the add case');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${fix} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'the fixup!'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed the fixup!: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
@@ -631,7 +663,8 @@ test('edit fence reads a plugin role name kit:builder or kit:tester as the build
 });
 
 // why: catches a test edit under another spelling of its type or a scope, pushed unheld, since the hold matches one lowercase form
-test('pre-push holds a test edit under any spelling of its type, in both hooks, and repeats its verdict', () => {
+// renamed from: pre-push holds a test edit under any spelling of its type, in both hooks, and repeats its verdict
+test('the project pre-push holds a test edit under any spelling of its type, and the kit hook passes it on a feature branch, and both repeat the verdict', () => {
 	const subjects = ['fix(hooks): tighten the add case', 'Fix: tighten the add case', 'TEST: tighten the add case', 'RETEST: tighten the add case', 'retest: tighten the add case'];
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		for (const subject of subjects) {
@@ -640,6 +673,7 @@ test('pre-push holds a test edit under any spelling of its type, in both hooks, 
 			const edit = commit(dir, subject);
 			const push = () => pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
 			const first = push();
+			if (isKit(hook)) { kitPassesNoAsk(first, `"${subject}"`); kitPassesNoAsk(push(), `"${subject}" on a repeat`); continue; }
 			assert.notEqual(first.status, 0, `${hook} passed "${subject}": ${first.stderr}`);
 			assert.match(first.stderr, OWNER_YES);
 			assert.notEqual(push().status, 0, `${hook} passed "${subject}" on a repeat`);
@@ -648,7 +682,8 @@ test('pre-push holds a test edit under any spelling of its type, in both hooks, 
 });
 
 // why: catches a test edit in the middle of a push range, or on a new branch, pushed unheld because only the tip was read
-test('pre-push holds a push whose test edit sits mid-range, and a new branch carrying a test edit, in both hooks', () => {
+// renamed from: pre-push holds a push whose test edit sits mid-range, and a new branch carrying a test edit, in both hooks
+test('the project pre-push holds a push whose test edit sits mid-range, and a new branch carrying a test edit, and the kit hook passes them on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 4;\n' });
@@ -658,9 +693,10 @@ test('pre-push holds a push whose test edit sits mid-range, and a new branch car
 		put(dir, { 'src/add.js': 'export const add = (a, b) => a + b + 5;\n' });
 		const tip = commit(dir, 'feat: tidy add again');
 		const mid = pushRun(hook, dir, bare, `refs/heads/feat/x ${tip} refs/heads/feat/x ${red}\n`);
+		const fresh = pushRun(hook, dir, bare, `refs/heads/feat/new ${tip} refs/heads/feat/new ${ZERO}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(mid, 'a mid-range test edit'); kitPassesNoAsk(fresh, 'a new branch with a test edit'); continue; }
 		assert.notEqual(mid.status, 0, `${hook} passed the range with a mid-range test edit: ${mid.stderr}`);
 		assert.match(mid.stderr, OWNER_YES);
-		const fresh = pushRun(hook, dir, bare, `refs/heads/feat/new ${tip} refs/heads/feat/new ${ZERO}\n`);
 		assert.notEqual(fresh.status, 0, `${hook} passed a new branch with a test edit: ${fresh.stderr}`);
 	}
 });
@@ -679,7 +715,8 @@ function indexPut(dir, mode, rel, text) {
 }
 
 // why: catches a merge that resolves a test file to a third version pushed unheld, since only the merge's own diff against both parents shows it
-test('pre-push holds a merge whose resolution changes a test file away from both parents, in both hooks', () => {
+// renamed from: pre-push holds a merge whose resolution changes a test file away from both parents, in both hooks
+test('the project pre-push holds a merge whose resolution changes a test file away from both parents, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		// Both sides' edits are on the remote already, so the push's range holds only the merge.
@@ -696,13 +733,15 @@ test('pre-push holds a merge whose resolution changes a test file away from both
 		put(dir, { 'tests/add.test.mjs': 'test("resolved", () => {});\n' });
 		const merge = commit(dir, 'merge topic');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'a merge that changes a test file away from both parents'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed a merge that changes a test file away from both parents: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
 });
 
 // why: catches a test path with a space pushed unheld, since the hold's path split could read the name as two paths
-test('pre-push holds an edit of a test file whose name has a space, in both hooks', () => {
+// renamed from: pre-push holds an edit of a test file whose name has a space, in both hooks
+test('the project pre-push holds an edit of a test file whose name has a space, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		indexPut(dir, '100644', 'tests/add case.test.mjs', 'test("a", () => {});\n');
@@ -711,13 +750,15 @@ test('pre-push holds an edit of a test file whose name has a space, in both hook
 		indexPut(dir, '100644', 'tests/add case.test.mjs', 'test("b", () => {});\n');
 		const edit = indexCommit(dir, 'fix: tighten the spaced case');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'an edit of tests/add case.test.mjs'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed an edit of tests/add case.test.mjs: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
 });
 
 // why: catches a test path with a newline in its name pushed unheld. Index-only, since git refuses such a path on Windows.
-test('pre-push holds an edit of a test file whose name has a newline, in both hooks', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows; the Linux unit-tests job in .github/workflows/ci.yml runs it' }, () => {
+// renamed from: pre-push holds an edit of a test file whose name has a newline, in both hooks
+test('the project pre-push holds an edit of a test file whose name has a newline, and the kit hook passes it on a feature branch', { skip: process.platform === 'win32' && 'git refuses a newline in a path on Windows; the Linux unit-tests job in .github/workflows/ci.yml runs it' }, () => {
 	const name = 'tests/add\ncase.test.mjs';
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
@@ -727,13 +768,15 @@ test('pre-push holds an edit of a test file whose name has a newline, in both ho
 		indexPut(dir, '100644', name, 'test("b", () => {});\n');
 		const edit = indexCommit(dir, 'fix: tighten the newline case');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'an edit of a test file with a newline in its name'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed an edit of a test file with a newline in its name: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
 });
 
 // why: catches a test path in capitals pushed unheld, since the hold lowercases the path but a case-sensitive match would miss Tests/
-test('pre-push holds an edit of Tests/X.Test.mjs in upper case, in both hooks', () => {
+// renamed from: pre-push holds an edit of Tests/X.Test.mjs in upper case, in both hooks
+test('the project pre-push holds an edit of Tests/X.Test.mjs in upper case, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		indexPut(dir, '100644', 'Tests/X.Test.mjs', 'test("a", () => {});\n');
@@ -742,18 +785,21 @@ test('pre-push holds an edit of Tests/X.Test.mjs in upper case, in both hooks', 
 		indexPut(dir, '100644', 'Tests/X.Test.mjs', 'test("b", () => {});\n');
 		const edit = indexCommit(dir, 'fix: tighten the upper case');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'an edit of Tests/X.Test.mjs'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed an edit of Tests/X.Test.mjs: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
 });
 
 // why: catches a test file replaced by a symlink (type change, T) pushed unheld, since only edits and deletes were read
-test('pre-push holds a type change of a test file, in both hooks', () => {
+// renamed from: pre-push holds a type change of a test file, in both hooks
+test('the project pre-push holds a type change of a test file, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		indexPut(dir, '120000', 'tests/add.test.mjs', 'src/add.js');
 		const change = indexCommit(dir, 'fix: point the add test at source');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${change} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'a type change of a test file'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed a type change of a test file: ${r.stderr}`);
 		assert.match(r.stderr, OWNER_YES);
 	}
@@ -773,7 +819,8 @@ function mergeRef(dir, ref, extra = []) {
 }
 
 // why: catches a merge that takes a side branch's new test file over the remote's v1 pushed unheld, since the merge's diff against its first parent is hidden when the result equals the side parent
-test('pre-push holds a merge that takes a side branch new test file over the remote v1, in both hooks', () => {
+// renamed from: pre-push holds a merge that takes a side branch new test file over the remote v1, in both hooks
+test('the project pre-push holds a merge that takes a side branch new test file over the remote v1, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -790,8 +837,11 @@ test('pre-push holds a merge that takes a side branch new test file over the rem
 		put(dir, { 'tests/a.test.js': 'test("side a", () => {});\n' });
 		const merge = commit(dir, 'merge side');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${v1}\n`);
-		assert.notEqual(r.status, 0, `${hook} passed a merge that takes the side's tests/a.test.js over the remote v1: ${r.stderr}`);
-		assert.match(r.stderr, HOLD_RE);
+		if (isKit(hook)) kitPassesNoAsk(r, "a merge that takes the side's tests/a.test.js over the remote v1");
+		else {
+			assert.notEqual(r.status, 0, `${hook} passed a merge that takes the side's tests/a.test.js over the remote v1: ${r.stderr}`);
+			assert.match(r.stderr, HOLD_RE);
+		}
 		// Folded control: main's test change is already on the remote, so a new feature branch that merges main is not held.
 		const ctl = pushRepo();
 		firstPushDone(ctl.dir);
@@ -825,7 +875,8 @@ test('pre-push holds a merge that takes a side branch new test file over the rem
 });
 
 // why: catches an orphan root merged with --allow-unrelated-histories that takes its test file over the remote's v1, pushed unheld
-test('pre-push holds an orphan root merge that takes its test file over the remote v1, in both hooks', () => {
+// renamed from: pre-push holds an orphan root merge that takes its test file over the remote v1, in both hooks
+test('the project pre-push holds an orphan root merge that takes its test file over the remote v1, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -844,8 +895,11 @@ test('pre-push holds an orphan root merge that takes its test file over the remo
 		put(dir, { 'tests/a.test.js': 'test("orphan a", () => {});\n' });
 		const merge = commit(dir, 'merge orphan');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${v1}\n`);
-		assert.notEqual(r.status, 0, `${hook} passed an orphan-root merge over the remote v1: ${r.stderr}`);
-		assert.match(r.stderr, HOLD_RE);
+		if (isKit(hook)) kitPassesNoAsk(r, 'an orphan-root merge over the remote v1');
+		else {
+			assert.notEqual(r.status, 0, `${hook} passed an orphan-root merge over the remote v1: ${r.stderr}`);
+			assert.match(r.stderr, HOLD_RE);
+		}
 		// Folded control (was its own test): a new orphan ref that only adds tests is not held, since a ref with no merge base is a fresh add.
 		const oT = pushRepo();
 		firstPushDone(oT.dir);
@@ -860,7 +914,8 @@ test('pre-push holds an orphan root merge that takes its test file over the remo
 });
 
 // why: catches a merge that restores an older copy of a test over the remote tip pushed unheld, since the merge diff is hidden when the result equals the side parent
-test('pre-push holds a merge that restores an older copy of a test over the remote tip, in both hooks', () => {
+// renamed from: pre-push holds a merge that restores an older copy of a test over the remote tip, in both hooks
+test('the project pre-push holds a merge that restores an older copy of a test over the remote tip, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, bare } = pushRepo();
 		firstPushDone(dir);
@@ -880,13 +935,15 @@ test('pre-push holds a merge that restores an older copy of a test over the remo
 		put(dir, { 'tests/add.test.mjs': 'test("adds", () => {});\n' });
 		const merge = commit(dir, 'merge side');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${tip}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'a merge that restores an older test copy over the remote tip'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed a merge that restores an older test copy over the remote tip: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
 	}
 });
 
 // why: catches a test edit hidden from the hold by a git replace object, since the hook read the replaced commit's tree
-test('pre-push holds a test edit that a git replace object hides, in both hooks', () => {
+// renamed from: pre-push holds a test edit that a git replace object hides, in both hooks
+test('the project pre-push holds a test edit that a git replace object hides, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -897,13 +954,15 @@ test('pre-push holds a test edit that a git replace object hides, in both hooks'
 		const repl = git(dir, ['commit-tree', tree, '-p', red, '-m', 'fix: tighten the add case']);
 		git(dir, ['replace', edit, repl]);
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'a test edit hidden by git replace'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed a test edit hidden by git replace: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
 	}
 });
 
 // why: catches a test edit hidden by a root graft in .git/info/grafts, since the hook read the commit as a root that adds every file
-test('pre-push holds a test edit that a root graft hides, in both hooks', () => {
+// renamed from: pre-push holds a test edit that a root graft hides, in both hooks
+test('the project pre-push holds a test edit that a root graft hides, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -911,6 +970,7 @@ test('pre-push holds a test edit that a root graft hides, in both hooks', () => 
 		const edit = commit(dir, 'fix: tighten the add case');
 		fs.writeFileSync(path.join(dir, '.git', 'info', 'grafts'), `${edit}\n`);
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, 'a test edit hidden by a root graft'); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed a test edit hidden by a root graft: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
 	}
@@ -931,7 +991,8 @@ test('pre-push holds every push from a shallow repository, in both hooks', () =>
 });
 
 // why: catches an amend! or a double fixup! retest subject on an add-only commit pushed unheld, since the subject match reads only one prefix
-test('pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add-only change, in both hooks', () => {
+// renamed from: pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add-only change, in both hooks
+test('the project pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add-only change, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		for (const subject of ['amend! retest: z', 'fixup! fixup! retest: z']) {
 			const { dir, red, bare } = pushRepo();
@@ -939,6 +1000,7 @@ test('pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add
 			put(dir, { 'tests/new.test.mjs': 'test("new", () => {});\n' });
 			const c = commit(dir, subject);
 			const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${c} refs/heads/feat/x ${red}\n`);
+			if (isKit(hook)) { kitPassesNoAsk(r, `"${subject}" on an add-only commit`); continue; }
 			assert.notEqual(r.status, 0, `${hook} passed "${subject}" on an add-only commit: ${r.stderr}`);
 			assert.match(r.stderr, HOLD_RE);
 		}
@@ -946,7 +1008,8 @@ test('pre-push holds an amend! retest: or fixup! fixup! retest: commit on an add
 });
 
 // why: catches a merge that deletes a test file pushed unheld when a remote tip also lacks it, and a merge of a blob only a side branch holds passed as trusted
-test('pre-push holds a merge that deletes an existing test file although a remote tip lacks it, passes a merge bringing a blob the remote main holds, and holds one only a side branch holds, in both hooks', () => {
+// renamed from: pre-push holds a merge that deletes an existing test file although a remote tip lacks it, passes a merge bringing a blob the remote main holds, and holds one only a side branch holds, in both hooks
+test('the project pre-push holds a merge that deletes an existing test file although a remote tip lacks it, passes a merge bringing a blob the remote main holds, and holds one only a side branch holds; the kit hook passes the two it would otherwise hold on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -966,8 +1029,11 @@ test('pre-push holds a merge that deletes an existing test file although a remot
 		git(dir, ['rm', '-q', 'tests/add.test.mjs']);
 		const merge = commit(dir, 'merge side and drop the add case');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${ZERO}\n`);
-		assert.notEqual(r.status, 0, `${hook} passed a merge that deletes tests/add.test.mjs: ${r.stderr}`);
-		assert.match(r.stderr, HOLD_RE);
+		if (isKit(hook)) kitPassesNoAsk(r, 'a merge that deletes tests/add.test.mjs');
+		else {
+			assert.notEqual(r.status, 0, `${hook} passed a merge that deletes tests/add.test.mjs: ${r.stderr}`);
+			assert.match(r.stderr, HOLD_RE);
+		}
 		// Folded control: a merge brings a test blob the remote main holds, so it is not held. The blob goes to main first.
 		const ctl = pushRepo();
 		firstPushDone(ctl.dir);
@@ -996,8 +1062,11 @@ test('pre-push holds a merge that deletes an existing test file although a remot
 		assert.equal(mergeRef(only.dir, 'side').status, 0, 'merging side is clean');
 		const onlyMerge = git(only.dir, ['rev-parse', 'HEAD']);
 		const held = pushRun(hook, only.dir, only.bare, `refs/heads/feat/x ${onlyMerge} refs/heads/feat/x ${ZERO}\n`);
-		assert.notEqual(held.status, 0, `${hook} passed a merge whose test blob only a side branch holds: ${held.stderr}`);
-		assert.match(held.stderr, HOLD_RE);
+		if (isKit(hook)) kitPassesNoAsk(held, 'a merge whose test blob only a side branch holds');
+		else {
+			assert.notEqual(held.status, 0, `${hook} passed a merge whose test blob only a side branch holds: ${held.stderr}`);
+			assert.match(held.stderr, HOLD_RE);
+		}
 	}
 });
 
@@ -1117,7 +1186,8 @@ test('pre-push holds a merge into main that restores the copy a remote branch ho
 });
 
 // why: catches a feature tip's test edit that a merge of main resolves back to main's copy pushed unheld, since the merge still differs from the feature tip it sits on
-test('pre-push holds a merge of main that resolves a feature test edit back to main, in both hooks', () => {
+// renamed from: pre-push holds a merge of main that resolves a feature test edit back to main, in both hooks
+test('the project pre-push holds a merge of main that resolves a feature test edit back to main, and the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -1136,13 +1206,15 @@ test('pre-push holds a merge of main that resolves a feature test edit back to m
 		put(dir, { 'tests/add.test.mjs': 'test("adds three", () => {});\n' });
 		const merge = commit(dir, 'merge main');
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${edit}\n`);
+		if (isKit(hook)) { kitPassesNoAsk(r, "a merge that resolves the feature test edit back to main's copy"); continue; }
 		assert.notEqual(r.status, 0, `${hook} passed a merge that resolves the feature test edit back to main's copy: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
 	}
 });
 
 // why: catches a merge of a main that dropped a test the feature never touched held, and a test the feature added then dropped in a merge passed, since only the first is a net change from main
-test('pre-push passes a merge of main that drops a test the feature never touched, and holds a drop of a test the branch added, in both hooks', () => {
+// renamed from: pre-push passes a merge of main that drops a test the feature never touched, and holds a drop of a test the branch added, in both hooks
+test('both pre-push hooks pass a merge of main that drops a test the feature never touched, and the project hook holds a drop of a test the branch added while the kit hook passes it on a feature branch', () => {
 	for (const hook of [KIT_PRE_PUSH, PROJECT_PRE_PUSH]) {
 		const { dir, red, bare } = pushRepo();
 		firstPushDone(dir);
@@ -1175,8 +1247,11 @@ test('pre-push passes a merge of main that drops a test the feature never touche
 		git(dir, ['rm', '-q', 'tests/mine.test.mjs']);
 		const dropped = commit(dir, 'merge main and drop the mine case');
 		const held = pushRun(hook, dir, bare, `refs/heads/feat/z ${dropped} refs/heads/feat/z ${mine}\n`);
-		assert.notEqual(held.status, 0, `${hook} passed a merge that drops a test the branch added: ${held.stderr}`);
-		assert.match(held.stderr, HOLD_RE);
+		if (isKit(hook)) kitPassesNoAsk(held, 'a merge that drops a test the branch added');
+		else {
+			assert.notEqual(held.status, 0, `${hook} passed a merge that drops a test the branch added: ${held.stderr}`);
+			assert.match(held.stderr, HOLD_RE);
+		}
 	}
 });
 
@@ -1224,6 +1299,40 @@ test('pre-push holds a merge that changes a test path on a remote with no defaul
 		const r = pushRun(hook, dir, bare, `refs/heads/feat/x ${merge} refs/heads/feat/x ${featX}\n`);
 		assert.notEqual(r.status, 0, `${hook} passed a merge that changes a test path on a remote with no default branch: ${r.stderr}`);
 		assert.match(r.stderr, HOLD_RE);
+	}
+});
+
+// why: catches the kit pre-push hold on a main push that no owner yes lifts, or one an owner yes does not lift
+// planted: {"file":".githooks/pre-push","was":"held=$(printf '%s\\n' \"$refs\" | node \"$scan_tests\" \"$2\" --protected); scan_rc=$?","to":"held=''; scan_rc=0"}
+test("the kit's own pre-push holds a main push with a test change and the owner's pop-up yes to that push lifts the hold", () => {
+	const mainPush = () => {
+		const { dir, red, bare } = pushRepo();
+		put(dir, { 'tests/add.test.mjs': 'test("adds two", () => {});\n' });
+		const edit = commit(dir, 'fix: tighten the add case');
+		return { dir, bare, input: `refs/heads/main ${edit} refs/heads/main ${red}\n` };
+	};
+	// Without the owner's yes the push is held, for the owner's own push and for an approved agent push alike.
+	for (const env of [{ KIT_OWNER_PUSH: '1', CLAUDE_CODE_SESSION_ID: TAP_SID }, { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1', CLAUDE_CODE_SESSION_ID: TAP_SID }]) {
+		const { dir, bare, input } = mainPush();
+		const r = pushRun(KIT_PRE_PUSH, dir, bare, input, { ...env, CLAUDE_CONFIG_DIR: kitTemp.makeTemp('lock-main-none-') });
+		assert.notEqual(r.status, 0, `a main push with a test change and no owner yes is held: ${r.stderr}`);
+		assert.match(r.stderr, /tests\/add\.test\.mjs/, 'the held test path is named');
+	}
+	// With the owner's pop-up yes quoting that push, the same push passes.
+	for (const [act, env] of [['git push origin main', { KIT_OWNER_PUSH: '1' }], ['KIT_PUSH_APPROVED=1 git push origin main', { KIT_PUSH_APPROVED: '1', CLAUDECODE: '1' }]]) {
+		const { dir, bare, input } = mainPush();
+		const cfg = kitTemp.makeTemp('lock-main-yes-');
+		ownerTaps(cfg, dir, act, { at: new Date(Date.now() - 1000).toISOString() });
+		const r = pushRun(KIT_PRE_PUSH, dir, bare, input, { ...env, CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
+		assert.equal(r.status, 0, `the owner's yes lifts the hold on a main push (${act}): ${r.stderr}`);
+	}
+	// A yes quoting another push does not lift it.
+	{
+		const { dir, bare, input } = mainPush();
+		const cfg = kitTemp.makeTemp('lock-main-other-');
+		ownerTaps(cfg, dir, 'git push origin feat/x', { at: new Date(Date.now() - 1000).toISOString() });
+		const r = pushRun(KIT_PRE_PUSH, dir, bare, input, { KIT_OWNER_PUSH: '1', CLAUDE_CONFIG_DIR: cfg, CLAUDE_CODE_SESSION_ID: TAP_SID });
+		assert.notEqual(r.status, 0, `a yes for another push does not lift the main hold: ${r.stderr}`);
 	}
 });
 

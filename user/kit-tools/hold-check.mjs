@@ -11,6 +11,7 @@ import { spawnSync } from 'node:child_process';
 
 const HOLDS = 'user/kit-hooks/holds.json';
 const HOOKS = 'user/kit-hooks';
+const PROJECT_HOOKS = 'project/.claude';
 const RELEASE = /^v\d+(\.\d+)*$/;
 
 // git in the kit folder, started from node's own folder with the lookup switched off, as pr-size.mjs starts it.
@@ -42,10 +43,12 @@ function listAt(file) {
   try { return holdsOf(fs.readFileSync(file, 'utf8')) ?? []; } catch { return []; }
 }
 
-// A hold's hook file must be a plain name in user/kit-hooks on disk; a name that climbs out of that folder is no file there.
+// A hold's hook file must be a plain name in user/kit-hooks or project/.claude on disk; a name that climbs out of those folders is no file there.
 function hookExists(kit, hook) {
   if (typeof hook !== 'string' || path.basename(hook) !== hook) return false;
-  try { return fs.statSync(path.join(kit, HOOKS, hook)).isFile(); } catch { return false; }
+  return [HOOKS, PROJECT_HOOKS].some((dir) => {
+    try { return fs.statSync(path.join(kit, dir, hook)).isFile(); } catch { return false; }
+  });
 }
 
 function parse(argv) {
@@ -107,7 +110,7 @@ function main(argv) {
     if (now === 'gone') problems.push(`${id} is enforce at ${ref} and gone from ${HOLDS}`);
   }
   for (const h of after) {
-    if (!hookExists(kit, h.hook)) problems.push(`${h.id} names the hook file ${h.hook}, which is missing from ${HOOKS}`);
+    if (!hookExists(kit, h.hook)) problems.push(`${h.id} names the hook file ${h.hook}, which is missing from ${HOOKS} and ${PROJECT_HOOKS}`);
   }
   if (problems.length > 0) {
     for (const p of new Set(problems)) console.error(`hold-check: ${p}`);
