@@ -18,6 +18,7 @@ A hook that crashes answers by its tier, the lead works from a checked state rec
 - `ci-wait` writes the CI state file, and `ci-fix.mjs` lists a red run's failing items, takes one diagnosis each and logs each fix; closeout checks the fix lines against the runs.
 - The `ci-fix.cjs` hook holds edits on a red run until each item is diagnosed, holds a loosened gate line for the owner's yes, and fences the lead's edits after the sweep, Bash writes included.
 - A message about a size budget or cap cues the trim-first rule, which looks for bloat before asking for room.
+- A score gate's model is a setting, `KIT_GATE_MODEL`: each run's record and the score lines name any model but the pin, and runs on two models are refused.
 
 ### Changed
 - Only a broken safety net pauses a sweep: a ceiling that did not hold, a meter that let calls through or an unheld call cap; the other trips log a warning, and no trial review is due.

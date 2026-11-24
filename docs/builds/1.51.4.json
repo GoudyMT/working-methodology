@@ -540,11 +540,18 @@
       "reach": "projects",
       "text": "A message about a size budget or cap cues the trim-first rule, which looks for bloat before asking for room.",
       "evidence": "rules/cues.json"
+    },
+    {
+      "id": "U30",
+      "kind": "added",
+      "reach": "kit",
+      "text": "A score gate's model is a setting, `KIT_GATE_MODEL`: each run's record and the score lines name any model but the pin, and runs on two models are refused.",
+      "evidence": "scripts/recall.mjs"
     }
   ],
   "verification": [
     "Each unit's new tests failed on the code before them and pass now.",
-    "test-integrity passes the whole branch and lists 38 retest commits for the merge yes.",
+    "test-integrity passes the whole branch and lists 39 retest commits for the merge yes.",
     "CI runs the full suite on this branch; no full-suite run was made on the PC."
   ],
   "decisions": [
