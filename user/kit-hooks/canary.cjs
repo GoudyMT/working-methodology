@@ -1,22 +1,16 @@
-// The agent canary (rule:agent-canary). Each kit agent opens every message to whoever started it with a phrase that
-// lives only on the last line of the project's "Rules every brief carries" block, which the agent must open with
-// Read. Role files and preloaded skills never carry it.
-// Two jobs, by event:
-// - Stop (SubagentStop): the last message must open with the phrase. A miss blocks the stop once with close-out steps
-//   that never name the phrase; the stop after that goes through. Each result is one line in <git common dir>/kit-canary.log.
-// - PreToolUse on Agent, Task and SendMessage (the leak guard): a brief or message that carries the phrase is denied and logged.
+// The agent canary (rule:agent-canary). Each kit agent opens every message with a phrase found only on the last line
+// of the project's "Rules every brief carries" block, which it must Read; role files and skills never carry it.
+// - Stop (SubagentStop): the last message opens with the phrase. A miss blocks the stop once with close-out steps that
+//   never name it; the next stop goes through. Each result is one line in <git common dir>/kit-canary.log.
+// - PreToolUse on Agent, Task and SendMessage (leak guard): a brief or message carrying the phrase is denied, logged.
 // A project with no phrase line has the check off. A hook that throws answers by its tier (hook-error.cjs).
 const fs = require('fs');
 const path = require('path');
-// The kit modules load on the first run() (K375 S1F3), which every entry calls inside its try: a load crash answers by the tier.
+// Kit modules load in run(), inside the caller's try, so a load crash answers by the tier (K375).
 let safeSpawn = null;
 let recordCounts = null;
 function load() {
-	if (safeSpawn) return;
-	const spawnKit = require('./safe-spawn.cjs');
-	const counts = require('./record-counts.cjs');
-	recordCounts = counts.recordCounts;
-	safeSpawn = spawnKit;
+	if (!safeSpawn) [recordCounts, safeSpawn] = [require('./record-counts.cjs').recordCounts, require('./safe-spawn.cjs')];
 }
 
 // git from node's own folder, never the project.
@@ -24,13 +18,13 @@ const git = (cwd, ...a) => safeSpawn.gitRead(cwd, a, { encoding: 'utf8' });
 // One spelling for comparing: lower case letters and digits, other runs as one space.
 const words = (s) => ` ${String(s || '').toLowerCase().replace(/[^\p{L}\p{N}]+/gu, ' ').trim()} `;
 
-// The phrase is in the file the rule index names for rule:agent-team-adapter, else standards/agent-teams.md, read from the main checkout.
+// The phrase: the rule index's file for rule:agent-team-adapter, else standards/agent-teams.md, from the main checkout.
 function findPhrase(cwd) {
 	const common = git(cwd, 'rev-parse', '--path-format=absolute', '--git-common-dir');
 	if (common.status !== 0) return null;
 	const commonDir = common.stdout.trim();
 	const root = path.dirname(commonDir);
-	// In a sweep the base copy approve.mjs wrote is read (while HEAD is its commit), so a branch cannot swap the phrase.
+	// In a sweep, approve.mjs's base copy is read (HEAD at its commit): a branch cannot swap the phrase.
 	try {
 		const rec = JSON.parse(fs.readFileSync(path.join(commonDir, 'kit-sweep-rules.json'), 'utf8'));
 		const head = git(cwd, 'rev-parse', 'HEAD');
@@ -64,8 +58,8 @@ const CLOSE_OUT = [
 	'3. Then stop. The one who started you saves the hand-off and starts a fresh agent from your note.',
 ].join('\n');
 
-// The final report: last_assistant_message, else (a tool hand-back has no text) the end of the agent's transcript, latest
-// turn only: the first assistant entry with content decides; its hand-back message, else its text if it calls no tool.
+// The final report: last_assistant_message, else the transcript's latest turn: its first assistant entry with content
+// decides, its hand-back message, else its text when it calls no tool.
 function finalReport(input) {
 	if (typeof input.last_assistant_message === 'string' && input.last_assistant_message.trim()) return input.last_assistant_message;
 	let lines;
@@ -90,10 +84,10 @@ function finalReport(input) {
 	return null;
 }
 
-// What a reviewer's report lacks: a "ROLE:" line, finding lines of five fields (severity | CONFIRMED or PLAUSIBLE |
+// A reviewer report needs a "ROLE:" line, five-field finding lines (severity | CONFIRMED or PLAUSIBLE |
 // claim | file:line | evidence) or "No findings", and a "Not checked:" line.
 const SEVERITY_ROW = /^\s*(critical|high|medium|low)\s*\|/i;
-// A report with a RECORD: block meets the same shape in JSON (record-counts.cjs): see recordCounts there.
+// A RECORD: block meets the same shape in JSON (record-counts.cjs recordCounts).
 function countRecord(report, where) {
 	try { return { record: recordCounts(report) }; } catch (e) { return { failed: true, held: fail('record-counts', e, where) }; }
 }
@@ -113,7 +107,7 @@ function reportFaults(report, record) {
 // Kit roles that report up and task no one; an orchestrator and the main session are taskers.
 const REPORTING_ROLES = ['builder', 'checker', 'scanner', 'reviewer', 'tester', 'test-reviewer', 'researcher', 'drafter', 'writer'];
 
-// One event's answer: { out } refuses a tool call (guard.cjs calls it), { code: 2 } holds a stop (Claude Code runs this file).
+// One event's answer: { out } refuses a tool call (via guard.cjs), { code: 2 } holds a stop.
 function run(input) {
 	load();
 	const cwd = input.cwd || process.cwd();
@@ -139,7 +133,7 @@ function run(input) {
 			return {};
 		}
 		const opens = words(report).startsWith(phrase);
-		// A reviewer's report feeds the findings ledger, so its shape is checked once; a second try goes through, logged.
+		// A reviewer's report feeds the ledger: its shape is checked once; a second try passes, logged.
 		if (opens && input.agent_type === 'reviewer') {
 			const counted = countRecord(report, cwd);
 			if (counted.failed) return counted.held ? { out: counted.held } : {};
@@ -192,7 +186,7 @@ function run(input) {
 	return { code: 2 };
 }
 
-// A throw answers by its tier (hook-error.cjs, loaded here); without it: a deny and one row, from an fs-only walk.
+// A throw answers by its tier (hook-error.cjs); without it, a deny and one row (fs-only walk).
 const fail = (id, e, cwd) => {
 	let h = null;
 	try { h = require('./hook-error.cjs'); } catch { /* missing: denied below */ }
@@ -211,7 +205,7 @@ if (require.main === module) {
 	try {
 		const input = JSON.parse(fs.readFileSync(0, 'utf8') || '{}');
 		const pre = input.hook_event_name === 'PreToolUse';
-		// A repeated stop (stop_hook_active) whose check crashes lets the stop through; the row is still written (K375 S1F5).
+		// A repeated stop that crashes again goes through, its row written (K375).
 		const stopRetry = !pre && input.stop_hook_active === true;
 		// The hand-back gate follows its hold's mode; one deny carries both reasons.
 		let gate = null;
