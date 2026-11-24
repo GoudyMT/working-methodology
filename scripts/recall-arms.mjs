@@ -2,7 +2,8 @@
 // Runs the score gate's two arms, the candidate (this kit) and the release, side by side, once the machine is quiet.
 //
 // Why side by side: both arms then share the same load, so a gap between their scores is the build's, not the hour's.
-// Why a load line: a paid recall run on a busy machine is slow and its sessions can time out, so the run waits.
+// Why a load line: a paid recall run on a busy machine is slow and its sessions can time out, so a run over the line does
+// not start: it exits 3, and the same command runs it once the build's lanes have stopped.
 // Why a copy of the probe login per arm: a token refresh in one arm cannot spoil the other, and the probe's own login
 // file is only read, never written.
 // Why the names cand-<label>-<n> and base-<label>-<n>: scripts/recall-score.mjs reads the arm from the name.
@@ -221,7 +222,8 @@ async function main(argv) {
   }
   const held = holdLines(samples);
   if (held.length) {
-    console.error(`arms: held, no arm started: ${held.join('; ')}; the run starts when every reading is under the line`);
+    console.error(`arms: held, no arm started: ${held.join('; ')}`);
+    console.error(`arms: run it again once the build's lanes have stopped: node ${shown(path.join(KIT, 'scripts', 'recall-arms.mjs'))} ${args.label} --release ${shown(args.release)} --probe ${shown(args.probe)}`);
     return EXIT_HELD;
   }
   const dirs = [...new Set([
