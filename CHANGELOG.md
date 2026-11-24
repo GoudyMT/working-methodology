@@ -26,7 +26,7 @@ A hook that crashes answers by its tier, the lead works from a checked state rec
 - The team rule and skill say a kit repo feature-branch push never asks and CI judges a retest commit; a project's pre-push hook still holds a test change. Main, tags, force and deletes keep the owner's yes.
 - The team build skill and its templates carry the new steps: lock the Rows line, run the state check, follow a hook error by tier, clear a red through ci-fix, start side jobs apart.
 - A start check that can't run, or prints no verdict line, means the full reading, without asking.
-- A PR that changes only the gate's test set passes when candidate and release both reach the new set's top score, the control scores 0 and two scorers read it; the floor is the whole set.
+- A PR that changes only the gate's test set passes when candidate and release both reach the new set's top score, the wording control is 0, the behaviour control at most 8 in 14, and two scorers read it; the floor is the whole set.
 
 ### Fixed
 - CI's base-copy steps all run when one fails, and a Base-copy report step names every failed one in one block, with the lands-first patch to main.
