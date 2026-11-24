@@ -71,6 +71,17 @@
         "**Visual decisions (how the product LOOKS) are collaborative, never unilateral:**",
         "Every undecided visual (layout, component, state set, number or date format) is decided from a rendered wireframe, never prose."
       ]
+    },
+    {
+      "rule": "size-budgets",
+      "home": ".claude/rules/code.md",
+      "source": "rules/code.md",
+      "when": "\\b(?:size|byte) (?:budget|cap|limit)s?\\b|\\bover (?:its |the |a )?(?:size )?budget\\b|\\b(?:rais|bump|increas|lift)\\w* (?:the |its |a )?(?:size )?(?:cap|budget)\\b",
+      "quotes": [
+        "When a change would exceed one, the order is fixed:",
+        "1. **Look for bloat first** in the over-budget bucket (dead guards, duplicated logic, values never read, eager code needed on demand), MEASURING each saving on the file it touches - even for a small overage.",
+        "3. **Only then request room** with the measured shortfall, what was ruled out, and the proposed number; the owner decides."
+      ]
     }
   ]
 }
