@@ -22,6 +22,7 @@ const step = (text, name) => text.split(`- name: ${name}\n`)[1].split(/\n\s+- (?
 test('every step that judges a PR runs the base commit\'s copy of its script, before any of the PR\'s code runs', () => {
 	const ci = read('.github/workflows/ci.yml');
 	const body = read('.github/workflows/pr-body.yml');
+	assert.match(ci, /^  static:$/m, 'ci.yml has the static job that holds the content checks');
 	const judged = [
 		[job(ci, 'test-check'), 'Test check'],
 		// Build 23: the spawn check holds every installed launch of a bare program name to node's own folder.

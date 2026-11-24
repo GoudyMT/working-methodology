@@ -251,6 +251,7 @@ test('an installed approve.mjs lists and reads session records under the install
 });
 
 // why: catches a later No in another worktree's or a parent folder's record leaving an earlier Yes standing (K377 S2)
+// planted: {"file":"user/skills/pre-pr-sweep/approve.mjs","was":"[...new Set([...repoRoots(), ...worktreeRoots()])]","to":"[...new Set([...repoRoots()])]"}
 test('a later No in a record under another worktree of this repo, or a folder above it, stops --resume', () => {
   const r = paused();
   const act = `sweep resume ${r.code}`;

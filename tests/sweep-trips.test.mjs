@@ -178,6 +178,7 @@ test('fail-closed: an outcome the script cannot read pauses, logged', () => {
 });
 
 // why: catches a triage report for a paused ask that does not tell the owner to resume with a Yes in the pop-up
+// planted: {"file":"user/skills/pre-pr-sweep/approve.mjs","was":"then resumes with a Yes in the pop-up; until then","to":"then resumes; until then"}
 test('the next ask while paused writes its triage with the way forward: resume with a Yes in the pop-up', () => {
   const r = approveRun(featureContract());
   outcome(r, String(Math.ceil(537500 * 1.3)));

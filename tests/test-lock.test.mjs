@@ -1303,6 +1303,7 @@ test('pre-push holds a merge that changes a test path on a remote with no defaul
 });
 
 // why: catches the kit pre-push hold on a main push that no owner yes lifts, or one an owner yes does not lift
+// planted: {"file":".githooks/pre-push","was":"held=$(printf '%s\\n' \"$refs\" | node \"$scan_tests\" \"$2\" --protected); scan_rc=$?","to":"held=''; scan_rc=0"}
 test("the kit's own pre-push holds a main push with a test change and the owner's pop-up yes to that push lifts the hold", () => {
 	const mainPush = () => {
 		const { dir, red, bare } = pushRepo();

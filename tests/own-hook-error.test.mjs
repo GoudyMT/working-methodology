@@ -27,7 +27,8 @@ function setup({ spawnStub = false, drop = [] } = {}) {
 	const kit = kitTemp.makeTemp('own-hook-error-kit-');
 	fs.cpSync(HOOK_SRC, path.join(kit, 'kit-hooks'), { recursive: true });
 	if (spawnStub) fs.writeFileSync(path.join(kit, 'kit-hooks', 'safe-spawn.cjs'), GIT_THROWS);
-	for (const f of drop) fs.rmSync(path.join(kit, 'kit-hooks', f));
+	// force: a kit with no such helper (the base commit) runs the hook as it is, and the assertions say what it does.
+	for (const f of drop) fs.rmSync(path.join(kit, 'kit-hooks', f), { force: true });
 	return { repo, kit };
 }
 const rowsOf = (repo) => {
