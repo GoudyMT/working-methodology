@@ -4,15 +4,16 @@
 # no merge), but a head armed by hand is still held. Pushes stay the owner's by the permission rules; this only stops a push
 # over a head still armed, since GitHub documents no head pin past a writer's push (rule:standing-grants).
 refs=$(cat)
-# A test change needs the owner's yes. The helper holds each test path a push changes, by net effect, and each retest:
-# subject; a history it cannot read, or a shallow repo, is held too, and no yes lifts that.
+# A test change needs the owner's yes when the push is to main or the default branch, a tag or a force (K367: a
+# feature-branch push is judged by CI's test-integrity instead). The helper holds each test path such a push changes, by
+# net effect, and each retest: subject; a history it cannot read, or a shallow repo, is held too, and no yes lifts that.
 scan_tests="$(dirname "$0")/../project/.claude/test-push-scan.mjs"
 if [ ! -f "$scan_tests" ]; then
   echo "Push blocked: the test-change scan (project/.claude/test-push-scan.mjs) is missing; reinstall the kit." >&2
   exit 1
 fi
 retests=""
-held=$(printf '%s\n' "$refs" | node "$scan_tests" "$2"); scan_rc=$?
+held=$(printf '%s\n' "$refs" | node "$scan_tests" "$2" --protected); scan_rc=$?
 case "$scan_rc" in
   0) ;;
   10) if printf '%s\n' "$held" | grep -Eq '^  [0-9a-f]{7} '; then retests=$held; else echo "Push blocked: the test-change scan gave no result, so the push is held." >&2; exit 1; fi ;;
@@ -46,6 +47,14 @@ EOF
     exit 1
   fi
 fi
+# The secret scan (K371): every commit the push sends is read, not only the net change, so a key added and taken out
+# again in a later commit still goes out. A missing scan script holds the push: the scan cannot be skipped by deleting it.
+scan="$(dirname "$0")/../project/.claude/secret-shapes.mjs"
+if [ ! -f "$scan" ]; then
+  echo "Push blocked: the secret scan (project/.claude/secret-shapes.mjs) is missing; reinstall the kit." >&2
+  exit 1
+fi
+printf '%s\n' "$refs" | node "$scan" --push "$2" || { echo "Push blocked: a secret-shaped file or value is in a pushed commit. Take it out of the history, and rotate any real key." >&2; exit 1; }
 common=$(git rev-parse --git-common-dir)
 gatelog="$common/kit-merge-gate.log"
 if [ -f "$gatelog" ]; then

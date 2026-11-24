@@ -1,0 +1,10 @@
+#!/bin/sh
+# The kit source's write-time secret check (K371): a commit that stages a secret-shaped file or line is refused here,
+# where the slip happens, as project/.githooks/pre-commit refuses it in a project. The pre-push scan reads every pushed
+# commit too, so a commit made with the hooks skipped is still caught before it leaves.
+scan="$(dirname "$0")/../project/.claude/secret-shapes.mjs"
+if [ ! -f "$scan" ]; then
+  echo "Commit blocked: the secret scan (project/.claude/secret-shapes.mjs) is missing; reinstall the kit." >&2
+  exit 1
+fi
+node "$scan" --staged || { echo "Commit blocked: a secret-shaped file or value is staged." >&2; exit 1; }
