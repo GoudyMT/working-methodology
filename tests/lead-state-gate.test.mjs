@@ -96,6 +96,33 @@ function compact(fx) {
 }
 const later = () => new Promise((r) => setTimeout(r, 30));
 
+// why: catches a crash inside agent-model passing every spawn that is not a checker, so a high-tier hold fails open
+test('a crash in the spawn check refuses a builder spawn with "hook error: lead review", logged', () => {
+	const fx = fixture();
+	assert.equal(check(fx, 's1').code, 0);
+	assert.equal(hook(fx, [agent('s1')])[0], null, 'control: with a pass and a plain brief the builder spawn goes through');
+	// A brief whose text cannot be read throws inside the hook's own check, outside every gate's own try.
+	const script = "const path = require('node:path'); const a = JSON.parse(process.env.KIT_TEST_ARGS); const m = require(path.join(a.hookDir, 'agent-model.cjs')); const prompt = { toString() { throw new Error('brief unreadable'); } }; process.stdout.write(JSON.stringify(m.check({ tool_name: 'Agent', session_id: 's1', cwd: a.cwd, transcript_path: a.transcript, tool_input: { subagent_type: 'builder', prompt } }) || null));";
+	const r = spawnSync(process.execPath, ['-e', script], { env: isolatedEnv({ KIT_CLAUDE_HOME: CONFIG, CLAUDE_CONFIG_DIR: CONFIG, KIT_TEST_ARGS: JSON.stringify({ hookDir: HOOK_DIR, cwd: fx.root, transcript: fx.transcript }) }), encoding: 'utf8' });
+	assert.equal(r.status, 0, `the hook ran: ${r.stderr}`);
+	const crashed = JSON.parse(r.stdout);
+	assert.ok(denied(crashed), `a crash on a builder spawn blocks, got ${JSON.stringify(crashed)}`);
+	assert.match(reason(crashed), /hook error: lead review/);
+	assert.ok(readRows(fx.open).some((row) => row.kind === 'hook-error'), 'the crash is logged to kit-guard-open.log by hook-error.cjs');
+});
+
+// why: catches a SendMessage to a warm agent skipping the lead-state gate that every spawn must pass
+test('a SendMessage is held for the lead-state check like a spawn, and goes through once this session has a pass', () => {
+	const fx = fixture();
+	const message = { tool_name: 'SendMessage', session_id: 's1', tool_input: { to: 'agent-1', message: 'carry on' } };
+	const [held] = hook(fx, [message]);
+	assert.ok(denied(held), `a SendMessage with no pass is refused, got ${JSON.stringify(held)}`);
+	assert.match(reason(held), CHECK_CMD('s1'));
+	assert.equal(check(fx, 's1').code, 0);
+	const [open] = hook(fx, [message]);
+	assert.equal(open, null, `with the pass the message goes through, got ${JSON.stringify(open)}`);
+});
+
 // why: catches an Agent spawn is refused while a record exists and this session has no passing lead-state check, printing the check command (K374 S1)
 test('an Agent spawn is refused while a record exists and this session has no passing lead-state check, printing the check command', () => {
 	const fx = fixture();

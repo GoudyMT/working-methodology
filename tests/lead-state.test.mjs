@@ -66,6 +66,18 @@ const readRecord = (fx) => JSON.parse(fs.readFileSync(fx.record, 'utf8'));
 const has = (v, text) => JSON.stringify(v).includes(text);
 const lineFor = (out, field) => out.split(/\r?\n/).find((l) => new RegExp(`^\\s*${field}\\b`).test(l)) || '';
 
+// why: catches one non-JSON line in kit-guard-open.log making every write and check return full-read for good
+test('one non-JSON line in the hook log is skipped, so write and check still pass', () => {
+	const fx = fixture();
+	fs.appendFileSync(fx.hookLog, 'a torn half line {"at":\n');
+	const w = run(fx, 'write');
+	assert.equal(w.code, 0, `write skips the bad line: ${w.out}`);
+	assert.doesNotMatch(w.out, /full-read/);
+	const c = run(fx, 'check');
+	assert.equal(c.code, 0, `check skips the bad line: ${c.out}`);
+	assert.match(c.out, /VERDICT: ok/);
+});
+
 // why: catches write builds the record from the plan, its locks, the flow log, the lead checklist, the closeout file and git, with no typed field (K374 S1)
 test('write builds the record from the plan, its locks, the flow log, the lead checklist, the closeout file and git, with no typed field', () => {
 	const fx = fixture();

@@ -305,3 +305,55 @@ test('repeat: the same refused spawn twice gives the same refusal and one log li
 	assert.equal(rows.length, 2, `one log line per refusal, got ${JSON.stringify(rows)}`);
 	assert.equal(rows[0].reason, rows[1].reason);
 });
+
+// why: catches a spawn with no listed sweep role, such as Explore, Plan or an odd Role: line, passing after the sweep
+test('after the sweep a spawn that is not a build role with a valid ticket is refused by default', () => {
+	const dir = repo();
+	const odd = [
+		['an Explore spawn', { subagent_type: 'Explore', prompt: 'Look through the repo for the sweep fixes.' }],
+		['a Plan spawn', { subagent_type: 'Plan', prompt: 'Plan the next steps.' }],
+		['a Role: line with no listed word', general('Security: audit the sweep fixes')],
+		['a lead reviewer role', general('lead reviewer of the sweep')],
+		['a brief that says reviewers', { subagent_type: 'general-purpose', prompt: 'Start the reviewers on the sweep fixes.' }],
+	];
+	const out = run(dir, odd.map(([, input]) => ({ input })));
+	out.forEach((d, i) => assert.ok(denied(d), `${odd[i][0]} is refused after the sweep, got ${JSON.stringify(d)}`));
+	assert.equal(one(dir, ticketed('F1')), null, 'control: a tester with a valid ticket still goes through');
+});
+
+// why: catches the tester then builder pair for one finding being refused at the builder as a used ticket
+test('one ticket allows one tester spawn and one builder spawn, and no second of either', () => {
+	const dir = repo();
+	const [tester, builder, tester2, builder2] = run(dir, [{ input: ticketed('F1') }, { input: ticketed('F1', 'builder') }, { input: ticketed('F1') }, { input: ticketed('F1', 'builder') }]);
+	assert.equal(tester, null, `the tester for F1 goes through, got ${JSON.stringify(tester)}`);
+	assert.equal(builder, null, `the builder for the same F1 goes through, got ${JSON.stringify(builder)}`);
+	assert.ok(denied(tester2), `a second tester for F1 is refused, got ${JSON.stringify(tester2)}`);
+	assert.ok(denied(builder2), `a second builder for F1 is refused, got ${JSON.stringify(builder2)}`);
+});
+
+// why: catches "Ticket: none" being a free pass that is never used up, so any spawn can say it
+test('"Ticket: none" with no named non-ticket finding is refused, while a named medium finding goes through once', () => {
+	const dir = repo();
+	const [none, none2] = run(dir, [{ input: ticketed('none', 'builder') }, { input: ticketed('none', 'builder') }]);
+	assert.ok(denied(none), `a bare "Ticket: none" is refused, got ${JSON.stringify(none)}`);
+	assert.ok(denied(none2), `and refused again, got ${JSON.stringify(none2)}`);
+	const [named, again] = run(dir, [{ input: ticketed('F2', 'builder') }, { input: ticketed('F2', 'builder') }]);
+	assert.equal(named, null, `control: the named medium finding F2 goes through once, got ${JSON.stringify(named)}`);
+	assert.ok(denied(again), `and is used up, got ${JSON.stringify(again)}`);
+});
+
+// why: catches a detached HEAD or a new branch at the same commit lifting the sweep lock
+test('a detached HEAD or a new branch at the swept commit keeps the sweep lock', () => {
+	const detached = repo();
+	assert.ok(denied(one(detached, reviewer())), 'control: on the swept branch the reviewer is refused');
+	git(detached, ['checkout', '-q', '--detach']);
+	const d = one(detached, reviewer());
+	assert.ok(denied(d), `a reviewer on a detached HEAD is refused, got ${JSON.stringify(d)}`);
+	const moved = repo();
+	git(moved, ['checkout', '-q', '-b', 'other-name']);
+	const b = one(moved, reviewer());
+	assert.ok(denied(b), `a reviewer on a new branch at the swept commit is refused, got ${JSON.stringify(b)}`);
+	const none = repo({ sweep: 'none' });
+	git(none, ['checkout', '-q', '--detach']);
+	assert.equal(one(none, reviewer()), null, 'control: with no sweep recorded a detached HEAD changes nothing');
+});
