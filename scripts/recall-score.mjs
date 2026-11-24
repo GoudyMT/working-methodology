@@ -220,9 +220,11 @@ export function summarize(sets, map, count, { when, again } = {}) {
   if (again && !lower.length) throw new Error('nothing summed lower on the first look, so no second look is owed: score the first look alone');
   const { asked, worse } = again ? secondLook(lower, sum, again, firstTimes) : { asked: [], worse: [] };
   const candMedian = medians.cand;
+  // The floor is the whole test set, never under FLOOR.
+  const floor = Math.max(FLOOR, count);
   // Under the floor the build fails whatever a second look shows, so none is asked for.
-  const pending = lower.length > 0 && !again && candMedian >= FLOOR;
-  return { table, medians, lower, asked, worse, pending, gate, candMedian, baseMedian: medians.base, controlMedian: medians.control, pass: candMedian >= FLOOR && !pending && !worse.length };
+  const pending = lower.length > 0 && !again && candMedian >= floor;
+  return { table, medians, lower, asked, worse, pending, gate, candMedian, baseMedian: medians.base, controlMedian: medians.control, floor, pass: candMedian >= floor && !pending && !worse.length };
 }
 
 /**
@@ -308,7 +310,7 @@ if (process.argv[1] && realOf(process.argv[1]) === realOf(fileURLToPath(import.m
       console.log(`\n${r.lines.join('\n')}`);
       if (r.userLayerNote) console.log(`\n${r.userLayerNote}`);
       if (!r.pass) {
-        const why = [r.candMedian < FLOOR && `the candidate's median of ${r.candMedian} is under the floor of ${FLOOR}`, r.worse.length && `questions ${r.worse.join(', ')} do worse than the release on two looks`].filter(Boolean);
+        const why = [r.candMedian < r.floor && `the candidate's median of ${r.candMedian} is under the floor of ${r.floor}`, r.worse.length && `questions ${r.worse.join(', ')} do worse than the release on two looks`].filter(Boolean);
         console.log(`\nThis build does not pass: ${why.join('; ')}. There is no override (K198): fix the cause, then run a new candidate.`);
         process.exitCode = 1;
       }

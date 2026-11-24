@@ -65,6 +65,8 @@ const QUESTIONS_REL = 'docs/evals/recall-questions.md';
 // K231 (S7, flag F5): the global CLAUDE.md is in every session's start text, and each arm now carries its own, so a
 // change to it is graded too.
 const GRADED = /^(rules\/|project\/.*\.md$|memory\/|user\/CLAUDE\.md$|scripts\/(kit|recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
+// The test set (the owner's plan yes, 2026-11-24): the keys, the brief, the suite and the scripts that run and score them.
+const RULER = /^(scripts\/(recall|recall-score|recall-behave)\.mjs$|docs\/evals\/(recall-(questions|scorer-brief)\.md|behaviour-scenarios\.json)$)/i;
 // T10 (1.42.0): beside the wording gate line, a rule change records the behaviour suite's line, written by
 // recall-behave.mjs line from the saved runs. The base branch's gate reads only the gate line, so this sits apart.
 const BEHAVE_LINE = /^behaviour: (\S+) median (\d+) baseline (\d+) suite v(\d+) control (\d+)( owner-accepted)?$/;
@@ -357,7 +359,7 @@ export function runHeader({ label, keys, facts, when, cli, only = null, userLaye
 // the K116 check is not asked for (the gate command always reads it).
 // behaviour is { suite, bar } from the head's suite when the caller reads the behaviour line; left out, it is not asked.
 // floor is the K198 floor the gate command passes; left out (a direct call), the K198 lines are not asked for.
-export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour, floor }) {
+export function checkGate({ changed, added, removed = [], brief, keys, bar = null, was = {}, scored, after = [], behaviour, floor, count = null }) {
   const all = added.map((l) => l.trim()).filter((l) => l.startsWith('gate:'));
   // A file with no newline at its end shows its last line removed and added back unchanged when an entry is
   // appended (the 1.24.0 build). Beside the PR's own new line, that line is still recorded, so it is no
@@ -402,11 +404,20 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
   const scorers = lastOf(SCORERS_LINE);
   const worse = lastOf(WORSE_LINE);
   const behaveWorse = lastOf(BEHAVE_WORSE_LINE);
+  // The floor is the whole test set, never under FLOOR: a score of 14 on a bigger set is not a pass.
+  const top = Math.max(floor ?? 0, count ?? 0);
+  const behaveTop = Math.max(floor ?? 0, behaviour?.count ?? 0);
+  // A PR that changes only the test set, each changed file on a later version, is judged on the new set (newSet below);
+  // any rule text beside it, an edit at one version or a step back keeps the refusal.
+  const suiteMoved = !!behaviour && behaviour.base != null && behaviour.base !== behaviour.suite;
+  const forward = !was.edited && !(behaviour && behaviour.moved) && (was.brief == null || brief >= was.brief) && (was.keys == null || keys >= was.keys) && !(suiteMoved && behaviour.suite < behaviour.base);
+  const onlySet = changed.filter((f) => GRADED.test(f)).every((f) => RULER.test(f));
+  const newSet = (moved || suiteMoved) && forward && onlySet && floor != null;
   const fixed = floor == null ? [] : [
-    Number(median) < floor && `median ${median} is under the floor of ${floor}`,
+    Number(median) < top && `median ${median} is under the floor of ${top}`,
     (!scorers || Number(scorers[1]) !== 2) && 'the wording runs need two blind scorers: add "scorers: 2", as recall-score.mjs score prints it',
     !worse ? 'add the "worse:" line recall-score.mjs score prints' : worse[1].trim() !== 'none' && `questions ${worse[1].trim()} do worse than the same-day release`,
-    behave && Number(behave[2]) < floor && `behaviour median ${behave[2]} is under the floor of ${floor}`,
+    behave && Number(behave[2]) < behaveTop && `behaviour median ${behave[2]} is under the floor of ${behaveTop} (${behaviour.count} scenarios)`,
     behave && (!behaveWorse ? 'add the "behaviour worse:" line recall-behave.mjs line prints' : behaveWorse[1].trim() !== 'none' && `scenarios ${behaveWorse[1].trim()} do worse than the same-day release`),
     // The build 22 sweep: the worse line is typed beside the lines it sums, so those lines are read too.
     ...added.map((l) => l.trim().match(ONCE_LINE)).filter(Boolean).map((o) => `${o[1].trim()} summed lower on one look and has not been asked again: ask it again alone, then record both looks`),
@@ -415,16 +426,23 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
       if (!m) return `cannot read the ${a[1] ? 'behaviour ' : ''}asked again line: ${item}`;
       return Number(m[4]) < Number(m[5]) && `${m[1]} was lower on both looks (${item.trim()}), so it is worse`;
     })),
-    behave && behaviour.count != null && behaviour.count !== floor && `the behaviour suite has ${behaviour.count} scenarios and the floor is ${floor}: the floor is the top score, so move it with the suite`,
+    behave && behaviour.count != null && behaviour.count < floor && `the behaviour suite has ${behaviour.count} scenarios, under the floor of ${floor}: a test set never shrinks under it`,
+    newSet && count != null && count < floor && `the keys hold ${count} questions, under the floor of ${floor}: a test set never shrinks under it`,
+    ...(newSet ? [
+      Number(baseline) < top && `a new test set: the release's baseline ${baseline} is under the floor of ${top}`,
+      Number(control) !== 0 && `a new test set: the control ${control ?? 'is not recorded'} is not 0`,
+      behave && Number(behave[3]) < behaveTop && `a new test set: behaviour baseline ${behave[3]} is under the floor of ${behaveTop}`,
+      behave && Number(behave[5]) !== 0 && `a new test set: behaviour control ${behave[5]} is not 0`,
+    ] : []),
   ].filter(Boolean);
   const faults = [
     ...fixed,
     ...behaviourFaults,
-    behaviour && behaviour.moved && graded && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
+    behaviour && (behaviour.moved || suiteMoved) && !newSet && graded && `this PR changes the behaviour suite it is graded on (suite v${behaviour.suite})`,
     scoredAsked && !scored && 'it names no scored commit: add "scored: <the full commit id the run measured>" beside the gate line',
     scoredAsked && scored && after.length && `rule text changed after the scored commit ${scored.slice(0, 7)}: ${after.join(', ')}`,
     dropped && 'this PR removes a recorded gate line',
-    moved && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
+    moved && !newSet && `this PR changes the ruler it is graded on (now brief v${brief} keys v${keys})`,
     // The owner's pick, 2026-11-21: the same-day release score is no longer held against the last one recorded. With no
     // marker left to pass a miss that check had no way out (1.47.0 scored 12 that day against its recorded 13), and at a
     // floor of 14 of 14 a typed-low baseline cannot help a candidate pass. A floor under the top score would need it back
@@ -485,10 +503,11 @@ function gate([base, head]) {
     const s = JSON.parse(suiteText);
     const b = baseSuite ? JSON.parse(baseSuite) : {};
     const bar = Math.max(Number.isInteger(s.pass) ? s.pass : 0, Number.isInteger(b.pass) ? b.pass : 0);
-    return { suite: s.version, bar: bar || Infinity, count: (s.scenarios || []).length || null, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
+    return { suite: s.version, base: Number.isInteger(b.version) ? b.version : null, bar: bar || Infinity, count: (s.scenarios || []).length || null, moved: !!baseSuite && b.version === s.version && baseSuite !== suiteText };
   })() : undefined;
   const r = checkGate({
     floor: FLOOR,
+    count: questionCount(now(QUESTIONS_REL), keys),
     behaviour,
     scored,
     after,
