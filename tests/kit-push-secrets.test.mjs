@@ -128,3 +128,37 @@ test('write-time twin: a commit staging a file that holds a whole AWS-shaped key
 	const joined = record(work, FILE, JOINED, hooks);
 	assert.equal(joined.status, 0, `a joined value was refused: ${joined.stderr}`);
 });
+
+// why: catches a key added in one branch commit and removed in the next passing the CI scan as a clean net diff
+test('the CI branch scan reads each commit of base..HEAD, so a key added and then removed is still a hit', () => {
+	// The branch scan as CI runs it: the kit copy's secret-shapes.mjs in the work clone, against a base commit.
+	const ciScan = (work, kit, base) => {
+		const r = spawnSync(process.execPath, [path.join(kit, 'project', '.claude', 'secret-shapes.mjs'), base], { cwd: work, encoding: 'utf8', env: ENV });
+		return { status: r.status, out: `${r.stdout}${r.stderr}` };
+	};
+	const { work, none } = repo();
+	const base = git(work, ['rev-parse', 'HEAD']).stdout.trim();
+	assert.equal(record(work, FILE, LITERAL, none).status, 0, 'the first setup commit did not land');
+	assert.equal(record(work, FILE, CLEAN, none).status, 0, 'the second setup commit did not land');
+	const r = ciScan(work, kitCopy(), base);
+	assert.notEqual(r.status, 0, `a key taken out again passed the CI scan: ${r.out}`);
+	assert.match(r.out, /secret-shaped hit/);
+});
+
+// why: catches a key inside a file git treats as binary (a NUL byte) passing every secret scan unread
+test('a key in a file with a NUL byte is still a hit in the push scan and the CI branch scan', () => {
+	const ciScan = (work, kit, base) => {
+		const r = spawnSync(process.execPath, [path.join(kit, 'project', '.claude', 'secret-shapes.mjs'), base], { cwd: work, encoding: 'utf8', env: ENV });
+		return { status: r.status, out: `${r.stdout}${r.stderr}` };
+	};
+	const { work, none } = repo();
+	const base = git(work, ['rev-parse', 'HEAD']).stdout.trim();
+	assert.equal(record(work, 'lib/blob.txt', `\u0000\n${LITERAL}`, none).status, 0, 'the setup commit did not land');
+	const kit = kitCopy();
+	const pushed = push(work, kit);
+	assert.notEqual(pushed.status, 0, `a push of a key behind a NUL byte went through: ${pushed.out}`);
+	assert.match(pushed.err, /Push blocked: a secret-shaped/);
+	const ci = ciScan(work, kit, base);
+	assert.notEqual(ci.status, 0, `the CI scan read the NUL file as clean: ${ci.out}`);
+	assert.match(ci.out, /secret-shaped hit/);
+});

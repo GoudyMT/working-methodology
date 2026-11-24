@@ -784,3 +784,84 @@ test('test-integrity exits 2 and says why when the base is unreadable, the clone
 		assert.equal(r.code, 2, r.out);
 	}
 });
+
+// why: catches a fresh test( block whose arguments run code at load time or sit inside an old test passing as a pure addition
+test('test-integrity fails a fresh test( block whose arguments are not a string, options and a function, or that sits in an old test', () => {
+	// The arguments run at load time and replace assert.equal with a no-op for every test after it.
+	{
+		const { dir, base } = prRepo();
+		put(dir, { 'tests/add.test.mjs': `${T0}\ntest('setup', (assert.equal = () => {}, () => {}));\n` });
+		commit(dir, 'test: add the setup case');
+		const r = integrity(dir, base);
+		assert.equal(r.code, 1, `a comma expression as the callback: ${r.out}`);
+		assert.match(r.out, /tests\/add\.test\.mjs/);
+	}
+	// A well-formed block at column 0 that sits inside an old test's own lines runs in that test's scope.
+	{
+		const { dir, base } = prRepo();
+		put(dir, { 'tests/add.test.mjs': T0.replace("() => {\n", "() => {\ntest('inner', () => {\n  assert.ok(true);\n});\n") });
+		commit(dir, 'test: add the inner case');
+		const r = integrity(dir, base);
+		assert.equal(r.code, 1, `a block inside an old test: ${r.out}`);
+		assert.match(r.out, /tests\/add\.test\.mjs/);
+	}
+	// Control: a string name, an options object and a function literal is a fresh block and passes.
+	{
+		const { dir, base } = prRepo();
+		put(dir, { 'tests/add.test.mjs': `${T0}\ntest('adds two', { timeout: 5000 }, () => {\n  assert.equal(2 + 2, 4);\n});\n` });
+		commit(dir, 'test: add the two case');
+		const r = integrity(dir, base);
+		assert.equal(r.code, 0, r.out);
+	}
+});
+
+// why: catches a regex literal holding a bracket hiding the real end of a fresh block so a process.exit rides inside it
+test('test-integrity fails a process.exit line that a regex literal with a bracket hides inside a fresh test( block', () => {
+	const trick = "\ntest('r', () => {\n  const a = /\\(/;\n});\nprocess.exit(0);\ntest('s', () => {\n  const b = /\\)/;\n});\n";
+	const { dir, base } = prRepo();
+	put(dir, { 'tests/add.test.mjs': T0.replace("\ntest('adds'", `${trick}\ntest('adds'`) });
+	const exit = commit(dir, 'test: add the r and s cases');
+	const r = integrity(dir, base);
+	assert.equal(r.code, 1, `a process.exit between two fresh blocks: ${r.out}`);
+	assert.ok(r.out.includes(exit.slice(0, 7)), `names the commit: ${r.out}`);
+	assert.match(r.out, /tests\/add\.test\.mjs/);
+});
+
+// why: catches a commit that edits the test runner or CI wiring and drops tests unlisted for the merge yes
+test('test-integrity lists a commit that touches scripts/test-run.mjs or .github/workflows as kind runner, and does not fail it', () => {
+	const { dir, base } = prRepo({ 'scripts/test-run.mjs': 'export const run = 1;\n', '.github/workflows/ci.yml': 'name: ci\n' });
+	put(dir, { 'scripts/test-run.mjs': 'export const run = 2;\n', '.github/workflows/ci.yml': 'name: ci2\n' });
+	const runner = commit(dir, 'fix: change the runner and the workflow');
+	put(dir, { 'src/add.js': `${SRC0}// tidy\n` });
+	commit(dir, 'fix: tidy add');
+	const out = kitTemp.makeTemp('integrity-out-');
+	const file = path.join(out, 'retests.json');
+	const summary = path.join(out, 'summary.md');
+	const r = integrity(dir, base, ['--retests', file], { GITHUB_STEP_SUMMARY: summary });
+	assert.equal(r.code, 0, `a runner change is listed, never failed: ${r.out}`);
+	const list = JSON.parse(fs.readFileSync(file, 'utf8'));
+	assert.equal(list.length, 1, `only the runner commit is listed: ${JSON.stringify(list)}`);
+	assert.ok(runner.startsWith(list[0].sha), `sha ${list[0].sha}`);
+	assert.equal(list[0].kind, 'runner');
+	const line = fs.existsSync(summary) ? fs.readFileSync(summary, 'utf8').split('\n').find((l) => l.includes(runner.slice(0, 7))) : '';
+	assert.match(line || '', /runner/, 'the step summary lists the runner commit');
+});
+
+// why: catches a retest subject with an open HTML comment or control character hiding later retest lines in the summary
+test('test-integrity prints each retest subject in a code span with no angle brackets, ampersands or control characters', () => {
+	const { dir, base } = prRepo();
+	put(dir, { 'tests/add.test.mjs': T0.replace('1 + 1, 2', '1 + 1, 1 + 1') });
+	commit(dir, 'retest: hide <!-- the rest & more \u001b[31m');
+	put(dir, { 'tests/add.test.mjs': T0.replace('1 + 1, 2', '1 + 1, 3 - 1') });
+	commit(dir, 'retest: second line stays visible');
+	const out = kitTemp.makeTemp('integrity-out-');
+	const summary = path.join(out, 'summary.md');
+	const r = integrity(dir, base, ['--retests', path.join(out, 'retests.json')], { GITHUB_STEP_SUMMARY: summary });
+	assert.equal(r.code, 0, r.out);
+	const text = fs.readFileSync(summary, 'utf8');
+	assert.doesNotMatch(text, /[<>&]/, `no angle bracket or ampersand reaches the summary: ${text}`);
+	assert.doesNotMatch(text, /[\u0000-\u0009\u000b-\u001f\u007f]/, 'no control character reaches the summary');
+	const span = (words) => new RegExp(`\\x60[^\\x60\\n]*${words}[^\\x60\\n]*\\x60`);
+	assert.match(text, span('hide[^`\\n]*the rest'), `the first subject is in a code span: ${text}`);
+	assert.match(text, span('second line stays visible'), `the later subject is in a code span: ${text}`);
+});
