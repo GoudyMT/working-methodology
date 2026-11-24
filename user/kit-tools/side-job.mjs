@@ -79,6 +79,7 @@ function jobsOf(common) {
 			const job = byId.get(ev.id);
 			if (ev.event === 'end') job.end = ev;
 			if (ev.event === 'stop') job.stopped = true;
+			if (ev.event === 'pid') job.pidStart = ev.pidStart;
 		}
 	}
 	return [...byId.values()];
@@ -89,7 +90,27 @@ function alive(pid) {
 	try { process.kill(pid, 0); return true; } catch (e) { return e.code === 'EPERM'; }
 }
 
-/** The state of a job: running, stopped, done (exit 0), or failed with its exit code (or none recorded). */
+/** The OS start time of a process, as a string equal only for that process; null when it cannot be read. */
+function startTimeOf(pid) {
+	if (!pid) return null;
+	const opts = { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] };
+	try {
+		if (process.platform === 'win32') {
+			const cim = `(Get-CimInstance Win32_Process -Filter "ProcessId=${Number(pid)}").CreationDate.ToUniversalTime().ToString('o')`;
+			return safeSpawn.toolOut('powershell', ['-NoProfile', '-NonInteractive', '-Command', cim], opts).trim() || null;
+		}
+		if (process.platform === 'linux') {
+			// Field 22 of /proc/<pid>/stat (starttime, in clock ticks since boot); the fields after the ')' of the comm name start at field 3.
+			const stat = fs.readFileSync(`/proc/${pid}/stat`, 'utf8');
+			return stat.slice(stat.lastIndexOf(')') + 2).split(' ')[19] || null;
+		}
+		return safeSpawn.toolOut('ps', ['-o', 'lstart=', '-p', String(pid)], opts).trim() || null;
+	} catch {
+		return null;
+	}
+}
+
+/** The state of a job: running, stopped, done (exit 0), failed with its exit code (or none recorded), or stale. */
 function stateOf(job) {
 	if (job.stopped) return { state: 'stopped', text: 'stopped' };
 	if (job.end) {
@@ -97,8 +118,11 @@ function stateOf(job) {
 		const how = job.end.exit === null ? `signal ${job.end.signal}` : `exit ${job.end.exit}`;
 		return { state: 'failed', text: `failed (${how})` };
 	}
-	if (alive(job.pid)) return { state: 'running', text: 'running' };
-	return { state: 'failed', text: 'failed (no exit recorded)' };
+	if (!alive(job.pid)) return { state: 'failed', text: 'failed (no exit recorded)' };
+	// A live pid is this job's supervisor only if its start time is the one recorded at start; a pid reused by another
+	// process, or a start time that cannot be read, reads as stale. Stale is never running, so stop never kills it.
+	if (job.pidStart && startTimeOf(job.pid) === job.pidStart) return { state: 'running', text: 'running' };
+	return { state: 'stale', text: 'stale (no exit recorded; its pid is not this job)' };
 }
 
 /** The last non-empty line of a job log, read from its last 8 KB. */
@@ -167,6 +191,8 @@ function start(args) {
 		});
 		child.unref();
 		appendEvent(common, { event: 'start', id, kind: args.kind, pid: child.pid, folder, brief, log });
+		// Read after the start row: a fast job can end while the query runs, and an end row must not come before its start row.
+		appendEvent(common, { event: 'pid', id, pidStart: startTimeOf(child.pid) });
 		console.log(`started ${id} log ${log}`);
 	} finally {
 		try { fs.unlinkSync(lock); } catch { /* already gone */ }
@@ -193,12 +219,17 @@ function resolveProgram(prog, folder) {
 	if (prog === 'node') return process.execPath;
 	const isFile = (f) => { try { return fs.statSync(f).isFile(); } catch { return false; } };
 	const win = process.platform === 'win32';
-	const exts = win ? ['', ...(process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean)] : [''];
+	const pathExts = win ? (process.env.PATHEXT || '.COM;.EXE;.BAT;.CMD').split(';').filter(Boolean) : [];
+	const exts = win ? ['', ...pathExts] : [''];
+	// On win32 the PATH search tries PATHEXT names only (an extension-less npm shim must not win), unless the name
+	// already ends in a PATHEXT extension: then the name as given is tried first.
+	const named = win && pathExts.some((e) => prog.toLowerCase().endsWith(e.toLowerCase())) ? [''] : [];
+	const pathTries = win ? [...named, ...pathExts] : [''];
 	if (path.isAbsolute(prog)) return exts.map((e) => prog + e).find((f) => isFile(f) && !inside(path.resolve(f), folder)) || null;
 	if (/[\\/]/.test(prog)) return null;
 	for (const dir of (process.env.PATH || '').split(path.delimiter)) {
 		if (!dir || !path.isAbsolute(dir) || inside(path.resolve(dir), folder)) continue;
-		const hit = exts.map((e) => path.join(dir, prog + e)).find(isFile);
+		const hit = pathTries.map((e) => path.join(dir, prog + e)).find(isFile);
 		if (hit) return hit;
 	}
 	return null;
