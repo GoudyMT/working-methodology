@@ -87,7 +87,7 @@ function counted(jobs, cwd, extraEnv = {}) {
 const LONG = 'a;'.repeat(49000); // 98,000 characters
 const withinBound = (run, command, label) => assert.ok(run.max <= command.length, `${label}: ${run.name} was called ${run.max} times for ${command.length} characters`);
 
-// why: catches with the coverage-map environment set as test-run --map sets it, the 98 KB command through owner-proof alone takes under half the 8 s limit (K379 S1)
+// why: guard proof: owner-proof reads a 98 KB command within its work bound (K379 S1)
 test('with the coverage-map environment set as test-run --map sets it, the 98 KB command through owner-proof alone takes under half the 8 s limit', () => {
 	const dir = repoDir();
 	const [run] = counted([{ command: LONG }], dir);
@@ -95,7 +95,7 @@ test('with the coverage-map environment set as test-run --map sets it, the 98 KB
 	withinBound(run, LONG, 'one read of the command');
 });
 
-// why: catches the verdicts for the long command and for the guard's existing cases are unchanged (K379 S2)
+// why: guard proof: owner-proof's verdicts on long and existing commands (K379 S2)
 test("the verdicts for the long command and for the guard's existing cases are unchanged", () => {
 	const dir = repoDir();
 	const settingsWrite = `${'a;'.repeat(48900)}echo '{}' > .claude/settings.json`;
@@ -133,7 +133,7 @@ test("the verdicts for the long command and for the guard's existing cases are u
 	for (const i of [6, 7, 8]) withinBound(runs[i], jobs[i].command, `the long protected write ${i}`);
 });
 
-// why: catches bypass: the same command split across a pipe and a here-doc stays under half the limit too (K379 S1)
+// why: guard proof: owner-proof stays within its work bound on a command split by pipe and here-doc (K379 S1)
 test('bypass: the same command split across a pipe and a here-doc stays under half the limit too', () => {
 	const dir = repoDir();
 	const pipe = 'a|'.repeat(49000);
@@ -147,7 +147,7 @@ test('bypass: the same command split across a pipe and a here-doc stays under ha
 	});
 });
 
-// why: catches fail-closed: a command the guard cannot finish reading in time still holds the call, logged (K379 S3)
+// why: guard proof: owner-proof holds, logged, a command past its work cap (K379 S3)
 test('fail-closed: a command the guard cannot finish reading in time still holds the call, logged', () => {
 	const dir = repoDir();
 	const log = path.join(dir, '.git', 'kit-guard-open.log');

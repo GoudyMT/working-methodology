@@ -48,7 +48,7 @@ test('GITHUB_RUN_ATTEMPT=2 exits 1 and prints the first attempt\'s failed job fr
   assert.doesNotMatch(r.out, /lanes/, 'a job that passed is printed as failed');
 });
 
-// why: catches the kit-tests step runs the base commit's copy on a PR, and its own on main (K380 S3)
+// why: pin: GitHub runs the base commit's ci-attempt on a PR and its own on main (K380 S3)
 test('the kit-tests step runs the base commit\'s copy on a PR, and its own on main', () => {
   const ci = fs.readFileSync(path.join(ROOT, '.github', 'workflows', 'ci.yml'), 'utf8');
   const kit = ci.split(/^  kit-tests:$/m)[1].split(/^  [a-z-]+:$/m)[0];

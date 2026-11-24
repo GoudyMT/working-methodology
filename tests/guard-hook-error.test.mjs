@@ -104,7 +104,7 @@ test('a user hook that throws under tier small lets the call through and writes 
 	assert.equal(rows[0].error, 'user hook boom');
 });
 
-// why: catches a project guard that throws still holds with "could not run" (security tier, unchanged) (K375 S2)
+// why: guards the owner's hook tier decision of 2026-11-23: a project guard is tier security, so one that throws still holds (K375 S2)
 test('a project guard that throws still holds with "could not run" (security tier, unchanged)', () => {
 	const s = setup({ guards: { 'guard-delete.cjs': "exports.check = () => { throw new Error('project guard boom'); };\n" } });
 	const out = s.call('Bash', { command: 'git status' });
@@ -150,7 +150,7 @@ test('repeat: the same crash twice gives the same answer', () => {
 	}
 });
 
-// why: catches fail-closed: a missing hook-error.cjs blocks the call, logged (K375 S3)
+// why: guards the owner's hook tier decision of 2026-11-23: a failed hook whose helper is missing blocks the call, logged (K375 S3)
 test('fail-closed: a missing hook-error.cjs blocks the call, logged', () => {
 	for (const [name, hooks, call] of [['tier high', { 'canary.cjs': THROWS }, agent], ['tier small', { 'grounding.cjs': THROWS }, ask], ['old shape', { 'canary.cjs': CRASHES }, agent]]) {
 		const s = setup({ hooks, drop: ['hook-error.cjs'] });

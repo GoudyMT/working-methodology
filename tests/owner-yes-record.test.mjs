@@ -430,7 +430,7 @@ test('every spelling of a merge needs the head pin: gh.exe, global options befor
 	for (const [what, command] of Object.entries(spelled)) assert.notEqual(popUpYes(command, ++n), 'allow', `${what}: a pop-up Yes to the whole command is no yes without the head pin`);
 });
 
-// why: catches an escaped spelling of the record writer slipping past the guard that holds the plain words (K367 S2)
+// why: guard proof: guard-outward holds an escaped spelling of the record writer like the plain words (K367 S2)
 test('a command that runs the writer through backslashes, carets or backticks inside words is held like the plain words', () => {
 	const env = setup();
 	const spelled = {

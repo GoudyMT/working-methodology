@@ -269,7 +269,7 @@ test('with no sweep recorded nothing changes', () => {
 	assert.ok(denied(held), `a decision on another branch at an ancestor of HEAD locks this branch, got ${JSON.stringify(held)}`);
 });
 
-// why: catches holds.json sets the hold to enforce with tier high, and a test fails if it reads otherwise (K399 S5)
+// why: guards the owner's plan yes of 2026-11-23: the sweep-lock hold is enforced at tier high (K399 S5)
 test('holds.json sets the hold to enforce with tier high, and a test fails if it reads otherwise', () => {
 	const holds = JSON.parse(fs.readFileSync(HOLDS, 'utf8')).holds;
 	const hold = holds.find((h) => h.id === 'sweep-lock');

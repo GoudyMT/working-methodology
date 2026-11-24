@@ -17,7 +17,7 @@ const TESTER = () => read('templates', 'tester-brief.md');
 const PLAN = () => read('templates', 'batch-plan.md');
 const SKILL = () => read('SKILL.md');
 
-// why: catches a skill or plan template that never says the Rows line is locked at kickoff and a later find goes out by defer (S1)
+// why: doc claim: the skill and plan template lock the Rows line at kickoff and send a later find to defer (S1)
 test('the Rows line is locked at kickoff with --lock-rows and a later find goes out with closeout.mjs defer', () => {
 	for (const [name, text] of [['SKILL.md', SKILL()], ['batch-plan.md', PLAN()]]) {
 		assert.match(text, /plan-check(?:\.mjs)?(?:\s+(?!--)\S+)?\s+--lock-rows/, `${name} names plan-check --lock-rows`);
@@ -36,7 +36,7 @@ test('a base-copy report fault goes into one lands-first patch to main, planned 
 	assert.match(s, /first shows/i, 'SKILL.md says it is planned when the report first shows it');
 });
 
-// why: catches a skill missing the fresh-lead check, the hook tier steps, the high-tier block steps (S3) or the folded F1 to F4 steps
+// why: doc claim: the skill gives the fresh-lead check, the hook tier steps and the high-tier block steps (S3)
 test('a fresh lead runs lead-state check, a hook error follows its tier, and a high-tier block is triaged, fixed and investigated', () => {
 	const s = SKILL();
 	assert.match(s, /lead-state(?:\.mjs)?(?:\s+(?!--)\S+)?\s+check/, 'names lead-state check');
@@ -73,7 +73,7 @@ test('the tester brief joins a secret-shaped test value from parts at run time, 
 	assert.match(t, /never[\s\S]{0,40}whole/i, 'never written whole');
 });
 
-// why: catches a skill that lets a gate or study asked for in a build's thread block the build instead of side-job.mjs start (S5)
+// why: doc claim: the skill starts a gate or study asked for in a build thread with side-job.mjs start (S5)
 test('a gate, study, trial or check asked for in a build thread starts with side-job.mjs start and the lead keeps building', () => {
 	const s = SKILL();
 	assert.match(s, /gate[\s\S]{0,40}study[\s\S]{0,40}trial[\s\S]{0,40}check/i, 'names gate, study, trial or check');

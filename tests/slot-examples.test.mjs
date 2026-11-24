@@ -12,7 +12,7 @@ import kitTemp from '../project/.claude/kit-temp.cjs';
 import { copyKitCli, makeKit } from './kit-helpers.mjs';
 import { slotsIn } from '../user/skills/pre-pr-sweep/slots.mjs';
 
-// why: catches install project on a fresh project prints no unfilled-slot line naming a file whose name holds -example (K387 S1)
+// why: pin: install reads a slot in the shipped project-map example as unfilled, so it holds none (K387 S1)
 test('install project on a fresh project prints no unfilled-slot line naming a file whose name holds -example', () => {
 	// A fixture kit with the CLI and the shipped project-map example, installed into a fresh project in temp folders.
 	const ctx = makeKit();
@@ -32,7 +32,7 @@ test('install project on a fresh project prints no unfilled-slot line naming a f
 	assert.equal(naming.length, 0, `install named an -example file as an unfilled slot: ${naming.join(' | ')}`);
 });
 
-// why: catches every shipped file whose name holds -example holds no slot from the slots.mjs list (K387 S2)
+// why: pin: install reads a slot in any shipped -example file as unfilled, so none holds one (K387 S2)
 test('every shipped file whose name holds -example holds no slot from the slots.mjs list', () => {
 	const tracked = spawnSync('git', ['ls-files', 'project', 'user'], { encoding: 'utf8' });
 	assert.equal(tracked.status, 0, tracked.stderr);

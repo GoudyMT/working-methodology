@@ -65,7 +65,7 @@ const CONTENT = {
   'recall record': /recall-gate-base\.mjs gate/,
 };
 
-// why: catches every step that runs a base copy in unit-tests, test-check, windows-tests and kit-tests runs with if !cancelled(), so one fault does not hide the next (K373 S1)
+// why: pin: GitHub reads each base-copy step's if: !cancelled(), so one fault does not hide the next (K373 S1)
 test('every step that runs a base copy in unit-tests, test-check, windows-tests and kit-tests runs with if !cancelled(), so one fault does not hide the next', () => {
   // The Windows test-check step keeps its own condition beside the guard: a part-0 step on a PR.
   const KEPT = { 'Test check, Windows part': ["github.event_name == 'pull_request'", 'matrix.part == 0'] };
@@ -83,7 +83,7 @@ test('every step that runs a base copy in unit-tests, test-check, windows-tests 
   assert.deepEqual(bare, [], 'base-copy steps without if: ${{ !cancelled() }}, or without their own condition');
 });
 
-// why: catches kit-tests ends with a Base-copy report step that always runs and names every failed base-copy step in one block (K373 S2)
+// why: pin: GitHub reads the Base-copy report step: it always runs and reads every base-copy outcome (K373 S2)
 test('kit-tests ends with a Base-copy report step that always runs and names every failed base-copy step in one block', () => {
   const kit = steps(jobBlock('kit-tests'));
   const last = kit[kit.length - 1];
@@ -108,7 +108,7 @@ test('kit-tests ends with a Base-copy report step that always runs and names eve
   assert.match(last.text, /no base-copy faults/, 'Base-copy report has no "no base-copy faults" line');
 });
 
-// why: catches the report names the lands-first path: one patch to main holding every fault in the block (K373 S3)
+// why: pin: the Base-copy report step prints the lands-first line (K373 S3)
 test('the report names the lands-first path: one patch to main holding every fault in the block', () => {
   const report = steps(jobBlock('kit-tests')).find((s) => s.name === 'Base-copy report');
   assert.ok(report, 'kit-tests has no Base-copy report step');

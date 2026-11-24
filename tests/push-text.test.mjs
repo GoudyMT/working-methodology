@@ -21,7 +21,7 @@ const paragraph = (text) => {
 	return end < 0 ? rest : rest.slice(0, end);
 };
 
-// why: catches an agent-teams rule or standard that still says a retest commit is held at push, or the two copies drifting (S1)
+// why: doc claim: both agent-teams files say a retest commit is checked by test-integrity and never held at push (S1)
 test('both agent-teams files say a retest commit is checked by test-integrity and listed for the merge yes, never held at push', () => {
 	const files = {
 		'rules/agent-teams.md': paragraph(read('rules', 'agent-teams.md')),
@@ -61,7 +61,7 @@ test('SKILL.md says a feature-branch push never asks, and main, tags, force and 
 	assert.match(w, /(?:still|only)[\s\S]{0,200}(?:pop-?up|yes)|(?:pop-?up|yes)[\s\S]{0,200}(?:still|only)/i, 'the yes is still needed there'); // pin: 4 the owner locked the push words
 });
 
-// why: catches a project reader told a retest is never held at push when the project pre-push hook still holds it (S15F1)
+// why: doc claim: both agent-teams files scope "never held at push" to the kit repo (S15F1)
 test('both agent-teams files scope "never held at push" to the kit repo and say a project pre-push hook still holds a retest push', () => {
 	const files = {
 		'rules/agent-teams.md': paragraph(read('rules', 'agent-teams.md')),

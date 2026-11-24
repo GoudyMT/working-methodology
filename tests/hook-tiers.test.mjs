@@ -110,7 +110,7 @@ test('an unknown id or a missing tier reads as high', () => {
 	assert.equal(m.tier('kept'), 'small', 'control: a clean entry still reads its tier');
 });
 
-// why: catches every hook the kit installs (kit-hooks/*.cjs and guard.cjs's PROJECT and USER lists) has a tier entry, so a new hook with none fails (K375 S2)
+// why: guards the owner's hook tier decision of 2026-11-23: every installed hook has the tier the owner approved (K375 S2)
 test("every hook the kit installs (kit-hooks/*.cjs and guard.cjs's PROJECT and USER lists) has a tier entry, so a new hook with none fails", () => {
 	const ids = new Set(fs.readdirSync(HOOK_DIR).filter((f) => f.endsWith('.cjs')).map((f) => f.slice(0, -4)).filter((id) => !LIBRARIES.has(id)));
 	const guardText = fs.readFileSync(GUARD, 'utf8');
@@ -159,7 +159,7 @@ test('onError under high or security returns a deny "hook error: lead review: <h
 	assert.deepEqual(strayLogs(main), [], 'no log in .git/worktrees/<name>/');
 });
 
-// why: catches onError under small returns nothing (the call goes through) and logs one JSON line with hook, error and time (K375 S3)
+// why: guards the owner's hook tier decision of 2026-11-23: a small hook that fails lets the call through and logs one row (K375 S3)
 test('onError under small returns nothing (the call goes through) and logs one JSON line with hook, error and time', () => {
 	const m = load(hookDir(holdsOf([['small-hook', 'small']])));
 	needOnError(m);
@@ -176,7 +176,7 @@ test('onError under small returns nothing (the call goes through) and logs one J
 	assert.ok(!Number.isNaN(Date.parse(rows[0].at)), 'an at that is a time');
 });
 
-// why: catches bypass: a tier in another case or with spaces reads as high (K375 S1)
+// why: guards the owner's hook tier decision of 2026-11-23: only an exact tier spelling counts, any other reads as high (K375 S1)
 test('bypass: a tier in another case or with spaces reads as high', () => {
 	const spellings = ['Small', 'SMALL', ' small', 'small ', 'sma ll', 'Security', ' security', 'SECURITY', 'High', 'high\n', 'small\t'];
 	const m = load(hookDir(holdsOf([...spellings.map((s, i) => [`odd-${i}`, s]), ['exact', 'small']])));
@@ -203,7 +203,7 @@ test('repeat: the same id gives the same tier', () => {
 	assert.equal(decision(a), 'deny');
 });
 
-// why: catches fail-closed: an unreadable holds.json reads every tier as high, logged (K375 S4)
+// why: guards the owner's hook tier decision of 2026-11-23: an unreadable holds.json reads every tier as high, logged (K375 S4)
 test('fail-closed: an unreadable holds.json reads every tier as high, logged', () => {
 	// F1: handoff-gate whose hold-mode.cjs will not load reads as its high tier and refuses, not log mode.
 	const kit = kitTemp.makeTemp('hook-tiers-kit-');
