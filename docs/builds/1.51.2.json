@@ -238,7 +238,7 @@
       "kind": "added",
       "reach": "projects",
       "text": "A lead's ruling in a plan passes only with its proof, a test or a probe.",
-      "evidence": "user/kit-tools/plan-check.mjs",
+      "evidence": "user/kit-tools/handoff.mjs",
       "tests": [
         "tests/ruling-proof.test.mjs::a note \"lead ruling: ...\" with no proof key fails check with \"missing `proof`\"",
         "tests/ruling-proof.test.mjs::the same note with a proof naming a test or a probe passes"
