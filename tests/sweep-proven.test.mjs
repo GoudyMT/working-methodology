@@ -150,3 +150,17 @@ test('fail-closed: a log line the summary cannot read ends the run at 0, logged'
   assert.equal((summary(after).match(/clean sweeps in a row: (\d+)/) || [])[1], '1');
   assert.ok(guardRows(after).some((r) => /unreadable|cannot be read/i.test(String(r.cause))), 'the unreadable line in the middle is logged too');
 });
+
+// why: catches a reviewer on another model still counted as a clean sweep
+test('a reviewer on another or unread model writes a warning row and leaves the sweep out of the clean run', async () => {
+  const { approveIn, approveRun, approvalLog, featureContract, transcripts } = await import('./kit-helpers.mjs');
+  const r = approveRun(featureContract());
+  assert.equal(r.status, 0, r.stdout);
+  const cfg = transcripts({ m1: [[1, 1, 1, 1]], m2: [[1, 1, 1, 1]], m3: [[1, 1, 1, 1]], m4: [{ model: 'claude-haiku-4-5', u: [1, 1, 1, 1] }], m5: [[1, 1, 1, 1]] });
+  const o = approveIn(r.dir, [r.f, '--outcome', '--agents', 'm1,m2,m3,m4,m5', '--findings', '1', '--real', '1', '--duplicates', '0'], { CLAUDE_CONFIG_DIR: cfg });
+  assert.equal(o.status, 0, o.stdout);
+  assert.match(o.stdout, /rerun .+ on \S+: it ran on claude-haiku-4-5/);
+  const rows = approvalLog(r.dir);
+  assert.ok(rows.some((e) => e.kind === 'warning' && /claude-haiku-4-5|another model|model the contract named/.test(String(e.reason))), `no warning row for the mismatch: ${JSON.stringify(rows.map((e) => e.kind))}`);
+  assert.equal((summary(r.dir).match(/clean sweeps in a row: (\d+)/) || [])[1], '0', 'a mismatched sweep is no clean sweep');
+});
