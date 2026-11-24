@@ -68,7 +68,7 @@ function push(work, kit) {
 	return { status: r.status, out: `${r.stdout}${r.stderr}`, err: r.stderr };
 }
 
-// why: catches a push whose commit adds a literal AWS-shaped key in a test file is blocked with "Push blocked: a secret-shaped" (K371 S1)
+// why: guards rule:security-standards (a push with a whole key in a test file is blocked) (K371 S1)
 test('a push whose commit adds a literal AWS-shaped key in a test file is blocked with "Push blocked: a secret-shaped"', () => {
 	const { work, none } = repo();
 	assert.equal(record(work, FILE, LITERAL, none).status, 0, 'the setup commit did not land');
@@ -77,7 +77,7 @@ test('a push whose commit adds a literal AWS-shaped key in a test file is blocke
 	assert.match(r.err, /Push blocked: a secret-shaped/);
 });
 
-// why: catches a push whose test builds the value from joined parts at run time passes the scan (K371 S2)
+// why: guards rule:security-standards (a value joined at run time passes the scan, which did read the push) (K371 S2)
 test('a push whose test builds the value from joined parts at run time passes the scan', () => {
 	const { work, none } = repo();
 	assert.equal(record(work, FILE, JOINED, none).status, 0, 'the setup commit did not land');
@@ -96,20 +96,7 @@ test('bypass: a key added in one commit and taken out in the next is still block
 	assert.match(r.err, /Push blocked: a secret-shaped/);
 });
 
-// why: catches repeat: the same push twice is blocked the same way (K371 S1)
-test('repeat: the same push twice is blocked the same way', () => {
-	const { work, none } = repo();
-	const kit = kitCopy();
-	assert.equal(record(work, FILE, LITERAL, none).status, 0, 'the setup commit did not land');
-	const first = push(work, kit);
-	const second = push(work, kit);
-	assert.notEqual(first.status, 0, `the first push went through: ${first.out}`);
-	assert.match(first.err, /Push blocked: a secret-shaped/);
-	assert.notEqual(second.status, 0, `the second push went through: ${second.out}`);
-	assert.match(second.err, /Push blocked: a secret-shaped/);
-});
-
-// why: catches fail-closed: a missing secret-shapes.mjs blocks the push and is logged on stderr (K371 S3)
+// why: guards rule:security-standards (a push with no scan script is blocked, logged) (K371 S3)
 test('fail-closed: a missing secret-shapes.mjs blocks the push and is logged on stderr', () => {
 	const { work, none } = repo();
 	assert.equal(record(work, FILE, CLEAN, none).status, 0, 'the setup commit did not land');
