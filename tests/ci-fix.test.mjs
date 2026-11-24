@@ -56,7 +56,7 @@ const SESSION_3 = '7b3e4f50-6c7d-4e8f-8091-b22334455667';
 function proofFor(id, act) { return { session: SESSION, id, act, at: Date.parse(ANSWER_AT) }; }
 // The time every fixture pop-up is answered at (fresh for the run), so a proof's at can equal the answer time.
 const ANSWER_AT = new Date().toISOString();
-// The session transcript of a repo, where Max's answered pop-up is (owner-yes.cjs reads it from the Claude folder).
+// The session transcript of a repo, where the owner's answered pop-up is (owner-yes.cjs reads it from the Claude folder).
 const slugOf = (root) => fs.realpathSync.native(root).replace(/[^A-Za-z0-9]/g, '-');
 // An answered pop-up quoting `act` in one code span, accepted by the user, in session sid; returns the env that reads it.
 // One pop-up: the ask and its accepted answer, under askId, with the question text and the answer given.
@@ -290,7 +290,7 @@ test('a fix of under 6 words is refused; each line goes to `docs/builds/<version
 	assert.deepEqual(cifixLines(root), []);
 	const ok = cifix(root, 'diagnose', '1', '--cause', 'code', '--fix', SIX, '--files', 'src/a.mjs');
 	assert.equal(ok.status, 0, ok.stderr);
-	assert.ok(ok.stdout.includes(`fails thing: code, ${SIX}`), `the one line for Max: ${ok.stdout}`);
+	assert.ok(ok.stdout.includes(`fails thing: code, ${SIX}`), `the one line for the owner: ${ok.stdout}`);
 	const lines = cifixLines(root);
 	assert.equal(lines.length, 1);
 	assert.deepEqual({ run: lines[0].run, key: lines[0].key, cause: lines[0].cause, fix: lines[0].fix, files: lines[0].files, attempt: lines[0].attempt },
@@ -309,11 +309,11 @@ test('a second diagnose on an item diagnosed in an earlier run is refused unless
 	// an item diagnosed in no earlier run is still taken as attempt 1
 	const other = cifix(root, 'diagnose', '2', '--cause', 'env', '--fix', SIX, '--files', 'scripts/setup.mjs');
 	assert.equal(other.status, 0, other.stderr);
-	// attempt 2 needs a grant that is Max's accepted pop-up quoting the item's code: a made-up grant id is refused
+	// attempt 2 needs a grant that is the owner's accepted pop-up quoting the item's code: a made-up grant id is refused
 	const made = cifix(root, 'diagnose', '1', '--cause', 'code', '--fix', SIX, '--files', 'src/a.mjs', '--grant', 'g-41');
 	assert.equal(made.status, 1, `a made-up grant id is refused: ${made.stdout}`);
 	assert.equal(cifixLines(root).filter((l) => l.key === ITEM_TEST.key).length, 1, 'a refused grant writes no line');
-	// with Max's pop-up quoting the item's key in an accepted answer, the answer's id is the grant: attempt 2
+	// with the owner's pop-up quoting the item's key in an accepted answer, the answer's id is the grant: attempt 2
 	const env = answeredYes(root, SESSION, ITEM_TEST.key);
 	const yes = cifixWith(env, root, 'diagnose', '1', '--cause', 'code', '--fix', SIX, '--files', 'src/a.mjs', '--grant', 'toolu_ask_owner');
 	assert.equal(yes.status, 0, yes.stderr);
@@ -417,11 +417,11 @@ test('closeout.mjs check fails a cifix line with a bad cause, short fix, attempt
 	assert.equal(pr.status, 1, `a pin fix in a fix: commit must fail: ${pr.stdout}`);
 	assert.match(pr.stderr, /cifix/, 'the pin refusal names cifix');
 	assert.equal(logLines(pinBad.root).filter((l) => l.hook === 'closeout').length, 1, 'one closeout log line');
-	// a made-up attempt-2 grant is not a yes: closeout refuses it (a grant is Max's accepted pop-up, which CI cannot read)
+	// a made-up attempt-2 grant is not a yes: closeout refuses it (a grant is the owner's accepted pop-up, which CI cannot read)
 	const made = coCheck(closeoutRepo(cifixCase({ ...GOOD, attempt: 2, grant: 'g-41' })).root);
 	assert.equal(made.status, 1, `a made-up attempt-2 grant fails closeout: ${made.stdout}`);
 	assert.match(made.stderr, /cifix/);
-	// closeout runs on the PC: an attempt-2 line whose grant is Max's accepted pop-up quoting the item's key passes
+	// closeout runs on the PC: an attempt-2 line whose grant is the owner's accepted pop-up quoting the item's key passes
 	const real = closeoutRepo(cifixCase({ ...GOOD, attempt: 2, grant: 'toolu_ask_owner', proof: proofFor('toolu_ask_owner', ITEM_TEST.key) }));
 	const realYes = coCheck(real.root, answeredYes(real.root, SESSION, ITEM_TEST.key));
 	assert.equal(realYes.status, 0, `an attempt-2 grant that is a real accepted pop-up passes closeout: ${realYes.stderr}`);
@@ -477,11 +477,11 @@ test('closeout.mjs check fails a gate-file number that rises on a cap line or fa
 	const slow = gate('scripts/test-run.mjs', 'const FAST_CAP_MS = 30000;\nconst RETRIES = 3;\nconst SLOW_MS = 2 * 9000;');
 	assert.equal(slow.r.status, 1, `a cap line raised in its second number fails: ${slow.r.stdout}`);
 	assert.match(slow.r.stderr, /test-run\.mjs/);
-	// ci-fix.mjs gate-yes writes the gate's owner-yes line only with Max's accepted pop-up quoting the new line, else refuses and logs
+	// ci-fix.mjs gate-yes writes the gate's owner-yes line only with the owner's accepted pop-up quoting the new line, else refuses and logs
 	const gy = mkRepo();
 	const gyLine = 'const FAST_CAP_MS = 60000;';
 	const refused = cifix(gy, 'gate-yes', 'scripts/test-run.mjs', gyLine);
-	assert.equal(refused.status, 1, `gate-yes without Max's pop-up is refused: ${refused.stdout}`);
+	assert.equal(refused.status, 1, `gate-yes without the owner's pop-up is refused: ${refused.stdout}`);
 	assert.ok(logLines(gy).some((l) => l.hook === 'ci-fix'), 'the refusal is logged by hook ci-fix');
 	assert.deepEqual(cifixLines(gy), [], 'a refused gate-yes writes no line');
 	const granted = cifixWith(answeredYes(gy, SESSION, gyLine), gy, 'gate-yes', 'scripts/test-run.mjs', gyLine);
@@ -771,7 +771,7 @@ test('ci-fix.mjs fix touches only the fixable items and logs one cifix line for 
 
 const GATE_ACT = 'ci-fix gate-yes scripts/test-run.mjs:const FAST_CAP_MS = 60000;';
 const GATE_KEY = 'gate:scripts/test-run.mjs:const FAST_CAP_MS = 60000;';
-const gateYesLine = (extra = {}) => ({ run: 200, key: GATE_KEY, cause: 'env', fix: 'Max accepted this gate line change', files: ['scripts/test-run.mjs'], attempt: 1, ...(extra.grant ? { proof: proofFor(extra.grant, String(extra.key ?? GATE_KEY).replace(/^gate:/, 'ci-fix gate-yes ')) } : {}), ...extra });
+const gateYesLine = (extra = {}) => ({ run: 200, key: GATE_KEY, cause: 'env', fix: 'the owner accepted this gate line change', files: ['scripts/test-run.mjs'], attempt: 1, ...(extra.grant ? { proof: proofFor(extra.grant, String(extra.key ?? GATE_KEY).replace(/^gate:/, 'ci-fix gate-yes ')) } : {}), ...extra });
 
 // why: catches closeout.mjs accepting a made-up, mismatched or reused gate: grant that is no accepted pop-up (K399 U22 ruling 1)
 test('closeout.mjs check counts a gate: grant only when it is the id of one accepted pop-up quoting the gate-yes act, used by no other line', () => {

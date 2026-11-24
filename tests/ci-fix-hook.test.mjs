@@ -180,7 +180,7 @@ function guardCall(home, root, tool_name, tool_input, extra = {}, env = {}) {
 	assert.equal(r.status, 0, r.stderr);
 	return r.stdout ? JSON.parse(r.stdout) : {};
 }
-// An answered pop-up as Claude Code writes it when Max taps Yes on a question quoting `act` in one code span.
+// An answered pop-up as Claude Code writes it when the owner taps Yes on a question quoting `act` in one code span.
 function writeYesTranscript(file, act) {
 	const question = `May I run \`${act}\`?`;
 	const askId = 'toolu_ask_owner';
@@ -265,15 +265,15 @@ test('with a sweep recorded, an edit adding a test( or // planted: tag is refuse
 	assert.ok(!deny(check(root, ...editOf(root, 'src/a.mjs'), {}, builder)), 'an edit adding no tag is allowed');
 });
 
-// why: catches a gate-file number raised on a cap line or lowered on a floor line held for Max, with the other numbers free (K399 S3)
-test('a cap raised, a floor lowered or a timeout raised in a gate file is held for Max; the loosening-free edits go through', () => {
+// why: catches a gate-file number raised on a cap line or lowered on a floor line held for the owner, with the other numbers free (K399 S3)
+test('a cap raised, a floor lowered or a timeout raised in a gate file is held for the owner; the loosening-free edits go through', () => {
 	const root = mkRepo({ state: 'none' });
 	const cap = check(root, ...editOf(root, 'scripts/test-run.mjs', 'FAST_CAP_MS = 30000', 'FAST_CAP_MS = 60000'));
 	assert.ok(deny(cap), 'a cap raised is held');
-	assert.match(why(cap), /Max/, 'the hold names Max');
+	assert.match(why(cap), /the owner/, 'the hold names the owner');
 	const floor = check(root, ...editOf(root, 'scripts/test-check.mjs', 'SCORE_FLOOR = 8', 'SCORE_FLOOR = 5'));
 	assert.ok(deny(floor), 'a floor lowered is held');
-	assert.match(why(floor), /Max/);
+	assert.match(why(floor), /the owner/);
 	const timeout = check(root, ...editOf(root, 'tests/foo.test.mjs', '{ timeout: 1000 }', '{ timeout: 5000 }'));
 	assert.ok(deny(timeout), 'a timeout: number raised in a test file is held');
 	// a replace_all edit raises the cap on every match; a MultiEdit entry with replace_all does the same
@@ -307,7 +307,7 @@ test('a cap raised, a floor lowered or a timeout raised in a gate file is held f
 	write(root, 'scripts/test-check.mjs', 'const t = Math.max(1000, Math.min(600000, left()));\n');
 	assert.ok(deny(check(root, ...editOf(root, 'scripts/test-check.mjs', 'Math.min(600000', 'Math.min(900000'))), 'a mixed max and min line with its cap raised is held');
 	assert.ok(deny(check(root, ...editOf(root, 'scripts/test-check.mjs', 'Math.min(600000', 'Math.min(300000'))), 'a mixed max and min line with its cap lowered is held too');
-	// a held gate edit is the owner-yes hold through guard.cjs; once Max's accepted pop-up quotes that change's code, the same edit goes through
+	// a held gate edit is the owner-yes hold through guard.cjs; once the owner's accepted pop-up quotes that change's code, the same edit goes through
 	write(root, 'scripts/test-run.mjs', 'const FAST_CAP_MS = 30000;\n');
 	const home = guardHome();
 	const capIn = { file_path: `${root}/scripts/test-run.mjs`, old_string: 'FAST_CAP_MS = 30000', new_string: 'FAST_CAP_MS = 60000' };
@@ -346,15 +346,15 @@ test('an edit that keeps the old timeout line and adds a second line with a high
 	assert.ok(deny(check(root, ...editOf(root, 'tests/x.test.mjs', '{ timeout: 1000 }', '{ timeout: 60000 }'))), 'the plain raise is held');
 });
 
-// why: catches a second red on an item held for Max, its owner-ask logged, while another diagnosed item's file is still taken (K399 S4)
+// why: catches a second red on an item held for the owner, its owner-ask logged, while another diagnosed item's file is still taken (K399 S4)
 test('an edit to the files of an item red a second time is refused and logged as an owner-ask; the other item carries on', () => {
 	// ITEM_A was diagnosed in run 100 and is red again in run 200; ITEM_B is diagnosed in run 200 and names src/b.mjs
 	const root = mkRepo({ cifix: [cifixLine(ITEM_A, ['src/a.mjs'], { run: 100 }), cifixLine(ITEM_B, ['src/b.mjs'])] });
 	const second = check(root, ...editOf(root, 'src/a.mjs'));
 	assert.ok(deny(second), 'the second red on ITEM_A refuses its file');
-	assert.match(why(second), /Max/, 'the refusal stops and asks Max');
+	assert.match(why(second), /the owner/, 'the refusal stops and asks the owner');
 	assert.ok(logRows(root).some((r) => String(r.cause || '').includes(ITEM_A.name)), `the owner-ask is logged: ${JSON.stringify(logRows(root))}`);
-	// control: ITEM_A has left the count (it is Max's now), so the other item's named file carries on
+	// control: ITEM_A has left the count (it is the owner's now), so the other item's named file carries on
 	assert.ok(!deny(check(root, ...editOf(root, 'src/b.mjs'))), 'ITEM_B carries on');
 });
 
