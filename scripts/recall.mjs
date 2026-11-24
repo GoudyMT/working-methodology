@@ -440,7 +440,8 @@ export function checkGate({ changed, added, removed = [], brief, keys, bar = nul
       Number(baseline) < top && `a new test set: the release's baseline ${baseline} is under the floor of ${top}`,
       Number(control) !== 0 && `a new test set: the control ${control ?? 'is not recorded'} is not 0`,
       behave && Number(behave[3]) < behaveTop && `a new test set: behaviour baseline ${behave[3]} is under the floor of ${behaveTop}`,
-      behave && Number(behave[5]) !== 0 && `a new test set: behaviour control ${behave[5]} is not 0`,
+      // A no-kit session passes "did not" checks by doing nothing: 8 of 14 is the highest control recorded on suite v2.
+      behave && Number(behave[5]) * 14 > behaveTop * 8 && `a new test set: behaviour control ${behave[5]} is over 8 in 14 of ${behaveTop}`,
     ] : []),
   ].filter(Boolean);
   const faults = [
