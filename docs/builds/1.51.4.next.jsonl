@@ -54,3 +54,7 @@
 {"text":"1.51.4 build: ci-fix-hook red-twice test matches /the owner/ on its last clause only, so the first clause can name anyone; pin both clauses (lane C builder doubt, after the sweep, low)","at":"2026-11-24T13:18:16.075Z"}
 {"text":"1.51.4 build: test fixture strings and comments in tests still use the owner's first name (agent-model, closeout, kit-sweep tests); rename in a retest (S13F1 remainder, low)","at":"2026-11-24T13:18:16.109Z"}
 {"text":"1.51.4 build: S9F1's tag and force test partly duplicates test-integrity.test.mjs:136 legs; cut one at the next test-value pass (lane E tester, low)","at":"2026-11-24T13:18:16.142Z"}
+{"text":"1.51.4 build: kit-tests checkout, setup-node and base unpack lack if !cancelled, so after a red the Attempt check and Time budget steps fail with a missing module, noise beside the real red (CI round 1)","at":"2026-11-24T16:35:14.596Z"}
+{"text":"1.51.4 build: the approve-worktree pause-ask test title still says it names CLAUDE_CODE_SESSION_ID when unset; it now asserts only the resume step; rename it, and decide if the ask should name the variable","at":"2026-11-24T16:35:21.248Z"}
+{"text":"1.51.4 build: install user from the kit source took about 20 s, and recall-arms tests hit their 20 s timeout locally; cause not proven, the 233 worktrees under .claude are a guess","at":"2026-11-24T16:35:21.794Z"}
+{"text":"1.51.4 build: the kit pre-push prints fatal Not a valid object name lines for remote shas the clone lacks; read them quietly","at":"2026-11-24T16:35:22.344Z"}
