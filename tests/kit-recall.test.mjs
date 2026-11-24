@@ -307,11 +307,11 @@ test('the gate holds a PR to the bar of its own keys, not the base\'s', () => {
   const between = gate(7);
   assert.equal(between.status, 1, between.stdout + between.stderr);
   assert.match(between.stdout, /pass bar of 9/);
-  // Over the head's bar, the PR still moved its ruler, and since K198 no marker passes that.
+  // Over the head's bar, the PR moved its test set, so the release must reach the new set's top score too.
   const atBar = gate(14);
   assert.equal(atBar.status, 1, atBar.stdout + atBar.stderr);
   assert.doesNotMatch(atBar.stdout, /pass bar/);
-  assert.match(atBar.stdout, /changes the ruler/);
+  assert.match(atBar.stdout, /a new test set: the release's baseline 1 is under/);
 });
 
 // why: guards rule:instruments-and-evals
@@ -400,7 +400,7 @@ test('a PR that moves the ruler it is graded on fails, and no marker passes it (
     ['an edit at the same version', { was: { brief: 2, keys: 12, edited: true } }, /changes the ruler/],
     ['a set moved back a version', { was: { brief: 2, keys: 14 } }, /changes the ruler/],
     ['a suite moved back a version', { behaviour: { suite: 3, base: 4, bar: 12, count: 16 } }, /changes the behaviour suite/],
-    ['a set of fewer questions than the floor', { count: 10, added: lines(10, 10, 0) }, /under the floor of 14/],
+    ['a set of fewer questions than the floor', { count: 10, bar: 5, added: lines(10, 10, 0) }, /never shrinks under it/],
     ['no behaviour line', { added: lines(29, 29, 0).slice(0, 4) }, /records no behaviour line/],
     ['no floor to judge by', { floor: undefined }, /changes the ruler/],
   ]) {
