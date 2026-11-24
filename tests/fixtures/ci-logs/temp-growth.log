@@ -1,0 +1,14 @@
+2026-11-23T14:51:01.1000000Z ##[group]Run node scripts/test-run.mjs --shard 1/2
+2026-11-23T14:51:01.1000001Z shell: /usr/bin/bash -e {0}
+2026-11-23T14:51:01.1000002Z ##[endgroup]
+2026-11-23T14:51:02.2000000Z TAP version 13
+2026-11-23T14:51:02.2000001Z 1..40
+2026-11-23T14:51:02.2000002Z # tests 40
+2026-11-23T14:51:02.2000003Z # pass 40
+2026-11-23T14:51:02.2000004Z # fail 0
+2026-11-23T14:51:03.3000000Z test-run: temp growth: 18 in /tmp/kit-test-1234:
+2026-11-23T14:51:03.3000001Z   ci-budget-a1b2c3
+2026-11-23T14:51:03.3000002Z   ci-budget-d4e5f6
+2026-11-23T14:51:03.3000003Z   ci-budget-0a9b8c
+2026-11-23T14:51:03.3000004Z   ci-budget-77aa66
+2026-11-23T14:51:03.3000005Z ##[error]Process completed with exit code 1.

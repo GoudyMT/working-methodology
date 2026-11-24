@@ -1,0 +1,5 @@
+2026-11-23T14:56:01.1000000Z ##[group]Run node "$M" check
+2026-11-23T14:56:01.1000001Z shell: /usr/bin/bash -e {0}
+2026-11-23T14:56:01.1000002Z ##[endgroup]
+2026-11-23T14:56:02.2000000Z docs/rule-map.json is stale: run node scripts/rule-map.mjs write
+2026-11-23T14:56:02.2000001Z ##[error]Process completed with exit code 1.

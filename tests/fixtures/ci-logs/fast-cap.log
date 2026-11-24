@@ -1,0 +1,10 @@
+2026-11-23T14:52:01.1000000Z ##[group]Run node scripts/test-run.mjs --shard 0/2
+2026-11-23T14:52:01.1000001Z shell: C:\Program Files\Git\bin\bash.EXE -e {0}
+2026-11-23T14:52:01.1000002Z ##[endgroup]
+2026-11-23T14:52:02.2000000Z TAP version 13
+2026-11-23T14:52:02.2000001Z 1..30
+2026-11-23T14:52:02.2000002Z # tests 30
+2026-11-23T14:52:02.2000003Z # pass 30
+2026-11-23T14:52:02.2000004Z # fail 0
+2026-11-23T14:52:03.3000000Z test-run: fast-lane test over the cap: the pre-push hook test in tests/kit-hooks.test.mjs, 42940 ms (cap 30000 ms)
+2026-11-23T14:52:03.3000001Z ##[error]Process completed with exit code 1.

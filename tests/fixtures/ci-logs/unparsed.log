@@ -1,0 +1,35 @@
+2026-11-23T14:55:01.1000000Z ##[group]Run node project/.claude/link-scan.cjs .
+2026-11-23T14:55:01.1000001Z shell: /usr/bin/bash -e {0}
+2026-11-23T14:55:01.1000002Z ##[endgroup]
+2026-11-23T14:55:02.2000001Z scan line 1: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000002Z scan line 2: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000003Z scan line 3: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000004Z scan line 4: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000005Z scan line 5: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000006Z scan line 6: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000007Z scan line 7: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000008Z scan line 8: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000009Z scan line 9: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000010Z scan line 10: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000011Z scan line 11: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000012Z scan line 12: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000013Z scan line 13: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000014Z scan line 14: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000015Z scan line 15: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000016Z scan line 16: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000017Z scan line 17: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000018Z scan line 18: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000019Z scan line 19: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000020Z scan line 20: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000021Z scan line 21: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000022Z scan line 22: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000023Z scan line 23: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000024Z scan line 24: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000025Z scan line 25: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000026Z scan line 26: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000027Z scan line 27: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000028Z scan line 28: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000029Z scan line 29: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000030Z scan line 30: nothing here is in a known failure shape
+2026-11-23T14:55:02.2000031Z LAST-LINE-MARKER the scan stopped here
+2026-11-23T14:55:02.2000032Z ##[error]Process completed with exit code 1.
