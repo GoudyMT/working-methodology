@@ -9,6 +9,9 @@ import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+
+kitTemp.sessionRoot();
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 const TOOL = (f) => path.join(ROOT, 'user', 'kit-tools', f);
@@ -25,7 +28,7 @@ const merged = (unit) => [
 
 // A kit-installed git repo holding every source the record reads; withRecord also writes the record with the real tool.
 function fixture({ withRecord = true, window = 400000 } = {}) {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'phase-card-'));
+	const root = kitTemp.makeTemp('phase-card-');
 	const git = (...a) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.com', ...a], { cwd: root, encoding: 'utf8' });
 	git('init', '-q', '-b', 'main');
 	const dir = path.join(root, 'plans', 'p');

@@ -8,6 +8,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import kitTemp from '../project/.claude/kit-temp.cjs';
+
+kitTemp.sessionRoot();
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'user', 'kit-tools', 'lead-state.mjs');
 const sha256 = (s) => createHash('sha256').update(s).digest('hex');
@@ -18,7 +21,7 @@ const FIELDS = ['plan', 'planSha', 'locksSha', 'phase', 'head', 'merged', 'next'
 
 // A small git repo holding every source the record reads, as the kit writes them.
 function fixture() {
-	const root = fs.mkdtempSync(path.join(os.tmpdir(), 'lead-state-'));
+	const root = kitTemp.makeTemp('lead-state-');
 	const git = (...a) => execFileSync('git', ['-c', 'user.name=T', '-c', 'user.email=t@example.com', ...a], { cwd: root, encoding: 'utf8' });
 	git('init', '-q', '-b', 'main');
 	const dir = path.join(root, 'plans', 'p');
