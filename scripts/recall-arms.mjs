@@ -17,6 +17,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
+import { install } from './kit.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // A program named by its bare name starts from node's own folder, so a same-named file left in a folder never runs.
@@ -243,6 +244,8 @@ async function main(argv) {
     for (const arm of arms) {
       fs.mkdirSync(arm.configDir);
       fs.copyFileSync(path.join(args.probe, LOGIN_FILE), path.join(arm.configDir, LOGIN_FILE));
+      // The arm's user layer comes from its own kit, so recall.mjs's checkUserLayer finds an install there.
+      install({ kit: arm.kit, home: arm.configDir, target: 'user', release: null });
     }
     return await runArms(arms);
   } finally {
