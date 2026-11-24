@@ -547,6 +547,13 @@
       "reach": "kit",
       "text": "A score gate's model is a setting, `KIT_GATE_MODEL`: each run's record and the score lines name any model but the pin, and runs on two models are refused.",
       "evidence": "scripts/recall.mjs"
+    },
+    {
+      "id": "U31",
+      "kind": "changed",
+      "reach": "projects",
+      "text": "A start check that can't run, or prints no verdict line, means the full reading, without asking.",
+      "evidence": "rules/core.md"
     }
   ],
   "verification": [
