@@ -31,8 +31,11 @@ let homeNow = null;
 // It moves with each cd the guard follows, and is used only while its own parts are the parts in hand, so a stale
 // or mistaken one is never read from: the lower-case parts are then all there is.
 let startNow = null;
-// K158 (build 21): set only to ask whether a hold came from a neighbour alone (see heldBeside below).
-let neighbourBlind = false;
+// K379: the readings one check asks of a command (each a names function and whether it reads the commands beside a
+// read as plain, K158 build 21: whether a hold came from a neighbour alone), and the plan made for each command: the
+// command is split and read once, and every reading takes its answer from that one plan.
+let readingSet = [];
+const planSeen = new Map();
 // The two sides of the compare are kept between calls: a long command asks for every word (the 98 KB command spent
 // most of its owner-proof time here, the main CI on the PR 37 merge).
 const cwdKeys = new WeakMap();
@@ -690,8 +693,10 @@ function dashGlob(command, tool, start) {
 	// The build 20 sweep: text run after a cd is read from the start folder below, and text from a variable is not
 	// read at all, so a wildcard in either is unsure.
 	let cdBefore = false;
-	for (const cmd of read.cmds) {
-		const names = cmd.map(wordText);
+	// Each word's text, once: the readings below ask for the first word of a command and for every cd.
+	const texts = read.cmds.map((cmd) => cmd.map(wordText));
+	for (const [ci, cmd] of read.cmds.entries()) {
+		const names = texts[ci];
 		const k = names.findIndex((n, j) => n === 'eval' || ((/(^|\/)(ba|z|da|k)?sh(\.exe)?$/.test(n)) && names.slice(j + 1).some((x) => /^-\w*c/.test(x))));
 		if (k >= 0) {
 			const text = names.slice(k + 1).filter((x) => !/^-\w*c$/.test(x)).join(' ');
@@ -706,7 +711,7 @@ function dashGlob(command, tool, start) {
 	// cat <<E | sh, xargs, a variable) it may run as a command of its own, so it is read the same way. A list of plain
 	// readers, not of shells: the commit security review of this fix found shells such a list would miss. Only readers
 	// with no option that runs a program (sort --compress-program does, the second review) are on it.
-	if (read.bodies.some((b) => /[*?[]/.test(b)) && !read.cmds.every((cmd) => /^(cat|head|tail|grep|egrep|fgrep|wc|cut|tr)$/.test(wordText(cmd[0] || [])))) {
+	if (read.bodies.some((b) => /[*?[]/.test(b)) && !texts.every((t) => /^(cat|head|tail|grep|egrep|fgrep|wc|cut|tr)$/.test(t[0] || ''))) {
 		if (cdBefore) return 'unsure';
 		for (const b of read.bodies) { const inner = dashGlob(b, tool, start); if (inner) return inner; }
 	}
@@ -716,9 +721,9 @@ function dashGlob(command, tool, start) {
 	// The build 21 sweep: a here-document whose end word is not quoted runs the substitutions in its body, whatever
 	// command reads it (cat <<E with $(sed -n 1p *) inside), so a wildcard there is more than this reading follows.
 	if (read.live.some((b) => /\$\(|`/.test(b) && /[*?[]/.test(b))) return 'unsure';
-	if (read.cmds.some((cmd) => /^(source|\.)$/.test(wordText(cmd[0] || [])))) read.unsure = read.unsure || words.some(wordGlob);
+	if (texts.some((t) => /^(source|\.)$/.test(t[0] || ''))) read.unsure = read.unsure || words.some(wordGlob);
 	// A cd the word split did not see (inside text run as shell, or glued to another word) is more than this follows.
-	const cdSeen = words.filter((w) => /^(cd|pushd|popd|chdir)$/.test(wordText(w))).length;
+	const cdSeen = texts.flat().filter((t) => /^(cd|pushd|popd|chdir)$/.test(t)).length;
 	const cdRaw = (c.match(/(?:^|[^\w./-])(?:cd|pushd|popd|chdir)(?![\w.-])/g) || []).length;
 	// A word whose first part is the wildcard: a plain first folder, a root, a drive or a ~ never starts with a dash.
 	const firsts = words.filter((w) => {
@@ -871,20 +876,20 @@ function psReads(command) {
 	const plain = String(command || '').replace(BRACKET_READ, (m, lead, read) => `${lead}${read}`);
 	return psShown(plain) ?? plain;
 }
-function shellWrites(command, tool, start, names = proofNames) {
+function shellWrites(command, tool, start, reading) {
 	if (tool === 'PowerShell') {
 		const plain = psReads(command);
-		if (plain !== String(command || '')) return shellWrites(plain, tool, start, names);
+		if (plain !== String(command || '')) return shellWrites(plain, tool, start, reading);
 	}
 	if (globSplits(command, tool, start)) return true;
 	const bodies = loopBodies(command, tool);
-	if (bodies) return bodies.some((b) => shellWrites(b, tool, start, names));
+	if (bodies) return bodies.some((b) => shellWrites(b, tool, start, reading));
 	// Each reading has its own real folder: a reading nested in this one must not leave its own behind.
 	const outer = startNow;
 	startNow = start ? { dir: String(start), origin: String(start) } : null;
-	try { return shellWritesFrom(command, tool, start, names); } finally { startNow = outer; }
+	try { return shellWritesFrom(command, tool, start, reading); } finally { startNow = outer; }
 }
-function shellWritesFrom(command, tool, start, names) {
+function shellWritesFrom(command, tool, start, reading) {
 	// Every line is read, here-document bodies too: reading a body as data was spelled around five ways in the 1.24.0
 	// sweep (an end mark bash reads otherwise, a cat function, continued lines, nested quotes), so it fails closed.
 	// A variable set in the command (P=~/.claude) is read as its value where it is used, before the reader splits ${P} at
@@ -897,7 +902,7 @@ function shellWritesFrom(command, tool, start, names) {
 	const filled = String(command || '')
 		.replace(/\$\{([A-Za-z_]\w*):?[-=+?]([^}]*)\}/g, (m, name, word) => word)
 		.replace(/\$\{([A-Za-z_]\w*\[[^\]]*\])\}/g, (m, el) => (elements.has(el) ? elements.get(el) : m));
-	if (filled !== String(command || '') && shellWrites(filled, tool, start, names)) return true;
+	if (filled !== String(command || '') && shellWrites(filled, tool, start, reading)) return true;
 	const given = new Map();
 	for (const m of String(command || '').matchAll(/(?:^|[\s;&|(])([A-Za-z_]\w*)=([^\s;&|()'"`$]+)/g)) given.set(m[1], [...(given.get(m[1]) || []), m[2]]);
 	// A variable set more than once (P=~/.claude; ... $P ...; P=x) is read as each value it is given in turn: the
@@ -927,7 +932,7 @@ function shellWritesFrom(command, tool, start, names) {
 		if (twice.reduce((n, [, values]) => n * new Set(values).size, 1) > 32) return true;
 		const [name, values] = twice[0];
 		const use = new RegExp(`\\$\\{${name}\\}|\\$${name}\\b`, 'g');
-		return [...new Set(values)].some((value) => shellWrites(String(command).replace(use, () => value), tool, start, names));
+		return [...new Set(values)].some((value) => shellWrites(String(command).replace(use, () => value), tool, start, reading));
 	}
 	for (const [name, values] of given) given.set(name, values[0]);
 	const source = String(command || '').replace(/\$\{([A-Za-z_]\w*)\}|\$([A-Za-z_]\w*)\b/g, (m, a, b) => (given.has(a || b) ? given.get(a || b) : m));
@@ -936,6 +941,20 @@ function shellWritesFrom(command, tool, start, names) {
 	if (/[$%][{(]?[A-Za-z_][\w:]*[})%]?[\\/]?kit-owner\.json/i.test(source)) return true;
 	// CDPATH moves a cd the guard cannot follow, so a cd beside it is refused (the 1.24.0 sweep).
 	if (/\bCDPATH\b/.test(source) && /(^|[\s;&|(])(cd|pushd|chdir)\b/i.test(source)) return true;
+	const at = readingSet.indexOf(reading);
+	if (at < 0) return buildPlan(command, tool, start, source, [reading])[0];
+	const key = `${tool}\0${start}\0${command}\0${source}`;
+	if (!planSeen.has(key)) planSeen.set(key, buildPlan(command, tool, start, source, readingSet));
+	return planSeen.get(key)[at];
+}
+// K379: the one read of a command. The command is split and each segment classified once; every reading in rs (a names
+// function, and whether it reads the commands beside a read as plain) is then answered from that one walk: a segment no
+// reading names is passed with no call, and only a segment a reading names is read again for that reading. The answers
+// come back as one flag per reading, in the order of rs.
+function buildPlan(command, tool, start, source, rs) {
+	const R = rs.length;
+	const ALL = (1 << R) - 1;
+	const out = (m) => rs.map((q, r) => (m & (1 << r)) !== 0);
 	const text = plainText(joinContinuations(source), tool);
 	const segments = tokenize(text);
 	// The 1.49.0 workbench (F2): tee or Tee-Object taking a pipe writes it to the one file it names and sends it on, as
@@ -959,8 +978,12 @@ function shellWritesFrom(command, tool, start, names) {
 		Object.assign(merged, { end: g.end, opens: g.opens, closes: g.closes, endsGroup: g.endsGroup });
 		segments.splice(i - 1, 2, merged);
 	}
+	// Each word of each segment as the path reader writes it, once: the pipe check and the program name both read it.
+	const low = segments.map((g) => g.map((x) => slash(x.value)));
 	let cwd = start ? parts(start) : null;
-	let named = false;
+	// Which readings have a word that names a protected place, and which are already held: one bit per reading.
+	let named = 0;
+	let held = 0;
 	// K19 (pass bar 4): bash's * and ? at the start of a path part never match a name starting with a dot while dotglob
 	// is off, so tests/* cannot name .githooks or .claude. Only for an unquoted word with no escape, expansion, brace or
 	// ~, in a command that names no way to turn dot globbing on; PowerShell's wildcards match dot names, so not there.
@@ -996,11 +1019,31 @@ function shellWritesFrom(command, tool, start, names) {
 	let linkMade = false;
 	// K154: inline node code read as text (its wildcards no file name), kept out of the last whole-text reading too.
 	const inertCode = [];
+	// The readings that say yes to any of the strings, as a mask with one bit per reading. A reading that has the same
+	// names function as one before it (the twin that reads its neighbours as plain) takes that one's answer.
+	const twin = rs.map((q) => rs.findIndex((o) => o.names === q.names));
+	const maskOf = (list, from = cwd) => {
+		let m = 0;
+		for (let r = 0; r < R; r++) {
+			if (twin[r] < r) { if (m & (1 << twin[r])) m |= 1 << r; continue; }
+			if (list.some((w) => rs[r].names(w, from))) m |= 1 << r;
+		}
+		return m;
+	};
+	// The folder as a key, worked out when a cd moves it.
+	const whereIs = () => (Array.isArray(cwd) ? `A${cwdKey(cwd)}` : cwd === null ? 'N' : 'U');
+	let where = whereIs();
 	const hit = (x) => {
-		const where = Array.isArray(cwd) ? `A${cwdKey(cwd)}` : cwd === null ? 'N' : 'U';
 		const key = `${x.quoted ? 1 : 0}${where}\0${x.value}`;
-		if (!seen.has(key)) seen.set(key, tails(dotless(x.value, x.quoted)).some((w) => names(w, cwd)));
+		if (!seen.has(key)) seen.set(key, maskOf(tails(dotless(x.value, x.quoted))));
 		return seen.get(key);
+	};
+	// The same ask of one plain word, once per word and folder (K379: each segment asked it again).
+	const asks = new Map();
+	const askNames = (w, quoted) => {
+		const key = `${quoted ? 1 : 0}${where}\0${w}`;
+		if (!asks.has(key)) asks.set(key, maskOf([dotless(w, quoted)]));
+		return asks.get(key);
 	};
 	// A variable set to a plain value earlier in the command (P=~/.claude/projects) is read as that value where it is
 	// used, so a read through it passes and a write through it is refused (S23-2). One the guard did not see set stays
@@ -1085,7 +1128,13 @@ function shellWritesFrom(command, tool, start, names) {
 	const substituted = /[`]|\$\(|<\(/.test(text);
 	// $_, ${_} and !$ hand the last word of the command before to the next one, whatever that command is.
 	const defined = DEFINITION.test(text) || /\$\{?_(?!\w)|!\$/.test(String(command || ''));
-	const definesBefore = (s) => !neighbourBlind && (defined || (segments.length > 1 && (substituted || !segments.every((g, k) => k === s || (plainStep(g, k) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value)))))));
+	// The segments that are not plain, worked out once when first asked; a segment is beside another when it is any other.
+	let notPlain = null;
+	const besideNotPlain = (s) => {
+		if (notPlain === null) notPlain = segments.flatMap((g, k) => (plainStep(g, k) && !g.some((x) => x.redirect && !/^(\d|\/dev\/null|\$null|nul)$/i.test(x.value)) ? [] : [k]));
+		return notPlain.some((k) => k !== s);
+	};
+	const definesBefore = (s, blind) => !blind && (defined || (segments.length > 1 && (substituted || besideNotPlain(s))));
 	// The last command ends with no break (''): it was read as not plain, so no cd was ever followed (S23-1, the
 	// mutation check's survivor at "sure").
 	const plainBreak = (end) => end === undefined || end === '' || end === ';' || end === '&&' || end === '\n';
@@ -1097,7 +1146,7 @@ function shellWritesFrom(command, tool, start, names) {
 	// A pipe after a cd counts only when every stage of every pipeline is a plain reader with no redirect: a file list
 	// piped on to a writer (ls | xargs cp /dev/null) names its files where no word shows them (the sweep of this fix).
 	const firstPipe = segments.findIndex((g) => g.end === '|');
-	const stageReads = (g, at) => { if (memberStage(at)) return true; const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(slash(w[0] || '')).replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
+	const stageReads = (g, at) => { if (memberStage(at)) return true; const w = g.filter((x) => !x.redirect).map((x) => x.value); const p = path.basename(low[at][g.findIndex((x) => !x.redirect)] || '').replace(/\.(exe|cmd|bat)$/, ''); return !/[\\/]/.test(w[0] || '') && (READERS.has(p) || PIPE_READERS.has(p) || wordReader(w)) && !g.some((x) => x.redirect); };
 	// K252 (build 23a): a stage that only sends its output on (node x.mjs 2>&1 | tail) runs in a shell of its own, so it
 	// cannot move the folder; it counts with no redirect but one output pointed at another, and its own words are read
 	// below as any command's are. Every stage that takes the pipe must still read.
@@ -1108,31 +1157,43 @@ function shellWritesFrom(command, tool, start, names) {
 	// bracketed reads it (strict for anything that reading does not model), makes the cd unsure.
 	const apartAt = (s) => bracketed || otherBreak || (firstPipe >= 0 && firstPipe <= s);
 	for (let s = 0; s < segments.length; s++) {
-		if (linkMade) return true;
+		if (linkMade) return out(ALL);
 		const segment = segments[s].map((x) => ({ ...x, value: sub(x.value) }));
 		segment.end = segments[s].end;
 		// Only assignments (P=x, export P=x): nothing is written but a redirect.
 		const assigns = segment.filter((x) => !x.redirect);
 		const lead = /^(export|declare|local|readonly)$/.test(assigns[0]?.value || '') ? 1 : 0;
 		if (assigns.length > lead && assigns.slice(lead).every((x) => /^[A-Za-z_]\w*=/.test(x.value) && !x.value.startsWith('-'))) {
-			if (segment.some((x) => x.redirect && hit(x))) return true;
+			for (const x of segment) if (x.redirect) held |= hit(x);
 			for (const x of assigns.slice(lead)) vars.set(x.value.slice(0, x.value.indexOf('=')), x.value.slice(x.value.indexOf('=') + 1));
 			if (tool === 'Bash' || tool === 'Monitor' || tool === 'mcp__terminal__run_in_terminal') continue;
 		}
 		const all = segment.map((x) => x.value);
-		const program = path.basename(slash(all[0] || '')).replace(/\.(exe|cmd|bat)$/, '');
-		if (/symlink|symbolic|junction|hardlink|mklink/i.test(all.join(' ')) || all.some((w) => /^(ln|mklink|link|fsutil|tar|bsdtar|unzip|7z|7za|cpio|rsync|expand-archive)$/i.test(path.basename(slash(w)).replace(/\.(exe|cmd|bat)$/i, ''))) || all.some((w) => /^--(symbolic|link|recursive|archive|no-dereference|preserve)|^-[a-z]*[slrRaPd][a-z]*$/.test(w)) && /^(cp|gcp)$/.test(program)) linkMade = true;
+		// The words as the path reader writes them: the ones read above, unless a variable set before changed a word.
+		const allLow = vars.size === 0 ? low[s] : all.map(slash);
+		const program = path.basename(allLow[0] || '').replace(/\.(exe|cmd|bat)$/, '');
+		if (/symlink|symbolic|junction|hardlink|mklink/i.test(all.join(' ')) || allLow.some((w) => /^(ln|mklink|link|fsutil|tar|bsdtar|unzip|7z|7za|cpio|rsync|expand-archive)$/i.test(path.basename(w).replace(/\.(exe|cmd|bat)$/i, ''))) || all.some((w) => /^--(symbolic|link|recursive|archive|no-dereference|preserve)|^-[a-z]*[slrRaPd][a-z]*$/.test(w)) && /^(cp|gcp)$/.test(program)) linkMade = true;
 		// sed writes a file wherever its script holds a w or W command (1w.claude/x, s/a/b/gwx, -e '1!w x'), and the forms
 		// have no end, so every place a w or W sits is read as naming the rest of its word, gaps trimmed; a script word past
 		// the cap that holds one is held (the review of this fix: fail closed, read too much rather than too little).
 		// Any sed in the command words, run through a wrapper (env, nice, busybox, xargs) or by another name (gsed, a path).
 		// Fail closed on the name: any word holding sed, busybox or toybox, quoted text handed to a shell among them.
 		const sedHere = all.some((w) => /sed|busybox|toybox/i.test(w));
-		if (sedHere && !printSed(all) && segment.some((x) => !x.redirect && /[wW]/.test(x.value) && (x.value.length > 4096 || [...x.value.matchAll(/[wW]/g)].some((m) => { const t = x.value.slice(m.index + 1).trimStart(); return t && tails(t).some((w) => names(w, cwd)); })))) return true;
+		if (sedHere && !printSed(all)) {
+			for (const x of segment) {
+				if (x.redirect || !/[wW]/.test(x.value)) continue;
+				if (x.value.length > 4096) return out(ALL);
+				for (const m of x.value.matchAll(/[wW]/g)) { const t = x.value.slice(m.index + 1).trimStart(); if (t) held |= maskOf(tails(t)); }
+			}
+		}
 		// A message right after its flag (git commit -m "...", gh pr create --body "..."); a redirect is never one.
 		const message = (x, k) => MESSAGES.has(program) && !x.redirect && k > 0 && (MESSAGE_FLAGS.test(all[k - 1]) || false);
 		const inline = (x) => MESSAGES.has(program) && !x.redirect && /^(--message|--body|--title|--notes)=/i.test(x.value);
-		if (segment.some((x) => hit(x) || x.value.split(/\s+/).some((w) => names(dotless(w, x.quoted), cwd)))) named = true;
+		const hm = segment.map(hit);
+		for (let k = 0; k < segment.length; k++) {
+			named |= hm[k];
+			for (const w of segment[k].value.split(/\s+/)) named |= askNames(w, segment[k].quoted);
+		}
 		// A PowerShell -Filter or -Include names files at any depth, with no path word (the 1.29.0 sweep: Get-ChildItem
 		// -Recurse -Filter *folders.json | Remove-Item deleted the list). Its value is held against the names of the
 		// files the guards live in; the command is a write unless it and every stage it pipes into only read.
@@ -1159,7 +1220,7 @@ function shellWritesFrom(command, tool, start, names) {
 			let k = s;
 			let onlyReads = reads(segments[k]) && !segment.some((x) => x.redirect);
 			while (onlyReads && segments[k].end === '|') { k++; onlyReads = k < segments.length && reads(segments[k]) && !segments[k].some((x) => x.redirect); }
-			if (!onlyReads) return true;
+			if (!onlyReads) return out(ALL);
 		}
 		// A quoted word is read in pieces too: inline code (node -e "...writeFileSync('.claude/settings.json')") names a
 		// file inside it.
@@ -1169,9 +1230,18 @@ function shellWritesFrom(command, tool, start, names) {
 		// wildcard piece in it is text; a plain name in it is still read, and the strict reading holds for any other code.
 		const code = (x) => tool === 'Bash' && program === 'node' && x.quoted && /^(-e|-p|-pe|--eval|--print)$/.test(all[segment.indexOf(x) - 1] || '')
 			&& !/require|import|process|module|global|constructor|prototype|eval|Function|Reflect|Deno|Bun|\bfs\b|spawn|exec|fork|glob|write|append|unlink|\brm|rename|copy|cp\b|mkdir|link|open|truncate|chmod|chown|utimes|readdir|watch|\[|\\u|\\x|`|\$/.test(x.value);
-		if (segment.some(code)) inertCode.push(...segment.filter(code).map((x) => x.value));
-		const inside = (x) => x.quoted && x.value.split(/[\s;|&<>()"'`,]+/).some((w) => w && !(code(x) && /[*?[\]]/.test(w)) && tails(w).some((t) => names(t, cwd)));
-		const hits = segment.filter((x, k) => !message(x, k) && !inline(x) && ((!code(x) && hit(x)) || inside(x)));
+		const isCode = segment.map(code);
+		if (isCode.includes(true)) inertCode.push(...segment.filter((x, k) => isCode[k]).map((x) => x.value));
+		const inside = (x, k) => {
+			let m = 0;
+			if (x.quoted) for (const w of x.value.split(/[\s;|&<>()"'`,]+/)) if (w && !(isCode[k] && /[*?[\]]/.test(w))) m |= maskOf(tails(w));
+			return m;
+		};
+		// Per word, the readings it makes a hit for: a message after its flag is text, and a plain piece of inline code is
+		// no name.
+		const wm = segment.map((x, k) => (message(x, k) || inline(x) ? 0 : (isCode[k] ? 0 : hm[k]) | inside(x, k)));
+		let live = 0;
+		for (const m of wm) live |= m;
 		if (CHANGERS.has(program)) {
 			// A cd that may fail leaves the shell where it was: only one followed by && is sure to have moved it.
 			const sure = segment.end === '&&' || s === segments.length - 1;
@@ -1182,47 +1252,57 @@ function shellWritesFrom(command, tool, start, names) {
 			if (startNow && startNow.dir && linkOnTheWay(startNow.dir, startNow.origin)) { cwd = 'unknown'; startNow.dir = null; }
 			// Into the transcripts only where the guard follows the folder: every later word is then read from there, so
 			// only plain reads pass (S23-2). A move it cannot follow, into them, is refused as before.
-			if (hits.length && cwd === 'unknown') return true;
+			where = whereIs();
+			if (cwd === 'unknown') held |= live;
 			continue;
 		}
-		if (hits.length === 0) continue;
-		if (segment.some((x) => x.redirect && hit(x))) return true;
-		if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || wordReader(all) || printSed(all)) && !definesBefore(s)) {
-			// Piped on, the read must go to another reader.
-			const next = segments[s + 1] && segments[s + 1].filter((x) => !x.redirect).map((x) => x.value);
-			if (segment.end === '|' && next && !PIPE_READERS.has(path.basename(slash(next[0] || '')).replace(/\.(exe|cmd|bat)$/, '')) && !wordReader(next)) return true;
-			continue;
-		}
-		if (COPIERS.has(program) && !definesBefore(s)) {
-			// A copy out is a read. Any option outside the known plain ones may name the destination (-t, --t...,
-			// -Destination and its short forms), so the guard refuses rather than guess.
-			// PowerShell takes any start of a parameter's name and some take a value, so there only a bare two-word copy
-			// (source, destination) or -Recurse / -Force passes; cp takes its plain letter flags.
-			// Only Bash's own cp is read by cp's rules; any other shell or copier gets the strict ones.
-			const pwsh = tool !== 'Bash' || program !== 'cp';
-			const options = segment.slice(1).filter((x) => x.value.startsWith('-'));
-			const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
-			const risky = options.some((x) => (pwsh ? !/^-(recurse|force)$/i.test(x.value) : !COPY_OPTIONS.test(x.value)));
-			const dest = plain[plain.length - 1];
-			if (!risky && (pwsh ? plain.length === 2 : plain.length >= 2) && !hit(dest)) continue;
-		}
-		// For the guards and settings (T1): running a script is no write to it (node <file>, the file the only word named,
-		// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
-		// transcripts keep the stricter reading they had.
-		// The word is the script, never an option: node's own options write files (--redirect-warnings, --cpu-prof-dir,
-		// --diagnostic-dir, --heap-prof-name; the 1.36.0 sweep).
-		// Never with a bracket in the command: a PowerShell argument in brackets runs as code, and a path it joins from
-		// pieces ('.cl'+'aude/...') is no word the reader sees (the 1.36.1 sweep).
-		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) continue;
-		// Only the subcommand right after git (no global option, which can run a program), no option that runs
-		// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
-		// K196 (reproduced on 1.47.0): -C <folder> only moves where the read runs, and these subcommands write no file
-		// wherever they run, so it is the one global option read past.
-		if (names !== proofNames && !definesBefore(s) && !bracketed && program === 'git' && GIT_READS.has(all[1] === '-C' ? all[3] : all[1]) && hits.every((h) => hit(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) continue;
-		return true;
+		// Only a reading that names a word here reads this segment further; the others pass it with no call.
+		if ((live & ~held) === 0) continue;
+		// Whether this segment holds reading r: the original reading of a segment a reading names, one reading at a time.
+		const tail = (r) => {
+			const bit = 1 << r;
+			const blind = rs[r].blind;
+			const names = rs[r].names;
+			const hitR = (x) => (hit(x) & bit) !== 0;
+			const hits = segment.filter((x, k) => wm[k] & bit);
+			if (segment.some((x) => x.redirect && hitR(x))) return true;
+			if (((READERS.has(program) && !/[\\/]/.test(all[0] || '')) || wordReader(all) || printSed(all)) && !definesBefore(s, blind)) {
+				// Piped on, the read must go to another reader.
+				const next = segments[s + 1] && segments[s + 1].filter((x) => !x.redirect).map((x) => x.value);
+				return segment.end === '|' && next && !PIPE_READERS.has(path.basename(slash(next[0] || '')).replace(/\.(exe|cmd|bat)$/, '')) && !wordReader(next);
+			}
+			if (COPIERS.has(program) && !definesBefore(s, blind)) {
+				// A copy out is a read. Any option outside the known plain ones may name the destination (-t, --t...,
+				// -Destination and its short forms), so the guard refuses rather than guess.
+				// PowerShell takes any start of a parameter's name and some take a value, so there only a bare two-word copy
+				// (source, destination) or -Recurse / -Force passes; cp takes its plain letter flags.
+				// Only Bash's own cp is read by cp's rules; any other shell or copier gets the strict ones.
+				const pwsh = tool !== 'Bash' || program !== 'cp';
+				const options = segment.slice(1).filter((x) => x.value.startsWith('-'));
+				const plain = segment.slice(1).filter((x) => !x.value.startsWith('-'));
+				const risky = options.some((x) => (pwsh ? !/^-(recurse|force)$/i.test(x.value) : !COPY_OPTIONS.test(x.value)));
+				const dest = plain[plain.length - 1];
+				if (!risky && (pwsh ? plain.length === 2 : plain.length >= 2) && !hitR(dest)) return false;
+			}
+			// For the guards and settings (T1): running a script is no write to it (node <file>, the file the only word named,
+			// no inline code), and git reading or staging a file writes none (git diff --output does, so it is refused). The
+			// transcripts keep the stricter reading they had.
+			// The word is the script, never an option: node's own options write files (--redirect-warnings, --cpu-prof-dir,
+			// --diagnostic-dir, --heap-prof-name; the 1.36.0 sweep).
+			// Never with a bracket in the command: a PowerShell argument in brackets runs as code, and a path it joins from
+			// pieces ('.cl'+'aude/...') is no word the reader sees (the 1.36.1 sweep).
+			if (names !== proofNames && !definesBefore(s, blind) && !bracketed && program === 'node' && hits.length === 1 && hits[0] === segment[1] && !String(segment[1].value).startsWith('-')) return false;
+			// Only the subcommand right after git (no global option, which can run a program), no option that runs
+			// one (-O, --ext-diff, --textconv) or writes a file (--output), and the file named as a plain word, not inside one.
+			// K196 (reproduced on 1.47.0): -C <folder> only moves where the read runs, and these subcommands write no file
+			// wherever they run, so it is the one global option read past.
+			if (names !== proofNames && !definesBefore(s, blind) && !bracketed && program === 'git' && GIT_READS.has(all[1] === '-C' ? all[3] : all[1]) && hits.every((h) => hitR(h)) && !all.some((a) => /^(--output|-O|--open-files-in-pager|--ext-diff|--textconv)/.test(a))) return false;
+			return true;
+		};
+		for (let r = 0; r < R; r++) if ((live & ~held & (1 << r)) && tail(r)) held |= 1 << r;
 	}
 	// Named in the text but in no command word the reader saw (a nested shell, odd quoting): the safe side.
-	if (named) return false;
+	// A reading that names a word is done here, and one already held is held.
 	const raw = source;
 	// Read from the folder the shell starts in, as the words above are: a bare kit-owner.json there is placed.
 	// K226 (build 23a): a quote anywhere once made every word here read as quoted, so a plain folder glob beside a quoted
@@ -1235,10 +1315,27 @@ function shellWritesFrom(command, tool, start, names) {
 	// the source, bare in the plain text), so its text elsewhere in the command (a '.' took every dot out) is still read.
 	const spelled = (c) => new RegExp(`(^|[\\s;|&()])(-e|-p|-pe|--eval|--print)(\\s+)(["']?)${[...c].map((ch) => `\\\\?${ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`).join('')}\\4(?=$|[\\s;|&()])`);
 	const textOnly = (t) => inertCode.reduce((left, c) => left.replace(spelled(c), (m, lead, flag, gap) => `${lead}${flag}${gap} `), t);
-	return [raw, text].map(textOnly).some((t) => t.split(/[\s;|&<>()]+/).some((word) => {
-		const quoted = quoteSign.test(word);
-		return word.split(/["'`]+/).some((w) => w && names(dotless(w, quoted), start ? parts(start) : null));
-	}));
+	// One pass over the words for every reading still open: each distinct word is asked once, and a repeated word costs no
+	// call (K379: a 98 KB command repeats one word). Each shell word is one step against the work cap, whatever the
+	// number of readings.
+	const open = ALL & ~held & ~named;
+	if (open === 0) return out(held);
+	const asked = new Map();
+	let found = 0;
+	for (const t of [raw, text].map(textOnly)) {
+		for (const word of t.split(/[\s;|&<>()]+/)) {
+			if (++steps > stepCap) throw CAPPED;
+			const quoted = quoteSign.test(word);
+			for (const w of word.split(/["'`]+/)) {
+				if (!w) continue;
+				const key = `${quoted ? 1 : 0}${w}`;
+				if (!asked.has(key)) asked.set(key, maskOf([dotless(w, quoted)], start ? parts(start) : null));
+				found |= asked.get(key);
+			}
+		}
+		if ((found & open) === open) break;
+	}
+	return out(held | (found & open));
 }
 
 // Turning every hook off is a gate bypass, never a settings change a yes may approve (K21). JSON reads \u escapes as
@@ -1262,9 +1359,48 @@ function writtenText(tool, t, file) {
 }
 
 // The hook's answer for one tool call: a refusal, or null to let it go on. The dispatcher (guard.cjs) calls this.
+// K379: one check may read at most this many shell words (one step for each word of a command, whatever the readings). Past it, owner-proof holds the
+// call rather than read on: a command it cannot finish reading is never let through. KIT_OWNER_PROOF_CAP sets it for a
+// test or a machine; the 98 KB command takes about 100,000 steps. Each re-read of a variable's value counts against the cap
+// too, so a 98 KB command ending `P=0;...;P=11; echo $P` is held (fail closed, S3).
+const STEP_CAP = 1000000;
+const CAPPED = { capped: true };
+let steps = 0;
+let stepCap = STEP_CAP;
 function check(input) {
 	homeNow = findHome();
-	try { return answer(input); } finally { homeNow = null; }
+	steps = 0;
+	readingSet = [];
+	planSeen.clear();
+	const set = Number(process.env.KIT_OWNER_PROOF_CAP);
+	stepCap = Number.isFinite(set) && set > 0 ? Math.floor(set) : STEP_CAP;
+	try { return answer(input); } catch (e) { if (e !== CAPPED) throw e; return couldNotFinish(input); } finally { homeNow = null; readingSet = []; planSeen.clear(); }
+}
+// The hold for a command past the cap. The row goes to the repository's git common dir, where the guard's open holds are
+// read; a folder that is no repository holds the call all the same.
+function couldNotFinish(input) {
+	const cwd = input.cwd || process.env.CLAUDE_PROJECT_DIR || process.cwd();
+	const common = commonDirOf(cwd);
+	if (common) fs.appendFileSync(path.join(common, 'kit-guard-open.log'), `${JSON.stringify({ at: new Date().toISOString(), hook: 'owner-proof', cause: `the command has more than ${stepCap} shell words to read` })}\n`);
+	return deny('Held: owner-proof could not finish reading this command within its work cap, so no call runs. Split it into shorter commands.');
+}
+
+// The git common dir of the repository a folder sits in, read from the folder's .git (a folder, or a file that names the
+// git dir of a worktree, which names the common dir in its commondir). No child process: the guard reads its own files.
+function commonDirOf(dir) {
+	for (let d = path.resolve(String(dir)); ; d = path.dirname(d)) {
+		const g = path.join(d, '.git');
+		try {
+			if (fs.statSync(g).isDirectory()) return g;
+			const m = /^gitdir:\s*(.+)$/m.exec(fs.readFileSync(g, 'utf8'));
+			if (m) {
+				const gd = path.resolve(d, m[1].trim());
+				const link = path.join(gd, 'commondir');
+				return fs.existsSync(link) ? path.resolve(gd, fs.readFileSync(link, 'utf8').trim()) : gd;
+			}
+		} catch { /* no .git here: look higher */ }
+		if (path.dirname(d) === d) return null;
+	}
 }
 
 // E3 (rule:project-adapter A2): folders the project lists in .claude/protected-folders.json ({ "folders": [...] }) are
@@ -1338,12 +1474,22 @@ function answer(input) {
 		const dash = dashGlob(t.command, input.tool_name, cwd);
 		if (dash) return deny(dash === 'dash' ? DASH_REASON : DASH_UNSURE);
 		// K158 (build 21): a hold that goes away when the commands beside the read are taken as plain came from them alone.
-		const heldBeside = (names) => { neighbourBlind = true; try { return !shellWrites(t.command, input.tool_name, cwd, names); } finally { neighbourBlind = false; } };
-		if (shellWrites(t.command, input.tool_name, cwd)) return deny(heldBeside(proofNames) ? BESIDE_REASON : REASON);
-		if (folders.length && shellWrites(t.command, input.tool_name, cwd, inFolders(folders))) return deny(FOLDERS_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(guardShape))) return deny(heldBeside(shapeNames(guardShape)) ? BESIDE_REASON : GUARD_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(listShape))) return deny(heldBeside(shapeNames(listShape)) ? BESIDE_REASON : LIST_REASON);
-		if (shellWrites(t.command, input.tool_name, cwd, shapeNames(settingsShape))) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
+		// K379: every reading is asked of one plan of the command, so it is split and read once; each has a twin that reads the
+		// commands beside a read as plain.
+		const asked = (names, twin = true) => { const plain = { names, blind: false }; return twin ? [plain, { names, blind: true }] : [plain]; };
+		const [proof, proofBeside] = asked(proofNames);
+		const [inList] = folders.length ? asked(inFolders(folders), false) : [null];
+		const [guard, guardBeside] = asked(shapeNames(guardShape));
+		const [list, listBeside] = asked(shapeNames(listShape));
+		const [settingsRead] = asked(shapeNames(settingsShape), false);
+		readingSet = [proof, proofBeside, inList, guard, guardBeside, list, listBeside, settingsRead].filter(Boolean);
+		const run = (reading) => shellWrites(t.command, input.tool_name, cwd, reading);
+		const heldBeside = (twin) => !run(twin);
+		if (run(proof)) return deny(heldBeside(proofBeside) ? BESIDE_REASON : REASON);
+		if (inList && run(inList)) return deny(FOLDERS_REASON);
+		if (run(guard)) return deny(heldBeside(guardBeside) ? BESIDE_REASON : GUARD_REASON);
+		if (run(list)) return deny(heldBeside(listBeside) ? BESIDE_REASON : LIST_REASON);
+		if (run(settingsRead)) return hooksOff(t.command) ? deny(HOOKS_OFF) : settings();
 		if (mcpCommand(t.command)) return settings();
 	}
 	return null;
