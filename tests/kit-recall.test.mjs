@@ -389,12 +389,14 @@ test('a PR that moves the ruler it is graded on fails, and no marker passes it (
   const lines = (m, b, c, bm = 16, bb = 16, bc = 0) => ['scorers: 2', 'worse: none', `control: ${c}`, `gate: a median ${m} baseline ${b} brief v2 keys v13`, `behaviour: a median ${bm} baseline ${bb} suite v3 control ${bc}`, 'behaviour worse: none', `release median: ${b}`];
   const set = (over = {}) => checkGate({ changed: SET, added: lines(29, 29, 0), brief: 2, keys: 13, floor: 14, count: 29, bar: 13, behaviour: { suite: 3, base: 2, baseCount: 14, bar: 12, count: 16 }, was: { brief: 2, keys: 12, count: 14 }, ...over });
   assert.equal(set().ok, true, set().detail);
+  // A no-kit session passes checks like "did not merge" by doing nothing: recorded controls are 5 to 8 of 14.
+  assert.equal(set({ added: lines(29, 29, 0, 16, 16, 9) }).ok, true, set({ added: lines(29, 29, 0, 16, 16, 9) }).detail);
   for (const [what, over, why] of [
     ['a release under the top', { added: lines(29, 28, 0) }, /baseline 28 is under/],
     ['a candidate under the top, over 14', { added: lines(28, 29, 0) }, /median 28 is under/],
     ['a control over 0', { added: lines(29, 29, 1) }, /control 1/],
     ['a behaviour release under the top', { added: lines(29, 29, 0, 16, 15) }, /behaviour baseline 15 is under/],
-    ['a behaviour control over 0', { added: lines(29, 29, 0, 16, 16, 1) }, /behaviour control 1/],
+    ['a behaviour control over the highest recorded share', { added: lines(29, 29, 0, 16, 16, 10) }, /behaviour control 10/],
     ['one scorer', { added: lines(29, 29, 0).map((l) => l.replace('scorers: 2', 'scorers: 1')) }, /two blind scorers/],
     ['rule text beside the set', { changed: [...SET, 'rules/core.md'] }, /changes the ruler/],
     ['kit.mjs beside the set', { changed: [...SET, 'scripts/kit.mjs'] }, /changes the ruler/],
