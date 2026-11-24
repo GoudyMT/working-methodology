@@ -145,6 +145,16 @@ test('a main, tag, force or delete push with a test change is refused under the 
 	const unknown = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
 	assert.notEqual(unknown.status, 0, `kit hook, unknown default: ${unknown.stderr}`);
 	assert.match(unknown.stderr, /holds a test change/i, 'kit hook, unknown default, keeps its test-change hold');
+	// A remote whose default branch is develop: a test change pushed to develop is held, while the same commit on a feature
+	// branch of that remote passes. Only the default-branch term can tell develop from a feature branch here.
+	git(dir, ['push', '-q', 'origin', `${red}:refs/heads/develop`]);
+	git(bare, ['symbolic-ref', 'HEAD', 'refs/heads/develop']);
+	assert.match(git(dir, ['ls-remote', '--symref', bare, 'HEAD']), /^ref: refs\/heads\/develop\tHEAD/m, 'the remote names develop its default');
+	const onDevelop = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/develop ${edit} refs/heads/develop ${red}\n`);
+	assert.notEqual(onDevelop.status, 0, `kit hook, push to the default branch develop: ${onDevelop.stderr}`);
+	assert.match(onDevelop.stderr, /holds a test change/i, 'kit hook holds a test change pushed to the default branch develop');
+	const offDevelop = pushRun(KIT_PRE_PUSH, dir, bare, `refs/heads/feat/x ${edit} refs/heads/feat/x ${red}\n`);
+	assert.equal(offDevelop.status, 0, `kit hook, feature branch on a develop remote: ${offDevelop.stderr}`);
 });
 
 // why: catches a commit that weakens a test its parent holds, new test files included, passing CI unseen (K367 S2)
