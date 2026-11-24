@@ -226,3 +226,33 @@ test('one arm failing stops the other and reports both', () => {
 	assert.equal(fs.existsSync(path.join(ctx.stubDir, `cand-${label}-1.done.json`)), false, 'the held arm ran to its end');
 	assert.notEqual(res.status, 0, 'one arm failed but the run exited 0');
 });
+
+// why: catches an arm starting with only the login in its folder, so recall.mjs refuses it, with no install from its own kit (S11F1)
+test("each arm's config folder holds a kit-install.json from its own kit before the recall script starts", () => {
+	const ctx = setup(LABEL());
+	writeLogin(ctx, login(Date.now() + HOUR));
+	// The release fixture is a kit folder with its own version, so an install from it reads differently from the candidate's.
+	const releaseVersion = '0.0.1-release-fixture';
+	fs.writeFileSync(path.join(ctx.release, 'VERSION'), `${releaseVersion}\n`);
+	fs.writeFileSync(path.join(ctx.release, 'kit.config.json'), '{}\n');
+	fs.mkdirSync(path.join(ctx.release, 'user'), { recursive: true });
+	// This stub records the folder's kit-install.json at the moment it starts, which is when recall.mjs checks the user layer.
+	const probeStub = path.join(path.dirname(ctx.stub), 'stub-install-probe.mjs');
+	fs.writeFileSync(probeStub, `import fs from 'node:fs';
+import path from 'node:path';
+const file = path.join(process.env.CLAUDE_CONFIG_DIR, 'kit-install.json');
+const text = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+fs.writeFileSync(path.join(process.env.STUB_DIR, process.argv[2] + '.install.json'), JSON.stringify({ text }));
+`);
+	const res = runArms(ctx, { extra: { KIT_RECALL_SCRIPT: probeStub } });
+	assert.equal(res.status, 0, out(res));
+	const stampOf = (prefix) => {
+		const rec = recordOf(ctx, prefix, '.install.json');
+		assert.ok(rec, `${prefix} arm did not start`);
+		assert.notEqual(rec.text, null, `${prefix} arm folder holds no kit-install.json when the recall script starts (only the login)`);
+		return JSON.parse(rec.text);
+	};
+	const candVersion = fs.readFileSync(path.join(KIT_SOURCE, 'VERSION'), 'utf8').trim();
+	assert.equal(stampOf('cand-').version, candVersion, 'the candidate arm install is not from the candidate kit');
+	assert.equal(stampOf('base-').version, releaseVersion, 'the release arm install is not from the release kit');
+});
