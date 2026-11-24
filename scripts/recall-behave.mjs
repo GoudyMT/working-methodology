@@ -19,7 +19,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { armUserLayer, carryUserLayer, checkUserLayer, checkGateHome, checkHome, checkSessionHome, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
+import { armUserLayer, carryUserLayer, checkUserLayer, checkGateHome, checkHome, checkSessionHome, gateModel, parseRunArgs, probePath, setupProbe, removeProbe, refuseOverCap } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const SUITE = path.join(KIT, 'docs', 'evals', 'behaviour-scenarios.json');
@@ -227,8 +227,8 @@ export function releasedUserLayer(home, dir) {
 }
 
 /** One session on one scenario: the record, the grades and the reads outside. */
-export function runScenario({ s, dir, home, run }) {
-	const r = run('claude', ['-p', '--output-format', 'stream-json', '--verbose', '--model', MODEL, '--effort', EFFORT,
+export function runScenario({ s, dir, home, run, model = MODEL }) {
+	const r = run('claude', ['-p', '--output-format', 'stream-json', '--verbose', '--model', model, '--effort', EFFORT,
 		'--setting-sources', 'project', '--strict-mcp-config', '--permission-mode', 'default', '--allowedTools', ALLOWED, '--disallowedTools', 'WebFetch,WebSearch',
 		'--max-turns', MAX_TURNS, '--no-session-persistence'], { cwd: dir, input: s.prompt, encoding: 'utf8', timeout: 900000, maxBuffer: 1 << 28 });
 	if (/Not logged in/i.test(r.stdout || '')) throw new Error(`${s.id}: Claude Code is not logged in for the sessions' config folder`);
@@ -289,6 +289,9 @@ export function behaviourLine({ label, cand, base, control, candAgain = null, ba
 	const [c, b, k] = [cand.map(read), base.map(read), control.map(read)];
 	const suites = new Set([...c, ...b, ...k].map((r) => r.suite));
 	if (suites.size !== 1) throw new Error(`runs on more than one suite version: ${[...suites].join(', ')}`);
+	// K428: one line is one model, the second look's runs too; a run saved before the setting ran on the pin.
+	const models = new Set([...c, ...b, ...k, ...(candAgain || []).map(read), ...(baseAgain || []).map(read)].map((r) => r.model ?? MODEL));
+	if (models.size !== 1) throw new Error(`runs on more than one model: ${[...models].join(', ')}`);
 	if (!c.length || !b.length || !k.length) throw new Error('a line needs candidate, baseline and control runs');
 	if (b.some((r) => !r.released) || k.some((r) => !r.noKit)) throw new Error('a baseline run is on a released kit, and the control on none');
 	if (c.length !== RUNS || b.length !== RUNS) throw new Error(`a gate is ${RUNS} candidate runs and ${RUNS} release runs, flat; got ${c.length} and ${b.length}`);
@@ -300,7 +303,8 @@ export function behaviourLine({ label, cand, base, control, candAgain = null, ba
 	const passes = (runs, id) => runs.filter((r) => r.rows.some((x) => x.id === id && x.passed)).length;
 	const ids = [...new Set([...c, ...b].flatMap((r) => r.rows.map((x) => x.id)))];
 	const lower = ids.filter((id) => passes(c, id) < passes(b, id));
-	const head = `behaviour: ${label} median ${median(c.map((r) => r.total))} baseline ${median(b.map((r) => r.total))} suite v${[...suites][0]} control ${median(k.map((r) => r.total))}`;
+	const named = [...models][0] === MODEL ? '' : `\nbehaviour model: ${[...models][0]}`;
+	const head = `behaviour: ${label} median ${median(c.map((r) => r.total))} baseline ${median(b.map((r) => r.total))} suite v${[...suites][0]} control ${median(k.map((r) => r.total))}${named}`;
 	const again = candAgain || baseAgain;
 	if (!again) return lower.length ? `${head}\nbehaviour lower once: ${lower.join(', ')}` : `${head}\nbehaviour worse: none`;
 	if (!lower.length) throw new Error('nothing passed in fewer runs than the release on the first look, so no second look is owed: write the line from the first look alone');
@@ -353,6 +357,7 @@ async function main(argv) {
 	// Every arm on its own throwaway Claude folder (the 2026-11-21 paired run; see recall.mjs checkGateHome).
 	checkGateHome(home);
 	checkHome(process.env);
+	const model = gateModel(process.env);
 	const kit = path.resolve(kitDir || KIT);
 	// K231 (S7): the arm's own global CLAUDE.md, checked before any session; see recall.mjs armUserLayer.
 	const layer = armUserLayer({ home, kitDir: kit, noKit });
@@ -367,7 +372,8 @@ async function main(argv) {
 	const rows = [];
 	const before = (() => { try { return JSON.parse(fs.readFileSync(path.join(out, 'result.json'), 'utf8')); } catch { return null; } })();
 	const head = run('git', ['rev-parse', 'HEAD'], { cwd: kit }).stdout.trim();
-	const marker = { head, suite: suite.version, released, noKit: !!noKit, userLayer: layer.line };
+	// K428: the model is in the marker, so a resume never mixes two.
+	const marker = { head, suite: suite.version, released, noKit: !!noKit, userLayer: layer.line, model };
 	const reuse = startRun(out, marker, suite.scenarios.map((s) => s.id), { only, resume, name, just });
 	if (resume) console.log(`--resume: ${reuse.size} scenario(s) saved on ${head.slice(0, 7)} are graded from their records`);
 	for (const s of suite.scenarios) {
@@ -391,7 +397,7 @@ async function main(argv) {
 			carryUserLayer(dir, layer);
 			readOnlyProbe(dir);
 			seed(dir, s.files, run, s.merged === true);
-			const r = runScenario({ s, dir, home, run });
+			const r = runScenario({ s, dir, home, run, model });
 			fs.writeFileSync(path.join(out, `${s.id}.jsonl`), r.raw);
 			const passed = r.grades.every((g) => g.ok) && !r.outside.length;
 			rows.push({ id: s.id, passed, cost: r.ev.cost, grades: r.grades, outside: r.outside });
@@ -403,7 +409,7 @@ async function main(argv) {
 	const total = rows.filter((r) => r.passed).length;
 	const cost = rows.reduce((n, r) => n + r.cost, 0);
 	if (before && only && (before.released !== released || before.noKit !== noKit)) throw new Error(`--only: ${name} was run on another kit side; start a new label`);
-	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, userLayer: layer.line, total, cost, rows, when: new Date().toISOString(), ...(just ? { just: [...just] } : {}) }, null, 1));
+	fs.writeFileSync(path.join(out, 'result.json'), JSON.stringify({ label: name, suite: suite.version, released, noKit, userLayer: layer.line, model, total, cost, rows, when: new Date().toISOString(), ...(just ? { just: [...just] } : {}) }, null, 1));
 	console.log(`${name}: ${total} of ${rows.length} on suite v${suite.version}, $${cost.toFixed(2)}`);
 }
 

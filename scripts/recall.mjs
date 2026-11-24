@@ -47,6 +47,15 @@ const MAX_TURNS = '8';
 // to a setting they do not reach. A change here is a new ruler: it needs its own baseline.
 const RECALL_MODEL = 'claude-opus-5-5';
 const RECALL_EFFORT = 'medium';
+// K428 (the owner's pick, 2026-11-24): the model a gate's sessions run on. The pin is the default; KIT_GATE_MODEL names
+// another for a whole gate, and every run's record carries it. Only these spellings run: a typo must not move the ruler.
+const GATE_MODELS = [RECALL_MODEL, 'claude-sonnet-5-5'];
+export const GATE_PIN = RECALL_MODEL;
+export function gateModel(env = process.env) {
+  if (env.KIT_GATE_MODEL === undefined) return RECALL_MODEL;
+  if (!GATE_MODELS.includes(env.KIT_GATE_MODEL)) throw new Error(`KIT_GATE_MODEL "${env.KIT_GATE_MODEL}" is not a gate model: ${GATE_MODELS.join(' or ')}`);
+  return env.KIT_GATE_MODEL;
+}
 const SCORES = 'docs/evals/results/recall-scores.md';
 const BRIEF = 'docs/evals/recall-scorer-brief.md';
 const QUESTIONS_REL = 'docs/evals/recall-questions.md';
@@ -513,10 +522,10 @@ export function prepare({ projectDir, label, home, osHome, text, when, cli, only
 }
 
 /** Ask each question in a fresh session in the probe folder, and return the answers as run-file lines. */
-export function askAll({ qs, projectDir, run }) {
+export function askAll({ qs, projectDir, run, model = RECALL_MODEL }) {
   const lines = [];
   for (const { n, q, key } of qs) {
-    const r = run('claude', ['-p', '--model', RECALL_MODEL, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--strict-mcp-config', '--allowedTools', 'Read,Grep,Glob',
+    const r = run('claude', ['-p', '--model', model, '--effort', RECALL_EFFORT, '--setting-sources', 'project', '--strict-mcp-config', '--allowedTools', 'Read,Grep,Glob',
       '--disallowedTools', 'Edit,Write,Bash,PowerShell,WebFetch,WebSearch,Agent', '--max-turns', MAX_TURNS,
       '--no-session-persistence'], { cwd: projectDir, input: q, encoding: 'utf8', timeout: 600000 });
     const answer = (r.stdout || '').trim();
@@ -552,15 +561,16 @@ export function recallRun({ label, kitDir, noKit, home, osHome, env, text, when,
   checkHome(env);
   checkSessionHome(home, run);
   const kit = path.resolve(kitDir || KIT);
+  const model = gateModel(env);
   // K231: checked before the probe exists, so a refused layer leaves nothing behind.
   const layer = armUserLayer({ home, kitDir: kit, noKit, osHome });
   const projectDir = probePath(osHome);
   try {
     setupProbe({ dir: projectDir, kitDir: kit, noKit, released: !noKit && !kitTools.releaseState(kit).problems.length, run });
     carryUserLayer(projectDir, layer);
-    const cli = `${(run('claude', ['--version'], {}).stdout || 'unknown').trim()}; model ${RECALL_MODEL}, effort ${RECALL_EFFORT}`;
+    const cli = `${(run('claude', ['--version'], {}).stdout || 'unknown').trim()}; model ${model}, effort ${RECALL_EFFORT}`;
     const { qs, lines } = prepare({ projectDir, label, home, osHome, text, when, cli, only, userLayer: layer.line });
-    lines.push(...askAll({ qs, projectDir, run }));
+    lines.push(...askAll({ qs, projectDir, run, model }));
     fs.mkdirSync(outDir, { recursive: true });
     const out = path.join(outDir, `${label}.md`);
     fs.writeFileSync(out, lines.join('\n'));

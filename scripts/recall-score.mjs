@@ -23,7 +23,7 @@ import crypto from 'node:crypto';
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { currentVersion, FLOOR, questionCount } from './recall.mjs';
+import { currentVersion, FLOOR, GATE_PIN, questionCount } from './recall.mjs';
 
 const KIT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -94,6 +94,8 @@ export function blind(out, runs, random = crypto.randomInt) {
   const when = {};
   const hashes = {};
   const only = {};
+  // K428: each run's model from its CLI header, sealed with the map and never in the scorer's text.
+  const model = {};
   // K231: each run's "User layer:" header, sealed with the map, so the score says whether the user layer was measured.
   const userLayer = {};
   const removedAll = [];
@@ -112,12 +114,14 @@ export function blind(out, runs, random = crypto.randomInt) {
     // A run that asked named questions alone (recall.mjs --only), sealed for the second-look check at scoring.
     const asked = raw.match(/^Only: (.+)$/m);
     if (asked) only[id] = asked[1].split(/,\s*/).map(Number);
+    const ranOn = raw.match(/^CLI: .*; model (\S+), effort /m);
+    if (ranOn) model[id] = ranOn[1];
     userLayer[id] = (raw.match(/^User layer: (.*)$/m) || [])[1] ?? '';
     hashes[path.basename(run)] = crypto.createHash('sha256').update(raw).digest('hex');
     fs.writeFileSync(path.join(out, 'scorer', `${id}.md`), `# ${id}\n\n${text}`);
   });
   fs.writeFileSync(path.join(out, 'removed-lines.txt'), removedAll.join('\n') + '\n');
-  fs.writeFileSync(path.join(out, 'sealed-map.json'), JSON.stringify({ map, when, hashes, only, userLayer }, null, 1));
+  fs.writeFileSync(path.join(out, 'sealed-map.json'), JSON.stringify({ map, when, hashes, only, userLayer, model }, null, 1));
   return { map };
 }
 
@@ -235,6 +239,10 @@ export function score(files, mapFile, label, kit = KIT, again = null) {
   const keys = currentVersion(keysText);
   const brief = currentVersion(fs.readFileSync(path.join(kit, 'docs/evals/recall-scorer-brief.md'), 'utf8'));
   const sealed = JSON.parse(fs.readFileSync(mapFile, 'utf8'));
+  // K428: one score is one model, the second look's runs too; a run whose header names none ran on the pin.
+  const modelsOf = (m) => Object.keys(m.map || {}).map((id) => m.model?.[id] ?? GATE_PIN);
+  const models = new Set([...modelsOf(sealed), ...(again ? modelsOf(JSON.parse(fs.readFileSync(again.mapFile, 'utf8'))) : [])]);
+  if (models.size > 1) throw new Error(`runs on more than one model: ${[...models].join(', ')}`);
   const second = again && (() => {
     if (!Array.isArray(again.files) || again.files.length !== SCORERS) throw new Error(`a second look needs two blind scorers' files; got ${Array.isArray(again.files) ? again.files.length : 0}`);
     const map2 = JSON.parse(fs.readFileSync(again.mapFile, 'utf8'));
@@ -255,7 +263,8 @@ export function score(files, mapFile, label, kit = KIT, again = null) {
   const controlLine = `control: ${Math.ceil(r.controlMedian)}`;
   // Lower on one look, under the floor: named, though the floor already decides.
   const onceLine = !r.asked.length && r.lower.length ? [`lower once: ${r.lower.join(', ')}`] : [];
-  const lines = [`scorers: ${SCORERS}`, ...askedLine, ...onceLine, `worse: ${r.worse.join(', ') || 'none'}`, controlLine, line];
+  const modelLine = models.size && [...models][0] !== GATE_PIN ? [`model: ${[...models][0]}`] : [];
+  const lines = [...modelLine, `scorers: ${SCORERS}`, ...askedLine, ...onceLine, `worse: ${r.worse.join(', ') || 'none'}`, controlLine, line];
   // K231 (S7): the user layer counts as measured only when every candidate and release run carried only its own CLAUDE.md.
   // Named by arm and reason, never by run, as the rest of the score is.
   const notOwn = {};
