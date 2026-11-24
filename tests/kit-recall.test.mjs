@@ -889,7 +889,7 @@ test('recall checks the Claude folder a session will use, not one a variable poi
 
 // why: guards rule:instruments-and-evals
 test('every recall session runs in the probe folder with the question as its input, and a failure stops the run', async (t) => {
-  const { askAll, probePath } = await recallTools();
+  const { askAll, probePath, gateModel } = await recallTools();
   const said = t.mock.method(console, 'log', () => {});
   const dir = probePath(path.join(os.tmpdir(), 'osh'));
   const calls = [];
@@ -905,9 +905,17 @@ test('every recall session runs in the probe folder with the question as its inp
   // saved default or a new release never moves the ruler.
   assert.equal(calls[0].args[calls[0].args.indexOf('--model') + 1], 'claude-opus-5-5');
   assert.equal(calls[0].args[calls[0].args.indexOf('--effort') + 1], 'medium');
+  // K428: the gate's model is a setting, the pin unless KIT_GATE_MODEL names another allowed model; a typo never runs.
+  assert.equal(typeof gateModel, 'function', 'recall.mjs exports gateModel');
+  assert.equal(gateModel({}), 'claude-opus-5-5');
+  assert.equal(gateModel({ KIT_GATE_MODEL: 'claude-sonnet-5-5' }), 'claude-sonnet-5-5');
+  for (const odd of ['sonnet', 'claude-haiku-5-5', ' claude-sonnet-5-5', '']) assert.throws(() => gateModel({ KIT_GATE_MODEL: odd }), /KIT_GATE_MODEL/, JSON.stringify(odd));
+  const named = [];
+  askAll({ qs, projectDir: dir, model: 'claude-sonnet-5-5', run: (cmd, args) => { named.push(args[args.indexOf('--model') + 1]); return { status: 0, stdout: 'answer\n' }; } });
+  assert.deepEqual(named, ['claude-sonnet-5-5', 'claude-sonnet-5-5']);
   assert.match(calls[0].args[calls[0].args.indexOf('--disallowedTools') + 1], /Bash/);
   assert.ok(lines.includes('> answer'));
-  assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
+  assert.deepEqual(said.mock.calls.map((c) => c.arguments[0]), ['[1/2] answered (6 chars)', '[2/2] answered (6 chars)', '[1/2] answered (6 chars)', '[2/2] answered (6 chars)']);
   for (const bad of [{ status: 1, stdout: 'words' }, { status: 0, stdout: '  ' }, { status: 0, stdout: 'Not logged in' }]) {
     assert.throws(() => askAll({ qs, projectDir: dir, run: () => bad }), /question 1: no answer/, JSON.stringify(bad));
   }
@@ -944,6 +952,12 @@ test('a whole recall run asks in a neutral folder with the kit installed, saves 
   assert.deepEqual(forgot, [asks[0].opts.cwd], 'its guard record is forgotten');
   assert.ok(fs.existsSync(path.join(home, 'projects', 'other-project')));
   assert.equal(fs.readdirSync(path.join(home, 'projects')).some((p) => /^p[0-9a-f]{6}$/.test(p)), false, 'its memory is gone');
+  // K428: the run's record names the model its sessions ran on, and every session of the run is on that one model.
+  calls.length = 0;
+  const sonnet = go({ label: 'recall-cand-12', env: { KIT_GATE_MODEL: 'claude-sonnet-5-5' } });
+  assert.match(read(sonnet), /^CLI: .*; model claude-sonnet-5-5, effort medium$/m);
+  const sonnetAsks = calls.filter((c) => c.cmd === 'claude' && c.args[0] === '-p');
+  assert.deepEqual([...new Set(sonnetAsks.map((c) => c.args[c.args.indexOf('--model') + 1]))], ['claude-sonnet-5-5']);
   // A saved label is never written over (the build 22 sweep), so the failing runs below take new labels.
   assert.throws(() => go({ env: { KIT_CLAUDE_HOME: 'C:/elsewhere' }, label: 'recall-cand-10' }), /KIT_CLAUDE_HOME/);
   assert.throws(() => go({ run: () => ({ status: 1, stderr: 'no' }), label: 'recall-cand-11' }), /no/);

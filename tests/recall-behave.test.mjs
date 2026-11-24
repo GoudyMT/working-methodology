@@ -96,6 +96,10 @@ test('a behaviour run allows no edit or shell, and seeds no file outside its fol
 	assert.equal(opt('--allowedTools'), 'Read,Grep,Glob,Skill');
 	assert.equal(opt('--permission-mode'), 'default');
 	assert.equal(opt('--setting-sources'), 'project');
+	// K428: the session's model is the gate model setting; the pin when none is given.
+	assert.equal(opt('--model'), 'claude-opus-5-5');
+	runScenario({ s: { id: 'x', prompt: 'p', checks: [] }, dir: makeTemp('behave-'), home: makeTemp('behave-home-'), model: 'claude-sonnet-5-5', run: (cmd, args) => { argv = args; return { status: 0, stdout: result('done'), stderr: '' }; } });
+	assert.equal(opt('--model'), 'claude-sonnet-5-5');
 	// K177 (build 23b): a scenario's planted .mcp.json must not start a server or add tools.
 	assert.ok(argv.includes('--strict-mcp-config'), 'a behaviour session ignores project MCP servers (K177)');
 	assert.ok(!argv.some((a) => /bypass|dangerously/i.test(a)), argv.join(' '));
@@ -232,6 +236,13 @@ test('the behaviour line (K198) needs 5 runs a side from the same day and names 
 	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base'), control }), /\nbehaviour lower once: 2-b$/);
 	assert.match(behaviourLine({ label: 'x', cand: five('cand', ['2-b']), base: five('base', ['2-b']), control }), /\nbehaviour worse: none$/);
 	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand').slice(1), base: five('base'), control }), /5 candidate runs and 5 release runs/);
+	// K428: one line is one model. A run saved with no model ran on the pin; any other model is named on the line.
+	const onModel = (dirs, model) => dirs.map((d) => { const f = path.join(d, 'result.json'); fs.writeFileSync(f, JSON.stringify({ ...JSON.parse(fs.readFileSync(f, 'utf8')), model })); return d; });
+	const SON = 'claude-sonnet-5-5';
+	const sonnetLine = behaviourLine({ label: 'x', cand: onModel(five('cand'), SON), base: onModel(five('base'), SON), control: onModel([save('control', ['1-a', '2-b', '3-c'])], SON) });
+	assert.match(sonnetLine, /^behaviour model: claude-sonnet-5-5$/m);
+	assert.doesNotMatch(behaviourLine({ label: 'x', cand: onModel(five('cand'), 'claude-opus-5-5'), base: five('base'), control }), /behaviour model:/);
+	assert.throws(() => behaviourLine({ label: 'x', cand: onModel(five('cand'), SON), base: five('base'), control }), /more than one model/);
 	const late = [...five('base').slice(1), save('base', [], '2026-11-18T09:00:00.000Z')];
 	assert.throws(() => behaviourLine({ label: 'x', cand: five('cand'), base: late, control }), /same day/);
 	const untimed = [...five('base').slice(1), save('base', [], null)];

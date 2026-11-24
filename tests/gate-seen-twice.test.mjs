@@ -103,6 +103,17 @@ test('score holds back the gate lines until a lower question is asked again, the
   assert.match(twice.stdout, /^worse: 6$/m);
   assert.match(twice.stdout, /on two looks[\s\S]*fix the cause/);
   assert.doesNotMatch(twice.stdout, /owner/);
+  // K428: the model sealed with each run: a set on one model prints it beside the gate line, two models are refused.
+  const modelled = (name, of) => { const w = write(name, scoreSets(fiveEach(Array(5).fill(clean)))); const m = JSON.parse(read(w[2])); fs.writeFileSync(w[2], JSON.stringify({ ...m, model: Object.fromEntries(Object.keys(m.map).map((id, i) => [id, of(i)])) })); return spawnSync('node', [path.resolve('scripts/recall-score.mjs'), 'score', ...w, 'kit-x'], { encoding: 'utf8' }); };
+  const sonnet = modelled('sonnet', () => 'claude-sonnet-5-5');
+  assert.equal(sonnet.status, 0, sonnet.stdout + sonnet.stderr);
+  assert.match(sonnet.stdout, /^model: claude-sonnet-5-5\n[\s\S]*^gate: /m);
+  const mixed = modelled('mixed', (i) => (i ? 'claude-sonnet-5-5' : 'claude-opus-5-5'));
+  assert.notEqual(mixed.status, 0);
+  assert.match(mixed.stdout + mixed.stderr, /more than one model/);
+  const pinned = modelled('pinned', () => 'claude-opus-5-5');
+  assert.equal(pinned.status, 0, pinned.stdout + pinned.stderr);
+  assert.doesNotMatch(pinned.stdout, /^model:/m, 'the pin prints as before');
 });
 
 // why: catches a second-look run, which asks one question alone, refused by the blind step
@@ -115,6 +126,12 @@ test('the blind step takes a run that asked one question alone', async () => {
   assert.match(blindRun(read(f)), /^## 6\. A review agent/);
   const { map } = blind(path.join(dir, 'out'), [f], () => 0);
   assert.deepEqual(map, { R01: 'cand-x-1' });
+  // K428: the header's model is sealed with the map and stays out of what the scorer reads.
+  const g = path.join(dir, 'cand-x-2.md');
+  fs.writeFileSync(g, read(f).replace('When:', 'CLI: 2.1.0; model claude-sonnet-5-5, effort medium\nWhen:'));
+  blind(path.join(dir, 'out2'), [g], () => 0);
+  assert.deepEqual(JSON.parse(read(path.join(dir, 'out2', 'sealed-map.json'))).model, { R01: 'claude-sonnet-5-5' });
+  assert.doesNotMatch(read(path.join(dir, 'out2', 'scorer', 'R01.md')), /sonnet/);
   const text = read(path.join(dir, 'out', 'scorer', 'R01.md'));
   assert.doesNotMatch(text, /cand|Only:|When:/);
   assert.match(text, /^## 6\. /m);
