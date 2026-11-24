@@ -76,7 +76,10 @@ test(`plan-check --lock-rows writes the sha of the plan's Rows line to the locks
 
 // why: catches a row added after --lock-rows is a fault that names the row and the closeout.mjs defer command (K372 S2)
 test('a row added after --lock-rows is a fault that names the row and the closeout.mjs defer command', () => {
-	const plan = planFile(planText({ rows: '- **Rows (3 placed, cap 15):** K901, K902, K903' }), { rows: sha(ROWS) });
+	const plan = planFile(planText());
+	const locked = check([plan, '--lock-rows']);
+	assert.equal(locked.status, 0, out(locked));
+	fs.writeFileSync(plan, planText({ rows: '- **Rows (3 placed, cap 15):** K901, K902, K903' }));
 	const res = check([plan]);
 	assert.equal(res.status, 1, out(res));
 	assert.match(out(res), CHANGED);
