@@ -543,7 +543,7 @@
   ],
   "verification": [
     "Each unit's new tests failed on the code before them and pass now.",
-    "test-integrity passes the whole branch and lists 25 retest commits for the merge yes.",
+    "test-integrity passes the whole branch and lists 26 retest commits for the merge yes.",
     "CI runs the full suite on this branch; no full-suite run was made on the PC."
   ],
   "decisions": [
